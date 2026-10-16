@@ -127,6 +127,244 @@ fun tl_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
 lift_definition tl_queue :: "'a queue \<Rightarrow> 'a queue" is tl_queue_t
   by (auto simp: queue_invariant_def split: list.splits elim!: tl_queue_t.elims)
 
+text \<open>
+  The equations above are written so that every case names its result, which makes them read
+  well but makes the generated code rebuild a queue it does not change: the case
+  @{text "safe_hd_t (f # fs, l # ls) = (Some f, (f # fs, l # ls))"} allocates two cons cells
+  and a pair that are equal to the ones it was given. On P2 that single case was the largest
+  allocation site of the whole monitor, because @{const safe_hd} runs once per time point per
+  queue. The code equations below return the argument instead wherever the result is the
+  argument; nothing else about the queue changes.
+\<close>
+
+declare [[code drop: safe_hd_t]]
+
+lemma safe_hd_t_code[code]:
+  "safe_hd_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> (Some f, q))
+      | [] \<Rightarrow> (case ls of
+                [] \<Rightarrow> (None, q)
+              | [l] \<Rightarrow> (Some l, q)
+              | l # v # va \<Rightarrow> (let gs = rev (v # va) in (Some (hd gs), (gs, [l]))))))"
+  by (cases q rule: safe_hd_t.cases) (auto simp: Let_def)
+
+declare [[code drop: safe_last_t]]
+
+lemma safe_last_t_code[code]:
+  "safe_last_t q = (case q of (fs, ls) \<Rightarrow>
+     (case ls of [] \<Rightarrow> (case fs of [] \<Rightarrow> (None, q) | _ \<Rightarrow> undefined)
+      | l # _ \<Rightarrow> (Some l, q)))"
+  by (cases q rule: safe_last_t.cases) auto
+
+declare [[code drop: prepend_queue_t]]
+
+lemma prepend_queue_t_code[code]:
+  "prepend_queue_t a q = (case q of (fs, ls) \<Rightarrow>
+     (case ls of [] \<Rightarrow> (case fs of [] \<Rightarrow> ([], [a]) | _ \<Rightarrow> undefined)
+      | _ \<Rightarrow> (a # fs, ls)))"
+  by (cases "(a, q)" rule: prepend_queue_t.cases) auto
+
+declare [[code drop: replace_hd_t]]
+
+lemma replace_hd_t_code[code]:
+  "replace_hd_t a q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> (a # fs', ls))
+      | [] \<Rightarrow> (case ls of
+                [] \<Rightarrow> q
+              | [l] \<Rightarrow> ([], [a])
+              | l # v # va \<Rightarrow> (let gs = rev (v # va) in (a # tl gs, [l])))))"
+  by (cases "(a, q)" rule: replace_hd_t.cases) (auto simp: Let_def)
+
+declare [[code drop: tl_queue_t]]
+
+lemma tl_queue_t_code[code]:
+  "tl_queue_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        a # as \<Rightarrow> (as, ls)
+      | [] \<Rightarrow> (case ls of
+                [] \<Rightarrow> q
+              | [l] \<Rightarrow> ([], [])
+              | l # v # va \<Rightarrow> (tl (rev (v # va)), [l]))))"
+  by (cases q rule: tl_queue_t.cases) auto
+
+text \<open>
+  @{const safe_hd} returns a pair whose second component is a queue, so the code generator
+  cannot state its code equation directly: @{command lift_definition} with the @{text code_dt}
+  option introduces an intermediate datatype, and the generated @{const safe_hd} builds a value
+  of it and then takes it apart into a fresh pair.  That is two blocks allocated and two
+  projections executed around a function that, with the equations above, no longer allocates
+  anything in the common case.  Splitting @{const safe_hd} into its two components avoids the
+  detour: each half has a result type the code generator can handle on its own, and the pair is
+  built once, by the equation below.
+\<close>
+
+fun hd_queue_t :: "'a queue_t \<Rightarrow> 'a option" where
+  "hd_queue_t ([], []) = None"
+| "hd_queue_t ([], [l]) = Some l"
+| "hd_queue_t ([], l # ls) = Some (last ls)"
+| "hd_queue_t (f # fs, l # ls) = Some f"
+| "hd_queue_t (f # fs, []) = undefined"
+
+fun norm_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
+  "norm_queue_t ([], []) = ([], [])"
+| "norm_queue_t ([], [l]) = ([], [l])"
+| "norm_queue_t ([], l # ls) = (rev ls, [l])"
+| "norm_queue_t (f # fs, l # ls) = (f # fs, l # ls)"
+| "norm_queue_t (f # fs, []) = undefined"
+
+lemma safe_hd_t_split:
+  "queue_invariant q \<Longrightarrow> safe_hd_t q = (hd_queue_t q, norm_queue_t q)"
+  by (cases q rule: safe_hd_t.cases)
+     (auto simp: queue_invariant_def Let_def hd_rev)
+
+lemma norm_queue_t_invariant:
+  "queue_invariant q \<Longrightarrow> queue_invariant (norm_queue_t q)"
+  by (cases q rule: norm_queue_t.cases)
+     (auto simp: queue_invariant_def split: list.splits)
+
+lift_definition hd_queue :: "'a queue \<Rightarrow> 'a option" is hd_queue_t .
+
+lift_definition norm_queue :: "'a queue \<Rightarrow> 'a queue" is norm_queue_t
+  by (rule norm_queue_t_invariant)
+
+lemma hd_queue_t_front:
+  "fs \<noteq> [] \<Longrightarrow> ls \<noteq> [] \<Longrightarrow> hd_queue_t (fs, ls) = Some (hd fs)"
+  by (cases fs; cases ls) auto
+
+lemma hd_queue_t_norm:
+  "queue_invariant q \<Longrightarrow> hd_queue_t (norm_queue_t q) = hd_queue_t q"
+  by (cases q rule: norm_queue_t.cases)
+     (auto simp: queue_invariant_def hd_queue_t_front hd_rev hd_append
+           split: list.splits)
+
+declare [[code drop: safe_hd]]
+
+text \<open>
+  The head is read off the normalised queue rather than off the argument: on a normalised queue
+  it is the first element of the front list, while on the argument it can be the last element of
+  the back list, which costs a second pass over it.
+\<close>
+
+lemma safe_hd_code[code]: "safe_hd q = (let q' = norm_queue q in (hd_queue q', q'))"
+  unfolding Let_def
+  by transfer (simp add: safe_hd_t_split hd_queue_t_norm)
+
+declare [[code drop: norm_queue_t]]
+
+lemma norm_queue_t_code[code]:
+  "norm_queue_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> q)
+      | [] \<Rightarrow> (case ls of
+                 [] \<Rightarrow> q
+               | [l] \<Rightarrow> q
+               | l # v # va \<Rightarrow> (rev (v # va), [l]))))"
+  by (cases q rule: norm_queue_t.cases) auto
+
+lemma hd_queue_t_rep:
+  "queue_invariant q \<Longrightarrow>
+   hd_queue_t q = (case (case q of (fs, ls) \<Rightarrow> fs @ rev ls) of [] \<Rightarrow> None | x # _ \<Rightarrow> Some x)"
+  by (cases q rule: hd_queue_t.cases)
+     (auto simp: queue_invariant_def hd_rev hd_append list.case_eq_if)
+
+lemma hd_queue_rep: "hd_queue q = (case linearize q of [] \<Rightarrow> None | x # _ \<Rightarrow> Some x)"
+  by transfer (rule hd_queue_t_rep)
+
+text \<open>
+  Dropping the head is @{const safe_hd} followed by @{const tl_queue}, which normalises the
+  queue and then rebuilds it a second time.  One function does it in a single step.
+\<close>
+
+fun pop_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
+  "pop_queue_t ([], []) = ([], [])"
+| "pop_queue_t ([], [l]) = ([], [])"
+| "pop_queue_t ([], l # ls) = (tl (rev ls), [l])"
+| "pop_queue_t (f # fs, ls) = (fs, ls)"
+
+text \<open>
+  A function whose parameter is a pattern is compiled as a function of the pattern's components,
+  and an application of it to a pair that is not written out at the call site goes through an
+  adapter that takes the pair apart again.  On P2 that adapter is entered 11.8 million times.
+  Matching on the argument inside the body, rather than in the parameter, gives an ordinary
+  one-argument function.
+\<close>
+
+declare [[code drop: hd_queue_t]]
+
+lemma hd_queue_t_code[code]:
+  "hd_queue_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> Some f)
+      | [] \<Rightarrow> (case ls of
+                 [] \<Rightarrow> None
+               | [l] \<Rightarrow> Some l
+               | l # v # va \<Rightarrow> Some (last (v # va)))))"
+  by (cases q rule: hd_queue_t.cases) auto
+
+lemma pop_queue_t_invariant:
+  "queue_invariant q \<Longrightarrow> queue_invariant (pop_queue_t q)"
+  by (cases q rule: pop_queue_t.cases)
+     (auto simp: queue_invariant_def split: list.splits)
+
+lift_definition pop_queue :: "'a queue \<Rightarrow> 'a queue" is pop_queue_t
+  by (rule pop_queue_t_invariant)
+
+declare [[code drop: pop_queue_t]]
+
+lemma pop_queue_t_code[code]:
+  "pop_queue_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (fs', ls)
+      | [] \<Rightarrow> (case ls of
+                 [] \<Rightarrow> q
+               | [l] \<Rightarrow> ([], [])
+               | l # v # va \<Rightarrow> (tl (rev (v # va)), [l]))))"
+  by (cases q rule: pop_queue_t.cases) auto
+
+lemma pop_queue_t_rep:
+  "queue_invariant q \<Longrightarrow>
+   (case pop_queue_t q of (fs, ls) \<Rightarrow> fs @ rev ls) =
+   tl (case q of (fs, ls) \<Rightarrow> fs @ rev ls)"
+  by (cases q rule: pop_queue_t.cases)
+     (auto simp: queue_invariant_def tl_append split: list.splits)
+
+lemma pop_queue_rep: "linearize (pop_queue q) = tl (linearize q)"
+  by transfer (rule pop_queue_t_rep)
+
+text \<open>
+  Appending a list element by element wraps and unwraps the queue once per element.  Appending
+  the whole list in one pass costs one pass over the list and nothing else.
+\<close>
+
+text \<open>
+  Reversing a list onto another one is a two-argument recursion, but the code equation the
+  library gives @{const rev} states it as a fold over a function argument, which the generated
+  code passes as a closure and applies through the generic application path once per element.
+  A named function does the same work with a direct call.
+\<close>
+
+fun rev_prepend :: "'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "rev_prepend [] ys = ys"
+| "rev_prepend (x # xs) ys = rev_prepend xs (x # ys)"
+
+lemma rev_prepend_eq: "rev_prepend xs ys = rev xs @ ys"
+  by (induction xs arbitrary: ys) auto
+
+declare [[code drop: rev]]
+
+lemma rev_code[code]: "rev xs = rev_prepend xs []"
+  by (simp add: rev_prepend_eq)
+
+lift_definition append_queue_list :: "'a list \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is
+  "\<lambda>ys q. (case q of (fs, ls) \<Rightarrow> (fs, rev_prepend ys ls))"
+  by (auto simp: queue_invariant_def rev_prepend_eq split: list.splits)
+
+lemma append_queue_list_rep:
+  "linearize (append_queue_list ys q) = linearize q @ ys"
+  by transfer (auto simp: linearize_def rev_prepend_eq)
+
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
   by transfer (auto simp: tl_append split: prod.splits list.splits elim!: tl_queue_t.elims)
 
@@ -194,25 +432,13 @@ proof(induction f q rule: takeWhile_queue.induct)
 qed
 
 lemma takeWhile_queue_rep_snd: "linearize (snd (takeWhile_queue f q)) = linearize q"
-proof(induction f q rule: takeWhile_queue.induct)
-  case (1 f q)
-  then obtain hd rm where safe_hd_eq: "safe_hd q = (hd, rm)" by (meson prod.exhaust_sel)
-  then show ?case 
-  proof(cases "hd")
-    case None
-    then show ?thesis using safe_hd_eq by (simp add: safe_hd_rep)
-  next
-    case (Some a)
-    then show ?thesis
-    proof(cases "f a")
-      case True
-      then show ?thesis apply(auto) using 1[OF safe_hd_eq[symmetric] Some True] safe_hd_eq Some
-        by(auto simp: safe_hd_rep split:prod.splits)
-    next
-      case False
-      then show ?thesis using safe_hd_eq Some by (simp add: safe_hd_rep)
-    qed
-  qed
+proof -
+  obtain x rm where safe_hd_eq: "safe_hd q = (x, rm)" by (cases "safe_hd q")
+  \<comment> \<open>no recursion needed: the second component is always the queue returned by @{const safe_hd}\<close>
+  have "snd (takeWhile_queue f q) = rm"
+    using safe_hd_eq by (simp add: case_prod_unfold split: option.split)
+  then show ?thesis
+    using safe_hd_rep[OF safe_hd_eq] by simp
 qed
 
 function takedropWhile_queue :: "('a \<Rightarrow> bool) \<Rightarrow> 'a queue \<Rightarrow> 'a queue \<times> 'a list" where
@@ -244,13 +470,13 @@ qed
 lemma not_empty_head_q:
   assumes "\<not>is_empty q"
   shows "\<exists>ts tss. safe_hd q = (Some ts, tss)"
-  using assms apply(transfer) apply(auto) 
 proof -
-  fix xs ys
-  assume "queue_invariant ((xs :: 'a list), ys)" "\<not> (case xs of [] \<Rightarrow> (case ys of [] \<Rightarrow> True | a # list \<Rightarrow> False) | aa # list \<Rightarrow> False)"
-  then obtain y ys' where "ys = y#ys'" unfolding queue_invariant_def by(auto split:list.splits)
-  then show "\<exists>ts aa ba. queue_invariant (aa, ba) \<and> safe_hd_t (xs, ys) = (Some ts, aa, ba) " 
-    by(cases xs; cases ys') (auto simp:queue_invariant_def Let_def list.case_eq_if) 
+  obtain x q' where safe_hd_eq: "safe_hd q = (x, q')" by (cases "safe_hd q")
+  have "linearize q \<noteq> []"
+    using assms by (simp add: is_empty_alt)
+  with safe_hd_rep[OF safe_hd_eq] obtain ts where "x = Some ts"
+    by (cases x) auto
+  with safe_hd_eq show ?thesis by blast
 qed
 
 fun pop_t :: "'a queue_t \<Rightarrow> 'a option \<times> 'a queue_t" where

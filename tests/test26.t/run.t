@@ -1,7 +1,5 @@
   $ echo '(NOT EVENTUALLY[0,3] T()) UNTIL[0,1] U()' > test26_1.mfotl
-  $ monpoly -sig test26.sig -formula test26_1.mfotl -log test26.log -verbose -nonewlastts
-  The analyzed formula is:
-    (NOT EVENTUALLY[0,3] T()) UNTIL[0,1] U()
+  $ verimon -sig test26.sig -formula test26_1.mfotl -log test26.log -verbose -nonewlastts
   The sequence of free variables is: ()
   At time point 0:
   At time point 1:

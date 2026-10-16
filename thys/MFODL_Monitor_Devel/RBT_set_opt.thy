@@ -77,6 +77,74 @@ definition rbt_join :: "'a urbt \<Rightarrow> 'a \<Rightarrow> 'a urbt \<Rightar
 declare rbt_joinL.simps[simp del]
 declare rbt_joinR.simps[simp del]
 
+text \<open>The black height of a tree is a @{typ nat} computed by walking the whole left spine, so
+every comparison of two black heights allocates a boxed number per level of both trees.  Both
+uses are comparisons, and a comparison can be decided by descending the two spines in lockstep,
+or---for the comparison against a constant---by counting down and stopping as soon as the
+constant is exceeded.  Neither allocates.\<close>
+
+function bh_le :: "'a urbt \<Rightarrow> 'b urbt \<Rightarrow> bool" where
+  "bh_le RBT_Impl.Empty t2 = True"
+| "bh_le (Branch RBT_Impl.R l1 a1 b1 r1) t2 = bh_le l1 t2"
+| "bh_le (Branch RBT_Impl.B l1 a1 b1 r1) RBT_Impl.Empty = False"
+| "bh_le (Branch RBT_Impl.B l1 a1 b1 r1) (Branch RBT_Impl.R l2 a2 b2 r2) =
+     bh_le (Branch RBT_Impl.B l1 a1 b1 r1) l2"
+| "bh_le (Branch RBT_Impl.B l1 a1 b1 r1) (Branch RBT_Impl.B l2 a2 b2 r2) = bh_le l1 l2"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(t1, t2). size t1 + size t2)") auto
+
+lemma bh_le_correct: "bh_le t1 t2 \<longleftrightarrow> bheight t1 \<le> bheight t2"
+  by (induction t1 t2 rule: bh_le.induct) auto
+
+fun bh_lt :: "integer \<Rightarrow> 'a urbt \<Rightarrow> bool" where
+  "bh_lt k RBT_Impl.Empty = (0 < k)"
+| "bh_lt k (Branch RBT_Impl.R l a b r) = bh_lt k l"
+| "bh_lt k (Branch RBT_Impl.B l a b r) = (if k \<le> 0 then False else bh_lt (k - 1) l)"
+
+lemma bh_lt_correct: "bh_lt k t \<longleftrightarrow> integer_of_nat (bheight t) < k"
+proof (induction k t rule: bh_lt.induct)
+  case (3 k l a b r)
+  show ?case
+  proof (cases "k \<le> 0")
+    case True
+    have "k \<le> 0" by (rule True)
+    also have "(0::integer) \<le> 1 + of_nat (bheight l)"
+      by (simp add: add_nonneg_nonneg)
+    finally have "k \<le> 1 + of_nat (bheight l)" .
+    then show ?thesis using True by (simp add: integer_of_nat_eq_of_nat not_less)
+  next
+    case False
+    then show ?thesis using 3
+      by (simp add: integer_of_nat_eq_of_nat less_diff_eq add.commute)
+  qed
+qed (auto simp: integer_of_nat_eq_of_nat)
+
+declare [[code drop: small_rbt flip_rbt rbt_joinL rbt_joinR rbt_join]]
+
+lemma small_rbt_code[code]: "small_rbt t = bh_lt 6 t"
+  by (simp add: small_rbt_def bh_lt_correct integer_of_nat_eq_of_nat)
+
+lemma flip_rbt_code[code]: "flip_rbt t1 t2 = (\<not> bh_le t1 t2)"
+  by (simp add: flip_rbt_def bh_le_correct not_le)
+
+lemma rbt_joinL_code[code]: "rbt_joinL l x r = (if bh_le r l then MR l x r
+    else case r of MB l' x' r' \<Rightarrow> baliL (rbt_joinL l x l') x' r'
+    | MR l' x' r' \<Rightarrow> MR (rbt_joinL l x l') x' r')"
+  by (subst rbt_joinL.simps) (simp add: bh_le_correct)
+
+lemma rbt_joinR_code[code]: "rbt_joinR l x r = (if bh_le l r then MR l x r
+    else case l of MB l' x' r' \<Rightarrow> baliR l' x' (rbt_joinR r' x r)
+    | MR l' x' r' \<Rightarrow> MR l' x' (rbt_joinR r' x r))"
+  by (subst rbt_joinR.simps) (simp add: bh_le_correct)
+
+lemma rbt_join_code[code]: "rbt_join l x r = (if \<not> bh_le l r
+    then paint RBT_Impl.B (rbt_joinR l x r)
+    else if \<not> bh_le r l
+    then paint RBT_Impl.B (rbt_joinL l x r)
+    else MB l x r)"
+  by (simp add: rbt_join_def bh_le_correct)
+
 lemma [simp]: "size (paint c t) = size t"
   by (cases t) auto
 
@@ -439,13 +507,26 @@ function union :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" where
         case split t1 a of (l1, _, r1) \<Rightarrow> rbt_join (union l1 l2) a (union r1 r2)))"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare union.simps[simp del]
 
@@ -479,13 +560,26 @@ function inter :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" where
       in if ain then rbt_join l' a r' else rbt_join2 l' r')"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare inter.simps[simp del]
 
@@ -563,13 +657,26 @@ function union_comp :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" whe
         case split_comp t1 a of (l1, _, r1) \<Rightarrow> rbt_join (union_comp l1 l2) a (union_comp r1 r2)))"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare union_comp.simps[simp del]
 
@@ -583,13 +690,26 @@ function inter_comp :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" whe
       in if ain then rbt_join l' a r' else rbt_join2 l' r')"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare inter_comp.simps[simp del]
 
@@ -693,19 +813,73 @@ context linorder begin
 
 lemma rbt_sorted_baliL:
   "\<lbrakk>rbt_sorted l; rbt_sorted r; l |\<guillemotleft> a; a \<guillemotleft>| r\<rbrakk> \<Longrightarrow> rbt_sorted (baliL l a r)"
-  using rbt_greater_trans rbt_less_trans
-  apply (cases "(l,a,r)" rule: baliL.cases)
-            apply (auto simp: rbt_sorted_def)
-   apply blast+
-  done
+proof -
+  assume *: "rbt_sorted l" "rbt_sorted r" "l |\<guillemotleft> a" "a \<guillemotleft>| r"
+  have rot1: "rbt_sorted (MR (MB t1 a1 t2) b (MB t3 a r))"
+    if l: "l = MR (MR t1 a1 t2) b t3" for t1 a1 t2 b t3
+  proof -
+    from *(3) have "b < a" by (simp add: l)
+    then have "b \<guillemotleft>| r" using *(4) by (rule rbt_greater_trans)
+    with \<open>b < a\<close> * show ?thesis by (simp add: l)
+  qed
+  have rot2: "rbt_sorted (MR (MB t1 a1 t2) b (MB t3 a r))"
+    if l: "l = MR t1 a1 (MR t2 b t3)" for t1 a1 t2 b t3
+  proof -
+    from *(1) have "t1 |\<guillemotleft> a1" "a1 < b" by (simp_all add: l)
+    then have "t1 |\<guillemotleft> b" by (rule rbt_less_trans)
+    from *(3) have "b < a" by (simp add: l)
+    then have "b \<guillemotleft>| r" using *(4) by (rule rbt_greater_trans)
+    with \<open>t1 |\<guillemotleft> b\<close> \<open>b < a\<close> * show ?thesis by (simp add: l)
+  qed
+  have plain: "rbt_sorted (MB l a r)"
+    using * by simp
+  show "rbt_sorted (baliL l a r)"
+  proof (cases "(l,a,r)" rule: baliL.cases)
+    case (1 t1 a1 t2 b t3 c t4)
+    with rot1[of t1 a1 t2 b t3] show ?thesis by simp
+  next
+    case ("2_1" a1 t2 b t3 c t4)
+    with rot2[of RBT_Impl.Empty a1 t2 b t3] show ?thesis by simp
+  next
+    case ("2_2" va vb vc vd a1 t2 b t3 c t4)
+    with rot2[of "Branch color.B va vb vc vd" a1 t2 b t3] show ?thesis by simp
+  qed (use plain in simp_all)
+qed
 
 lemma rbt_sorted_baliR:
   "\<lbrakk>rbt_sorted l; rbt_sorted r; l |\<guillemotleft> a; a \<guillemotleft>| r\<rbrakk> \<Longrightarrow> rbt_sorted (baliR l a r)"
-  using rbt_greater_trans rbt_less_trans
-  apply (cases "(l,a,r)" rule: baliR.cases)
-            apply (auto simp: rbt_sorted_def)
-    apply blast+
-  done
+proof -
+  assume *: "rbt_sorted l" "rbt_sorted r" "l |\<guillemotleft> a" "a \<guillemotleft>| r"
+  have rot1: "rbt_sorted (MR (MB l a t2) b (MB t3 c t4))"
+    if r: "r = MR t2 b (MR t3 c t4)" for t2 b t3 c t4
+  proof -
+    from *(4) have "a < b" by (simp add: r)
+    with *(3) have "l |\<guillemotleft> b" by (rule rbt_less_trans)
+    with \<open>a < b\<close> * show ?thesis by (simp add: r)
+  qed
+  have rot2: "rbt_sorted (MR (MB l a t2) b (MB t3 c t4))"
+    if r: "r = MR (MR t2 b t3) c t4" for t2 b t3 c t4
+  proof -
+    from *(4) have "a < b" by (simp add: r)
+    with *(3) have "l |\<guillemotleft> b" by (rule rbt_less_trans)
+    from *(2) have "b < c" "c \<guillemotleft>| t4" by (simp_all add: r)
+    then have "b \<guillemotleft>| t4" by (rule rbt_greater_trans)
+    with \<open>l |\<guillemotleft> b\<close> \<open>a < b\<close> * show ?thesis by (simp add: r)
+  qed
+  have plain: "rbt_sorted (MB l a r)"
+    using * by simp
+  show "rbt_sorted (baliR l a r)"
+  proof (cases "(l,a,r)" rule: baliR.cases)
+    case (1 t1 a' t2 b t3 c t4)
+    with rot1[of t2 b t3 c t4] show ?thesis by simp
+  next
+    case ("2_1" t1 a' t2 b t3 c)
+    with rot2[of t2 b t3 c RBT_Impl.Empty] show ?thesis by simp
+  next
+    case ("2_2" t1 a' t2 b t3 c va vb vc vd)
+    with rot2[of t2 b t3 c "Branch color.B va vb vc vd"] show ?thesis by simp
+  qed (use plain in simp_all)
+qed
 
 lemma rbt_sorted_rbt_joinL:
   "\<lbrakk>rbt_sorted (RBT_Impl.Branch c l a () r); bheight l \<le> bheight r\<rbrakk>
@@ -751,12 +925,64 @@ lemma split: "split t x = (l,xin,r) \<Longrightarrow> rbt_sorted t \<Longrightar
   set (RBT_Impl.keys l) = {a \<in> set (RBT_Impl.keys t). a < x} \<and>
   set (RBT_Impl.keys r) = {a \<in> set (RBT_Impl.keys t). x < a} \<and>
   (xin = (x \<in> set (RBT_Impl.keys t))) \<and> rbt_sorted l \<and> rbt_sorted r"
-  apply (induction t arbitrary: l xin r)
-  apply (force simp: Let_def set_rbt_join rbt_greater_prop rbt_less_prop
-      split: if_splits prod.splits intro!: rbt_sorted_rbt_join)
-  apply (intro conjI set_eqI; clarsimp split: prod.splits)
-  by (force simp: Let_def set_rbt_join rbt_greater_prop rbt_less_prop
-      split: if_splits prod.splits intro!: rbt_sorted_rbt_join)+
+proof (induction t arbitrary: l xin r)
+  case Empty
+  then show ?case by simp
+next
+  case (Branch c t1 k u t2)
+  have k1: "\<forall>y \<in> set (RBT_Impl.keys t1). y < k" and k2: "\<forall>y \<in> set (RBT_Impl.keys t2). k < y"
+    and s1: "rbt_sorted t1" and s2: "rbt_sorted t2"
+    using Branch.prems(2) by (simp_all add: rbt_less_prop rbt_greater_prop)
+  have keys: "set (RBT_Impl.keys (RBT_Impl.Branch c t1 k u t2)) =
+    set (RBT_Impl.keys t1) \<union> {k} \<union> set (RBT_Impl.keys t2)"
+    by auto
+  consider (lt) "x < k" | (gt) "k < x" | (eq) "x = k"
+    using less_linear by blast
+  then show ?case
+  proof cases
+    case lt
+    obtain l1 b l2 where split1: "split t1 x = (l1, b, l2)"
+      by (cases "split t1 x") auto
+    with lt Branch.prems(1) have lxr: "l = l1" "xin = b" "r = rbt_join l2 k t2"
+      by auto
+    from Branch.IH(1)[OF split1 s1]
+    have l1: "set (RBT_Impl.keys l1) = {a \<in> set (RBT_Impl.keys t1). a < x}"
+      and l2: "set (RBT_Impl.keys l2) = {a \<in> set (RBT_Impl.keys t1). x < a}"
+      and b: "b = (x \<in> set (RBT_Impl.keys t1))"
+      and "rbt_sorted l1" "rbt_sorted l2"
+      by auto
+    have "rbt_sorted (rbt_join l2 k t2)"
+      using l2 k1 k2 \<open>rbt_sorted l2\<close> s2
+      by (intro rbt_sorted_rbt_join) (simp add: rbt_less_prop rbt_greater_prop)
+    with lt k2 \<open>rbt_sorted l1\<close> show ?thesis
+      by (auto simp: lxr l1 l2 b keys set_rbt_join dest: less_trans)
+  next
+    case gt
+    obtain r1 b r2 where split2: "split t2 x = (r1, b, r2)"
+      by (cases "split t2 x") auto
+    moreover from gt have "\<not> x < k"
+      by (simp add: not_less less_imp_le)
+    ultimately have lxr: "l = rbt_join t1 k r1" "xin = b" "r = r2"
+      using gt Branch.prems(1) by auto
+    from Branch.IH(2)[OF split2 s2]
+    have r1: "set (RBT_Impl.keys r1) = {a \<in> set (RBT_Impl.keys t2). a < x}"
+      and r2: "set (RBT_Impl.keys r2) = {a \<in> set (RBT_Impl.keys t2). x < a}"
+      and b: "b = (x \<in> set (RBT_Impl.keys t2))"
+      and "rbt_sorted r1" "rbt_sorted r2"
+      by auto
+    have "rbt_sorted (rbt_join t1 k r1)"
+      using r1 k1 k2 \<open>rbt_sorted r1\<close> s1
+      by (intro rbt_sorted_rbt_join) (simp add: rbt_less_prop rbt_greater_prop)
+    with gt k1 \<open>rbt_sorted r2\<close> show ?thesis
+      by (auto simp: lxr r1 r2 b keys set_rbt_join dest: less_trans)
+  next
+    case eq
+    with Branch.prems(1) have lxr: "l = t1" "xin = True" "r = t2"
+      by auto
+    with eq k1 k2 s1 s2 show ?thesis
+      by (auto simp: keys dest: less_trans)
+  qed
+qed
 
 lemma keys_paint'[simp]: "RBT_Impl.keys (RBT_Impl.paint c t) = RBT_Impl.keys t"
   by (cases t) auto
@@ -836,11 +1062,14 @@ lemma rbtreeify_keys_Some:
   assumes "rbt_sorted t1"
   shows "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = Some ())
   (RBT_Impl.entries t2)))) = set (RBT_Impl.keys t1) \<inter> set (RBT_Impl.keys t2)"
-  apply (auto simp: RBT_Impl.keys_def map_of_entries[OF assms, symmetric])
-   apply (metis map_of_eq_None_iff not_None_eq)
-  using image_iff weak_map_of_SomeI
-  apply fastforce
-  done
+proof -
+  have "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = Some ())
+    (RBT_Impl.entries t2)))) = {k \<in> set (RBT_Impl.keys t2). rbt_lookup t1 k = Some ()}"
+    by (force simp: RBT_Impl.keys_def)
+  also have "\<dots> = set (RBT_Impl.keys t1) \<inter> set (RBT_Impl.keys t2)"
+    using rbt_lookup_keys[OF assms] by (auto simp: dom_def)
+  finally show ?thesis .
+qed
 
 lemma rbt_sorted_inter: "rbt_sorted t1 \<Longrightarrow> rbt_sorted t2 \<Longrightarrow>
   set (RBT_Impl.keys (inter t1 t2)) = set (RBT_Impl.keys t1) \<inter> set (RBT_Impl.keys t2) \<and>
@@ -965,11 +1194,14 @@ lemma rbtreeify_keys_None:
   assumes "rbt_sorted t1"
   shows "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = None)
   (RBT_Impl.entries t2)))) = set (RBT_Impl.keys t2) - set (RBT_Impl.keys t1)"
-  apply (auto simp: RBT_Impl.keys_def map_of_entries[OF assms, symmetric] split: prod.splits)
-  using image_iff weak_map_of_SomeI
-   apply fastforce
-  apply (smt fst_conv image_iff map_of_eq_None_iff mem_Collect_eq)
-  done
+proof -
+  have "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = None)
+    (RBT_Impl.entries t2)))) = {k \<in> set (RBT_Impl.keys t2). rbt_lookup t1 k = None}"
+    by (force simp: RBT_Impl.keys_def)
+  also have "\<dots> = set (RBT_Impl.keys t2) - set (RBT_Impl.keys t1)"
+    by (auto simp flip: rbt_lookup_keys[OF assms])
+  finally show ?thesis .
+qed
 
 lemma rbt_sorted_minus:
   "rbt t1 \<Longrightarrow> rbt_sorted t1 \<Longrightarrow> rbt_sorted t2 \<Longrightarrow>
@@ -1229,89 +1461,6 @@ lemma rbt_minus_code:
   using rbt_minus_rbt_join2_set
   by (auto split: option.splits)
 
-typedef (overloaded) 'a sdlist = "{xs :: ('a :: ccompare) list.
-  case ID CCOMPARE('a) of None \<Rightarrow> xs = [] | Some _ \<Rightarrow> linorder.sorted cless_eq xs \<and> distinct xs}"
-  by (auto intro!: exI[of _ "[]"] split: option.splits)
-
-setup_lifting type_definition_sdlist
-
-lift_definition sdlist_of_list :: "('a :: ccompare) list \<Rightarrow> 'a sdlist" is
-  "\<lambda>xs. case ID CCOMPARE('a) of None \<Rightarrow> [] | Some _ \<Rightarrow> remdups (linorder.sort cless_eq xs)"
-  using linorder.sorted_sort[OF ID_ccompare] linorder.sorted_remdups[OF ID_ccompare]
-  by (auto split: option.splits)
-
-lemma set_sdlist_of_list:
-  fixes xs :: "('a :: ccompare) list"
-    and c :: "'a comparator"
-  assumes assms: "ID ccompare = Some c"
-  shows "set (Rep_sdlist (sdlist_of_list xs)) = set xs"
-  using assms
-  by transfer (fastforce simp: linorder.set_sort[OF ID_ccompare])
-
-lemma sset_rbt:
-  fixes xs :: "('a :: ccompare) list"
-    and c :: "'a comparator"
-  assumes assms: "ID ccompare = Some c" "linorder.sorted cless_eq xs" "distinct xs"
-  shows "ord.is_rbt cless (rbtreeify (map (\<lambda>x. (x, ())) xs))"
-  using assms linorder.is_rbt_rbtreeify[OF ID_ccompare[OF assms(1)], of "map (\<lambda>x. (x, ())) xs"]
-  by (auto simp: comp_def)
-
-lift_definition sset :: "('a :: ccompare) sdlist \<Rightarrow> 'a set_rbt" is
-  "\<lambda>xs. rbtreeify (map (\<lambda>x. (x, ())) xs)"
-  using sset_rbt
-  by fastforce
-
-lemma Rep_sdlist_keys:
-  fixes xs :: "('a :: ccompare) sdlist"
-  shows "Rep_sdlist xs = RBT_Set2.keys (sset xs)"
-  by transfer (auto simp: RBT_Impl.keys_def comp_def)
-
-lemma rbt_comp_lookup_iff_in_set:
-  fixes x :: "'a :: ccompare"
-    and xs :: "'a list"
-    and c :: "'a comparator"
-  assumes "ID ccompare = Some c" "linorder.sorted cless_eq xs" "distinct xs"
-  shows "rbt_comp_lookup ccomp (rbtreeify (map (\<lambda>x. (x, ())) xs)) x = Some () \<longleftrightarrow> x \<in> set xs"
-  using linorder.rbt_lookup_rbtreeify[OF ID_ccompare[OF assms(1)], of "map (\<lambda>x. (x, ())) xs"]
-      assms(2,3)
-  by (auto simp: rbt_comp_lookup[OF ID_ccompare'[OF assms(1)]] assms(1) map_of_map_Pair_const
-      comp_def)
-
-lemma RBT_set_sset:
-  fixes xs :: "('a :: ccompare) sdlist"
-  shows "RBT_set (sset xs) = set (Rep_sdlist xs)"
-  unfolding RBT_set_def
-  apply transfer
-  using rbt_comp_lookup_iff_in_set
-  by (fastforce simp: rbtreeify_def split: option.splits)
-
-lemma set_code:
-  fixes xs :: "('a :: ccompare) list"
-  shows "set xs = (case ID CCOMPARE('a) of None \<Rightarrow> Code.abort (STR ''set: ccompare = None'')
-    (\<lambda>_. set xs)
-  | Some _ \<Rightarrow> RBT_set (sset (sdlist_of_list xs)))"
-  by (auto simp: RBT_set_sset set_sdlist_of_list split: option.splits)
-
-lemma linorder_sorted_upt: "linorder.sorted (le_of_comp compare) [n..<n']"
-proof -
-  define c :: "nat comparator" where "c = compare"
-  have cl: "class.linorder (le_of_comp c) (lt_of_comp c)"
-    by (auto simp: c_def ID_ccompare ID_Some ccompare_nat_def)
-  show ?thesis
-    using sorted_wrt_mono_rel[OF _ sorted_wrt_upt]
-    by (auto simp: c_def ord_defs(1))
-qed
-
-lift_definition upt_sdlist :: "nat \<Rightarrow> nat \<Rightarrow> nat sdlist" is upt
-  using linorder_sorted_upt
-  by (auto simp: ID_Some ccompare_nat_def split: option.splits)
-
-definition nat_set_upt :: "nat \<Rightarrow> nat \<Rightarrow> nat set" where
-  "nat_set_upt i j = {i..<j}"
-
-lemma nat_set_upt_prop: "nat_set_upt i j = RBT_set (sset (upt_sdlist i j))"
-  by (auto simp: nat_set_upt_def RBT_set_sset upt_sdlist.rep_eq)
-
 declare Set_union_code(3)[code drop]
 lemmas union_code[code equation] = rbt_union_code Set_union_code(1-2,4-)
 declare Set_inter_code(6)[code drop]
@@ -1319,20 +1468,13 @@ lemmas inter_code[code equation] = rbt_inter_code Set_inter_code(1-5,7-)
 
 (* Set_minus on RBTs not supported in Set_Impl! *)
 
-(* definition "my_fun b t1 t2 = (if b then {0::nat,1,2,3,4} - {0::nat,1,2,5} else RBT_set t1 - RBT_set t2)"
-code_thms my_fun *)
-thm Set_minus_code
 declare Set_minus_code(1) [code drop]
 lemmas minus_code[code equation] = rbt_minus_code Set_minus_code(2)
-
-
 
 (*
 The following code equation requires an executable sorting algorithm for ccompare.
 declare Set_Impl.set_code[code drop]
 declare set_code[code]
 *)
-
-declare nat_set_upt_prop[code]
 
 end

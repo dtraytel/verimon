@@ -1,36 +1,23 @@
 (lang dune 3.0)
-(name monpoly)
+(name verimon)
+(version 2.0)
 
 (generate_opam_files true)
 (cram enable)
 
 (license "LGPL-2.1-only WITH OCaml-LGPL-linking-exception")
-(maintainers "Joshua Schneider <joshua.schneider@inf.ethz.ch>")
-(source (uri "git+https://bitbucket.org/jshs/monpoly.git"))
-(homepage "https://infsec.ethz.ch/research/software/monpoly.html")
-(bug_reports "https://bitbucket.org/jshs/monpoly/issues")
+(maintainers "Dmitriy Traytel <traytel@di.ku.dk>")
+(source (github dtraytel/verimon))
 
 (package
-  (name libmonpoly)
-  (synopsis "Library for the MonPoly and VeriMon monitoring tools")
-  (depends
-    (ocaml (>= 4.13))
-    (zarith (>= 1.11))))
-
-(package
-  (name monpoly)
-  (synopsis "Check compliance of log files with respect to policies")
+  (name verimon)
+  (synopsis "A verified monitor for metric first-order dynamic logic")
   (description "\
-MonPoly and VeriMon are monitoring tools. They check the compliance of log files
-with respect to policies that are specified by formulas in Metric First-Order
-Temporal Logic (MFOTL) with aggregations.")
+VeriMon checks the compliance of logs with respect to policies specified in metric
+first-order dynamic logic (MFODL), with MonPoly's input formats. Its decisions are
+made by code generated from an Isabelle/HOL formalization: the formula parser, the
+signature reader, the log parser and the monitor are verified.")
   (depends
-    (libmonpoly (= :version))
+    (ocaml (>= 4.14))
+    (zarith (>= 1.11))
     dune-build-info))
-
-(package
-  (name monpoly-tools)
-  (synopsis "Additional tools for the MonPoly and VeriMon monitors")
-  (depends
-    (libmonpoly (= :version))
-    (qcheck (>= 0.18))))

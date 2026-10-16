@@ -192,37 +192,52 @@ lemma finite_Union_image_Collect:
   by (rule finite_Union, auto)
 
 lemma finite_image_Collect: "finite A \<Longrightarrow> finite {f k |k. k \<in> A}"
-  apply (subst Collect_mem_eq[where A=A, symmetric])
-  by (rule finite_image_set) simp
+proof -
+  assume "finite A"
+  moreover have "{f k |k. k \<in> A} = f ` A"
+    by blast
+  ultimately show "finite {f k |k. k \<in> A}"
+    by simp
+qed
 
 lemma finite_bounded_\<I>: "bounded I \<Longrightarrow> finite {i |i. memL I i \<and> memR I i}"
   by (transfer, clarsimp simp: upclosed_def downclosed_def)
     (metis (lifting) infinite_nat_iff_unbounded_le mem_Collect_eq)
 
 lemma finite_bounded_\<I>2: "bounded I \<Longrightarrow> finite {f i |i. memL I (f i) \<and> memR I (f i)}"
-  apply (transfer, clarsimp simp: upclosed_def downclosed_def)
-  by (smt (verit, best) infinite_nat_iff_unbounded_le mem_Collect_eq)
+  by (erule finite_subset[rotated, OF finite_bounded_\<I>]) blast
 
 lemma finite_vimage_set: "finite {x. P x} \<Longrightarrow> inj f \<Longrightarrow> finite {x. P (f x)}"
   using finite_vimageI
   unfolding vimage_def by force
 
 lemma finite_vimage_\<tau>_nat: "finite {k. \<tau> \<sigma> k - c = n}"
-proof (transfer, clarsimp)
-  fix \<sigma> :: "('a \<times> nat) stream" 
-    and c :: nat 
+proof transfer
+  fix \<sigma> :: "('a \<times> nat) stream"
+    and c :: nat
     and n :: nat
-  assume h1: "ssorted (smap snd \<sigma>)"
+  assume "ssorted (smap snd \<sigma>) \<and> sincreasing (smap snd \<sigma>)"
+  then have h1: "ssorted (smap snd \<sigma>)"
     and h2: "sincreasing (smap snd \<sigma>)"
+    by simp_all
   have "\<exists>k. n < snd (\<sigma> !! k) - c"
     using h2 sincreasing_grD less_diff_conv 
     by (metis smap_alt)
   moreover have "\<forall>i j. i \<le> j \<longrightarrow> snd (\<sigma> !! i) \<le> snd (\<sigma> !! j)"
     using iffD1[OF ssorted_iff_mono h1] smap_alt by auto
-  ultimately show "finite {k. snd (\<sigma> !! k) - c = n}"
-    unfolding finite_nat_set_iff_bounded_le
-    by (smt (verit, del_insts) add_less_cancel_left diff_le_mono linorder_le_cases 
-        mem_Collect_eq nat_arith.rule0 order_less_le_trans zero_order(3))
+  ultimately obtain k where k: "n < snd (\<sigma> !! k) - c"
+    and mono: "\<forall>i j. i \<le> j \<longrightarrow> snd (\<sigma> !! i) \<le> snd (\<sigma> !! j)"
+    by blast
+  have "k' \<le> k" if "snd (\<sigma> !! k') - c = n" for k'
+  proof (rule ccontr)
+    assume "\<not> k' \<le> k"
+    then have "snd (\<sigma> !! k) \<le> snd (\<sigma> !! k')"
+      using mono by simp
+    with k that show False
+      by linarith
+  qed
+  then show "finite {k. snd (\<sigma> !! k) - c = n}"
+    unfolding finite_nat_set_iff_bounded_le by blast
 qed
 
 lemma finite_vimage_\<I>_Until:
@@ -249,18 +264,76 @@ subsection \<open> Orders \<close>
 lemma bounded_fixpoint_ex:
   fixes f :: "nat \<Rightarrow> nat"
   shows "mono_on {..j} f \<Longrightarrow> (\<forall>x \<le> j. f x \<le> j) \<Longrightarrow> \<exists>y \<le> j. y = f y"
-  apply (induct j)
-   apply simp
-  apply (simp add: mono_on_def)
-  by (metis eq_iff le_Suc_eq)
+proof (induction j)
+  case 0
+  then show ?case
+    by simp
+next
+  case (Suc j)
+  show ?case
+  proof (cases "f (Suc j) = Suc j")
+    case True
+    then show ?thesis
+      by (intro exI[of _ "Suc j"]) simp
+  next
+    case False
+    with Suc.prems(2) have fSuc: "f (Suc j) \<le> j"
+      by (simp add: le_Suc_eq)
+    have "f x \<le> j" if "x \<le> j" for x
+    proof -
+      have "f x \<le> f (Suc j)"
+        by (rule mono_onD[OF Suc.prems(1)]) (use that in auto)
+      with fSuc show ?thesis
+        by simp
+    qed
+    moreover have "mono_on {..j} f"
+      using Suc.prems(1) by (rule mono_on_subset) auto
+    ultimately obtain y where "y \<le> j" "y = f y"
+      using Suc.IH by blast
+    then show ?thesis
+      by (intro exI[of _ y]) simp
+  qed
+qed
 
 lemma bounded_fixpoint_ex_above:
   fixes f :: "nat \<Rightarrow> nat"
   shows "mono_on {i..j} f \<Longrightarrow> (\<forall>x \<in> {i .. j}. f x \<in> {i .. j}) \<Longrightarrow> i \<le> j \<Longrightarrow> \<exists>y \<in> {i .. j}. y = f y"
-  apply (induct j)
-   apply simp
-   apply (simp add: mono_on_def)
-  by (metis atLeastAtMost_iff le_Suc_eq order_antisym_conv)
+proof (induction j)
+  case 0
+  then show ?case
+    by simp
+next
+  case (Suc j)
+  show ?case
+  proof (cases "f (Suc j) = Suc j")
+    case True
+    with Suc.prems(3) show ?thesis
+      by (intro bexI[of _ "Suc j"]) simp_all
+  next
+    case False
+    have "f (Suc j) \<in> {i..Suc j}"
+      using Suc.prems(2,3) by simp
+    with False have fSuc: "i \<le> f (Suc j)" "f (Suc j) \<le> j"
+      by (auto simp: le_Suc_eq)
+    then have "i \<le> j"
+      by simp
+    have "f x \<in> {i..j}" if "x \<in> {i..j}" for x
+    proof -
+      have "i \<le> f x"
+        using Suc.prems(2) that by auto
+      moreover have "f x \<le> f (Suc j)"
+        by (rule mono_onD[OF Suc.prems(1)]) (use that \<open>i \<le> j\<close> in auto)
+      ultimately show ?thesis
+        using fSuc by simp
+    qed
+    moreover have "mono_on {i..j} f"
+      using Suc.prems(1) by (rule mono_on_subset) auto
+    ultimately obtain y where "y \<in> {i..j}" "y = f y"
+      using Suc.IH \<open>i \<le> j\<close> by blast
+    then show ?thesis
+      by (intro bexI[of _ y]) auto
+  qed
+qed
 
 lemma Inf_leq:
   fixes X::"nat set"

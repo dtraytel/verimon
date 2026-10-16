@@ -1,0 +1,1 @@
+P(x) AND (EXISTS y. y = x + 1 AND z = y + 1)

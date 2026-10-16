@@ -226,13 +226,15 @@ lemma Sup_rec_safety_le_iff: "\<Squnion> A \<le> (x::rec_safety) \<longleftright
     (simp_all add: comp_fun_idem_on.fold_insert_idem[OF comp_fun_idem_on_sup])
 
 lemma le_Sup_rec_safety_iff: "(x::rec_safety) \<le> \<Squnion> A \<longleftrightarrow> (\<exists>y\<in>insert Unused A. x \<le> y)"
-  unfolding Sup_rec_safety_def using finite[of A]
-  apply (induction A rule: finite_induct)
-   apply (auto simp add: comp_fun_idem_on.fold_insert_idem[OF comp_fun_idem_on_sup]
-        bot.extremum_unique
-      simp flip: bot_rec_safety_def
-      intro: sup.coboundedI1 sup.coboundedI2)
-  by (smt (z3) sup_rec_safety.elims)
+proof -
+  have le_sup_rec_safety_iff: "x \<le> a \<squnion> b \<longleftrightarrow> x \<le> a \<or> x \<le> b" for a b :: rec_safety
+    by (cases x; cases a; cases b) simp_all
+  show ?thesis
+    unfolding Sup_rec_safety_def using finite[of A]
+    by (induction A rule: finite_induct)
+      (simp_all add: comp_fun_idem_on.fold_insert_idem[OF comp_fun_idem_on_sup]
+        le_sup_rec_safety_iff disj_left_commute)
+qed
 
 lemma Sup_eq_Unused_iff: "\<Squnion> A = Unused \<longleftrightarrow> A \<subseteq> {Unused}"
 proof -
@@ -339,20 +341,27 @@ next
     then show ?thesis by (simp add: safe_letpast_Unused)
   next
     case NonFutuRec
-    have "\<And>v j. j \<le> i \<Longrightarrow> ?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j"
-      if "safe_letpast ?en \<psi> = NonFutuRec"
+    have "?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j"
+      if "safe_letpast ?en \<psi> = NonFutuRec" "j \<le> i" for v j
       using NonFutuRec(2)
-      apply (rule Let.IH(1))
-       apply (rule Let.prems(2))
-      using Let.prems(1) that apply (simp add: sup.absorb_iff1 split: if_splits)
-       apply simp
-      apply (rule Let.prems(3))
-      apply simp
-      done
-    moreover have "\<And>v j. j < i \<Longrightarrow> ?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j"
+    proof (rule Let.IH(1))
+      assume "safe_letpast p \<phi> = NonFutuRec"
+      with that(1) Let.prems(1) have "safe_letpast p (Formula.Let e \<phi> \<psi>) = NonFutuRec"
+        by (simp add: sup.absorb_iff1 split: if_splits)
+      then show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+        using Let.prems(2) that \<open>j \<le> i\<close> by simp
+    next
+      show "f v' j' = g v' j'" if "j' < j" for v' j'
+        using Let.prems(3) that \<open>j \<le> i\<close> by simp
+    qed
+    moreover have "?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j" if "j < i" for v j
       using NonFutuRec(2)
-      apply (rule Let.IH(1))
-      using Let.prems(3) by auto
+    proof (rule Let.IH(1))
+      show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+        using Let.prems(3) that \<open>j < i\<close> by simp
+      show "f v' j' = g v' j'" if "j' < j" for v' j'
+        using Let.prems(3) that \<open>j < i\<close> by simp
+    qed
     ultimately show ?thesis
       using NonFutuRec(1)
       by (intro Let.IH(2)) simp_all
@@ -363,13 +372,16 @@ next
     then show ?thesis by simp
   next
     case False
-    have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
-      apply (rule Let.IH(2))
-      using Let.prems(1) False apply simp
-       apply (rule Let.prems(2))
-      using Let.prems(1) False apply (simp add: sup.absorb2)
-      apply assumption
-      by (rule Let.prems(3))
+    from Let.prems(1) False have "safe_letpast p \<psi> \<le> NonFutuRec"
+      by simp
+    then have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
+    proof (rule Let.IH(2))
+      assume "safe_letpast p \<psi> = NonFutuRec"
+      with Let.prems(1) False have "safe_letpast p (Formula.Let e \<phi> \<psi>) = NonFutuRec"
+        by (simp add: sup.absorb2)
+      then show "f v' j = g v' j" if "j \<le> i" for v' j
+        using that by (rule Let.prems(2))
+    qed (rule Let.prems(3))
     then show ?thesis
       using False by (simp add: fun_upd_twist[of p])
   qed
@@ -453,38 +465,62 @@ next
       with False show ?thesis by (simp add: safe_letpast_Unused fun_upd_twist[of p])
     next
       case NonFutuRec
-      have "\<And>v j. j \<le> i \<Longrightarrow> ?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j"
-        if "safe_letpast ?en \<psi> = NonFutuRec" for W
+      have \<phi>_le: "?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j"
+        if "safe_letpast ?en \<psi> = NonFutuRec" "j \<le> i" for W v j
         using NonFutuRec(2)
-        apply (rule LetPast.IH(1))
-         apply (rule LetPast.prems(2))
-        using LetPast.prems(1) that False apply simp
-          apply (metis sup.orderE)
-         apply simp
-        apply (rule LetPast.prems(3))
-        apply simp
-        done
-      moreover have "\<And>v j. j < i \<Longrightarrow> ?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j" for W
+      proof (rule LetPast.IH(1))
+        assume "safe_letpast p \<phi> = NonFutuRec"
+        with that(1) LetPast.prems(1) False
+        have "safe_letpast p (Formula.LetPast e \<phi> \<psi>) = NonFutuRec"
+          by (simp add: sup.absorb1)
+        then show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+          using LetPast.prems(2) that \<open>j \<le> i\<close> by simp
+      next
+        show "f v' j' = g v' j'" if "j' < j" for v' j'
+          using LetPast.prems(3) that \<open>j \<le> i\<close> by simp
+      qed
+      have \<phi>_less: "?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j" if "j < i" for W v j
         using NonFutuRec(2)
-        apply (rule LetPast.IH(1))
-        using LetPast.prems(3) by auto
-      ultimately show ?thesis
+      proof (rule LetPast.IH(1))
+        show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+          using LetPast.prems(3) that \<open>j < i\<close> by simp
+        show "f v' j' = g v' j'" if "j' < j" for v' j'
+          using LetPast.prems(3) that \<open>j < i\<close> by simp
+      qed
+      have twist: "V(p \<mapsto> h, ?en \<mapsto> X) = (V(?en \<mapsto> X))(p \<mapsto> h)" for h X
+        using False by (rule fun_upd_twist)
+      show ?thesis
         using NonFutuRec(1)
-        apply (intro LetPast.IH(2))
-          apply assumption
-         apply (intro V_subst_letpast_sat)
-         apply (simp add: fun_upd_twist[of p, OF False])
-        apply (intro V_subst_letpast_sat)
-        apply (simp add: fun_upd_twist[of p, OF False])
-        done
+      proof (rule LetPast.IH(2))
+        assume en\<psi>: "safe_letpast ?en \<psi> = NonFutuRec"
+        show "?s\<phi> (V(p \<mapsto> f)) v' j = ?s\<phi> (V(p \<mapsto> g)) v' j" if "j \<le> i" for v' j
+          unfolding twist
+        proof (rule V_subst_letpast_sat)
+          show "?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> f)) v'' j' = ?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> g)) v'' j'"
+            if "j' \<le> j" for X v'' j'
+            using en\<psi> that \<open>j \<le> i\<close> by (intro \<phi>_le) simp_all
+        qed
+      next
+        show "?s\<phi> (V(p \<mapsto> f)) v' j = ?s\<phi> (V(p \<mapsto> g)) v' j" if "j < i" for v' j
+          unfolding twist
+        proof (rule V_subst_letpast_sat)
+          show "?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> f)) v'' j' = ?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> g)) v'' j'"
+            if "j' \<le> j" for X v'' j'
+            using that \<open>j < i\<close> by (intro \<phi>_less) simp
+        qed
+      qed
     qed
     moreover have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
-      apply (rule LetPast.IH(2))
-      using LetPast.prems(1) False apply simp
-       apply (rule LetPast.prems(2))
-      using LetPast.prems(1) False apply (simp add: sup.absorb2)
-       apply assumption
-      by (rule LetPast.prems(3))
+    proof (rule LetPast.IH(2))
+      show "safe_letpast p \<psi> \<le> NonFutuRec"
+        using LetPast.prems(1) False by simp
+    next
+      assume "safe_letpast p \<psi> = NonFutuRec"
+      with LetPast.prems(1) False have "safe_letpast p (Formula.LetPast e \<phi> \<psi>) = NonFutuRec"
+        by (simp add: sup.absorb2)
+      then show "f v' j = g v' j" if "j \<le> i" for v' j
+        using that by (rule LetPast.prems(2))
+    qed (rule LetPast.prems(3))
     ultimately show ?thesis
       by (simp add: Let_def fun_upd_twist[of p, OF False] del: fun_upd_apply)
   qed
@@ -565,25 +601,36 @@ next
     by (simp add: mult_le_NonFutuRec_iff safe_letpast_Unused sup_eq_Unused_iff del: fun_upd_apply)
 next
   case (MatchF I r)
-  show ?case
-    using MatchF.IH[of _ p _ f g V] MatchF.prems
-    apply (simp add: mult_le_NonFutuRec_iff Sup_eq_Unused_iff del: fun_upd_apply)
-    apply (intro ex_cong conj_cong[OF refl] match_cong_strong)
-    by (metis image_eqD insertCI not_contains_pred_sat safe_letpast_Unused singletonD singleton_insert_inj_eq')
+  have atms: "\<not> contains_pred p \<phi>" if "\<phi> \<in> Regex.atms r" for \<phi>
+    using MatchF.prems(1) that
+    by (intro safe_letpast_Unused) (auto simp add: mult_le_NonFutuRec_iff Sup_eq_Unused_iff)
+  have "Regex.match (Formula.sat \<sigma> (V(p \<mapsto> f)) v) r i j = Regex.match (Formula.sat \<sigma> (V(p \<mapsto> g)) v) r i j" for j
+    by (intro match_cong_strong) (simp add: atms del: fun_upd_apply)
+  then show ?case
+    by (simp del: fun_upd_apply)
 next
   case (MatchP I r)
-  show ?case
-    using MatchP.IH[of _ p _ f g V v] MatchP.prems
-    apply (simp add: Sup_rec_safety_le_iff le_Sup_rec_safety_iff eq_iff[of _ NonFutuRec] del: fun_upd_apply)
-    apply (intro ex_cong conj_cong[OF refl] match_cong_strong)
-    subgoal for j k \<phi>
-      apply (drule meta_spec2[of _ \<phi> k])
-      apply (drule (1) meta_mp)
-      apply (drule meta_mp)
-       apply fastforce
-      apply (erule meta_mp)
-      by simp
-    done
+  have atms: "Formula.sat \<sigma> (V(p \<mapsto> f)) v k \<phi> = Formula.sat \<sigma> (V(p \<mapsto> g)) v k \<phi>"
+    if "\<phi> \<in> Regex.atms r" "k \<le> i" for \<phi> k
+  proof (rule MatchP.IH[OF that(1)])
+    show "safe_letpast p \<phi> \<le> NonFutuRec"
+      using MatchP.prems(1) that(1) by (simp add: Sup_rec_safety_le_iff)
+  next
+    assume "safe_letpast p \<phi> = NonFutuRec"
+    with that(1) have "NonFutuRec \<le> safe_letpast p (Formula.MatchP I r)"
+      by (auto simp add: le_Sup_rec_safety_iff intro!: bexI[where x = \<phi>])
+    with MatchP.prems(1) have "safe_letpast p (Formula.MatchP I r) = NonFutuRec"
+      by (rule order.antisym)
+    then show "f v' j = g v' j" if "j \<le> k" for v' j
+      using MatchP.prems(2) that \<open>k \<le> i\<close> by simp
+  next
+    show "f v' j = g v' j" if "j < k" for v' j
+      using MatchP.prems(3) that \<open>k \<le> i\<close> by simp
+  qed
+  have "Regex.match (Formula.sat \<sigma> (V(p \<mapsto> f)) v) r j i = Regex.match (Formula.sat \<sigma> (V(p \<mapsto> g)) v) r j i" for j
+    by (intro match_cong_strong) (simp add: atms del: fun_upd_apply)
+  then show ?case
+    by (simp del: fun_upd_apply)
 qed simp_all
 
 lemma V_subst_letpast:
@@ -777,9 +824,13 @@ next
     by (force dest!: sum_list_mem_leq[of _ _ size'])
 next
   case (Ands2 l pair safes \<phi>)
+  then obtain \<psi> where "\<psi> \<in> set l" and "\<phi> = remove_neg \<psi>"
+    by blast
+  then have "size' \<phi> \<le> sum_list (map size' l)"
+    using size'_remove_neg[of \<psi>] sum_list_mem_leq[of \<psi> l size']
+    by simp
   then show ?case 
-    by (auto simp add: Nat.less_Suc_eq_le dest!: sum_list_mem_leq[of _ _ size'])
-      (smt (z3) order.trans size'_remove_neg)
+    by simp
 next
   case (R_safe0 \<phi> I \<psi>)
   then show ?case 
@@ -897,6 +948,11 @@ proof (cases \<phi>)
         by auto
     next
       case not_mem: False
+      have safe_\<phi>: "safe_formula \<phi>" and safe_\<alpha>\<beta>: "safe_formula \<alpha>" "safe_formula \<beta>"
+        and fv_\<alpha>\<beta>: "fv \<alpha> = fv \<beta>" "fv \<beta> \<subseteq> fv \<phi>"
+        using safe not_mem no_safe_assign_trigger[of \<phi> \<alpha> I \<beta>]
+        unfolding And Trigger
+        by (simp_all add: safe_dual_def)
       show ?thesis
       proof (cases "bounded I")
         case True
@@ -905,27 +961,19 @@ proof (cases \<phi>)
           unfolding Trigger
           by auto
         show ?thesis
-          using Trigger not_mem
+          using safe_\<phi> safe_\<alpha>\<beta> fv_\<alpha>\<beta>
           unfolding And obs and_trigger_safe_bounded_def trigger_safe_bounded_def 
-          apply (simp add: Un_absorb Un_left_absorb Un_left_commute 
-              Un_commute safe_dual_def)
-          by (smt (verit, ccfv_SIG) And Un_absorb formula.simps(547) fvi.simps(18)
-              is_constraint.simps(40) no_safe_assign_trigger safe safe_dual_def
-              safe_formula.simps(10,18) subset_Un_eq)
+          by (simp add: Un_absorb2)
       next
         case False
         then have obs: "(rewrite_trigger (formula.And \<phi> \<psi>)) = and_trigger_safe_unbounded \<phi> \<alpha> I \<beta>"
           using not_mem
           unfolding Trigger
           by auto
-        then show ?thesis
-          using Trigger not_mem
+        show ?thesis
+          using safe_\<phi> safe_\<alpha>\<beta> fv_\<alpha>\<beta>
           unfolding And obs and_trigger_safe_unbounded_def trigger_safe_unbounded_def
-          apply (simp add: Un_absorb Un_left_absorb Un_left_commute 
-              Un_commute safe_dual_def)
-          by (smt (verit, ccfv_SIG) And Un_absorb formula.simps(547) fvi.simps(18)
-              is_constraint.simps(40) no_safe_assign_trigger safe safe_dual_def
-              safe_formula.simps(10,18) subset_Un_eq)
+          by (simp add: Un_absorb2)
       qed
     qed
   qed (auto)
@@ -1157,15 +1205,12 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
           by (auto simp: 10 intro!: And_safe split: formula.splits)
       next
         case True
-        have "P \<phi>'" "safe_formula \<phi>'' \<Longrightarrow> P \<phi>''" "safe_formula \<psi>'' \<Longrightarrow> P \<psi>''"
-          using \<open>safe_formula \<phi>'\<close> 
+        from e(2) have "safe_formula \<psi>''"
+          by (simp add: safe_dual_def split: if_splits)
+        with \<open>safe_formula \<phi>'\<close> True have "P \<phi>'" "P \<phi>''" "P \<psi>''"
           by (auto simp: 10 e(1) intro!: IH)
-        thus ?thesis
-          using e True no_safe_assign_trigger[of \<phi>' \<phi>'' I]
-           apply (simp add: 10 safe_dual_def split: if_splits)
-          subgoal by (rule And_safe; clarsimp simp: safe_dual_def)
-              (rule IH; clarsimp simp: 10 safe_dual_def)
-          by (rule And_Trigger; clarsimp simp: 10 safe_dual_def)
+        with e(4) True e(2) e(3)[unfolded e(1)] show ?thesis
+          unfolding 10 e(1) by (rule And_Trigger)
       qed
     next
       case f
@@ -1203,19 +1248,52 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
       by (simp add: 11)
   next
     case (16 \<phi>' I \<psi>')
-    with IH show ?thesis
-    proof (cases \<phi>')
-      case (Ands l)
-      then show ?thesis using IH Since
-        by (auto simp: 16)
-    qed (auto 0 3 simp: 16 elim!: disjE_Not2 intro: Since Not_Since) (*SLOW*)
+    from IH(2) have fv: "fv \<phi>' \<subseteq> fv \<psi>'" and safe_\<psi>: "safe_formula \<psi>'"
+      and safe_\<phi>: "safe_formula \<phi>' \<or> (case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False)"
+      by (simp_all add: 16)
+    have P_\<psi>: "P \<psi>'"
+      using safe_\<psi> by (intro IH(1)) (simp_all add: 16)
+    from safe_\<phi> show ?thesis
+    proof (rule disjE_Not2)
+      assume safe_\<phi>': "safe_formula \<phi>'"
+      then have P_\<phi>: "P \<phi>'"
+        by (intro IH(1)) (simp_all add: 16)
+      from fv safe_\<phi>' safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 16 by (rule Since)
+    next
+      assume unsafe: "\<not> safe_formula \<phi>'"
+        and "case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False"
+      then obtain \<phi>'' where \<phi>': "\<phi>' = \<not>\<^sub>F \<phi>''" and safe_\<phi>'': "safe_formula \<phi>''"
+        by (elim case_NegE)
+      then have P_\<phi>: "P \<phi>''"
+        by (intro IH(1)) (simp_all add: 16)
+      from fv safe_\<phi>'' unsafe safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 16 \<phi>' by (rule Not_Since)
+    qed
   next
     case (17 \<phi>' I \<psi>')
-    with IH show ?thesis
-    proof (cases \<phi>')
-      case (Ands l)
-      then show ?thesis using IH Until by (auto simp: 17)
-    qed (auto 0 3 simp: 17 elim!: disjE_Not2 intro: Until Not_Until) (*SLOW*)
+    from IH(2) have fv: "fv \<phi>' \<subseteq> fv \<psi>'" and safe_\<psi>: "safe_formula \<psi>'"
+      and safe_\<phi>: "safe_formula \<phi>' \<or> (case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False)"
+      by (simp_all add: 17)
+    have P_\<psi>: "P \<psi>'"
+      using safe_\<psi> by (intro IH(1)) (simp_all add: 17)
+    from safe_\<phi> show ?thesis
+    proof (rule disjE_Not2)
+      assume safe_\<phi>': "safe_formula \<phi>'"
+      then have P_\<phi>: "P \<phi>'"
+        by (intro IH(1)) (simp_all add: 17)
+      from fv safe_\<phi>' safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 17 by (rule Until)
+    next
+      assume unsafe: "\<not> safe_formula \<phi>'"
+        and "case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False"
+      then obtain \<phi>'' where \<phi>': "\<phi>' = \<not>\<^sub>F \<phi>''" and safe_\<phi>'': "safe_formula \<phi>''"
+        by (elim case_NegE)
+      then have P_\<phi>: "P \<phi>''"
+        by (intro IH(1)) (simp_all add: 17)
+      from fv safe_\<phi>'' unsafe safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 17 \<phi>' by (rule Not_Until)
+    qed
   next
     case (18 \<phi>' I \<psi>')
     show ?thesis
@@ -1488,9 +1566,23 @@ function (sequential) convert_multiway :: "'t Formula.formula \<Rightarrow> 't F
   | "convert_multiway (Formula.TS t) = Formula.TS t"
   by pat_completeness auto
 termination
-  using size'_and_release size'_Release size'_Or size'_release_aux
-  apply (relation "measure size'")
-  by (auto simp add: Nat.less_Suc_eq_le dest!: sum_list_mem_leq[of _ _ size'] regex_atms_size')
+proof (relation "measure size'", simp_all only: in_measure size'_Or,
+    simp_all add: size'_release_aux, goal_cases Ands MatchP MatchF)
+  case (Ands \<phi>s \<phi>)
+  then show ?case
+    using sum_list_mem_leq[of \<phi> \<phi>s size']
+    by simp
+next
+  case (MatchP r \<phi>)
+  then show ?case
+    using regex_atms_size'[of \<phi> r]
+    by simp
+next
+  case (MatchF r \<phi>)
+  then show ?case
+    using regex_atms_size'[of \<phi> r]
+    by simp
+qed
 
 lemma convert_multiway_TT [simp]: 
   "convert_multiway Formula.TT = Formula.TT"
@@ -1827,10 +1919,10 @@ begin
 lemma map_\<Gamma>_subset_traces: "\<sigma> \<in> traces \<Longrightarrow> (\<And>D. f D \<subseteq> D) \<Longrightarrow> map_\<Gamma> f \<sigma> \<in> traces"
   by (simp add: closed)
 
-sublocale formula_slicer: sliceable_fo_spec "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
+sublocale formula_slicer: sliceable_fo_spec "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces
   "relevant_events \<phi>" "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" for \<phi>
   by unfold_locales
-    (auto simp add: fvi_less_nfv sat_fv_cong closed iff: sat_slice_strong)
+    (auto simp add: fvi_less_nfv closed iff: sat_slice_strong intro!: sat_fv_cong)
 
 end
 

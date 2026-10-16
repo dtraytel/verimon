@@ -19,13 +19,12 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Queue
     Regex
     Formula
+    Frz_Locality
     Rewriting
     Safety
-    Slicing
     Progress
     Safety_Proofs
     Typing
-    Type_Soundness
     Optimized_Join
     Monitor
     Correct_Un_Ops
@@ -36,18 +35,17 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Correct_Regex
     Correct_Agg
     Correctness
-    Sat
+    VeriMon
     Optimized_Agg
     Optimized_Common
     Optimized_Since
     Optimized_Until
     Optimized_Trigger
     Optimized_Agg_Temporal
+    Optimized_Until_Deque
     Monitor_Impl
-  theories [document=false]
-    Monitor_Code
+    Code_Opt
+    Monomorphic_Code
   document_files
     "root.tex"
     "root.bib"
-  export_files (in ".") [2]
-    "MFODL_Monitor_Devel.Monitor_Code:code/**"

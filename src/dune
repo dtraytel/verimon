@@ -1,28 +1,17 @@
-(ocamllex formula_lexer log_lexer)
-(ocamlyacc formula_parser)
-
-; The verified kernel is generated from the Isabelle/HOL formalization and is
-; not meant to be edited, so its (many, harmless) compiler warnings are silenced
-; by isolating it in its own library with -w -a. It only depends on zarith.
+; The code generated from the Isabelle/HOL formalization (thys/VeriMon_CLI, theory CLI_Code):
+; the formula parser, the signature reader, the log parser and the monitor in one module, with
+; the few functions CLI_Code implements in OCaml (verimon_runtime.ml). It is not meant to be
+; edited, so its (many, harmless) compiler warnings are silenced.
 (library
-  (name verified)
-  (public_name libmonpoly.verified)
+  (name verimon_code)
+  (wrapped false)
   (libraries zarith)
-  (instrumentation (backend bisect_ppx))
   (flags (:standard -w -a))
-  (modules verified))
-
-(library
-  (name libmonpoly)
-  (public_name libmonpoly)
-  (libraries str unix zarith verified)
-  (instrumentation (backend bisect_ppx))
-  (modules (:standard \ Main verified)))
+  (modules verimon_code verimon_runtime))
 
 (executable
-  (name main)
-  (public_name monpoly)
-  (package monpoly)
-  (libraries libmonpoly dune-build-info)
-  (instrumentation (backend bisect_ppx))
-  (modules Main))
+  (name verimon)
+  (public_name verimon)
+  (package verimon)
+  (libraries zarith verimon_code dune-build-info)
+  (modules verimon verimon_io))

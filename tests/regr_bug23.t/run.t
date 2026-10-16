@@ -10,10 +10,7 @@ Before fix: MonPoly output nothing (skipped @1,@3 as "empty").
 After fix:  satisfactions are correctly reported at @1 and @3.
 
   $ echo '((ONCE (0,2) temp(x)) AND tp(t))' > f.mfotl
-  $ monpoly -sig bug.sig -formula f.mfotl -log bug2.log
-  @1 (time point 1): (5,1)
-  @3 (time point 3): (10,3)
-  $ monpoly -verified -sig bug.sig -formula f.mfotl -log bug2.log
+  $ verimon -sig bug.sig -formula f.mfotl -log bug2.log
   @1 (time point 1): (5,1)
   @3 (time point 3): (10,3)
 
@@ -23,9 +20,6 @@ instead of @1,@3.
 After fix:  satisfactions correctly appear at @1 and @3.
 
   $ echo '((EVENTUALLY (0,2) temp(x)) AND tp(t))' > f.mfotl
-  $ monpoly -sig bug.sig -formula f.mfotl -log bug3.log
-  @1 (time point 1): (10,1)
-  @3 (time point 3): (8,3)
-  $ monpoly -verified -sig bug.sig -formula f.mfotl -log bug3.log
+  $ verimon -sig bug.sig -formula f.mfotl -log bug3.log
   @1 (time point 1): (10,1)
   @3 (time point 3): (8,3)

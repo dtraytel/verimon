@@ -4,12 +4,52 @@ theory Generic_Join
   imports MFOTL_Monitor_Devel.Table
 begin
 
-type_synonym 'a atable = "nat set \<times> 'a table"
+text \<open>A table of a query comes with the list of its columns, without duplicates and in any
+  order.  The result of a join over a set of variables @{term V} has the columns
+  @{term "sorted_list_of_set V"}, the variables in increasing order.\<close>
+
+type_synonym 'a atable = "nat list \<times> 'a table"
 type_synonym 'a query = "'a atable set"
 type_synonym vertices = "nat set"
 
-type_synonym 'a satable = "nat set \<times> ('a tuple \<Rightarrow> 'a tuple set)"
+type_synonym 'a satable = "nat list \<times> ('a tuple \<Rightarrow> 'a tuple set)"
 type_synonym 'a squery = "nat set \<times> nat set \<times> 'a satable set"
+
+abbreviation cols :: "vertices \<Rightarrow> nat list" where
+  "cols V \<equiv> sorted_list_of_set V"
+
+text \<open>The columns of a table among a set of variables, in the table's order.\<close>
+
+abbreviation cols_in :: "vertices \<Rightarrow> nat list \<Rightarrow> nat list" where
+  "cols_in V cs \<equiv> filter (\<lambda>c. c \<in> V) cs"
+
+text \<open>A tuple over @{term "cols I"} and one over @{term "cols J"} combined into one over
+  @{term "cols (I \<union> J)"}.\<close>
+
+definition merge :: "vertices \<Rightarrow> vertices \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+  "merge I J t1 t2 = restrict (cols (I \<union> J)) (cols I @ cols J) (t1 @ t2)"
+
+fun projectTable :: "vertices \<Rightarrow> 'a atable \<Rightarrow> 'a atable" where
+  "projectTable V (cs, t) = (cols_in V cs, restrict (cols_in V cs) cs ` t)"
+
+fun filterQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
+  "filterQuery V Q = Set.filter (\<lambda>(cs, _). \<not> Set.is_empty (set cs \<inter> V)) Q"
+
+fun filterQueryNeg :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
+  "filterQueryNeg V Q = Set.filter (\<lambda>(cs, _). set cs \<subseteq> V) Q"
+
+fun projectQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
+  "projectQuery V s = Set.image (projectTable V) s"
+
+text \<open>The rows of a table that agree with a tuple over @{term "cols I"} on the table's columns
+  among @{term I}.\<close>
+
+fun semiJoin :: "'a atable \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a atable" where
+  "semiJoin (cs, tab) (I, tup) =
+    (cs, Set.filter (\<lambda>t. restrict (cols_in I cs) cs t = restrict (cols_in I cs) (cols I) tup) tab)"
+
+fun newQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a query" where
+  "newQuery V Q (I, t) = Set.image (\<lambda>tab. projectTable V (semiJoin tab (I, t))) Q"
 
 subsection \<open>Generic algorithm\<close>
 
@@ -36,37 +76,6 @@ proof -
   show "I \<inter> J = {}" by (metis assms(1) assms(2) getIJ_axioms getIJ_def)
 qed
 
-fun projectTable :: "vertices \<Rightarrow> 'a atable \<Rightarrow> 'a atable" where
-  "projectTable V (s, t) = (s \<inter> V, Set.image (restrict V) t)"
-
-fun filterQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
-  "filterQuery V Q = Set.filter (\<lambda>(s, _). \<not> Set.is_empty (s \<inter> V)) Q"
-
-fun filterQueryNeg :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
-  "filterQueryNeg V Q = Set.filter (\<lambda>(A, _). A \<subseteq> V) Q"
-
-fun projectQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
-  "projectQuery V s = Set.image (projectTable V) s"
-
-fun isSameIntersection :: "'a tuple \<Rightarrow> nat set \<Rightarrow> 'a tuple \<Rightarrow> bool" where
-  "isSameIntersection t1 s t2 = (restrict s t1 = restrict s t2)"
-
-fun semiJoin :: "'a atable \<Rightarrow> (nat set \<times> 'a tuple) \<Rightarrow> 'a atable" where
-  "semiJoin (s, tab) (st, tup) = (s, Set.filter (isSameIntersection tup (s \<inter> st)) tab)"
-
-fun newQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> (nat set \<times> 'a tuple) \<Rightarrow> 'a query" where
-  "newQuery V Q (st, t) = Set.image (\<lambda>tab. projectTable V (semiJoin tab (st, t))) Q"
-
-fun merge_option :: "'a option \<times> 'a option \<Rightarrow> 'a option" where
-  "merge_option (None, None) = None"
-| "merge_option (Some x, None) = Some x"
-| "merge_option (None, Some x) = Some x"
-| "merge_option (Some a, Some b) = Some a"
-(* Last case shouldn't happen but useful for proof *)
-
-fun merge :: "'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
-  "merge t1 t2 = map merge_option (zip t1 t2)"
-
 function (sequential) genericJoin :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query \<Rightarrow> 'a table" where
   "genericJoin V Q_pos Q_neg =
     (if card V \<le> 1 then
@@ -80,21 +89,22 @@ function (sequential) genericJoin :: "vertices \<Rightarrow> 'a query \<Rightarr
       let Q_J_pos = filterQuery J Q_pos in
       let X = {(t, genericJoin J (newQuery J Q_J_pos (I, t)) (newQuery J Q_J_neg (I, t)))
         | t . t \<in> R_I} in
-      (\<Union>(t, x) \<in> X. {merge xx t | xx . xx \<in> x}))"
+      (\<Union>(t, x) \<in> X. {merge I J t xx | xx . xx \<in> x}))"
 by pat_completeness auto
 termination
   by (relation "measure (\<lambda>(V, Q_pos, Q_neg). card V)") (auto simp add: getIJProperties)
 
 fun squery_of_query :: "vertices \<Rightarrow> vertices \<Rightarrow> 'a query \<Rightarrow> 'a squery" where
-  "squery_of_query I J Q = (I, J, Set.image (\<lambda>(V, T).
-    (V, Equiv_Relations.proj (Set.image (\<lambda>t. (restrict (V \<inter> I) t, restrict J t)) T))) Q)"
+  "squery_of_query I J Q = (I, J, Set.image (\<lambda>(cs, T).
+    (cs, Equiv_Relations.proj (Set.image (\<lambda>t. (restrict (cols_in I cs) cs t, restrict (cols_in J cs) cs t)) T))) Q)"
 
 fun query_of_squery :: "'a squery \<Rightarrow> 'a tuple \<Rightarrow> 'a query" where
-  "query_of_squery (I, J, SQ) t = Set.image (\<lambda>(V, f). (V \<inter> J, f (restrict (V \<inter> I) t))) SQ"
+  "query_of_squery (I, J, SQ) t =
+    Set.image (\<lambda>(cs, f). (cols_in J cs, f (restrict (cols_in I cs) (cols I) t))) SQ"
 
 lemma squery_correct: "t \<in> R \<Longrightarrow> newQuery J Q (I, t) = query_of_squery (squery_of_query I J
-  (Set.image (\<lambda>(V, T). let R' = restrict (V \<inter> I) ` R in
-    (V, Set.filter (\<lambda>t. restrict (V \<inter> I) t \<in> R') T)) Q)) t"
+  (Set.image (\<lambda>(cs, T). let R' = restrict (cols_in I cs) (cols I) ` R in
+    (cs, Set.filter (\<lambda>t. restrict (cols_in I cs) cs t \<in> R') T)) Q)) t"
   by (auto simp: Equiv_Relations.proj_def image_image intro!: image_cong rev_image_eqI)
 
 lemma genericJoin_code[code]:
@@ -109,37 +119,39 @@ lemma genericJoin_code[code]:
       (if Set.is_empty R_I then {} else
         let Q_J_neg = Q_neg - Q_I_neg in
         let Q_J_pos = filterQuery J Q_pos in
-        let SQ_J_pos = squery_of_query I J (Set.image (\<lambda>(V, T).
-          let V' = V \<inter> I; R' = restrict V' ` R_I in
-          (V, Set.filter (\<lambda>t. restrict V' t \<in> R') T)) Q_J_pos) in
-        let SQ_J_neg = squery_of_query I J (Set.image (\<lambda>(V, T).
-          let V' = V \<inter> I; R' = restrict V' ` R_I in
-          (V, Set.filter (\<lambda>t. restrict V' t \<in> R') T)) Q_J_neg) in
+        let SQ_J_pos = squery_of_query I J (Set.image (\<lambda>(cs, T).
+          let R' = restrict (cols_in I cs) (cols I) ` R_I in
+          (cs, Set.filter (\<lambda>t. restrict (cols_in I cs) cs t \<in> R') T)) Q_J_pos) in
+        let SQ_J_neg = squery_of_query I J (Set.image (\<lambda>(cs, T).
+          let R' = restrict (cols_in I cs) (cols I) ` R_I in
+          (cs, Set.filter (\<lambda>t. restrict (cols_in I cs) cs t \<in> R') T)) Q_J_neg) in
         let X = {(t, genericJoin J (query_of_squery SQ_J_pos t) (query_of_squery SQ_J_neg t))
           | t . t \<in> R_I} in
-        (\<Union>(t, x) \<in> X. {merge xx t | xx . xx \<in> x})))"
+        (\<Union>(t, x) \<in> X. {merge I J t xx | xx . xx \<in> x})))"
   by (subst genericJoin.simps)
      (fastforce simp only: Let_def Set.is_empty_iff squery_correct split: if_splits)
 
+text \<open>Tables without columns constrain nothing (if they contain the empty tuple) or make the
+  join empty; the variables are those of the positive tables.\<close>
+
 fun wrapperGenericJoin :: "'a query \<Rightarrow> 'a query \<Rightarrow> 'a table" where
   "wrapperGenericJoin Q_pos Q_neg =
-    (if ((\<exists>(A, X)\<in>Q_pos. Set.is_empty X) \<or> (\<exists>(A, X)\<in>Q_neg. Set.is_empty A \<and> \<not> Set.is_empty X)) then
+    (if ((\<exists>(A, X)\<in>Q_pos. Set.is_empty X) \<or> (\<exists>(A, X)\<in>Q_neg. A = [] \<and> \<not> Set.is_empty X)) then
       {}
     else
-      let Q = Set.filter (\<lambda>(A, _). \<not> Set.is_empty A) Q_pos in
+      let Q = Set.filter (\<lambda>(A, _). A \<noteq> []) Q_pos in
       if Set.is_empty Q then
-        (\<Inter>(A, X)\<in>Q_pos. X) -  (\<Union>(A, X)\<in>Q_neg. X)
+        (\<Inter>(A, X)\<in>Q_pos. X) - (\<Union>(A, X)\<in>Q_neg. X)
       else
-        let V = (\<Union>(A, X)\<in>Q. A) in
-        let Qn = Set.filter (\<lambda>(A, _). A \<subseteq> V \<and> card A \<ge> 1) Q_neg in
+        let V = (\<Union>(A, X)\<in>Q. set A) in
+        let Qn = Set.filter (\<lambda>(A, _). set A \<subseteq> V \<and> A \<noteq> []) Q_neg in
         genericJoin V Q Qn)"
-
 end
 
 subsection \<open>An instantation\<close>
 
 fun score :: "'a query \<Rightarrow> nat \<Rightarrow> nat" where
-  "score Q i = sum (\<lambda>(_, x). card x) (Set.filter (\<lambda>(sign, _). i \<in> sign) Q)"
+  "score Q i = sum (\<lambda>(_, x). card x) (Set.filter (\<lambda>(sign, _). i \<in> set sign) Q)"
 
 fun arg_max_list :: "('a \<Rightarrow> ('b::linorder)) \<Rightarrow> 'a list \<Rightarrow> 'a" where
   "arg_max_list f [x] = x"

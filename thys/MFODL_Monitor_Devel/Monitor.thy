@@ -2,6 +2,7 @@
 theory Monitor
   imports
     Typing
+    Frz_Locality
     Optimized_Join
     "HOL-Library.While_Combinator"
     "HOL-Library.Mapping"
@@ -63,7 +64,7 @@ function (sequential) mmonitorable_exec :: "'t Formula.formula \<Rightarrow> boo
 | "mmonitorable_exec (Formula.TP t) = (Formula.is_Var t \<or> Formula.is_Const t)"
 | "mmonitorable_exec (Formula.TS t) = (Formula.is_Var t \<or> Formula.is_Const t)"
 | "mmonitorable_exec _ = False"
-  by pat_completeness auto
+  by pat_completeness (simp_all only: formula.inject formula.distinct simp_thms)
 
 termination mmonitorable_exec
 proof ((relation "measure size'"; clarsimp dest!: sum_list_mem_leq[of _ _ size'] regex_atms_size'),
@@ -517,10 +518,36 @@ next
   qed
 next
   case (Plus r1 r2)
-  then show ?case by (fastforce split: if_splits prod.splits formula.splits simp: safe_atms_def elim: ok_mono)
+  obtain mr1 ys1 where 1: "to_mregex_exec r1 xs = (mr1, ys1)"
+    by (cases "to_mregex_exec r1 xs")
+  obtain mr2 ys2 where 2: "to_mregex_exec r2 ys1 = (mr2, ys2)"
+    by (cases "to_mregex_exec r2 ys1")
+  from Plus.prems have mr_ys: "mr = MPlus mr1 mr2" "ys = ys2"
+    by (simp_all add: 1 2)
+  obtain zs1 where zs1: "ys1 = xs @ zs1" "set zs1 = safe_atms r1" "ok (length ys1) mr1"
+    using Plus.hyps(1)[OF 1] by blast
+  obtain zs2 where zs2: "ys2 = ys1 @ zs2" "set zs2 = safe_atms r2" "ok (length ys2) mr2"
+    using Plus.hyps(2)[OF 2] by blast
+  have "ok (length ys2) mr1"
+    using zs1(3) by (rule ok_mono) (simp add: zs2(1))
+  with zs1 zs2 show ?case
+    unfolding mr_ys by (intro exI[of _ "zs1 @ zs2"]) simp
 next
   case (Times r1 r2)
-  then show ?case by (fastforce split: if_splits prod.splits formula.splits simp: safe_atms_def elim: ok_mono)
+  obtain mr1 ys1 where 1: "to_mregex_exec r1 xs = (mr1, ys1)"
+    by (cases "to_mregex_exec r1 xs")
+  obtain mr2 ys2 where 2: "to_mregex_exec r2 ys1 = (mr2, ys2)"
+    by (cases "to_mregex_exec r2 ys1")
+  from Times.prems have mr_ys: "mr = MTimes mr1 mr2" "ys = ys2"
+    by (simp_all add: 1 2)
+  obtain zs1 where zs1: "ys1 = xs @ zs1" "set zs1 = safe_atms r1" "ok (length ys1) mr1"
+    using Times.hyps(1)[OF 1] by blast
+  obtain zs2 where zs2: "ys2 = ys1 @ zs2" "set zs2 = safe_atms r2" "ok (length ys2) mr2"
+    using Times.hyps(2)[OF 2] by blast
+  have "ok (length ys2) mr1"
+    using zs1(3) by (rule ok_mono) (simp add: zs2(1))
+  with zs1 zs2 show ?case
+    unfolding mr_ys by (intro exI[of _ "zs1 @ zs2"]) simp
 next
   case (Star r)
   then show ?case by (auto split: if_splits prod.splits simp: safe_atms_def elim: ok_mono)
@@ -895,7 +922,7 @@ subsection \<open> Datatypes \<close>
 type_synonym ts = nat
 
 type_synonym 'a mbuf2 = "'a table list \<times> 'a table list"
-type_synonym 'a mbuft2 = "('a table) list \<times> (nat set \<times> 'a table) list"
+type_synonym 'a mbuft2 = "('a table) list \<times> (nat list \<times> 'a table) list"
 type_synonym 'a mbufn = "'a table list list"
 type_synonym 'a mbuf2S = "'a table list \<times> 'a table list \<times> ts list \<times> bool"
 
@@ -907,8 +934,11 @@ type_synonym 'a ml\<delta>aux = "(ts \<times> 'a table list \<times> 'a table) l
 
 datatype mconstraint = MEq | MLess | MLessEq
 
+text \<open>The columns of the aggregated formula (@{text aggargs_cols}) and of the two operands of a
+  temporal operator (@{text args_L}, @{text args_R}) are the column lists of their tables.\<close>
+
 record aggargs =
-  aggargs_cols :: "nat set"
+  aggargs_cols :: "nat list"
   aggargs_n :: nat
   aggargs_g0 :: bool
   aggargs_y :: nat
@@ -919,8 +949,8 @@ record aggargs =
 record args =
   args_ivl :: \<I>
   args_n :: nat
-  args_L :: "nat set"
-  args_R :: "nat set"
+  args_L :: "nat list"
+  args_R :: "nat list"
   args_pos :: bool
   args_agg :: "aggargs option"
 
@@ -928,29 +958,38 @@ datatype pred_mode = Copy | Simple | Match
 
 datatype mtrm = MVar nat | MConst event_data
 
+text \<open>Each node produces its tables over the column list @{const Formula.fv_list} of its
+  formula.  A node records the column lists of its operands where it needs them to combine
+  their tables: the conjunction, disjunction and existential quantifier, the bound formula
+  of a @{text Let} (whose tables are read positionally as a predicate), the multi-way
+  conjunction, the regular expressions (over the columns of the whole expression and of each
+  atom), and the assignment and constraint conjuncts (to evaluate terms).\<close>
+
 datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   MRel "event_data table"
   | MPred Formula.name "Formula.trm list" pred_mode
-  | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
-  | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
+  | MLet Formula.name nat "nat list" "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
+  | MFrz Formula.name nat "nat list" "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
      nat nat nat "event_data table list"
-  | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
-  | MAnd "nat set" "('msaux, 'muaux, 'mtaux) mformula" bool "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
-  | MAndAssign "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
-  | MAndRel "('msaux, 'muaux, 'mtaux) mformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
-  | MAndTrigger "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuft2" args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" "'mtaux"
-  | MAnds "nat set list" "nat set list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn"
-  | MOr "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
+     "('msaux, 'muaux, 'mtaux) mformula" nat nat "ts list" "event_data table list" enat bool bool
+     "nat option" "('msaux, 'muaux, 'mtaux) mformula"
+  | MLetPast Formula.name nat "nat list" "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
+  | MAnd "nat list" "('msaux, 'muaux, 'mtaux) mformula" bool "nat list" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
+  | MAndAssign "nat list" "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
+  | MAndRel "nat list" "('msaux, 'muaux, 'mtaux) mformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
+  | MAndTrigger "nat list" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuft2" args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" "'mtaux"
+  | MAnds "nat list" "nat list list" "nat list list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn"
+  | MOr "nat list" "('msaux, 'muaux, 'mtaux) mformula" "nat list" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
   | MNeg "('msaux, 'muaux, 'mtaux) mformula"
-  | MExists "('msaux, 'muaux, 'mtaux) mformula"
+  | MExists "nat list" "('msaux, 'muaux, 'mtaux) mformula"
   | MAgg "aggargs" "('msaux, 'muaux, 'mtaux) mformula"
   | MPrev \<I> "('msaux, 'muaux, 'mtaux) mformula" bool "event_data table list" "ts list"
   | MNext \<I> "('msaux, 'muaux, 'mtaux) mformula" bool "ts list"
   | MSince args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2S" "'msaux"
   | MUntil args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" ts "'muaux"
   | MTrigger args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" "'mtaux"
-  | MMatchP \<I> "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" "event_data mr\<delta>aux"
-  | MMatchF \<I> "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" ts "event_data ml\<delta>aux"
+  | MMatchP \<I> "nat list" "nat list list" "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" "event_data mr\<delta>aux"
+  | MMatchF \<I> "nat list" "nat list list" "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" ts "event_data ml\<delta>aux"
   | MTP mtrm nat
   | MTS mtrm
 
@@ -961,65 +1000,129 @@ record ('msaux, 'muaux, 'mtaux) mstate =
   mstate_n :: nat
   mstate_t :: "ts list"
 
+text \<open>The table of a formula @{term \<phi>} at time point @{term i} over the columns @{term cs}: its
+  tuples, read as valuations of the first @{term n} variables, are the satisfying valuations in
+  the slice @{term R}.\<close>
 
+abbreviation sat_table :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow>
+  ty Formula.formula \<Rightarrow> event_data table \<Rightarrow> bool" where
+  "sat_table \<sigma> V n R cs i \<phi> \<equiv> qtable cs (mem_restr R cs) (\<lambda>v. Formula.sat \<sigma> V (val n cs v) i \<phi>)"
+
+text \<open>Two valuations of the same length agree beyond it, so reading a restricted tuple needs no
+  bound on the variables.\<close>
+
+lemma nth_beyond_length: "length xs = length ys \<Longrightarrow> length xs \<le> i \<Longrightarrow> xs ! i = ys ! i"
+proof (induct xs arbitrary: ys i)
+  case (Cons x xs)
+  then obtain y ys' where ys: "ys = y # ys'"
+    by (cases ys) auto
+  obtain i' where i: "i = Suc i'"
+    using Cons.prems(2) by (cases i) auto
+  show ?case
+    using Cons.hyps[of ys' i'] Cons.prems by (simp add: ys i)
+qed simp
+
+lemma val_restrict_nth:
+  assumes "c \<in> set ds"
+  shows "val n ds (restrict ds cs x) ! c = val n cs x ! c"
+proof (cases "c < n")
+  case False
+  then show ?thesis
+    by (intro nth_beyond_length) simp_all
+qed (simp add: tup_get_restrict assms)
+lemma sat_restrict: "fv \<phi> \<subseteq> set ds \<Longrightarrow>
+  Formula.sat \<sigma> V (val n ds (restrict ds cs v)) i \<phi> = Formula.sat \<sigma> V (val n cs v) i \<phi>"
+  by (rule sat_fv_cong) (auto simp: val_restrict_nth)
+
+lemma eval_trm_restrict: "fv_trm t \<subseteq> set ds \<Longrightarrow>
+  Formula.eval_trm (val n ds (restrict ds cs v)) t = Formula.eval_trm (val n cs v) t"
+  by (rule eval_trm_fv_cong) (auto simp: val_restrict_nth)
+
+text \<open>A join whose second operand's columns are among the first's keeps the first's columns.\<close>
+
+lemma qtable_join_sub:
+  assumes "qtable A (mem_restr R A) Q1 X" "qtable B (mem_restr R B) Q2 Y" "distinct A" "distinct B"
+    "set B \<subseteq> set A"
+    "\<And>x. b \<Longrightarrow> wf_tuple A x \<Longrightarrow> mem_restr R A x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<and> Q2 (restrict B A x)"
+    "\<And>x. \<not> b \<Longrightarrow> wf_tuple A x \<Longrightarrow> mem_restr R A x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<and> \<not> Q2 (restrict B A x)"
+  shows "qtable A (mem_restr R A) Q (join A X b B Y)"
+proof -
+  have A: "A = cols_union A B"
+    using assms(5) by (simp add: cols_union_subset)
+  show ?thesis
+    using assms(1-5)
+    by (rule qtable_join[where es=A, OF _ _ _ _ _ A])
+      (auto simp: restrict_idle[OF assms(3)] assms(3-7) intro!: restrict_mem_restr subsetD[OF assms(5)])
+qed
 subsection \<open> Init \<close>
 
-definition init_args :: "\<I> \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> bool \<Rightarrow> aggargs option \<Rightarrow> args" where
+definition init_args :: "\<I> \<Rightarrow> nat \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> aggargs option \<Rightarrow> args" where
   "init_args I n L R pos agg = \<lparr>args_ivl = I, args_n = n, args_L = L, args_R = R,
     args_pos = pos, args_agg = agg\<rparr>"
 
-definition init_aggargs :: "nat set \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> ty Formula.agg_op \<Rightarrow> ty list \<Rightarrow>
+definition init_aggargs :: "nat list \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> ty Formula.agg_op \<Rightarrow> ty list \<Rightarrow>
   Formula.trm \<Rightarrow> aggargs" where
-  "init_aggargs cols n g0 y \<omega> tys f = \<lparr>aggargs_cols = cols, aggargs_n = n, aggargs_g0 = g0,
+  "init_aggargs cs n g0 y \<omega> tys f = \<lparr>aggargs_cols = cs, aggargs_n = n, aggargs_g0 = g0,
     aggargs_y = y, aggargs_\<omega> = \<omega>, aggargs_tys = tys, aggargs_f = f\<rparr>"
 
+text \<open>The table of an equation between a variable and a constant has the variable's single
+  column; one between two constants has no columns.\<close>
 
-fun eq_rel :: "nat \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> event_data table" where
-  "eq_rel n (Formula.Const x) (Formula.Const y) = (if x = y then unit_table n else empty_table)"
-| "eq_rel n (Formula.Var x) (Formula.Const y) = singleton_table n x y"
-| "eq_rel n (Formula.Const x) (Formula.Var y) = singleton_table n y x"
-| "eq_rel n _ _ = undefined"
+fun eq_rel :: "Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> event_data table" where
+  "eq_rel (Formula.Const x) (Formula.Const y) = (if x = y then unit_table else empty_table)"
+| "eq_rel (Formula.Var x) (Formula.Const y) = singleton_table y"
+| "eq_rel (Formula.Const x) (Formula.Var y) = singleton_table x"
+| "eq_rel _ _ = undefined"
 
-fun meval_trm :: "Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data" where
-  "meval_trm (Formula.Var x) v = the (v ! x)"
-| "meval_trm (Formula.Const x) v = x"
-| "meval_trm (Formula.Plus x y) v = meval_trm x v + meval_trm y v"
-| "meval_trm (Formula.Minus x y) v = meval_trm x v - meval_trm y v"
-| "meval_trm (Formula.UMinus x) v = - meval_trm x v"
-| "meval_trm (Formula.Mult x y) v = meval_trm x v * meval_trm y v"
-| "meval_trm (Formula.Div x y) v = meval_trm x v div meval_trm y v"
-| "meval_trm (Formula.Mod x y) v = meval_trm x v mod meval_trm y v"
-| "meval_trm (Formula.F2i x) v = EInt (integer_of_event_data (meval_trm x v))"
-| "meval_trm (Formula.I2f x) v = EFloat (double_of_event_data (meval_trm x v))"
+text \<open>A term evaluated on a tuple over the columns @{term cs}.\<close>
 
-lemma meval_trm_eval_trm: "wf_tuple n A x \<Longrightarrow> fv_trm t \<subseteq> A \<Longrightarrow> \<forall>i\<in>A. i < n \<Longrightarrow>
-    meval_trm t x = Formula.eval_trm (map the x) t"
-  unfolding wf_tuple_def
-  by (induction t) simp_all
+fun meval_trm :: "nat list \<Rightarrow> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data" where
+  "meval_trm cs (Formula.Var x) v = tup_get cs v x"
+| "meval_trm cs (Formula.Const x) v = x"
+| "meval_trm cs (Formula.Plus x y) v = meval_trm cs x v + meval_trm cs y v"
+| "meval_trm cs (Formula.Minus x y) v = meval_trm cs x v - meval_trm cs y v"
+| "meval_trm cs (Formula.UMinus x) v = - meval_trm cs x v"
+| "meval_trm cs (Formula.Mult x y) v = meval_trm cs x v * meval_trm cs y v"
+| "meval_trm cs (Formula.Div x y) v = meval_trm cs x v div meval_trm cs y v"
+| "meval_trm cs (Formula.Mod x y) v = meval_trm cs x v mod meval_trm cs y v"
+| "meval_trm cs (Formula.F2i x) v = EInt (integer_of_event_data (meval_trm cs x v))"
+| "meval_trm cs (Formula.I2f x) v = EFloat (double_of_event_data (meval_trm cs x v))"
+
+lemma meval_trm_eval_trm: "fv_trm t \<subseteq> set cs \<Longrightarrow> \<forall>i\<in>set cs. i < n \<Longrightarrow>
+    meval_trm cs t x = Formula.eval_trm (val n cs x) t"
+  by (induction t) auto
 
 definition packagg :: "args \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "packagg args f = (case args_agg args of None \<Rightarrow> f
     | Some aggargs \<Rightarrow> Formula.Agg (aggargs_y aggargs)
       (aggargs_\<omega> aggargs) (aggargs_tys aggargs) (aggargs_f aggargs) f)"
 
-definition eval_agg :: "nat \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> ty Formula.agg_op \<Rightarrow> ty list \<Rightarrow> Formula.trm \<Rightarrow>
+text \<open>The aggregation over a table with the columns @{term cs}: the tuples are grouped by
+  their values in the columns that are not bound by the aggregation (the key, over
+  @{term "shift_cols (length tys) cs"}), and each group yields the aggregate followed by the
+  key, a tuple over @{term "y # shift_cols (length tys) cs"}.\<close>
+
+definition agg_key :: "nat \<Rightarrow> nat list \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
+  "agg_key k cs x = restrict (filter (\<lambda>x. k \<le> x) cs) cs x"
+
+definition eval_agg :: "nat list \<Rightarrow> bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> ty list \<Rightarrow> Formula.trm \<Rightarrow>
   event_data table \<Rightarrow> event_data table" where
-  "eval_agg n g0 y \<omega> tys f rel = (if g0 \<and> rel = empty_table
-    then singleton_table n y (eval_agg_op \<omega> {})
+  "eval_agg cs g0 \<omega> tys f rel = (if g0 \<and> rel = empty_table
+    then singleton_table (eval_agg_op \<omega> {})
     else (\<lambda>k.
-      let group = Set.filter (\<lambda>x. drop (length tys) x = k) rel;
-        M = (\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm f x = y) group))) ` meval_trm f ` group
-      in k[y:=Some (eval_agg_op \<omega> M)]) ` (drop (length tys)) ` rel)"
+      let group = Set.filter (\<lambda>x. agg_key (length tys) cs x = k) rel;
+        M = (\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm cs f x = y) group))) ` meval_trm cs f ` group
+      in eval_agg_op \<omega> M # k) ` agg_key (length tys) cs ` rel)"
 
 definition eval_aggargs :: "aggargs \<Rightarrow> event_data table \<Rightarrow> event_data table" where
-  "eval_aggargs args = eval_agg (aggargs_n args) (aggargs_g0 args)
-    (aggargs_y args) (aggargs_\<omega> args) (aggargs_tys args) (aggargs_f args)"
+  "eval_aggargs args = eval_agg (aggargs_cols args) (aggargs_g0 args)
+    (aggargs_\<omega> args) (aggargs_tys args) (aggargs_f args)"
 
 definition eval_args_agg :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "eval_args_agg args X = (case args_agg args of None \<Rightarrow> X | Some aggargs \<Rightarrow> eval_aggargs aggargs X)"
 
 definition type_restr :: "aggargs \<Rightarrow> event_data table \<Rightarrow> bool" where
-  "type_restr args X = (let Z = meval_trm (aggargs_f args) ` X;
+  "type_restr args X = (let Z = meval_trm (aggargs_cols args) (aggargs_f args) ` X;
     all_int = Z \<subseteq> range EInt;
     all_float = Z \<subseteq> range EFloat;
     all_string = Z \<subseteq> range EString in
@@ -1030,21 +1133,26 @@ definition type_restr :: "aggargs \<Rightarrow> event_data table \<Rightarrow> b
     | (Formula.Agg_Avg, _) \<Rightarrow> all_int
     | (Formula.Agg_Med, _) \<Rightarrow> all_int)"
 
-lemma meval_trm_cong: "(\<And>i. i \<in> Formula.fv_trm f \<Longrightarrow> ts ! i = ts' ! i) \<Longrightarrow>
-  meval_trm f ts = meval_trm f ts'"
-  by (induction f ts rule: meval_trm.induct) auto
+lemma meval_trm_cong: "(\<And>i. i \<in> Formula.fv_trm f \<Longrightarrow> tup_get cs ts i = tup_get cs' ts' i) \<Longrightarrow>
+  meval_trm cs f ts = meval_trm cs' f ts'"
+  by (induction cs f ts rule: meval_trm.induct) auto
 
 definition safe_aggargs :: "aggargs \<Rightarrow> bool" where
-  "safe_aggargs args = (aggargs_y args < aggargs_n args \<and>
-    (\<forall>i \<in> aggargs_cols args. i < length (aggargs_tys args) + aggargs_n args) \<and>
-    aggargs_y args + length (aggargs_tys args) \<notin> aggargs_cols args \<and>
-    {0..<length (aggargs_tys args)} \<subseteq> aggargs_cols args \<and>
-    Formula.fv_trm (aggargs_f args) \<subseteq> aggargs_cols args \<and>
-    aggargs_g0 args = (aggargs_cols args \<subseteq> {0..<length (aggargs_tys args)}))"
+  "safe_aggargs args = (aggargs_y args < aggargs_n args \<and> distinct (aggargs_cols args) \<and>
+    (\<forall>i \<in> set (aggargs_cols args). i < length (aggargs_tys args) + aggargs_n args) \<and>
+    aggargs_y args + length (aggargs_tys args) \<notin> set (aggargs_cols args) \<and>
+    {0..<length (aggargs_tys args)} \<subseteq> set (aggargs_cols args) \<and>
+    Formula.fv_trm (aggargs_f args) \<subseteq> set (aggargs_cols args) \<and>
+    aggargs_g0 args = (set (aggargs_cols args) \<subseteq> {0..<length (aggargs_tys args)}))"
 
 definition "valid_aggargs n R args = (case args of None \<Rightarrow> True | Some aggargs \<Rightarrow>
   n = length (aggargs_tys aggargs) + aggargs_n aggargs \<and> R = aggargs_cols aggargs \<and> safe_aggargs aggargs)"
 
+text \<open>The columns of the result of a temporal operator, after the aggregation if any.\<close>
+
+definition args_cols :: "args \<Rightarrow> nat list" where
+  "args_cols args = (case args_agg args of None \<Rightarrow> args_R args
+    | Some aggargs \<Rightarrow> aggargs_y aggargs # shift_cols (length (aggargs_tys aggargs)) (args_R args))"
 locale msaux =
   fixes valid_msaux :: "args \<Rightarrow> ts \<Rightarrow> 'msaux \<Rightarrow> event_data msaux \<Rightarrow> bool"
     and init_msaux :: "args \<Rightarrow> 'msaux"
@@ -1052,17 +1160,17 @@ locale msaux =
     and join_msaux :: "args \<Rightarrow> event_data table \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
     and add_new_table_msaux :: "args \<Rightarrow> event_data table \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
     and result_msaux :: "args \<Rightarrow> 'msaux \<Rightarrow> event_data table"
-  assumes valid_init_msaux: "L \<subseteq> R \<Longrightarrow> valid_aggargs n R agg \<Longrightarrow>
+  assumes valid_init_msaux: "set L \<subseteq> set R \<Longrightarrow> distinct L \<Longrightarrow> distinct R \<Longrightarrow> valid_aggargs n R agg \<Longrightarrow>
     valid_msaux (init_args I n L R pos agg) 0 (init_msaux (init_args I n L R pos agg)) []"
   assumes valid_add_new_ts_msaux: "valid_msaux args cur aux auxlist \<Longrightarrow> nt \<ge> cur \<Longrightarrow>
     valid_msaux args nt (add_new_ts_msaux args nt aux)
     (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
   assumes valid_join_msaux: "valid_msaux args cur aux auxlist \<Longrightarrow>
-    table (args_n args) (args_L args) rel1 \<Longrightarrow>
+    table (args_L args) rel1 \<Longrightarrow>
     valid_msaux args cur (join_msaux args rel1 aux)
-    (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
+    (map (\<lambda>(t, rel). (t, join (args_R args) rel (args_pos args) (args_L args) rel1)) auxlist)"
   assumes valid_add_new_table_msaux: "valid_msaux args cur aux auxlist \<Longrightarrow>
-    table (args_n args) (args_R args) rel2 \<Longrightarrow>
+    table (args_R args) rel2 \<Longrightarrow>
     valid_msaux args cur (add_new_table_msaux args rel2 aux)
     (case auxlist of
       [] => [(cur, rel2)]
@@ -1070,11 +1178,11 @@ locale msaux =
   assumes valid_result_msaux: "valid_msaux args cur aux auxlist \<Longrightarrow> result_msaux args aux =
     eval_args_agg args (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
 
-fun trigger_results :: "args \<Rightarrow> ts \<Rightarrow> event_data mtaux \<Rightarrow> (nat set \<times> event_data table)" where
+fun trigger_results :: "args \<Rightarrow> ts \<Rightarrow> event_data mtaux \<Rightarrow> (nat list \<times> event_data table)" where
   "trigger_results args cur auxlist = (
     if (length (filter (\<lambda> (t, _, _). mem (args_ivl args) (cur - t)) auxlist) > 0) then (
       (args_R args), {
-      tuple. wf_tuple (args_n args) (args_R args) tuple \<and>
+      tuple. wf_tuple (args_R args) tuple \<and>
         \<comment> \<open>pretty much the definition of trigger\<close>
         (\<forall>i \<in> {0..<(length auxlist)}.
           let (t, l, r) = auxlist!i in
@@ -1083,13 +1191,13 @@ fun trigger_results :: "args \<Rightarrow> ts \<Rightarrow> event_data mtaux \<R
           (
             tuple \<in> r \<or>
             (\<exists>j \<in> {i<..<(length auxlist)}.
-              join_cond (args_pos args) ((fst o snd) (auxlist!j)) (proj_tuple (join_mask (args_n args) (args_L args)) tuple) \<comment> \<open>t < t' is given as the list is sorted\<close>
+              join_cond (args_pos args) ((fst o snd) (auxlist!j)) (restrict (args_L args) (args_R args) tuple) \<comment> \<open>t < t' is given as the list is sorted\<close>
             )
           )
         )
       }
     ) else
-    ({}, {replicate (args_n args) None})
+    ([], unit_table)
 )"
 
 locale mtaux =
@@ -1098,16 +1206,17 @@ locale mtaux =
     and update_mtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux"
     (* and update_mtaux_constraint :: "args \<Rightarrow> ts \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux" *)
     (* and update_mtaux_safe_assignment :: "args \<Rightarrow> ts \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux" *)
-    and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat set \<times> event_data table)"
+    and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat list \<times> event_data table)"
 
   (* the initial state should be valid *)
   assumes valid_init_mtaux: "(
     if (mem I 0)
       then
-        L \<subseteq> R
+        set L \<subseteq> set R
       else 
-        L = R
+        set L = set R
     ) \<Longrightarrow>
+    distinct L \<Longrightarrow> distinct R \<Longrightarrow>
     \<not>mem I 0 \<longrightarrow> pos \<Longrightarrow>
     let args = init_args I n L R pos agg in
     valid_mtaux args 0 (init_mtaux args) []"
@@ -1115,9 +1224,8 @@ locale mtaux =
   (* assuming the previous state outputted the same result, the next will as well *)
   assumes valid_update_mtaux: "
     nt \<ge> cur \<Longrightarrow>
-    table (args_n args) (args_L args) l \<Longrightarrow>
-    table (args_n args) (args_R args) r \<Longrightarrow>
-    valid_mtaux args cur aux auxlist \<Longrightarrow>
+    table (args_L args) l \<Longrightarrow>
+    table (args_R args) r \<Longrightarrow>    valid_mtaux args cur aux auxlist \<Longrightarrow>
     valid_mtaux
       args
       nt
@@ -1138,10 +1246,9 @@ fun proj_thd :: "('a \<times> 'b \<times> 'c) \<Rightarrow> 'c" where
 
 definition update_until :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data muaux \<Rightarrow> event_data muaux" where
   "update_until args rel1 rel2 nt aux =
-    (map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if (args_pos args) then join a1 True rel1 else a1 \<union> rel1,
-      if mem  (args_ivl args) (nt - t) then a2 \<union> join rel2 (args_pos args) a1 else a2)) aux) @
+    (map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if (args_pos args) then a1 \<inter> rel1 else a1 \<union> rel1,
+      if mem  (args_ivl args) (nt - t) then a2 \<union> join (args_R args) rel2 (args_pos args) (args_L args) a1 else a2)) aux) @
     [(nt, rel1, if memL (args_ivl args) 0 then rel2 else empty_table)]"
-
 lemma map_proj_thd_update_until: "map proj_thd (takeWhile (check_before (args_ivl args) nt) auxlist) =
   map proj_thd (takeWhile (check_before (args_ivl args) nt) (update_until args rel1 rel2 nt auxlist))"
 proof (induction auxlist)
@@ -1179,12 +1286,11 @@ locale muaux =
     and add_new_muaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> 'muaux"
     and length_muaux :: "args \<Rightarrow> 'muaux \<Rightarrow> nat"
     and eval_muaux :: "args \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> event_data table list \<times> 'muaux"
-  assumes valid_init_muaux: "L \<subseteq> R \<Longrightarrow> valid_aggargs n R aggargs \<Longrightarrow>
+  assumes valid_init_muaux: "set L \<subseteq> set R \<Longrightarrow> distinct L \<Longrightarrow> distinct R \<Longrightarrow> valid_aggargs n R aggargs \<Longrightarrow>
     valid_muaux (init_args I n L R pos aggargs) 0 (init_muaux (init_args I n L R pos aggargs)) []"
   assumes valid_add_new_muaux: "valid_muaux args cur aux auxlist \<Longrightarrow>
-    table (args_n args) (args_L args) rel1 \<Longrightarrow>
-    table (args_n args) (args_R args) rel2 \<Longrightarrow>
-    nt \<ge> cur \<Longrightarrow>
+    table (args_L args) rel1 \<Longrightarrow>
+    table (args_R args) rel2 \<Longrightarrow>    nt \<ge> cur \<Longrightarrow>
     valid_muaux args nt (add_new_muaux args rel1 rel2 nt aux)
     (update_until args rel1 rel2 nt auxlist)"
   assumes valid_length_muaux: "valid_muaux args cur aux auxlist \<Longrightarrow> length_muaux args aux = length auxlist"
@@ -1211,7 +1317,7 @@ locale maux = msaux valid_msaux init_msaux add_new_ts_msaux join_msaux add_new_t
     and valid_mtaux :: "args \<Rightarrow> ts \<Rightarrow> 'mtaux \<Rightarrow> event_data mtaux \<Rightarrow> bool"
     and init_mtaux :: "args \<Rightarrow> 'mtaux"
     and update_mtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux"
-    and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat set \<times> event_data table)"
+    and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat list \<times> event_data table)"
 
 fun split_assignment :: "nat set \<Rightarrow> 't Formula.formula \<Rightarrow> nat \<times> Formula.trm" where
   "split_assignment X (Formula.Eq t1 t2) = (case (t1, t2) of
@@ -1244,7 +1350,7 @@ definition pred_mode_of :: "nat \<Rightarrow> Formula.trm list \<Rightarrow> pre
 abbreviation (input) "init_mbuf2S \<equiv> ([], [], [], False)"
 
 definition (in msaux) "init_since minit0 n agg \<phi> I \<psi> =
-  (let args = (\<lambda>b. (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) b agg)) in
+  (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) b agg)) in
    if safe_formula \<phi>
    then MSince (args True) (minit0 n \<phi>) (minit0 n \<psi>) init_mbuf2S (init_msaux (args True))
    else (case \<phi> of
@@ -1258,7 +1364,7 @@ lemma (in msaux) init_since_cong[fundef_cong]:
   by (auto simp: init_since_def split: formula.splits)
 
 definition (in muaux) "init_until minit0 n agg \<phi> I \<psi> =
-  (let args = (\<lambda>b. (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) b agg)) in
+  (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) b agg)) in
    if safe_formula \<phi>
    then MUntil (args True) (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux (args True))
    else (case \<phi> of
@@ -1272,11 +1378,11 @@ lemma (in muaux) init_until_cong[fundef_cong]:
   by (auto simp: init_until_def split: formula.splits)
 
 definition (in mtaux) "init_and_trigger minit0 n agg \<phi> \<phi>' I \<psi>' =
-  (let args = (\<lambda>b. (init_args I n (Formula.fv \<phi>') (Formula.fv \<psi>') b agg)) in
+  (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>') (Formula.fv_list \<psi>') b agg)) in
     if (safe_formula \<phi>') then
-      MAndTrigger (fv \<phi>) (minit0 n \<phi>) ([], []) (args True) (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mtaux (args True))
+      MAndTrigger (Formula.fv_list \<phi>) (minit0 n \<phi>) ([], []) (args True) (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mtaux (args True))
     else (case \<phi>' of 
-      Formula.Neg \<phi>' \<Rightarrow> MAndTrigger (fv \<phi>) (minit0 n \<phi>) ([], []) (args False) (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mtaux (args False))
+      Formula.Neg \<phi>' \<Rightarrow> MAndTrigger (Formula.fv_list \<phi>) (minit0 n \<phi>) ([], []) (args False) (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mtaux (args False))
       | _ \<Rightarrow> MRel empty_table))"
 
 lemma (in mtaux) init_and_trigger_cong[fundef_cong]:
@@ -1286,13 +1392,12 @@ lemma (in mtaux) init_and_trigger_cong[fundef_cong]:
   by (clarsimp simp: init_and_trigger_def split: formula.splits)
 
 definition (in mtaux) "init_trigger minit0 n agg \<phi> I \<psi> =
-  (let args = (\<lambda>b. (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) b agg)) in
+  (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) b agg)) in
    if safe_formula \<phi>
     then MTrigger (args True) (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mtaux (args True))
     else (case \<phi> of
       Formula.Neg \<phi> \<Rightarrow> MTrigger (args False) (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mtaux (args False))
       | _ \<Rightarrow> MRel empty_table))"
-
 lemma (in mtaux) init_trigger_cong[fundef_cong]:
   assumes "\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi> + size' \<psi> \<Longrightarrow> minit0 m \<alpha> = minit0' m \<alpha>"
   shows "init_trigger minit0 n agg \<phi> I \<psi> = init_trigger minit0' n agg \<phi> I \<psi>"
@@ -1308,39 +1413,67 @@ fun mtrm_of_trm :: "Formula.trm \<Rightarrow> mtrm" where
 | "mtrm_of_trm (Formula.Const x) = MConst x"
 | "mtrm_of_trm _ = undefined"
 
+text \<open>Whether a predicate occurs under a negation.  A freeze's replay base absorbs the time
+  points that leave its window with some value of the frozen predicate; which value does not matter
+  for the verdicts (they lie beyond the body's past reach), but it decides how much of the replay
+  base's state the copies inherit and then throw away.  Under a negation the frozen predicate
+  keeps the least with a large table, elsewhere with an empty one (@{text frz_fill} below).\<close>
+
+fun neg_pred :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> bool" where
+  "neg_pred p (Formula.Neg \<phi>) = Formula.contains_pred p \<phi>"
+| "neg_pred p (Formula.Let e \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Frz e \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.LetPast e \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Or \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.And \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Ands l) = (\<exists>\<phi>\<in>set l. neg_pred p \<phi>)"
+| "neg_pred p (Formula.Exists t \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Agg y \<omega> tys f \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Prev I \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Next I \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Since \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Until \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Trigger \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Release \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.MatchP I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
+| "neg_pred p (Formula.MatchF I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
+| "neg_pred p _ = False"
+
 function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula" where
   "minit0 n (Formula.Neg \<phi>) = (if fv \<phi> = {} then MNeg (minit0 n \<phi>) else MRel empty_table)"
-| "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel n t1 t2)"
+| "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel t1 t2)"
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
-| "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
-| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []"
-| "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
-| "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
+| "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
+| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
+    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)
+    (neg_pred (p, Formula.nfv \<phi>) \<psi>) None (minit0 n \<psi>)"
+| "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
+| "minit0 n (Formula.Or \<phi> \<psi>) = MOr (Formula.fv_list \<phi>) (minit0 n \<phi>) (Formula.fv_list \<psi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
-      MAndAssign (minit0 n \<phi>) (split_assignment (fv \<phi>) \<psi>)
+      MAndAssign (Formula.fv_list \<phi>) (minit0 n \<phi>) (split_assignment (fv \<phi>) \<psi>)
     else if safe_formula \<psi> then
-      MAnd (fv \<phi>) (minit0 n \<phi>) True (fv \<psi>) (minit0 n \<psi>) ([], [])
+      MAnd (Formula.fv_list \<phi>) (minit0 n \<phi>) True (Formula.fv_list \<psi>) (minit0 n \<psi>) ([], [])
     else if is_constraint \<psi> then
-      MAndRel (minit0 n \<phi>) (split_constraint \<psi>)
+      MAndRel (Formula.fv_list \<phi>) (minit0 n \<phi>) (split_constraint \<psi>)
     else (case \<psi> of
-        (Formula.Neg \<psi>) \<Rightarrow> MAnd (fv \<phi>) (minit0 n \<phi>) False (fv \<psi>) (minit0 n \<psi>) ([], [])
+        (Formula.Neg \<psi>) \<Rightarrow> MAnd (Formula.fv_list \<phi>) (minit0 n \<phi>) False (Formula.fv_list \<psi>) (minit0 n \<psi>) ([], [])
       | (Formula.Trigger \<phi>' I \<psi>') \<Rightarrow> init_and_trigger minit0 n None \<phi> \<phi>' I \<psi>'
       | (Formula.Release \<phi>' I \<psi>') \<Rightarrow> minit0 n (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
       | _ \<Rightarrow> MRel empty_table))"
 | "minit0 n (Formula.Ands l) = (let (pos, neg) = partition safe_formula l in
     let mpos = map (minit0 n) pos in
     let mneg = map (minit0 n) (map remove_neg neg) in \<comment> \<open>Trigger is passed as is\<close>
-    let vpos = map fv pos in
-    let vneg = map fv neg in
-    MAnds vpos vneg (mpos @ mneg) (replicate (length l) []))"
-| "minit0 n (Formula.Exists t \<phi>) = MExists (minit0 (Suc n) \<phi>)"
+    let vpos = map Formula.fv_list pos in
+    let vneg = map Formula.fv_list neg in
+    MAnds (Formula.fv_list (Formula.Ands l)) vpos vneg (mpos @ mneg) (replicate (length l) []))"
+| "minit0 n (Formula.Exists t \<phi>) = MExists (Formula.fv_list \<phi>) (minit0 (Suc n) \<phi>)"
 | "minit0 n (Formula.Agg y \<omega> tys f \<phi>) = 
-    (let default = MAgg (init_aggargs (fv \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) (minit0 (length tys + n) \<phi>) in
+    (let default = MAgg (init_aggargs (Formula.fv_list \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) (minit0 (length tys + n) \<phi>) in
     (case \<phi> of Formula.Since \<phi>' I \<psi>' \<Rightarrow>
-        let agg = Some (init_aggargs (fv \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) in
+        let agg = Some (init_aggargs (Formula.fv_list \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) in
         init_since minit0 (length tys + n) agg \<phi>' I \<psi>'
      | Formula.Until \<phi>' I \<psi>' \<Rightarrow>
-        let agg = Some (init_aggargs (fv \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) in
+        let agg = Some (init_aggargs (Formula.fv_list \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) in
         init_until minit0 (length tys + n) agg \<phi>' I \<psi>'
      | _ \<Rightarrow> default))"
 | "minit0 n (Formula.Prev I \<phi>) = MPrev I (minit0 n \<phi>) True [] []"
@@ -1356,11 +1489,12 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
       minit0 n (release_safe_bounded \<phi> I \<psi>))"
 | "minit0 n (Formula.MatchP I r) =
     (let (mr, \<phi>s) = to_mregex r
-    in MMatchP I mr (sorted_list_of_set (RPDs mr)) (map (minit0 n) \<phi>s) (replicate (length \<phi>s) []) [] [])"
+    in MMatchP I (Formula.fv_list (Formula.MatchP I r)) (map Formula.fv_list \<phi>s) mr
+      (sorted_list_of_set (RPDs mr)) (map (minit0 n) \<phi>s) (replicate (length \<phi>s) []) [] [])"
 | "minit0 n (Formula.MatchF I r) =
     (let (mr, \<phi>s) = to_mregex r
-    in MMatchF I mr (sorted_list_of_set (LPDs mr)) (map (minit0 n) \<phi>s) (replicate (length \<phi>s) []) [] 0 [])"
-| "minit0 n (Formula.TP t) = MTP (mtrm_of_trm t) 0"
+    in MMatchF I (Formula.fv_list (Formula.MatchF I r)) (map Formula.fv_list \<phi>s) mr
+      (sorted_list_of_set (LPDs mr)) (map (minit0 n) \<phi>s) (replicate (length \<phi>s) []) [] 0 [])"| "minit0 n (Formula.TP t) = MTP (mtrm_of_trm t) 0"
 | "minit0 n (Formula.TS t) = MTS (mtrm_of_trm t)"
 | "minit0 n _ = MRel empty_table"
   by pat_completeness auto
@@ -1520,67 +1654,66 @@ fun mbufnt_take :: "(event_data table list \<Rightarrow> ts \<Rightarrow> 'b \<R
 
 fun match :: "Formula.trm list \<Rightarrow> event_data tuple \<Rightarrow> (nat \<rightharpoonup> event_data) option" where
   "match [] [] = Some Map.empty"
-| "match (Formula.Const x # ts) (Some y # ys) = (if x = y then match ts ys else None)"
-| "match (Formula.Var x # ts) (Some y # ys) = (case match ts ys of
+| "match (Formula.Const x # ts) (y # ys) = (if x = y then match ts ys else None)"
+| "match (Formula.Var x # ts) (y # ys) = (case match ts ys of
       None \<Rightarrow> None
     | Some f \<Rightarrow> (case f x of
         None \<Rightarrow> Some (f(x \<mapsto> y))
       | Some z \<Rightarrow> if y = z then Some f else None))"
 | "match _ _ = None"
 
-function (sequential) simple_match :: "nat \<Rightarrow> nat \<Rightarrow> Formula.trm list \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
-  "simple_match n m [] [] = replicate (n - m) None"
-| "simple_match n m (Formula.Var x # ts) (y # ys) =
-    (if m < x then None # simple_match n (Suc m) (Formula.Var x # ts) (y # ys)
-    else y # simple_match n (Suc m) ts ys)"
-| "simple_match _ _ _ _ = []"
-  by pat_completeness auto
-termination
-  by (relation "measure (\<lambda>(_, m, ts, _). length ts + (sum_list [x. Formula.Var x \<leftarrow> ts] - m))")
-    auto
+text \<open>A predicate's table is over its variables in the order of their first occurrence.  With a
+  simple pattern (distinct variables in increasing order) the tuples of the event are the
+  tuples of the table; otherwise they are matched against the pattern and tabulated.\<close>
 
+definition tabulate_match :: "nat list \<Rightarrow> (nat \<rightharpoonup> event_data) \<Rightarrow> event_data tuple" where
+  "tabulate_match cs f = map (\<lambda>x. the (f x)) cs"
 definition "lookup = Mapping.lookup_default empty_table"
 
+text \<open>The tables of a regular expression's derivatives are over the columns @{term cs} of the
+  whole expression, those of its atoms over the columns @{term dss} of each atom.  A lax test
+  joins the atom's table into the guard; a strict test, whose atom has the same variables as the
+  whole expression, reorders it.\<close>
+
 fun \<epsilon>_lax where
-  "\<epsilon>_lax guard \<phi>s (MSkip n) = (if n = 0 then guard else empty_table)"
-| "\<epsilon>_lax guard \<phi>s (MTestPos i) = join guard True (\<phi>s ! i)"
-| "\<epsilon>_lax guard \<phi>s (MTestNeg i) = join guard False (\<phi>s ! i)"
-| "\<epsilon>_lax guard \<phi>s (MPlus r s) = \<epsilon>_lax guard \<phi>s r \<union> \<epsilon>_lax guard \<phi>s s"
-| "\<epsilon>_lax guard \<phi>s (MTimes r s) = join (\<epsilon>_lax guard \<phi>s r) True (\<epsilon>_lax guard \<phi>s s)"
-| "\<epsilon>_lax guard \<phi>s (MStar r) = guard"
+  "\<epsilon>_lax cs dss guard \<phi>s (MSkip n) = (if n = 0 then guard else empty_table)"
+| "\<epsilon>_lax cs dss guard \<phi>s (MTestPos i) = join cs guard True (dss ! i) (\<phi>s ! i)"
+| "\<epsilon>_lax cs dss guard \<phi>s (MTestNeg i) = join cs guard False (dss ! i) (\<phi>s ! i)"
+| "\<epsilon>_lax cs dss guard \<phi>s (MPlus r s) = \<epsilon>_lax cs dss guard \<phi>s r \<union> \<epsilon>_lax cs dss guard \<phi>s s"
+| "\<epsilon>_lax cs dss guard \<phi>s (MTimes r s) = join cs (\<epsilon>_lax cs dss guard \<phi>s r) True cs (\<epsilon>_lax cs dss guard \<phi>s s)"
+| "\<epsilon>_lax cs dss guard \<phi>s (MStar r) = guard"
 
 fun r\<epsilon>_strict where
-  "r\<epsilon>_strict n \<phi>s (MSkip m) = (if m = 0 then unit_table n else empty_table)"
-| "r\<epsilon>_strict n \<phi>s (MTestPos i) = \<phi>s ! i"
-| "r\<epsilon>_strict n \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table n else empty_table)"
-| "r\<epsilon>_strict n \<phi>s (MPlus r s) = r\<epsilon>_strict n \<phi>s r \<union> r\<epsilon>_strict n \<phi>s s"
-| "r\<epsilon>_strict n \<phi>s (MTimes r s) = \<epsilon>_lax (r\<epsilon>_strict n \<phi>s r) \<phi>s s"
-| "r\<epsilon>_strict n \<phi>s (MStar r) = unit_table n"
+  "r\<epsilon>_strict cs dss \<phi>s (MSkip m) = (if m = 0 then unit_table else empty_table)"
+| "r\<epsilon>_strict cs dss \<phi>s (MTestPos i) = reorder cs (dss ! i) (\<phi>s ! i)"
+| "r\<epsilon>_strict cs dss \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table else empty_table)"
+| "r\<epsilon>_strict cs dss \<phi>s (MPlus r s) = r\<epsilon>_strict cs dss \<phi>s r \<union> r\<epsilon>_strict cs dss \<phi>s s"
+| "r\<epsilon>_strict cs dss \<phi>s (MTimes r s) = \<epsilon>_lax cs dss (r\<epsilon>_strict cs dss \<phi>s r) \<phi>s s"
+| "r\<epsilon>_strict cs dss \<phi>s (MStar r) = unit_table"
 
 fun l\<epsilon>_strict where
-  "l\<epsilon>_strict n \<phi>s (MSkip m) = (if m = 0 then unit_table n else empty_table)"
-| "l\<epsilon>_strict n \<phi>s (MTestPos i) = \<phi>s ! i"
-| "l\<epsilon>_strict n \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table n else empty_table)"
-| "l\<epsilon>_strict n \<phi>s (MPlus r s) = l\<epsilon>_strict n \<phi>s r \<union> l\<epsilon>_strict n \<phi>s s"
-| "l\<epsilon>_strict n \<phi>s (MTimes r s) = \<epsilon>_lax (l\<epsilon>_strict n \<phi>s s) \<phi>s r"
-| "l\<epsilon>_strict n \<phi>s (MStar r) = unit_table n"
+  "l\<epsilon>_strict cs dss \<phi>s (MSkip m) = (if m = 0 then unit_table else empty_table)"
+| "l\<epsilon>_strict cs dss \<phi>s (MTestPos i) = reorder cs (dss ! i) (\<phi>s ! i)"
+| "l\<epsilon>_strict cs dss \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table else empty_table)"
+| "l\<epsilon>_strict cs dss \<phi>s (MPlus r s) = l\<epsilon>_strict cs dss \<phi>s r \<union> l\<epsilon>_strict cs dss \<phi>s s"
+| "l\<epsilon>_strict cs dss \<phi>s (MTimes r s) = \<epsilon>_lax cs dss (l\<epsilon>_strict cs dss \<phi>s s) \<phi>s r"
+| "l\<epsilon>_strict cs dss \<phi>s (MStar r) = unit_table"
 
-fun r\<delta> :: "(mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table"  where
-  "r\<delta> \<kappa> X \<phi>s (MSkip n) = (case n of 0 \<Rightarrow> empty_table | Suc m \<Rightarrow> lookup X (\<kappa> (MSkip m)))"
-| "r\<delta> \<kappa> X \<phi>s (MTestPos i) = empty_table"
-| "r\<delta> \<kappa> X \<phi>s (MTestNeg i) = empty_table"
-| "r\<delta> \<kappa> X \<phi>s (MPlus r s) = r\<delta> \<kappa> X \<phi>s r \<union> r\<delta> \<kappa> X \<phi>s s"
-| "r\<delta> \<kappa> X \<phi>s (MTimes r s) = r\<delta> (\<lambda>t. \<kappa> (MTimes r t)) X \<phi>s s \<union> \<epsilon>_lax (r\<delta> \<kappa> X \<phi>s r) \<phi>s s"
-| "r\<delta> \<kappa> X \<phi>s (MStar r) = r\<delta> (\<lambda>t. \<kappa> (MTimes (MStar r) t)) X \<phi>s r"
+fun r\<delta> :: "nat list \<Rightarrow> nat list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table"  where
+  "r\<delta> cs dss \<kappa> X \<phi>s (MSkip n) = (case n of 0 \<Rightarrow> empty_table | Suc m \<Rightarrow> lookup X (\<kappa> (MSkip m)))"
+| "r\<delta> cs dss \<kappa> X \<phi>s (MTestPos i) = empty_table"
+| "r\<delta> cs dss \<kappa> X \<phi>s (MTestNeg i) = empty_table"
+| "r\<delta> cs dss \<kappa> X \<phi>s (MPlus r s) = r\<delta> cs dss \<kappa> X \<phi>s r \<union> r\<delta> cs dss \<kappa> X \<phi>s s"
+| "r\<delta> cs dss \<kappa> X \<phi>s (MTimes r s) = r\<delta> cs dss (\<lambda>t. \<kappa> (MTimes r t)) X \<phi>s s \<union> \<epsilon>_lax cs dss (r\<delta> cs dss \<kappa> X \<phi>s r) \<phi>s s"
+| "r\<delta> cs dss \<kappa> X \<phi>s (MStar r) = r\<delta> cs dss (\<lambda>t. \<kappa> (MTimes (MStar r) t)) X \<phi>s r"
 
-fun l\<delta> :: "(mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
-  "l\<delta> \<kappa> X \<phi>s (MSkip n) = (case n of 0 \<Rightarrow> empty_table | Suc m \<Rightarrow> lookup X (\<kappa> (MSkip m)))"
-| "l\<delta> \<kappa> X \<phi>s (MTestPos i) = empty_table"
-| "l\<delta> \<kappa> X \<phi>s (MTestNeg i) = empty_table"
-| "l\<delta> \<kappa> X \<phi>s (MPlus r s) = l\<delta> \<kappa> X \<phi>s r \<union> l\<delta> \<kappa> X \<phi>s s"
-| "l\<delta> \<kappa> X \<phi>s (MTimes r s) = l\<delta> (\<lambda>t. \<kappa> (MTimes t s)) X \<phi>s r \<union> \<epsilon>_lax (l\<delta> \<kappa> X \<phi>s s) \<phi>s r"
-| "l\<delta> \<kappa> X \<phi>s (MStar r) = l\<delta> (\<lambda>t. \<kappa> (MTimes t (MStar r))) X \<phi>s r"
-
+fun l\<delta> :: "nat list \<Rightarrow> nat list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
+  "l\<delta> cs dss \<kappa> X \<phi>s (MSkip n) = (case n of 0 \<Rightarrow> empty_table | Suc m \<Rightarrow> lookup X (\<kappa> (MSkip m)))"
+| "l\<delta> cs dss \<kappa> X \<phi>s (MTestPos i) = empty_table"
+| "l\<delta> cs dss \<kappa> X \<phi>s (MTestNeg i) = empty_table"
+| "l\<delta> cs dss \<kappa> X \<phi>s (MPlus r s) = l\<delta> cs dss \<kappa> X \<phi>s r \<union> l\<delta> cs dss \<kappa> X \<phi>s s"
+| "l\<delta> cs dss \<kappa> X \<phi>s (MTimes r s) = l\<delta> cs dss (\<lambda>t. \<kappa> (MTimes t s)) X \<phi>s r \<union> \<epsilon>_lax cs dss (l\<delta> cs dss \<kappa> X \<phi>s s) \<phi>s r"
+| "l\<delta> cs dss \<kappa> X \<phi>s (MStar r) = l\<delta> cs dss (\<lambda>t. \<kappa> (MTimes t (MStar r))) X \<phi>s r"
 lift_definition mrtabulate :: "mregex list \<Rightarrow> (mregex \<Rightarrow> 'b table) \<Rightarrow> (mregex, 'b table) mapping"
   is "\<lambda>ks f. (map_of (List.map_filter (\<lambda>k. let fk = f k in if fk = empty_table then None else Some (k, fk)) ks))" .
 
@@ -1590,31 +1723,30 @@ lemma lookup_tabulate:
   by transfer (auto simp: Let_def map_filter_def map_of_eq_None_iff o_def image_image dest!: map_of_SomeD
       split: if_splits option.splits)
 
-definition update_matchP :: "nat \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> event_data table list \<Rightarrow> ts \<Rightarrow>
+definition update_matchP :: "nat list \<Rightarrow> nat list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> event_data table list \<Rightarrow> ts \<Rightarrow>
   event_data mr\<delta>aux \<Rightarrow> event_data table \<times> event_data mr\<delta>aux" where
-  "update_matchP n I mr mrs rels nt aux =
+  "update_matchP cs dss I mr mrs rels nt aux =
     (let aux = (case [(t, mrtabulate mrs (\<lambda>mr.
-        r\<delta> id rel rels mr \<union> (if t = nt then r\<epsilon>_strict n rels mr else {}))).
+        r\<delta> cs dss id rel rels mr \<union> (if t = nt then r\<epsilon>_strict cs dss rels mr else {}))).
       (t, rel) \<leftarrow> aux, memR I (nt - t)]
-      of [] \<Rightarrow> [(nt, mrtabulate mrs (r\<epsilon>_strict n rels))]
+      of [] \<Rightarrow> [(nt, mrtabulate mrs (r\<epsilon>_strict cs dss rels))]
       | x # aux' \<Rightarrow> (if fst x = nt then x # aux'
-                     else (nt, mrtabulate mrs (r\<epsilon>_strict n rels)) # x # aux'))
+                     else (nt, mrtabulate mrs (r\<epsilon>_strict cs dss rels)) # x # aux'))
     in (foldr (\<union>) [lookup rel mr. (t, rel) \<leftarrow> aux, memL I (nt - t)] {}, aux))"
 
 definition update_matchF_base where
-  "update_matchF_base n I mr mrs rels nt =
-     (let X = mrtabulate mrs (l\<epsilon>_strict n rels)
+  "update_matchF_base cs dss I mr mrs rels nt =
+     (let X = mrtabulate mrs (l\<epsilon>_strict cs dss rels)
      in ([(nt, rels, if memL I 0 then lookup X mr else empty_table)], X))"
 
 definition update_matchF_step where
-  "update_matchF_step I mr mrs nt = (\<lambda>(t, rels', rel) (aux', X).
-     (let Y = mrtabulate mrs (l\<delta> id X rels')
+  "update_matchF_step cs dss I mr mrs nt = (\<lambda>(t, rels', rel) (aux', X).
+     (let Y = mrtabulate mrs (l\<delta> cs dss id X rels')
      in ((t, rels', if mem I ((nt - t)) then rel \<union> lookup Y mr else rel) # aux', Y)))"
 
-definition update_matchF :: "nat \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> event_data table list \<Rightarrow> ts \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> event_data ml\<delta>aux" where
-  "update_matchF n I mr mrs rels nt aux =
-     fst (foldr (update_matchF_step I mr mrs nt) aux (update_matchF_base n I mr mrs rels nt))"
-
+definition update_matchF :: "nat list \<Rightarrow> nat list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> event_data table list \<Rightarrow> ts \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> event_data ml\<delta>aux" where
+  "update_matchF cs dss I mr mrs rels nt aux =
+     fst (foldr (update_matchF_step cs dss I mr mrs nt) aux (update_matchF_base cs dss I mr mrs rels nt))"
 fun eval_matchF :: "\<I> \<Rightarrow> mregex \<Rightarrow> ts \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> event_data table list \<times> event_data ml\<delta>aux" where
   "eval_matchF I mr nt [] = ([], [])"
 | "eval_matchF I mr nt ((t, rels, rel) # aux) = (if \<not> memR I (nt - t) then
@@ -1632,17 +1764,18 @@ lemma map_split_map: "map_split f (map g xs) = map_split (f o g) xs"
 lemma map_split_alt: "map_split f xs = (map (fst o f) xs, map (snd o f) xs)"
   by (induct xs) (auto split: prod.splits)
 
-fun eval_assignment :: "nat \<times> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
-  "eval_assignment (x, t) y = (y[x:=Some (meval_trm t y)])"
+text \<open>An assignment appends the assigned variable's column to the tuples over @{term cs}.\<close>
+
+fun eval_assignment :: "nat list \<Rightarrow> nat \<times> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
+  "eval_assignment cs (x, t) y = y @ [meval_trm cs t y]"
 
 fun eval_constraint0 :: "mconstraint \<Rightarrow> event_data \<Rightarrow> event_data \<Rightarrow> bool" where
   "eval_constraint0 MEq x y = (x = y)"
 | "eval_constraint0 MLess x y = (x < y)"
 | "eval_constraint0 MLessEq x y = (x \<le> y)"
 
-fun eval_constraint :: "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> bool" where
-  "eval_constraint (t1, p, c, t2) x = (eval_constraint0 c (meval_trm t1 x) (meval_trm t2 x) = p)"
-
+fun eval_constraint :: "nat list \<Rightarrow> Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> bool" where
+  "eval_constraint cs (t1, p, c, t2) x = (eval_constraint0 c (meval_trm cs t1 x) (meval_trm cs t2 x) = p)"
 function letpast_meval0 where
   "letpast_meval0 eval j i ys xs p ts db \<phi> =
      (let (ys', \<phi>') = eval ts (Mapping.update p xs db) \<phi>
@@ -1662,45 +1795,582 @@ lemma letpast_meval0_cong[fundef_cong]:
   assumes "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow>  eval ts db \<psi> = eval' ts db \<psi>)"
   shows "letpast_meval0 eval j i ys xs p ts db \<phi> = letpast_meval0 eval' j i ys xs p ts db \<phi>"
   using assms
-  apply (induct eval j i ys xs p ts db \<phi>  rule: letpast_meval0.induct)
-  subgoal premises IH for eval j i ys xs p ts db \<phi> 
-    apply (subst (1 2) letpast_meval0.simps)
-    apply (auto split: prod.splits list.splits simp: Let_def IH)
-    done
-  done
+proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have eval': "eval' ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    using 1(2)[of \<phi>] eval by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      using eval eval' by (subst (1 2) letpast_meval0.simps) simp
+  next
+    case (Cons y ys'')
+    have "letpast_meval0 eval j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>' =
+      letpast_meval0 eval' j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      if "size \<phi>' = size \<phi>" "\<not> j \<le> Suc (i + length xs)"
+      using 1(1)[OF eval[symmetric] refl _ Cons] 1(2) that by simp
+    then show ?thesis
+      using eval eval' Cons by (subst (1 2) letpast_meval0.simps) (simp add: Let_def)
+  qed
+qed
 
 lemma size_letpast_meval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow> size (snd (eval ts db \<psi>)) = size \<psi>) \<Longrightarrow>
   size (snd (snd (snd (letpast_meval0 eval j i ys xs p ts db \<phi>)))) = size \<phi>"
-  apply (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
-  apply (subst letpast_meval0.simps)
-  apply (auto split: prod.splits list.splits simp: Let_def dest: sndI)
-  done
+proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have size: "size \<phi>' = size \<phi>"
+    using 1(2)[of \<phi> ts "Mapping.update p xs db"] eval by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      using eval size by (subst letpast_meval0.simps) simp
+  next
+    case (Cons y ys'')
+    have "size (snd (snd (snd (letpast_meval0 eval j (i + length xs) (ys @ ys') ys' p []
+      (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))) = size \<phi>'" if "\<not> j \<le> Suc (i + length xs)"
+      using 1(1)[OF eval[symmetric] refl _ Cons] 1(2) size that by simp
+    then show ?thesis
+      using eval size Cons by (subst letpast_meval0.simps) (simp add: Let_def)
+  qed
+qed
 
-fun freeze_meval0 where
-  "freeze_meval0 eval k [] = ([], [])"
-| "freeze_meval0 eval k (\<alpha> # \<alpha>s) =
-    (let (ys, _) = eval \<alpha> in
-      case drop k ys of
-        [] => ([], \<alpha> # \<alpha>s)
-      | y # _ =>
-          (let (zs, \<alpha>s') = freeze_meval0 eval (Suc k) \<alpha>s
-          in (y # zs, \<alpha>s')))"
+text \<open>The copies stop at the first frozen table whose verdict is not out yet.  That copy's state
+  is kept (the live copy), with the number of its verdicts still to come before the pending one,
+  and in the next step it is fed the new time points instead of being replayed from the replay
+  base again.  The live copy is kept in a slot of its own, @{text \<rho>L}, next to the number of its
+  verdicts still to come; without a live copy the slot keeps its previous contents.  A new live
+  copy replaces the slot only if it has the same size, which the live copies of a well-formed state
+  always have (they are replays of the replay base): so evaluation keeps the size of the state,
+  which the termination argument needs.\<close>
+
+definition frz_keep_lv :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> nat option" where
+  "frz_keep_lv lv \<rho>L = (case lv of Some (g, st) \<Rightarrow> if size st = size \<rho>L then Some g else None | None \<Rightarrow> None)"
+
+definition frz_keep_st :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "frz_keep_st lv \<rho>L = (case lv of Some (g, st) \<Rightarrow> if size st = size \<rho>L then st else \<rho>L | None \<Rightarrow> \<rho>L)"
+
+lemma size_frz_keep_st[simp]: "size (frz_keep_st lv \<rho>L) = size \<rho>L"
+  by (auto simp: frz_keep_st_def split: option.splits)
+
+text \<open>The windowed replay of @{const MFrz}: a time point whose timestamp is more than the past
+  reach @{term d} of the body before that of a time point @{term i} is never looked at by the
+  verdict at @{term i} or later ones.  The number of such time points at the front of the window
+  @{term "tq"} (the timestamps from time point @{term w} on), by which the window can move forward
+  before the copy of @{term i}, or, with @{term i} the first undecided time point, at the end of a
+  step.  Once every verdict is out (@{term "i = j"}), the timestamp of @{term i} is not known yet;
+  that of the last time point, @{term "j - 1"}, bounds it from below.  Without this, a frozen
+  formula that never lags would keep the window at its start, and each copy would replay the whole
+  prefix.
+
+  When the body does not use the frozen predicate beyond the current time point (the flag
+  @{term po}: @{const safe_letpast} of the frozen predicate is at most @{const NonFutuRec}, as for
+  the recursive predicate of @{const Formula.LetPast}), a copy's verdict at a time point @{term i}
+  needs the frozen predicate only up to @{term i}.  The copy of @{term i} is then fed it only up
+  to @{term i}, not up to the last time point (@{text frz_cut}): this matters when the frozen
+  formula lags, and the frozen tables of several time points arrive at once.\<close>
+definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> nat" where
+  "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> w < j
+     then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (min jfrz (j - 1) - w))) tq) else 0)"
+
+definition frz_cut :: "bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "frz_cut po w i j = (if po then min (j - w) (Suc i - w) else j - w)"
+
+text \<open>The value of the frozen predicate with which the replay base absorbs the time points that
+  leave the window.  They lie beyond the past reach of every verdict still to be computed, so any
+  table of the frozen formula will do.  The copies start from the replay base and throw away what
+  it holds for those time points.  With the frozen predicate under a negation
+  (@{const neg_pred}), the latest frozen table leaves the least of that: a copy's own frozen table
+  is typically close to it.  Otherwise the empty table does.\<close>
+
+definition frz_fill :: "bool \<Rightarrow> 'a set list \<Rightarrow> 'a set" where
+  "frz_fill ng \<alpha>s = (if ng then last ({} # \<alpha>s) else {})"
+
+lemma frz_fill_cases: "frz_fill ng \<alpha>s = {} \<or> frz_fill ng \<alpha>s \<in> set \<alpha>s"
+  by (cases \<alpha>s rule: rev_cases) (auto simp: frz_fill_def)
+
+text \<open>The copies, each with the window moved to its own time point.  The replay base and its window
+  (the base, the window's start @{term w}, the base's progress, the window's timestamps and the
+  base's verdicts from the first pending one on) are threaded through the copies: before the copy
+  for the frozen table of time point @{term i}, the window moves as far as @{term i} allows
+  (@{text frz_adv_st}), and after the last copy, as far as the first pending verdict allows.  The
+  base's evaluation is a parameter @{term ev}; a moved base replaces the old one only if it has
+  the same size @{term sz}, which the evaluation always keeps: the termination argument needs it,
+  as for @{text letpast_meval0}.  A copy stops the loop if it does not have its verdict yet.\<close>
+
+definition frz_adv_st :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'm \<Rightarrow> 't list \<times> 'm) \<Rightarrow>
+    'k \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'a \<Rightarrow> enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
+    'm \<times> nat \<times> nat \<times> ts list \<times> 't list" where
+  "frz_adv_st sz ev pm dbe fl d j i s = (case s of (\<rho>, w, pR, tq, rb) \<Rightarrow>
+     let a = frz_adv d w i j tq in
+     (case ev [] (Mapping.update pm (replicate a fl) dbe) \<rho> of (rs, \<rho>') \<Rightarrow>
+       if sz \<rho>' = sz \<rho>
+       then (\<rho>', w + a, pR + length rs, drop a tq, drop (min i (pR + length rs) - (pR - length rb)) (rb @ rs))
+       else s))"
+
+primrec frz_loop :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'm \<Rightarrow> 't list \<times> 'm) \<Rightarrow>
+    'k \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'a \<Rightarrow> enat \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a list \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
+    't list \<times> 'a list \<times> (nat \<times> 'm) option \<times> ('m \<times> nat \<times> nat \<times> ts list \<times> 't list)" where
+  "frz_loop sz ev pm dbe fl d po j i [] s = ([], [], None, frz_adv_st sz ev pm dbe fl d j i s)"
+| "frz_loop sz ev pm dbe fl d po j i (\<alpha> # \<alpha>s) s =
+    (case frz_adv_st sz ev pm dbe fl d j i s of (\<rho>, w, pR, tq, rb) \<Rightarrow>
+     (case ev [] (Mapping.update pm (replicate (frz_cut po w i j) \<alpha>) dbe) \<rho> of (us, \<sigma>) \<Rightarrow>
+      (case drop (i - (pR - length rb)) (rb @ us) of
+        [] \<Rightarrow> ([], \<alpha> # \<alpha>s, Some (i - (pR - length rb) - length (rb @ us), \<sigma>), (\<rho>, w, pR, tq, rb))
+      | y # _ \<Rightarrow> (case frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) of
+          (zs, \<alpha>s', lv, s') \<Rightarrow> (y # zs, \<alpha>s', lv, s')))))"
+
+text \<open>With a live copy (@{term lr}, its verdicts after the new time points and its state), the
+  first verdict is the live copy's, if it has it.\<close>
+
+definition frz_live_loop where
+  "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (case lr of
+     None \<Rightarrow> frz_loop sz ev pm dbe fl d po j i \<alpha>s s
+   | Some (g, us, st) \<Rightarrow> (case drop g us of
+       [] \<Rightarrow> ([], \<alpha>s, Some (g - length us, st), frz_adv_st sz ev pm dbe fl d j i s)
+     | y # _ \<Rightarrow> (case frz_loop sz ev pm dbe fl d po j (Suc i) (tl \<alpha>s) s of
+         (zs, \<alpha>s', lv, s') \<Rightarrow> (y # zs, \<alpha>s', lv, s'))))"
+
+lemma size_frz_adv_st: "sz (fst (frz_adv_st sz ev pm dbe fl d j i s)) = sz (fst s)"
+  by (auto simp: frz_adv_st_def Let_def split: prod.splits)
+
+lemma frz_loop_size:
+  "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s', lv, s') \<Longrightarrow> sz (fst s') = sz (fst s)"
+proof (induction \<alpha>s arbitrary: i s ys \<alpha>s' lv s')
+  case Nil
+  then show ?case
+    using size_frz_adv_st[of sz ev pm dbe fl d j i s] by auto
+next
+  case (Cons \<alpha> \<alpha>s)
+  obtain \<rho> w pR tq rb where s1: "frz_adv_st sz ev pm dbe fl d j i s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  have sz: "sz \<rho> = sz (fst s)"
+    using size_frz_adv_st[of sz ev pm dbe fl d j i s] s1 by simp
+  obtain us \<sigma> where e: "ev [] (Mapping.update pm (replicate (frz_cut po w i j) \<alpha>) dbe) \<rho> = (us, \<sigma>)"
+    by fastforce
+  show ?case
+  proof (cases "drop (i - (pR - length rb)) (rb @ us)")
+    case Nil
+    then show ?thesis
+      using Cons.prems s1 e sz by (auto simp: size_frz_adv_st)
+  next
+    case (Cons y r)
+    obtain zs a l s2 where r: "frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) = (zs, a, l, s2)"
+      by (metis prod_cases4)
+    have "s' = s2"
+      using Cons.prems s1 e Cons r by simp
+    then show ?thesis
+      using Cons.IH[OF r] sz by simp
+  qed
+qed
+
+lemma frz_live_loop_size:
+  "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s', lv, s') \<Longrightarrow> sz (fst s') = sz (fst s)"
+  using frz_loop_size[of sz ev pm dbe fl d po j _ _ s] size_frz_adv_st[of sz ev pm dbe fl d j i s]
+  by (auto simp: frz_live_loop_def split: option.splits list.splits prod.splits)
+
+lemma frz_adv_st_cong[fundef_cong]:
+  assumes "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev ts db \<psi> = ev' ts db \<psi>"
+  shows "frz_adv_st sz ev pm dbe fl d j i s = frz_adv_st sz ev' pm dbe fl d j i s"
+  using assms by (auto simp: frz_adv_st_def split: prod.splits)
+
+lemma frz_loop_cong[fundef_cong]:
+  assumes "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev ts db \<psi> = ev' ts db \<psi>"
+  shows "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = frz_loop sz ev' pm dbe fl d po j i \<alpha>s s"
+  using assms
+proof (induction \<alpha>s arbitrary: i s)
+  case Nil
+  then show ?case
+    using frz_adv_st_cong[of sz s ev ev'] by simp
+next
+  case (Cons \<alpha> \<alpha>s)
+  obtain \<rho> w pR tq rb where s': "frz_adv_st sz ev' pm dbe fl d j i s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  have adv: "frz_adv_st sz ev pm dbe fl d j i s = (\<rho>, w, pR, tq, rb)"
+    using frz_adv_st_cong[of sz s ev ev', OF Cons.prems] s' by simp
+  have sz: "sz \<rho> = sz (fst s)"
+    using size_frz_adv_st[of sz ev' pm dbe fl d j i s] s' by simp
+  have ev: "ev ts db \<rho> = ev' ts db \<rho>" for ts db
+    using Cons.prems sz by simp
+  have IH: "frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) =
+    frz_loop sz ev' pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb)"
+    by (rule Cons.IH) (use Cons.prems sz in simp)
+  show ?case
+    by (simp only: frz_loop.simps adv s' prod.case ev IH)
+qed
+
+lemma frz_live_loop_cong[fundef_cong]:
+  assumes "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev ts db \<psi> = ev' ts db \<psi>"
+  shows "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = frz_live_loop sz ev' pm dbe fl d po j i \<alpha>s lr s"
+proof -
+  have "frz_loop sz ev pm dbe fl d po j i' \<alpha>s' s = frz_loop sz ev' pm dbe fl d po j i' \<alpha>s' s" for i' \<alpha>s'
+    using assms by (rule frz_loop_cong)
+  moreover have "frz_adv_st sz ev pm dbe fl d j i s = frz_adv_st sz ev' pm dbe fl d j i s"
+    using assms by (rule frz_adv_st_cong)
+  ultimately show ?thesis
+    by (simp only: frz_live_loop_def)
+qed
+
+text \<open>The loop under a simulation.  Two runs whose evaluations are related, on states related by
+  @{term R} with the verdicts mapped by @{term g} and the frozen tables by @{term ga}, give related
+  results, provided that the size guards of the two runs agree on related states.  And a property
+  of the states and the tables that the evaluation keeps holds of the loop's results.  The
+  evaluators of the executable and of the dense layers run the same loop on their own states.\<close>
+
+definition frz_st_rel :: "('m \<Rightarrow> 'm' \<Rightarrow> bool) \<Rightarrow> ('t \<Rightarrow> 't') \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
+    'm' \<times> nat \<times> nat \<times> ts list \<times> 't' list \<Rightarrow> bool" where
+  "frz_st_rel R g s s' \<longleftrightarrow> (case s of (\<rho>, w, pR, tq, rb) \<Rightarrow> case s' of (\<rho>', w', pR', tq', rb') \<Rightarrow>
+     R \<rho> \<rho>' \<and> w' = w \<and> pR' = pR \<and> tq' = tq \<and> rb' = map g rb)"
+
+lemma frz_st_rel_simps[simp]: "frz_st_rel R g (\<rho>, w, pR, tq, rb) (\<rho>', w', pR', tq', rb') \<longleftrightarrow>
+    R \<rho> \<rho>' \<and> w' = w \<and> pR' = pR \<and> tq' = tq \<and> rb' = map g rb"
+  by (simp add: frz_st_rel_def)
+
+definition frz_st_inv :: "('m \<Rightarrow> bool) \<Rightarrow> ('t \<Rightarrow> bool) \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow> bool" where
+  "frz_st_inv P T s \<longleftrightarrow> (case s of (\<rho>, w, pR, tq, rb) \<Rightarrow> P \<rho> \<and> list_all T rb)"
+
+lemma frz_st_inv_simps[simp]: "frz_st_inv P T (\<rho>, w, pR, tq, rb) \<longleftrightarrow> P \<rho> \<and> list_all T rb"
+  by (simp add: frz_st_inv_def)
+
+lemma frz_adv_st_inv:
+  assumes ev: "\<And>\<psi> c. sz \<psi> = sz (fst s) \<Longrightarrow> P \<psi> \<Longrightarrow>
+      list_all T (fst (ev [] (Mapping.update pm (replicate c fl) dbe) \<psi>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate c fl) dbe) \<psi>))"
+    and st: "frz_st_inv P T s"
+  shows "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+proof -
+  obtain \<rho> w pR tq rb where s: "s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  let ?a = "frz_adv d w i j tq"
+  obtain rs \<sigma> where e: "ev [] (Mapping.update pm (replicate ?a fl) dbe) \<rho> = (rs, \<sigma>)"
+    by fastforce
+  have "list_all T rs" "P \<sigma>"
+    using ev[of \<rho> ?a] st s e by simp_all
+  then show ?thesis
+    using st s e by (auto simp: frz_adv_st_def Let_def list_all_iff dest: in_set_dropD)
+qed
+
+lemma frz_loop_inv:
+  assumes ev: "\<And>\<psi> c X. sz \<psi> = sz (fst s) \<Longrightarrow> P \<psi> \<Longrightarrow> X \<in> insert fl (set \<alpha>s) \<Longrightarrow>
+      list_all T (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))"
+    and st: "frz_st_inv P T s"
+    and r: "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s1, lv, s1)"
+  shows "list_all T ys \<and> set \<alpha>s1 \<subseteq> set \<alpha>s \<and> (\<forall>k \<sigma>. lv = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s1"
+  using ev st r
+proof (induction \<alpha>s arbitrary: i s ys \<alpha>s1 lv s1)
+  case Nil
+  have "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+    by (rule frz_adv_st_inv[OF _ Nil.prems(2)]) (use Nil.prems(1) in blast)
+  then show ?case
+    using Nil.prems(3) by auto
+next
+  case (Cons \<alpha> \<alpha>s)
+  note prems = Cons.prems and IH = Cons.IH
+  have adv: "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+    by (rule frz_adv_st_inv[OF _ prems(2)]) (use prems(1) in blast)
+  obtain \<rho> w pR tq rb where s1: "frz_adv_st sz ev pm dbe fl d j i s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  have sz\<rho>: "sz \<rho> = sz (fst s)"
+    using size_frz_adv_st[of sz ev pm dbe fl d j i s] s1 by simp
+  have P\<rho>: "P \<rho>" and Trb: "list_all T rb"
+    using adv s1 by simp_all
+  let ?c = "frz_cut po w i j"
+  obtain us \<sigma> where e: "ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho> = (us, \<sigma>)"
+    by fastforce
+  have "list_all T (fst (ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho>))"
+    by (rule prems(1)) (use sz\<rho> P\<rho> in auto)
+  then have Tus: "list_all T us" and P\<sigma>: "P \<sigma>"
+    using e by simp_all
+  show ?case
+  proof (cases "drop (i - (pR - length rb)) (rb @ us)")
+    case Nil
+    then show ?thesis
+      using prems(3) s1 e P\<sigma> adv by auto
+  next
+    case (Cons y r)
+    obtain zs bs lv0 s2 where rec: "frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) = (zs, bs, lv0, s2)"
+      by (metis prod_cases4)
+    have IH': "list_all T zs \<and> set bs \<subseteq> set \<alpha>s \<and> (\<forall>k \<sigma>. lv0 = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s2"
+      by (rule IH[OF _ _ rec]) (use prems(1) sz\<rho> P\<rho> Trb in auto)
+    have "T y"
+      using Cons Tus Trb by (metis in_set_dropD list.set_intros(1) list_all_append list_all_iff)
+    moreover have "ys = y # zs" "\<alpha>s1 = bs" "lv = lv0" "s1 = s2"
+      using prems(3) s1 e Cons rec by auto
+    ultimately show ?thesis
+      using IH' by auto
+  qed
+qed
+
+lemma frz_live_loop_inv:
+  assumes ev: "\<And>\<psi> c X. sz \<psi> = sz (fst s) \<Longrightarrow> P \<psi> \<Longrightarrow> X \<in> insert fl (set \<alpha>s) \<Longrightarrow>
+      list_all T (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))"
+    and st: "frz_st_inv P T s"
+    and L: "\<And>k us \<sigma>. lr = Some (k, us, \<sigma>) \<Longrightarrow> list_all T us \<and> P \<sigma>"
+    and r: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s1, lv, s1)"
+  shows "list_all T ys \<and> set \<alpha>s1 \<subseteq> set \<alpha>s \<and> (\<forall>k \<sigma>. lv = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s1"
+proof (cases lr)
+  case None
+  with r have r0: "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s1, lv, s1)"
+    by (simp add: frz_live_loop_def)
+  show ?thesis
+    by (rule frz_loop_inv[OF _ st r0]) (rule ev, assumption+)
+next
+  case (Some x)
+  then obtain k us \<sigma> where lr: "lr = Some (k, us, \<sigma>)"
+    by (cases x) auto
+  have Tus: "list_all T us" and P\<sigma>: "P \<sigma>"
+    using L[OF lr] by simp_all
+  show ?thesis
+  proof (cases "drop k us")
+    case Nil
+    have "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+      by (rule frz_adv_st_inv[OF _ st]) (use ev in blast)
+    then show ?thesis
+      using r lr Nil P\<sigma> by (auto simp: frz_live_loop_def)
+  next
+    case (Cons y r0)
+    obtain zs bs lv0 s2 where rec: "frz_loop sz ev pm dbe fl d po j (Suc i) (tl \<alpha>s) s = (zs, bs, lv0, s2)"
+      by (metis prod_cases4)
+    have IH': "list_all T zs \<and> set bs \<subseteq> set (tl \<alpha>s) \<and> (\<forall>k \<sigma>. lv0 = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s2"
+      by (rule frz_loop_inv[OF _ st rec]) (rule ev, assumption+, cases \<alpha>s; auto)
+    have "T y"
+      using Cons Tus by (metis in_set_dropD list.set_intros(1) list_all_iff)
+    moreover have "ys = y # zs" "\<alpha>s1 = bs" "lv = lv0" "s1 = s2"
+      using r lr Cons rec by (auto simp: frz_live_loop_def)
+    moreover have "set (tl \<alpha>s) \<subseteq> set \<alpha>s"
+      by (cases \<alpha>s) auto
+    ultimately show ?thesis
+      using IH' by auto
+  qed
+qed
+
+lemma frz_adv_st_rel:
+  assumes ev: "\<And>\<psi> \<psi>' c. sz \<psi> = sz (fst s) \<Longrightarrow> R \<psi> \<psi>' \<Longrightarrow>
+      fst (ev' [] (Mapping.update pm' (replicate c (ga fl)) dbe') \<psi>') =
+        map g (fst (ev [] (Mapping.update pm (replicate c fl) dbe) \<psi>)) \<and>
+      R (snd (ev [] (Mapping.update pm (replicate c fl) dbe) \<psi>))
+        (snd (ev' [] (Mapping.update pm' (replicate c (ga fl)) dbe') \<psi>'))"
+    and sz: "\<And>\<psi>1 \<psi>1' \<psi>2 \<psi>2'. R \<psi>1 \<psi>1' \<Longrightarrow> R \<psi>2 \<psi>2' \<Longrightarrow> sz \<psi>1 = sz \<psi>2 \<longleftrightarrow> sz' \<psi>1' = sz' \<psi>2'"
+    and st: "frz_st_rel R g s s'"
+  shows "frz_st_rel R g (frz_adv_st sz ev pm dbe fl d j i s) (frz_adv_st sz' ev' pm' dbe' (ga fl) d j i s')"
+proof -
+  obtain \<rho> w pR tq rb where s: "s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  with st obtain \<rho>' where s': "s' = (\<rho>', w, pR, tq, map g rb)" and R: "R \<rho> \<rho>'"
+    by (cases s') auto
+  let ?a = "frz_adv d w i j tq"
+  obtain rs \<sigma> where e: "ev [] (Mapping.update pm (replicate ?a fl) dbe) \<rho> = (rs, \<sigma>)"
+    by fastforce
+  obtain rs' \<sigma>' where e': "ev' [] (Mapping.update pm' (replicate ?a (ga fl)) dbe') \<rho>' = (rs', \<sigma>')"
+    by fastforce
+  have rs': "rs' = map g rs" and R\<sigma>: "R \<sigma> \<sigma>'"
+    using ev[of \<rho> \<rho>' ?a] R e e' s by simp_all
+  have guard: "sz \<sigma> = sz \<rho> \<longleftrightarrow> sz' \<sigma>' = sz' \<rho>'"
+    by (rule sz[OF R\<sigma> R])
+  show ?thesis
+    using s s' e e' rs' R\<sigma> R guard by (auto simp: frz_adv_st_def Let_def drop_map[symmetric])
+qed
+
+lemma frz_loop_rel:
+  assumes ev: "\<And>\<psi> \<psi>' c X. sz \<psi> = sz (fst s) \<Longrightarrow> R \<psi> \<psi>' \<Longrightarrow> X \<in> insert fl (set \<alpha>s) \<Longrightarrow>
+      fst (ev' [] (Mapping.update pm' (replicate c (ga X)) dbe') \<psi>') =
+        map g (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      R (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))
+        (snd (ev' [] (Mapping.update pm' (replicate c (ga X)) dbe') \<psi>'))"
+    and sz: "\<And>\<psi>1 \<psi>1' \<psi>2 \<psi>2'. R \<psi>1 \<psi>1' \<Longrightarrow> R \<psi>2 \<psi>2' \<Longrightarrow> sz \<psi>1 = sz \<psi>2 \<longleftrightarrow> sz' \<psi>1' = sz' \<psi>2'"
+    and st: "frz_st_rel R g s s'"
+    and r: "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s1, lv, s1)"
+    and r': "frz_loop sz' ev' pm' dbe' (ga fl) d po j i (map ga \<alpha>s) s' = (ys', \<alpha>s1', lv', s1')"
+  shows "ys' = map g ys \<and> \<alpha>s1' = map ga \<alpha>s1 \<and> rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv lv' \<and>
+    frz_st_rel R g s1 s1'"
+  using ev st r r'
+proof (induction \<alpha>s arbitrary: i s s' ys \<alpha>s1 lv s1 ys' \<alpha>s1' lv' s1')
+  case Nil
+  have "frz_st_rel R g (frz_adv_st sz ev pm dbe fl d j i s) (frz_adv_st sz' ev' pm' dbe' (ga fl) d j i s')"
+    by (rule frz_adv_st_rel[OF _ sz Nil.prems(2)]) (use Nil.prems(1) in blast)
+  then show ?case
+    using Nil.prems(3,4) by auto
+next
+  case (Cons \<alpha> \<alpha>s)
+  note prems = Cons.prems and IH = Cons.IH
+  have adv: "frz_st_rel R g (frz_adv_st sz ev pm dbe fl d j i s) (frz_adv_st sz' ev' pm' dbe' (ga fl) d j i s')"
+    by (rule frz_adv_st_rel[OF _ sz prems(2)]) (use prems(1) in blast)
+  obtain \<rho> w pR tq rb where s1: "frz_adv_st sz ev pm dbe fl d j i s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  with adv obtain \<rho>' where s1': "frz_adv_st sz' ev' pm' dbe' (ga fl) d j i s' = (\<rho>', w, pR, tq, map g rb)"
+    and R: "R \<rho> \<rho>'"
+    by (cases "frz_adv_st sz' ev' pm' dbe' (ga fl) d j i s'") auto
+  have sz\<rho>: "sz \<rho> = sz (fst s)"
+    using size_frz_adv_st[of sz ev pm dbe fl d j i s] s1 by simp
+  let ?c = "frz_cut po w i j"
+  obtain us \<sigma> where e: "ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho> = (us, \<sigma>)"
+    by fastforce
+  obtain us' \<sigma>' where e': "ev' [] (Mapping.update pm' (replicate ?c (ga \<alpha>)) dbe') \<rho>' = (us', \<sigma>')"
+    by fastforce
+  have "fst (ev' [] (Mapping.update pm' (replicate ?c (ga \<alpha>)) dbe') \<rho>') =
+      map g (fst (ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho>)) \<and>
+    R (snd (ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho>))
+      (snd (ev' [] (Mapping.update pm' (replicate ?c (ga \<alpha>)) dbe') \<rho>'))"
+    by (rule prems(1)) (use sz\<rho> R in auto)
+  then have us': "us' = map g us" and R\<sigma>: "R \<sigma> \<sigma>'"
+    using e e' by simp_all
+  have dr: "drop (i - (pR - length (map g rb))) (map g rb @ us') = map g (drop (i - (pR - length rb)) (rb @ us))"
+    by (simp add: us' drop_map[symmetric])
+  show ?case
+  proof (cases "drop (i - (pR - length rb)) (rb @ us)")
+    case Nil
+    then have dr': "drop (i - (pR - length (map g rb))) (map g rb @ us') = []"
+      using dr by simp
+    have "ys = []" "\<alpha>s1 = \<alpha> # \<alpha>s" "lv = Some (i - (pR - length rb) - length (rb @ us), \<sigma>)"
+      "s1 = (\<rho>, w, pR, tq, rb)"
+      using prems(3) s1 e Nil by auto
+    moreover have "ys' = []" "\<alpha>s1' = ga \<alpha> # map ga \<alpha>s"
+      "lv' = Some (i - (pR - length rb) - length (rb @ us), \<sigma>')" "s1' = (\<rho>', w, pR, tq, map g rb)"
+      using prems(4) s1' e' dr' us' by auto
+    ultimately show ?thesis
+      using R R\<sigma> by simp
+  next
+    case (Cons y r)
+    obtain zs bs lv0 s2 where rec: "frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) = (zs, bs, lv0, s2)"
+      by (metis prod_cases4)
+    obtain zs' bs' lv0' s2' where rec': "frz_loop sz' ev' pm' dbe' (ga fl) d po j (Suc i) (map ga \<alpha>s)
+        (\<rho>', w, pR, tq, map g rb) = (zs', bs', lv0', s2')"
+      by (metis prod_cases4)
+    have IH': "zs' = map g zs \<and> bs' = map ga bs \<and> rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv0 lv0' \<and>
+        frz_st_rel R g s2 s2'"
+      by (rule IH[OF _ _ rec rec']) (use prems(1) sz\<rho> R in auto)
+    have dr': "drop (i - (pR - length (map g rb))) (map g rb @ us') = g y # map g r"
+      using dr[unfolded Cons] by simp
+    have "ys = y # zs" "\<alpha>s1 = bs" "lv = lv0" "s1 = s2"
+      using prems(3) s1 e Cons rec by auto
+    moreover have "ys' = g y # zs'" "\<alpha>s1' = bs'" "lv' = lv0'" "s1' = s2'"
+      using prems(4) s1' e' dr' rec' by auto
+    ultimately show ?thesis
+      using IH' by simp
+  qed
+qed
+
+lemma frz_live_loop_rel:
+  assumes ev: "\<And>\<psi> \<psi>' c X. sz \<psi> = sz (fst s) \<Longrightarrow> R \<psi> \<psi>' \<Longrightarrow> X \<in> insert fl (set \<alpha>s) \<Longrightarrow>
+      fst (ev' [] (Mapping.update pm' (replicate c (ga X)) dbe') \<psi>') =
+        map g (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      R (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))
+        (snd (ev' [] (Mapping.update pm' (replicate c (ga X)) dbe') \<psi>'))"
+    and sz: "\<And>\<psi>1 \<psi>1' \<psi>2 \<psi>2'. R \<psi>1 \<psi>1' \<Longrightarrow> R \<psi>2 \<psi>2' \<Longrightarrow> sz \<psi>1 = sz \<psi>2 \<longleftrightarrow> sz' \<psi>1' = sz' \<psi>2'"
+    and st: "frz_st_rel R g s s'"
+    and L: "rel_option (\<lambda>(k, us, \<sigma>) (k', us', \<sigma>'). k' = k \<and> us' = map g us \<and> R \<sigma> \<sigma>') lr lr'"
+    and r: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s1, lv, s1)"
+    and r': "frz_live_loop sz' ev' pm' dbe' (ga fl) d po j i (map ga \<alpha>s) lr' s' = (ys', \<alpha>s1', lv', s1')"
+  shows "ys' = map g ys \<and> \<alpha>s1' = map ga \<alpha>s1 \<and> rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv lv' \<and>
+    frz_st_rel R g s1 s1'"
+proof (cases lr)
+  case None
+  then have "lr' = None"
+    using L by simp
+  with None r r' have r0: "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s1, lv, s1)"
+    and r0': "frz_loop sz' ev' pm' dbe' (ga fl) d po j i (map ga \<alpha>s) s' = (ys', \<alpha>s1', lv', s1')"
+    by (simp_all add: frz_live_loop_def)
+  show ?thesis
+    by (rule frz_loop_rel[OF _ sz st r0 r0']) (rule ev, assumption+)
+next
+  case (Some x)
+  then obtain k us \<sigma> where lr: "lr = Some (k, us, \<sigma>)"
+    by (cases x) auto
+  with L obtain \<sigma>' where lr': "lr' = Some (k, map g us, \<sigma>')" and R: "R \<sigma> \<sigma>'"
+    by (cases lr') auto
+  show ?thesis
+  proof (cases "drop k us")
+    case Nil
+    have "frz_st_rel R g (frz_adv_st sz ev pm dbe fl d j i s) (frz_adv_st sz' ev' pm' dbe' (ga fl) d j i s')"
+      by (rule frz_adv_st_rel[OF _ sz st]) (use ev in blast)
+    then show ?thesis
+      using r r' lr lr' R Nil by (auto simp: frz_live_loop_def drop_map)
+  next
+    case (Cons y r0)
+    obtain zs bs lv0 s2 where rec: "frz_loop sz ev pm dbe fl d po j (Suc i) (tl \<alpha>s) s = (zs, bs, lv0, s2)"
+      by (metis prod_cases4)
+    obtain zs' bs' lv0' s2' where rec': "frz_loop sz' ev' pm' dbe' (ga fl) d po j (Suc i) (map ga (tl \<alpha>s)) s' =
+        (zs', bs', lv0', s2')"
+      by (metis prod_cases4)
+    have IH': "zs' = map g zs \<and> bs' = map ga bs \<and> rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv0 lv0' \<and>
+        frz_st_rel R g s2 s2'"
+      by (rule frz_loop_rel[OF _ sz st rec rec']) (rule ev, assumption+, cases \<alpha>s; auto)
+    have "ys = y # zs" "\<alpha>s1 = bs" "lv = lv0" "s1 = s2"
+      using r lr Cons rec by (auto simp: frz_live_loop_def)
+    moreover have "ys' = g y # zs'" "\<alpha>s1' = bs'" "lv' = lv0'" "s1' = s2'"
+      using r' lr' Cons rec' by (auto simp: frz_live_loop_def drop_map map_tl)
+    ultimately show ?thesis
+      using IH' by simp
+  qed
+qed
+
+text \<open>A map of the states that commutes with the evaluation and keeps the size.\<close>
+
+lemma frz_live_loop_map:
+  assumes ev: "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev' ts db (f \<psi>) = apsnd f (ev ts db \<psi>)"
+    and sz: "\<And>\<psi>. sz' (f \<psi>) = sz \<psi>"
+    and r: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s1, lv, s1)"
+  shows "frz_live_loop sz' ev' pm dbe fl d po j i \<alpha>s (map_option (\<lambda>(k, us, \<sigma>). (k, us, f \<sigma>)) lr) (apfst f s) =
+    (ys, \<alpha>s1, map_option (apsnd f) lv, apfst f s1)"
+proof -
+  obtain ys' \<alpha>s1' lv' s1' where r': "frz_live_loop sz' ev' pm dbe (id fl) d po j i (map id \<alpha>s)
+      (map_option (\<lambda>(k, us, \<sigma>). (k, us, f \<sigma>)) lr) (apfst f s) = (ys', \<alpha>s1', lv', s1')"
+    by (metis prod_cases4)
+  have "ys' = map id ys \<and> \<alpha>s1' = map id \<alpha>s1 \<and>
+      rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> \<sigma>' = f \<sigma>) lv lv' \<and> frz_st_rel (\<lambda>\<psi> \<psi>'. \<psi>' = f \<psi>) id s1 s1'"
+  proof (rule frz_live_loop_rel[where R = "\<lambda>\<psi> \<psi>'. \<psi>' = f \<psi>" and g = id and ga = id, OF _ _ _ _ r r'])
+    show "fst (ev' [] (Mapping.update pm (replicate c (id X)) dbe) \<psi>') =
+        map id (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      snd (ev' [] (Mapping.update pm (replicate c (id X)) dbe) \<psi>') =
+        f (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))"
+      if "sz \<psi> = sz (fst s)" "\<psi>' = f \<psi>" for \<psi> \<psi>' c X
+      using ev[OF that(1), of "[]" "Mapping.update pm (replicate c X) dbe"] that(2)
+      by (cases "ev [] (Mapping.update pm (replicate c X) dbe) \<psi>") simp
+    show "sz \<psi>1 = sz \<psi>2 \<longleftrightarrow> sz' \<psi>1' = sz' \<psi>2'" if "\<psi>1' = f \<psi>1" "\<psi>2' = f \<psi>2" for \<psi>1 \<psi>1' \<psi>2 \<psi>2'
+      using that sz by simp
+    show "frz_st_rel (\<lambda>\<psi> \<psi>'. \<psi>' = f \<psi>) id s (apfst f s)"
+      by (cases s) simp
+    show "rel_option (\<lambda>(k, us, \<sigma>) (k', us', \<sigma>'). k' = k \<and> us' = map id us \<and> \<sigma>' = f \<sigma>) lr
+      (map_option (\<lambda>(k, us, \<sigma>). (k, us, f \<sigma>)) lr)"
+      by (cases lr) auto
+  qed
+  then have "ys' = ys" "\<alpha>s1' = \<alpha>s1" "lv' = map_option (apsnd f) lv" "s1' = apfst f s1"
+    by (cases lv; cases lv'; cases s1; cases s1'; auto)+
+  then show ?thesis
+    using r' by simp
+qed
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
 | "list_of_option (Some x) = [x]"
 
-fun eval_mtrm :: "nat \<Rightarrow> mtrm \<Rightarrow> event_data \<Rightarrow> event_data table" where
-  "eval_mtrm n (MVar v) x = singleton_table n v x"
-| "eval_mtrm n (MConst c) x = (if c = x then unit_table n else empty_table)"
+fun eval_mtrm :: "mtrm \<Rightarrow> event_data \<Rightarrow> event_data table" where
+  "eval_mtrm (MVar v) x = singleton_table x"
+| "eval_mtrm (MConst c) x = (if c = x then unit_table else empty_table)"
 
 lemma qtable_eval_mtrm:
   assumes "\<forall>x\<in>fv_trm t. x < n" 
     and "trm.is_Var t \<or> trm.is_Const t"
-  shows "qtable n (fv_trm t) R (\<lambda>v. Formula.eval_trm (map the v) t = x) (eval_mtrm n (mtrm_of_trm t) x)"
-  using assms unfolding table_def Formula.is_Var_def Formula.is_Const_def
-  by (auto split: if_splits intro!: qtable_singleton_table qtable_unit_table qtable_empty)
+  shows "qtable (Formula.fv_trm_list t) R (\<lambda>v. Formula.eval_trm (val n (Formula.fv_trm_list t) v) t = x)
+    (eval_mtrm (mtrm_of_trm t) x)"
+  using assms unfolding qtable_iff table_def Formula.is_Var_def Formula.is_Const_def
+  by (auto simp: singleton_table_def unit_table_def empty_table_def wf_tuple_def tup_get_Cons length_Suc_conv split: if_splits)
 
+text \<open>The columns of a predicate's table.\<close>
+
+definition pred_cols :: "Formula.trm list \<Rightarrow> nat list" where
+  "pred_cols ts = fold (\<lambda>t cs. cols_union cs (Formula.fv_trm_list t)) ts []"
+
+lemma fv_list_Pred: "Formula.fv_list (Formula.Pred e ts) = pred_cols ts"
+  by (simp add: pred_cols_def)
 type_synonym database = "(Formula.name \<times> nat, event_data table list) mapping"
 
 context maux
@@ -1710,6 +2380,10 @@ context
   fixes j :: nat
 begin
 
+text \<open>The tables of a formula bound to a predicate are read positionally, as the event tuples:
+  @{const MLet}, @{const MFrz} and @{const MLetPast} reorder them from the formula's columns
+  @{term cs} to @{term "[0..<m]"}.\<close>
+
 function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula \<Rightarrow>
     event_data table list \<times> ('msaux, 'muaux, 'mtaux) mformula" where
   "meval n ts db (MRel rel) = (replicate (length ts) rel, MRel rel)"
@@ -1718,37 +2392,46 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
         None \<Rightarrow> replicate (length ts) {}
       | Some xs \<Rightarrow> (case mode of
           Copy \<Rightarrow> xs
-        | Simple \<Rightarrow> map (\<lambda>X. simple_match n 0 tms ` X) xs
-        | Match \<Rightarrow> map (\<lambda>X. (\<lambda>f. Table.tabulate f 0 n) ` Option.these (match tms ` X)) xs)),
+        | Simple \<Rightarrow> xs
+        | Match \<Rightarrow> map (\<lambda>X. tabulate_match (pred_cols tms) ` Option.these (match tms ` X)) xs)),
     MPred e tms mode)"
-| "meval n ts db (MLet p m \<phi> \<psi>) =
+| "meval n ts db (MLet p m cs \<phi> \<psi>) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
-      (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
-    in (ys, MLet p m \<phi> \<psi>))"
-| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
+      (ys, \<psi>) = meval n ts (Mapping.update (p, m) (map (reorder [0..<m] cs) xs) db) \<psi>
+    in (ys, MLet p m cs \<phi> \<psi>))"
+| "meval n ts db (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
-         zs0_out = drop (jfrz - jpsi0) zs0;
-         jpsi0 = jpsi0 + length zs0;
-         \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. meval n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) (jfrz - jpsi0) \<alpha>s;
-         jphi = jphi + length xs;
-         jfrz = jfrz + length zs0_out + length ys
-     in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
+         (rs, \<rho>) = meval n ts db0 \<rho>;
+         (zs0_out, jfrz, fl, \<alpha>s, lr) =
+           (let zs0_out = drop (jfrz - jpsi0) zs0;
+                \<alpha>s0 = \<alpha>s @ map (reorder [0..<m] cs) xs;
+                \<alpha>s1 = drop (jfrz - jphi + length zs0_out) \<alpha>s0
+            in (zs0_out, jfrz + length zs0_out, frz_fill ng \<alpha>s0, \<alpha>s1,
+              case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+                if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+                then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+                else None));
+         (ys, \<alpha>s', lv, \<rho>, w, pR, tq, rb) = frz_live_loop size (meval n) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
+           fl d po j jfrz \<alpha>s lr (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+             drop (min jfrz (pR + length rs) - (pR - length rb)) (rb @ rs))
+     in (zs0_out @ ys, MFrz p m cs \<phi> \<psi> (jfrz + length ys) (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> w pR tq rb d po ng
+       (frz_keep_lv (if po then None else lv) \<rho>L) (frz_keep_st (if po then None else lv) \<rho>L)))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
-      (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
+      (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
     in (zs, MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf))"
-| "meval n ts db (MLetPast p m \<phi> \<psi> i buf) =
-    (let (xs, i, buf, \<phi>) = letpast_meval0 (meval m) j i [] (list_of_option buf) (p, m) ts db \<phi>;
+| "meval n ts db (MLetPast p m cs \<phi> \<psi> i buf) =
+    (let (xs, i, buf, \<phi>) = letpast_meval0 (\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval m ts db \<phi>))
+           j i [] (list_of_option buf) (p, m) ts db \<phi>;
          (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
-    in (ys, MLetPast p m \<phi> \<psi> i buf))"
-| "meval n ts db (MAndAssign \<phi> conf) =
+    in (ys, MLetPast p m cs \<phi> \<psi> i buf))"
+| "meval n ts db (MAndAssign cs \<phi> conf) =
     (let (xs, \<phi>) = meval n ts db \<phi> in
-    (map (\<lambda>(r). (eval_assignment conf ` r)) xs, MAndAssign \<phi> conf))"
-| "meval n ts db (MAndRel \<phi> conf) =
-    (let (xs, \<phi>) = meval n ts db \<phi> in (map (\<lambda>(r). (Set.filter (eval_constraint conf) r)) xs, MAndRel \<phi> conf))"
+    (map (\<lambda>(r). (eval_assignment cs conf ` r)) xs, MAndAssign cs \<phi> conf))"
+| "meval n ts db (MAndRel cs \<phi> conf) =
+    (let (xs, \<phi>) = meval n ts db \<phi> in (map (\<lambda>(r). (Set.filter (eval_constraint cs conf) r)) xs, MAndRel cs \<phi> conf))"
 | "meval n ts db (MAndTrigger V_\<phi> \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) = (let
     (as, \<phi>) = meval n ts db \<phi>;
     (xs, \<phi>') = meval n ts db \<phi>';
@@ -1759,24 +2442,24 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
         in (zs @ [(fv_z, z)], aux)) ([], aux) (mbuf2_add xs ys buf2) (nts @ ts);
      \<comment> \<open>analogous to MAnd\<close>
     (zs, buf1) = mbuf2_take (\<lambda>r1 (V_trigger, r2).
-        bin_join n V_\<phi> r1 True V_trigger r2 \<comment> \<open>fix pos=True for the and join\<close>
+        bin_join V_\<phi> r1 True V_trigger r2 \<comment> \<open>fix pos=True for the and join\<close>
     ) (mbuf2_add as zs_trigger buf1)
     in
     (zs, MAndTrigger V_\<phi> \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux)
 )"
-| "meval n ts db (MAnds A_pos A_neg L buf) =
+| "meval n ts db (MAnds cs A_pos A_neg L buf) =
     (let R = map (meval n ts db) L in
     let buf = mbufn_add (map fst R) buf in
-    let (zs, buf) = mbufn_take (\<lambda>xs zs. zs @ [mmulti_join n A_pos A_neg xs]) [] buf in
-    (zs, MAnds A_pos A_neg (map snd R) buf))"
-| "meval n ts db (MOr \<phi> \<psi> buf) =
+    let (zs, buf) = mbufn_take (\<lambda>xs zs. zs @ [mmulti_join cs A_pos A_neg xs]) [] buf in
+    (zs, MAnds cs A_pos A_neg (map snd R) buf))"
+| "meval n ts db (MOr cs1 \<phi> cs2 \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
-      (zs, buf) = mbuf2_take (\<lambda>(r1) (r2). (r1 \<union> r2)) (mbuf2_add xs ys buf)
-    in (zs, MOr \<phi> \<psi> buf))"
+      (zs, buf) = mbuf2_take (\<lambda>(r1) (r2). (r1 \<union> reorder cs1 cs2 r2)) (mbuf2_add xs ys buf)
+    in (zs, MOr cs1 \<phi> cs2 \<psi> buf))"
 | "meval n ts db (MNeg \<phi>) =
-    (let (xs, \<phi>) = meval n ts db \<phi> in (map (\<lambda>(r). (if r = empty_table then (unit_table n) else (empty_table))) xs, MNeg \<phi>))"
-| "meval n ts db (MExists \<phi>) =
-    (let (xs, \<phi>) = meval (Suc n) ts db \<phi> in (map (\<lambda>r. tl ` r) xs, MExists \<phi>))"
+    (let (xs, \<phi>) = meval n ts db \<phi> in (map (\<lambda>(r). (if r = empty_table then unit_table else empty_table)) xs, MNeg \<phi>))"
+| "meval n ts db (MExists cs \<phi>) =
+    (let (xs, \<phi>) = meval (Suc n) ts db \<phi> in (map (\<lambda>r. ex_proj cs ` r) xs, MExists cs \<phi>))"
 | "meval n ts db (MAgg args \<phi>) =
     (let (xs, \<phi>) = meval (length (aggargs_tys args) + n) ts db \<phi> in (map (eval_aggargs args) xs, MAgg args \<phi>))"
 | "meval n ts db (MPrev I \<phi> first buf nts) =
@@ -1805,20 +2488,19 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             (fv_z, z) = result_mtaux args aux
         in (zs @ [(z)], aux)) ([], aux) (mbuf2_add xs ys buf) (nts @ ts)
     in (zs, MTrigger args \<phi> \<psi> buf nts aux))"
-| "meval n ts db (MMatchP I mr mrs \<phi>s buf nts aux) =
+| "meval n ts db (MMatchP I cs dss mr mrs \<phi>s buf nts aux) =
     (let (xss, \<phi>s) = map_split id (map (meval n ts db) \<phi>s);
       ((zs, aux), buf, _, nts) = mbufnt_take (\<lambda>rels t (zs, aux).
-        let (z, aux) = update_matchP n I mr mrs rels t aux
+        let (z, aux) = update_matchP cs dss I mr mrs rels t aux
         in (zs @ [z], aux)) ([], aux) (mbufn_add xss buf) 0 (nts @ ts)
-    in (zs, MMatchP I mr mrs \<phi>s buf nts aux))"
-| "meval n ts db (MMatchF I mr mrs \<phi>s buf nts t aux) =
+    in (zs, MMatchP I cs dss mr mrs \<phi>s buf nts aux))"
+| "meval n ts db (MMatchF I cs dss mr mrs \<phi>s buf nts t aux) =
     (let (xss, \<phi>s) = map_split id (map (meval n ts db) \<phi>s);
-      (aux, buf, nt, nts') = mbufnt_take (update_matchF n I mr mrs) aux (mbufn_add xss buf) t (nts @ ts);
+      (aux, buf, nt, nts') = mbufnt_take (update_matchF cs dss I mr mrs) aux (mbufn_add xss buf) t (nts @ ts);
       (zs, aux) = eval_matchF I mr nt aux
-    in (zs, MMatchF I mr mrs \<phi>s buf nts' nt aux))"
-| "meval n ts db (MTP mt i) = (map (\<lambda>x. eval_mtrm n mt (EInt (integer_of_nat x))) [i..<j], MTP mt j)"
-| "meval n ts db (MTS mt) = (map (\<lambda>x. eval_mtrm n mt (EInt (integer_of_nat x))) ts, MTS mt)"
-  by pat_completeness auto
+    in (zs, MMatchF I cs dss mr mrs \<phi>s buf nts' nt aux))"
+| "meval n ts db (MTP mt i) = (map (\<lambda>x. eval_mtrm mt (EInt (integer_of_nat x))) [i..<j], MTP mt j)"
+| "meval n ts db (MTS mt) = (map (\<lambda>x. eval_mtrm mt (EInt (integer_of_nat x))) ts, MTS mt)"  by pat_completeness (simp_all only: prod.inject mformula.inject mformula.distinct simp_thms)
 
 lemma size_list_cong: "xs = ys \<Longrightarrow> (\<And>x. x \<in> set xs \<Longrightarrow> f x = g x) \<Longrightarrow> size_list f xs = size_list g ys"
   by (induct xs arbitrary: ys) auto
@@ -1831,15 +2513,96 @@ lemma map_split_eq_Pair_iff: "map_split f xs = (ys, zs) \<longleftrightarrow> ys
 
 lemma
   psize_snd_meval: "meval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meval n t db \<phi>)) = size \<phi>"
-  apply (induct rule: meval.pinduct)
-                      apply (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
-   apply (metis snd_conv size_letpast_meval)
-  apply simp
-  done
+proof (induct rule: meval.pinduct)
+  case (6 n ts db p m cs \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>MLetPast\<close>\<close>
+  let ?eval = "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval m ts db \<phi>)"
+  obtain xs i' buf' \<phi>' where lp: "letpast_meval0 ?eval j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have "size (snd (snd (snd (letpast_meval0 ?eval j i [] (list_of_option buf) (p, m) ts db \<phi>)))) = size \<phi>"
+    using 6(2) by (intro size_letpast_meval) simp
+  then have size_\<phi>': "size \<phi>' = size \<phi>"
+    by (simp add: lp)
+  obtain ys \<psi>' where \<psi>': "meval n ts (Mapping.update (p, m) xs db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>': "size \<psi>' = size \<psi>"
+    using 6(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
+  show ?case
+    using size_\<phi>' size_\<psi>' by (simp add: meval.psimps(6)[OF 6(1)] lp \<psi>')next
+  case (15 n ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>MPrev\<close>\<close>
+  obtain xs \<phi>' where \<phi>': "meval n ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs buf' nts' where mp: "mprev_next I (buf @ xs) (nts @ ts) = (zs, buf', nts')"
+    by (metis prod_cases3)
+  have "size \<phi>' = size \<phi>"
+    using 15(2) \<phi>' by simp
+  then show ?case
+    by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
+next
+  case (4 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) \<comment> \<open>\<^const>\<open>MFrz\<close>\<close>
+  let ?db0 = "Mapping.update (p, m) [] db"
+  obtain xs \<phi>' where \<phi>': "meval m ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs0 \<psi>' where \<psi>': "meval n ts ?db0 \<psi> = (zs0, \<psi>')"
+    by fastforce
+  obtain rs \<rho>' where \<rho>': "meval n ts ?db0 \<rho> = (rs, \<rho>')"
+    by fastforce
+  have s\<phi>: "size \<phi>' = size \<phi>"
+    using 4(2) \<phi>' by simp
+  have s\<psi>: "size \<psi>' = size \<psi>"
+    using 4(3)[OF \<phi>'[symmetric] refl refl] \<psi>' by simp
+  have s\<rho>: "size \<rho>' = size \<rho>"
+    using 4(4)[OF \<phi>'[symmetric] refl refl \<psi>'[symmetric] refl] \<rho>' by simp
+  obtain zo jf fl as lr where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s0 = \<alpha>s @ map (reorder [0..<m] cs) xs;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) \<alpha>s0
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng \<alpha>s0, \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None)) = (zo, jf, fl, as, lr)"
+    by (rule prod_cases5)
+  obtain ys as' lv' s' where lp0: "frz_live_loop size (meval n) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
+      fl d po j jf as lr (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s')"
+    by (metis prod_cases4)
+  obtain \<rho>'' w' pR' tq' rb' where s': "s' = (\<rho>'', w', pR', tq', rb')"
+    by (metis prod_cases5)
+  have s\<rho>'': "size \<rho>'' = size \<rho>"
+    using frz_live_loop_size[OF lp0] s\<rho> s' by simp
+  have "snd (meval n ts db (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) =
+    MFrz p m cs \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L)"
+    by (simp only: meval.psimps(4)[OF 4(1)] \<phi>' \<psi>' \<rho>' st lp0[unfolded s'] Let_def[where s = ?db0]
+        Let_def[where s = "(xs, \<phi>')"] Let_def[where s = "(zs0, \<psi>')"] Let_def[where s = "(rs, \<rho>')"]
+        Let_def[where s = "(zo, jf, fl, as, lr)"] Let_def[where s = "(ys, as', lv', \<rho>'', w', pR', tq', rb')"]
+        prod.case snd_conv)
+  then show ?case
+    using s\<phi> s\<psi> s\<rho>'' by simp
+  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
+qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply size_frz_keep_st cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
-  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
+proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
+  text \<open>The live copy is a subterm.  The copies and the window's moves evaluate a replay base of
+    the size of the one the node holds (@{const frz_live_loop}): left to the automation below, this
+    case takes long, since the many equations of the body's @{text let}s are tried in both
+    orientations.
 
+    The equation for @{const MFrz} computes the values each stage needs inside the bound term of
+    that stage's recursive call and returns them as a tuple, so that only a few pair @{text let}s
+    follow the calls.  With the values bound one by one at the top level, the definition takes
+    minutes instead of seconds: the function package's congruence steps unify over the whole
+    chain of @{text let}s that follows a call.\<close>
+  case 7 \<comment> \<open>the live copy, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case (8 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb xg xh
+    yc xi yd xj yca xk ycb tsa dba \<psi>')
+  have "size yb = size \<rho>"
+    using psize_snd_meval[of n ts xb \<rho>] 8 by (metis snd_conv)
+  then show ?case
+    using 8 by simp
+qed (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
 
 termination meval
@@ -1852,48 +2615,126 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
     MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS]:
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
-   (\<And>p m \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m \<phi> \<psi>)) \<Longrightarrow>
-   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)) \<Longrightarrow>
-   (\<And>p m \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m \<phi> \<psi> i buf)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m cs \<phi> \<psi>)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
+     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m cs \<phi> \<psi> i buf)) \<Longrightarrow>
    (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
-   (\<And>\<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign \<phi> conf)) \<Longrightarrow>
-   (\<And>\<phi> conf. P \<phi> \<Longrightarrow> P (MAndRel \<phi> conf)) \<Longrightarrow>
+   (\<And>cs \<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign cs \<phi> conf)) \<Longrightarrow>
+   (\<And>cs \<phi> conf. P \<phi> \<Longrightarrow> P (MAndRel cs \<phi> conf)) \<Longrightarrow>
    (\<And>args A_\<phi> \<phi> \<phi>' \<psi>' tbuf buf nts aux. P \<phi> \<Longrightarrow> P \<phi>' \<Longrightarrow> P \<psi>' \<Longrightarrow> P (MAndTrigger A_\<phi> \<phi> tbuf args \<phi>' \<psi>' buf nts aux)) \<Longrightarrow>
-   (\<And>A_pos A_neg L buf. (\<And>\<phi>. \<phi> \<in> set L \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MAnds A_pos A_neg L buf)) \<Longrightarrow>
-   (\<And> \<phi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MOr \<phi> \<psi> buf)) \<Longrightarrow>
+   (\<And>cs A_pos A_neg L buf. (\<And>\<phi>. \<phi> \<in> set L \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MAnds cs A_pos A_neg L buf)) \<Longrightarrow>
+   (\<And>cs1 \<phi> cs2 \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MOr cs1 \<phi> cs2 \<psi> buf)) \<Longrightarrow>
    (\<And>\<phi>. P \<phi> \<Longrightarrow> P (MNeg \<phi>)) \<Longrightarrow>
-   (\<And>\<phi>. P \<phi> \<Longrightarrow> P (MExists \<phi>)) \<Longrightarrow>
+   (\<And>cs \<phi>. P \<phi> \<Longrightarrow> P (MExists cs \<phi>)) \<Longrightarrow>
    (\<And>args \<phi>. P \<phi> \<Longrightarrow> P (MAgg args \<phi>)) \<Longrightarrow>
    (\<And>I \<phi> first buf nts. P \<phi> \<Longrightarrow> P (MPrev I \<phi> first buf nts)) \<Longrightarrow>
    (\<And>I \<phi> first nts. P \<phi> \<Longrightarrow> P (MNext I \<phi> first nts)) \<Longrightarrow>
    (\<And>args \<phi> \<psi> buf aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MSince args \<phi> \<psi> buf aux)) \<Longrightarrow>
    (\<And>args \<phi> \<psi> buf nts t aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MUntil args \<phi> \<psi> buf nts t aux)) \<Longrightarrow>
    (\<And>args \<phi> \<psi> buf nts aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MTrigger args \<phi> \<psi> buf nts aux)) \<Longrightarrow>
-   (\<And>I mr mrs \<phi>s buf nts aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchP I mr mrs \<phi>s buf nts aux)) \<Longrightarrow>
-   (\<And>I mr mrs \<phi>s buf nts t aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchF I mr mrs \<phi>s buf nts t aux)) \<Longrightarrow>
+   (\<And>I cs dss mr mrs \<phi>s buf nts aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchP I cs dss mr mrs \<phi>s buf nts aux)) \<Longrightarrow>
+   (\<And>I cs dss mr mrs \<phi>s buf nts t aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchF I cs dss mr mrs \<phi>s buf nts t aux)) \<Longrightarrow>
    (\<And>mt i. P (MTP mt i)) \<Longrightarrow>
    (\<And>mt. P (MTS mt)) \<Longrightarrow>
    P mf"
-  apply (induct "size mf" arbitrary: mf rule: less_induct)
-  subgoal for mf
-    apply (cases mf) 
-    apply (auto simp: termination_simp)
-    done
-  done
+proof (induct "size mf" arbitrary: mf rule: less_induct)
+  case less
+  have IH: "P \<psi>" if "size \<psi> < size mf" for \<psi>
+    using that less.prems by (rule less.hyps)
+  have IH_set: "P \<phi>" if "\<phi> \<in> set \<phi>s" "size_list size \<phi>s < size mf" for \<phi> \<phi>s
+    using size_list_estimation'[OF that(1), of "size \<phi>" size] that(2) by (intro IH) simp
+  show ?case
+  proof (cases mf)
+    case (MRel rel)
+    show ?thesis unfolding MRel by (rule less.prems(1))
+  next
+    case (MPred e ts mode)
+    show ?thesis unfolding MPred by (rule less.prems(2))
+  next
+    case (MLet p m cs \<phi> \<psi>)
+    show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
+  next
+    case (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
+    show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
+  next
+    case (MLetPast p m cs \<phi> \<psi> i buf)
+    show ?thesis unfolding MLetPast by (rule less.prems(5)) (rule IH, simp add: MLetPast)+
+  next
+    case (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)
+    show ?thesis unfolding MAnd by (rule less.prems(6)) (rule IH, simp add: MAnd)+
+  next
+    case (MAndAssign cs \<phi> conf)
+    show ?thesis unfolding MAndAssign by (rule less.prems(7)) (rule IH, simp add: MAndAssign)
+  next
+    case (MAndRel cs \<phi> conf)
+    show ?thesis unfolding MAndRel by (rule less.prems(8)) (rule IH, simp add: MAndRel)
+  next
+    case (MAndTrigger A_\<phi> \<phi> tbuf args \<phi>' \<psi>' buf nts aux)
+    show ?thesis unfolding MAndTrigger by (rule less.prems(9)) (rule IH, simp add: MAndTrigger)+
+  next
+    case (MAnds cs A_pos A_neg L buf)
+    show ?thesis unfolding MAnds by (rule less.prems(10)) (rule IH_set, assumption, simp add: MAnds)
+  next
+    case (MOr cs1 \<phi> cs2 \<psi> buf)
+    show ?thesis unfolding MOr by (rule less.prems(11)) (rule IH, simp add: MOr)+
+  next
+    case (MNeg \<phi>)
+    show ?thesis unfolding MNeg by (rule less.prems(12)) (rule IH, simp add: MNeg)
+  next
+    case (MExists cs \<phi>)
+    show ?thesis unfolding MExists by (rule less.prems(13)) (rule IH, simp add: MExists)
+  next
+    case (MAgg args \<phi>)
+    show ?thesis unfolding MAgg by (rule less.prems(14)) (rule IH, simp add: MAgg)
+  next
+    case (MPrev I \<phi> first buf nts)
+    show ?thesis unfolding MPrev by (rule less.prems(15)) (rule IH, simp add: MPrev)
+  next
+    case (MNext I \<phi> first nts)
+    show ?thesis unfolding MNext by (rule less.prems(16)) (rule IH, simp add: MNext)
+  next
+    case (MSince args \<phi> \<psi> buf aux)
+    show ?thesis unfolding MSince by (rule less.prems(17)) (rule IH, simp add: MSince)+
+  next
+    case (MUntil args \<phi> \<psi> buf nts t aux)
+    show ?thesis unfolding MUntil by (rule less.prems(18)) (rule IH, simp add: MUntil)+
+  next
+    case (MTrigger args \<phi> \<psi> buf nts aux)
+    show ?thesis unfolding MTrigger by (rule less.prems(19)) (rule IH, simp add: MTrigger)+
+  next
+    case (MMatchP I cs dss mr mrs \<phi>s buf nts aux)
+    show ?thesis unfolding MMatchP by (rule less.prems(20)) (rule IH_set, assumption, simp add: MMatchP)
+  next
+    case (MMatchF I cs dss mr mrs \<phi>s buf nts t aux)
+    show ?thesis unfolding MMatchF by (rule less.prems(21)) (rule IH_set, assumption, simp add: MMatchF)
+  next
+    case (MTP mt i)
+    show ?thesis unfolding MTP by (rule less.prems(22))
+  next
+    case (MTS mt)
+    show ?thesis unfolding MTS by (rule less.prems(23))
+  qed
+qed
 
-definition "letpast_meval m j = letpast_meval0 (meval j m) j"
+definition "letpast_meval m cs j =
+  letpast_meval0 (\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval j m ts db \<phi>)) j"
 
 lemma letpast_meval_code[code]:
-  "letpast_meval m j i ys xs p ts db \<phi> =
-     (let (ys', \<phi>') = meval j m ts (Mapping.update p xs db) \<phi> in
+  "letpast_meval m cs j i ys xs p ts db \<phi> =
+     (let (ys', \<phi>') = apfst (map (reorder [0..<m] cs)) (meval j m ts (Mapping.update p xs db) \<phi>) in
        (case ys' of
          [] \<Rightarrow> (ys @ ys', i + length xs, None, \<phi>')
        | y # _ \<Rightarrow> (if Suc (i + length xs) \<ge> j then (ys @ ys', i + length xs, Some y, \<phi>')
-           else letpast_meval m j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))"
-  apply (subst letpast_meval0.simps[where eval="meval j m" and j=j for j m t, folded letpast_meval_def])
-  apply (auto split: prod.splits simp: Let_def)
-  apply (metis size_snd_meval snd_conv)+
-  done
+           else letpast_meval m cs j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))"
+proof -
+  obtain ys' \<phi>' where ev: "meval j m ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have "size \<phi>' = size \<phi>"
+    using size_snd_meval[of j m ts "Mapping.update p xs db" \<phi>] ev by simp
+  then show ?thesis
+    unfolding letpast_meval_def by (subst (1) letpast_meval0.simps) (simp add: ev)
+qed
 
 declare meval.simps[simp del]
 lemmas meval_simps[simp] = meval.simps[folded letpast_meval_def]
@@ -1902,25 +2743,63 @@ lemma letpast_meval_induct[case_names step]:
   assumes step:
     "\<And>i ys xs p ts db \<phi>.
       (\<And>ys' \<phi>'.
-          (ys', \<phi>') = meval j m ts (Mapping.update p xs db) \<phi> \<Longrightarrow>
+          (ys', \<phi>') = apfst (map (reorder [0..<m] cs)) (meval j m ts (Mapping.update p xs db) \<phi>) \<Longrightarrow>
           ys' \<noteq> [] \<Longrightarrow>
           Suc (i + length xs) < j \<Longrightarrow>
           P (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>') \<Longrightarrow>
       P i ys xs p ts db \<phi>"
   shows "P i ys xs p ts db \<phi>"
-  apply (induction eval\<equiv>"meval j m" j\<equiv>j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
-  apply (rule step, auto simp: neq_Nil_conv)
-  apply (metis size_snd_meval snd_conv)
-  done
-
+proof (induction eval\<equiv>"\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval j m ts db \<phi>)" j\<equiv>j i ys xs p ts db \<phi>
+    rule: letpast_meval0.induct)
+  case (1 i ys xs p ts db \<phi>)
+  show ?case
+  proof (rule step)
+    fix ys' \<phi>'
+    assume ev: "(ys', \<phi>') = apfst (map (reorder [0..<m] cs)) (meval j m ts (Mapping.update p xs db) \<phi>)"
+      and ne: "ys' \<noteq> []" and lt: "Suc (i + length xs) < j"
+    from ne obtain y ys'' where ys': "ys' = y # ys''"
+      by (auto simp: neq_Nil_conv)
+    have "size \<phi>' = size \<phi>"
+      using size_snd_meval[of j m ts "Mapping.update p xs db" \<phi>] ev[symmetric]
+      by (cases "meval j m ts (Mapping.update p xs db) \<phi>") simp
+    then show "P (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      using 1[OF ev refl _ ys'] lt by simp
+  qed
+qed
 
 lemma letpast_meval_ys: 
-  "(ys', i', buf', \<phi>f) = letpast_meval m j i ys xs p ts db \<phi> \<Longrightarrow> \<exists> zs. ys' = ys@zs"
-  apply (induction i ys xs p ts db \<phi> arbitrary: i' buf' ys' \<phi>f taking: m j rule: letpast_meval_induct)
-  apply(subst(asm)(2) letpast_meval_code)
-  apply(fastforce simp add: Let_def split:prod.splits list.splits if_splits)
-  done
-
+  "(ys', i', buf', \<phi>f) = letpast_meval m cs j i ys xs p ts db \<phi> \<Longrightarrow> \<exists> zs. ys' = ys@zs"
+proof (induction i ys xs p ts db \<phi> arbitrary: i' buf' ys' \<phi>f rule: letpast_meval_induct[where m=m and cs=cs and j=j])
+  case (step i ys xs p ts db \<phi>)
+  obtain zs \<phi>' where ev: "apfst (map (reorder [0..<m] cs)) (meval j m ts (Mapping.update p xs db) \<phi>) = (zs, \<phi>')"
+    by fastforce
+  note code = letpast_meval_code[of m cs j i ys xs p ts db \<phi>]
+  show ?case
+  proof (cases zs)
+    case Nil
+    then show ?thesis
+      using step.prems ev by (simp add: code)
+  next
+    case (Cons y zs')
+    show ?thesis
+    proof (cases "j \<le> Suc (i + length xs)")
+      case True
+      then show ?thesis
+        using step.prems ev Cons by (simp add: code)
+    next
+      case False
+      then have "(ys', i', buf', \<phi>f) =
+        letpast_meval m cs j (i + length xs) (ys @ zs) zs p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+        using step.prems ev Cons by (simp add: code)
+      moreover have "zs \<noteq> []" "Suc (i + length xs) < j"
+        using Cons False by simp_all
+      ultimately obtain zs'' where "ys' = (ys @ zs) @ zs''"
+        using step.IH[OF ev[symmetric]] by blast
+      then show ?thesis
+        by simp
+    qed
+  qed
+qed
 end (* maux *)
 
 definition (in maux) mstep :: "database \<times> ts \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate \<Rightarrow>
@@ -1936,7 +2815,7 @@ definition (in maux) mstep :: "database \<times> ts \<Rightarrow> ('msaux, 'muau
 
 lift_definition mk_db :: "(Formula.name \<times> event_data list) set \<Rightarrow> database" is
   "\<lambda>X (p, n). (if (\<exists>ts. (p, ts) \<in> X \<and> n = length ts) 
-    then Some [map Some ` {ts. (p, ts) \<in> X \<and> n = length ts}] 
+    then Some [{ts. (p, ts) \<in> X \<and> n = length ts}] 
     else None)" .
 
 context maux

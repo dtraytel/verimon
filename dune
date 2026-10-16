@@ -1,16 +1,10 @@
 (alias
   (name default)
-  (deps (package monpoly) (package monpoly-tools)))
+  (deps (package verimon)))
 
 (env
   (dev
-    (flags :standard -warn-error -A -w -27-32..39-50)
-    (js_of_ocaml
-      (flags --pretty --no-inline --debug-info --source-map --enable effects)
-      (build_runtime_flags (:standard --enable effects))))
+    (flags :standard -warn-error -A -w -27-32..39-50))
   (release
     (flags :standard -warn-error -A -w -27-32..39-50)
-    (ocamlopt_flags (:standard -O3))
-    (js_of_ocaml
-      (flags --opt 3 --enable effects)
-      (build_runtime_flags (:standard --enable effects)))))
+    (ocamlopt_flags (:standard -O3))))

@@ -7,7 +7,6 @@ session "Generic_Join_Devel" (AFP) = "Containers" +
 	Generic_Join
 	Generic_Join_Correctness
 	Proj_Code
-	Examples_Join
   document_files
     "root.bib"
     "root.tex"

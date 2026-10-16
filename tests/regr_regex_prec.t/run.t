@@ -11,9 +11,6 @@ and produced nothing at tp0. At tp1 both R and S hold, so the `R(x)? S(x)?`
 branch matches under both parses (output 9).
 
   $ echo 'MATCHF[0,5] (R(x)? S(x)? + T(x)?)' > regex.mfotl
-  $ monpoly -sig regex.sig -formula regex.mfotl -log regex.log
-  @0 (time point 0): (5)
-  @1 (time point 1): (9)
-  $ monpoly -verified -sig regex.sig -formula regex.mfotl -log regex.log
+  $ verimon -sig regex.sig -formula regex.mfotl -log regex.log
   @0 (time point 0): (5)
   @1 (time point 1): (9)

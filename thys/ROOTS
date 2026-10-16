@@ -1,5 +1,8 @@
 MFOTL_Monitor_Devel
 Generic_Join_Devel
 MFODL_Monitor_Devel
-Multi_Source_Devel
-Testing_Verified_Monitor
+MFODL_Monitor_Exec
+Log_Parser
+grammar
+MFODL_Parser
+VeriMon_CLI

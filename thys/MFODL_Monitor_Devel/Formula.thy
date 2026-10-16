@@ -315,6 +315,122 @@ lemma fvi_Suc_bound:
 lemma fvi_iff_fv: "x \<in> fvi b \<phi> \<longleftrightarrow> x + b \<in> fv \<phi>"
   using fvi_plus[where b=0 and c=b] by simp_all
 
+subsubsection \<open>Free variables as column lists\<close>
+
+text \<open>The free variables in the order in which MonPoly lists them (its @{text free_vars}):
+  by first occurrence from left to right, except that the temporal operators Since, Until,
+  Trigger and Release list the variables of their right operand first, and an aggregation
+  lists its result variable first.  The OCaml adapter numbers the free variables of the
+  monitored formula by their position in MonPoly's list, so the columns of a formula at the
+  top level are then @{term "[0..<n]"} (up to the order of the group variables of an
+  aggregation, which MonPoly takes from the formula's syntax).\<close>
+
+qualified primrec fvi_trm_list :: "nat \<Rightarrow> trm \<Rightarrow> nat list" where
+  "fvi_trm_list b (Var x) = (if b \<le> x then [x - b] else [])"
+| "fvi_trm_list b (Const _) = []"
+| "fvi_trm_list b (Plus x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (Minus x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (UMinus x) = fvi_trm_list b x"
+| "fvi_trm_list b (Mult x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (Div x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (Mod x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (F2i x) = fvi_trm_list b x"
+| "fvi_trm_list b (I2f x) = fvi_trm_list b x"
+
+abbreviation "fv_trm_list \<equiv> fvi_trm_list 0"
+
+qualified primrec fv_regex_list :: "('a \<Rightarrow> nat list) \<Rightarrow> 'a Regex.regex \<Rightarrow> nat list" where
+  "fv_regex_list f (Regex.Skip n) = []"
+| "fv_regex_list f (Regex.Test \<phi>) = f \<phi>"
+| "fv_regex_list f (Regex.Plus r s) = cols_union (fv_regex_list f r) (fv_regex_list f s)"
+| "fv_regex_list f (Regex.Times r s) = cols_union (fv_regex_list f r) (fv_regex_list f s)"
+| "fv_regex_list f (Regex.Star r) = fv_regex_list f r"
+
+lemma fv_regex_list_cong[fundef_cong]:
+  "r = r' \<Longrightarrow> (\<And>z. z \<in> Regex.atms r \<Longrightarrow> f z = f' z) \<Longrightarrow> fv_regex_list f r = fv_regex_list f' r'"
+  by (induct r arbitrary: r') auto
+
+qualified fun fvi_list :: "nat \<Rightarrow> 't formula \<Rightarrow> nat list" where
+  "fvi_list b (Pred r ts) = fold (\<lambda>t cs. cols_union cs (fvi_trm_list b t)) ts []"
+| "fvi_list b (Let p \<phi> \<psi>) = fvi_list b \<psi>"
+| "fvi_list b (Frz p \<phi> \<psi>) = fvi_list b \<psi>"
+| "fvi_list b (LetPast p \<phi> \<psi>) = fvi_list b \<psi>"
+| "fvi_list b (Eq t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (Less t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (LessEq t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (Neg \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Or \<phi> \<psi>) = cols_union (fvi_list b \<phi>) (fvi_list b \<psi>)"
+| "fvi_list b (And \<phi> \<psi>) = cols_union (fvi_list b \<phi>) (fvi_list b \<psi>)"
+| "fvi_list b (Ands \<phi>s) = fold (\<lambda>\<phi> cs. cols_union cs (fvi_list b \<phi>)) \<phi>s []"
+| "fvi_list b (Exists t \<phi>) = fvi_list (Suc b) \<phi>"
+| "fvi_list b (Agg y \<omega> tys f \<phi>) = cols_union (if b \<le> y then [y - b] else [])
+    (cols_union (fvi_list (b + length tys) \<phi>) (fvi_trm_list (b + length tys) f))"
+| "fvi_list b (Prev I \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Next I \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Since \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Until \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Trigger \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Release \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (MatchF I r) = fv_regex_list (fvi_list b) r"
+| "fvi_list b (MatchP I r) = fv_regex_list (fvi_list b) r"
+| "fvi_list b (TP t) = fvi_trm_list b t"
+| "fvi_list b (TS t) = fvi_trm_list b t"
+
+abbreviation "fv_list \<equiv> fvi_list 0"
+
+lemma set_fvi_trm_list[simp]: "set (fvi_trm_list b t) = fvi_trm b t"
+  by (induction t) simp_all
+
+lemma distinct_fvi_trm_list[simp]: "distinct (fvi_trm_list b t)"
+  by (induction t) simp_all
+
+lemma set_fv_regex_list[simp]: "set (fv_regex_list f r) = Regex.fv_regex (\<lambda>\<phi>. set (f \<phi>)) r"
+  by (induction r) simp_all
+
+lemma distinct_fv_regex_list:
+  "(\<And>z. z \<in> Regex.atms r \<Longrightarrow> distinct (f z)) \<Longrightarrow> distinct (fv_regex_list f r)"
+  by (induction r) simp_all
+
+lemma set_fvi_list[simp]: "set (fvi_list b \<phi>) = fvi b \<phi>"
+  by (induction b \<phi> rule: fvi_list.induct)
+    (auto simp: set_fold_cols_union fv_regex_alt)
+
+lemma distinct_fvi_list[simp]: "distinct (fvi_list b \<phi>)"
+  by (induction b \<phi> rule: fvi_list.induct)
+    (simp_all add: distinct_fold_cols_union distinct_fv_regex_list)
+
+lemma fvi_trm_list_Suc: "fvi_trm_list (Suc b) t = ex_cols (fvi_trm_list b t)"
+  by (induction t) (auto simp: ex_cols_Cons ex_cols_cols_union)
+
+lemma ex_cols_fv_regex_list:
+  "(\<And>z. z \<in> Regex.atms r \<Longrightarrow> ex_cols (f z) = g z) \<Longrightarrow> ex_cols (fv_regex_list f r) = fv_regex_list g r"
+  by (induction r) (simp_all add: ex_cols_cols_union)
+
+lemma fvi_list_Suc: "fvi_list (Suc b) \<phi> = ex_cols (fvi_list b \<phi>)"
+  by (induction b \<phi> rule: fvi_list.induct)
+    (auto simp: ex_cols_Cons ex_cols_cols_union ex_cols_fold_cols_union fvi_trm_list_Suc
+      ex_cols_fv_regex_list cong: fold_cong fv_regex_list_cong)
+
+text \<open>Under @{term k} binders, the columns are those at least @{term k}, shifted down.\<close>
+
+definition shift_cols :: "nat \<Rightarrow> nat list \<Rightarrow> nat list" where
+  "shift_cols k cs = map (\<lambda>x. x - k) (filter (\<lambda>x. k \<le> x) cs)"
+
+lemma shift_cols_0[simp]: "shift_cols 0 cs = cs"
+  by (simp add: shift_cols_def)
+
+lemma shift_cols_Suc: "shift_cols (Suc k) cs = ex_cols (shift_cols k cs)"
+  by (induction cs) (auto simp: shift_cols_def ex_cols_Cons)
+
+lemma set_shift_cols: "set (shift_cols k cs) = (\<lambda>x. x - k) ` {x \<in> set cs. k \<le> x}"
+  by (auto simp: shift_cols_def)
+
+lemma distinct_shift_cols: "distinct cs \<Longrightarrow> distinct (shift_cols k cs)"
+  by (auto simp: shift_cols_def distinct_map inj_on_def)
+
+lemma fvi_list_plus: "fvi_list (b + k) \<phi> = shift_cols k (fvi_list b \<phi>)"
+  by (induction k) (simp_all add: fvi_list_Suc shift_cols_Suc)
+
 qualified definition nfv :: "'t formula \<Rightarrow> nat" where
   "nfv \<phi> = Max (insert 0 (Suc ` fv \<phi>))"
 
@@ -474,7 +590,7 @@ next
    "next": "sat \<sigma> V v (i + 1) (Until \<phi> (subtract (\<Delta> \<sigma> (i + 1)) I) \<psi>)"
   from "next" obtain j where j: "i + 1 \<le> j" "mem ((subtract (\<Delta> \<sigma> (i + 1)) I)) (\<tau> \<sigma> j - \<tau> \<sigma> (i + 1))"
       "sat \<sigma> V v j \<psi>" "\<forall>k \<in> {i + 1 ..< j}. sat \<sigma> V v k \<phi>"
-    by (auto simp: diff_le_mono memL_mono)
+    unfolding sat.simps by blast
   from \<Delta> j(1,2) have "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)"
     by auto
   with now j(1,3,4) show ?L by (auto simp: le_eq_less_or_eq[of i] intro!: exI[of _ j])
@@ -505,7 +621,7 @@ next
    "prev": "sat \<sigma> V v (i - 1) (Since \<phi> (subtract (\<Delta> \<sigma> i) I) \<psi>)"
   from "prev" obtain j where j: "j \<le> i - 1" "mem (subtract (\<Delta> \<sigma> i) I) (\<tau> \<sigma> (i - 1) - \<tau> \<sigma> j)"
       "sat \<sigma> V v j \<psi>" "\<forall>k \<in> {j <.. i - 1}. sat \<sigma> V v k \<phi>"
-    by (auto simp: diff_le_mono2 memL_mono)
+    unfolding sat.simps by blast
   from \<Delta> i j(1,2) have "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)"
     by auto
   with now i j(1,3,4) show ?L by (auto simp: le_Suc_eq gr0_conv_Suc intro!: exI[of _ j])
@@ -533,7 +649,7 @@ next
   assume [simp]: "s \<in> Regex.lpd (sat \<sigma> V v) i r" and "sat \<sigma> V v (i + 1) (MatchF (subtract (\<Delta> \<sigma> (i + 1)) I) s)"
   then obtain j where "j > i" "Regex.match (sat \<sigma> V v) s (i + 1) j"
     "mem (subtract (\<Delta> \<sigma> (i + 1)) I) (\<tau> \<sigma> j - \<tau> \<sigma> (Suc i))"
-    by (auto simp: diff_le_mono memL_mono Suc_le_eq)
+    unfolding sat.simps Suc_eq_plus1[symmetric] Suc_le_eq by blast
   ultimately show ?L
     by (auto simp: le_diff_conv lpd_match intro!: exI[of _ j] bexI[of _ s])
 qed (auto simp: eps_match intro!: exI[of _ i])
@@ -657,9 +773,9 @@ next
   then show ?case unfolding fvi.simps sat.simps by (metis eval_trm_fv_cong)
 qed (auto 10 0 simp: Let_def split: nat.splits intro!: iff_exI)
 
-lemma sat_the_restrict: "fv \<phi> \<subseteq> A \<Longrightarrow> Formula.sat \<sigma> V (map the (restrict A v)) i \<phi> = Formula.sat \<sigma> V (map the v) i \<phi>"
-  by (rule sat_fv_cong) (auto intro!: map_the_restrict)
-
+lemma sat_val_restrict: "fv \<phi> \<subseteq> set ds \<Longrightarrow> fv \<phi> \<subseteq> {..<n} \<Longrightarrow>
+  Formula.sat \<sigma> V (val n ds (restrict ds cs v)) i \<phi> = Formula.sat \<sigma> V (val n cs v) i \<phi>"
+  by (rule sat_fv_cong) (auto intro!: val_restrict)
 lemma sat_the_update: "y \<notin> fv \<phi> \<Longrightarrow> Formula.sat \<sigma> V (map the (x[y:=z])) i \<phi> = Formula.sat \<sigma> V (map the x) i \<phi>"
   by (rule sat_fv_cong) (metis map_update nth_list_update_neq)
 
@@ -911,36 +1027,105 @@ lemma contains_pred_release_safe_bounded [simp]: "contains_pred p (release_safe_
 
 lemma not_contains_pred_sat[simp]: 
   "\<not> contains_pred p \<phi> \<Longrightarrow> Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<phi> = Formula.sat \<sigma> V v i \<phi>"
-  apply(induct p \<phi> arbitrary: V v x i rule: contains_pred.induct)
-                      apply(simp_all add:  split: nat.splits cong: match_cong)
-    apply (erule conjE)
-    apply (erule disjE_Not2)
-     apply auto []
-    apply (auto) []
-       apply (metis (no_types, lifting) fun_upd_twist)
-      apply (metis (no_types, lifting) fun_upd_twist)
-     apply (metis (no_types, lifting) fun_upd_twist)
-    apply (metis (no_types, lifting) fun_upd_twist)
-   apply (erule conjE)
-   apply (erule disjE_Not2)
-    apply auto []
-   apply(clarsimp simp add: Let_def)
-   apply(erule impCE)
-  subgoal for p n e \<phi> \<psi> V v x i
-    apply(rule ccontr)
-    apply(simp add: fun_upd_twist[of "(p, n)" "(e, Formula.nfv \<phi>)"])
-    done
-   apply simp
-  apply (erule disjE_Not2)
-   apply auto []
-  apply(clarsimp simp add: Let_def)
-  apply(erule impCE)
-  subgoal for p n e \<phi> \<psi> V v x i
-    apply(rule ccontr)
-    apply(simp add: fun_upd_twist[of "(p, n)" "(e, Formula.nfv \<phi>)"])
-    done
-  apply simp
-  done
+  supply fun_upd_apply[simp del] \<comment> \<open>keep the updates of @{term V} symbolic\<close>
+proof (induction p \<phi> arbitrary: V v x i rule: contains_pred.induct)
+  case (5 p e \<phi> \<psi> V v x i)
+  let ?q = "(e, Formula.nfv \<phi>)"
+  let ?F = "\<lambda>V w j. Formula.sat \<sigma> V w j \<phi>"
+  have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+    Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+  proof (cases "contains_pred p \<phi>")
+    case True
+    with "5.prems" have q: "\<not> contains_pred ?q \<psi>" and p: "p \<noteq> ?q \<Longrightarrow> \<not> contains_pred p \<psi>"
+      by auto
+    from q have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+      Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<psi>"
+      by (rule "5.IH"(2))
+    also have "\<dots> = Formula.sat \<sigma> V v i \<psi>"
+      using q p by (cases "p = ?q") (simp_all add: "5.IH"(2,3))
+    also have "\<dots> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+      using q by (rule "5.IH"(2)[symmetric])
+    finally show ?thesis .
+  next
+    case False
+    then have "\<And>w j. Formula.sat \<sigma> (V(p \<mapsto> x)) w j \<phi> = Formula.sat \<sigma> V w j \<phi>"
+      by (rule "5.IH"(1))
+    moreover have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F V)) v i \<psi> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+    proof (cases "p = ?q")
+      case False
+      with "5.prems" have "\<not> contains_pred p \<psi>"
+        by simp
+      with False show ?thesis
+        by (simp add: fun_upd_twist[OF False] "5.IH"(3))
+    qed simp
+    ultimately show ?thesis
+      by simp
+  qed
+  then show ?case
+    by simp
+next
+  case (6 p e \<phi> \<psi> V v x i)
+  let ?q = "(e, Formula.nfv \<phi>)"
+  let ?F = "\<lambda>V w j. Formula.sat \<sigma> V w i \<phi>"
+  have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+    Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+  proof (cases "contains_pred p \<phi>")
+    case True
+    with "6.prems" have q: "\<not> contains_pred ?q \<psi>" and p: "p \<noteq> ?q \<Longrightarrow> \<not> contains_pred p \<psi>"
+      by auto
+    from q have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+      Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<psi>"
+      by (rule "6.IH"(2))
+    also have "\<dots> = Formula.sat \<sigma> V v i \<psi>"
+      using q p by (cases "p = ?q") (simp_all add: "6.IH"(2,3))
+    also have "\<dots> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+      using q by (rule "6.IH"(2)[symmetric])
+    finally show ?thesis .
+  next
+    case False
+    then have "\<And>w. Formula.sat \<sigma> (V(p \<mapsto> x)) w i \<phi> = Formula.sat \<sigma> V w i \<phi>"
+      by (rule "6.IH"(1))
+    moreover have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F V)) v i \<psi> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+    proof (cases "p = ?q")
+      case False
+      with "6.prems" have "\<not> contains_pred p \<psi>"
+        by simp
+      with False show ?thesis
+        by (simp add: fun_upd_twist[OF False] "6.IH"(3))
+    qed simp
+    ultimately show ?thesis
+      by simp
+  qed
+  then show ?case
+    by simp
+next
+  case (7 p e \<phi> \<psi> V v x i)
+  let ?q = "(e, Formula.nfv \<phi>)"
+  let ?L = "\<lambda>V. letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V(?q \<mapsto> X)) u k \<phi>)"
+  have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?L (V(p \<mapsto> x)))) v i \<psi> =
+    Formula.sat \<sigma> (V(?q \<mapsto> ?L V)) v i \<psi>"
+  proof (cases "p = ?q")
+    case False
+    with "7.prems" have p: "\<not> contains_pred p \<psi>"
+      by simp
+    from False "7.prems" have "\<not> contains_pred p \<phi> \<or> \<not> contains_pred ?q \<psi>"
+      by simp
+    then show ?thesis
+    proof
+      assume "\<not> contains_pred p \<phi>"
+      then have "?L (V(p \<mapsto> x)) = ?L V"
+        by (simp add: fun_upd_twist[OF False] "7.IH"(1))
+      with p show ?thesis
+        by (simp add: fun_upd_twist[OF False] "7.IH"(3))
+    next
+      assume "\<not> contains_pred ?q \<psi>"
+      with p show ?thesis
+        by (simp add: "7.IH"(2,3))
+    qed
+  qed simp
+  then show ?case
+    by (simp add: Let_def)
+qed (simp_all add: fun_upd_apply split: nat.splits cong: match_cong)
 
 
 subsection \<open>Past-only formulas\<close>
@@ -1396,7 +1581,7 @@ next
           then have "\<tau> \<sigma> k \<le> \<tau> \<sigma> j" by simp
           then have "\<tau> \<sigma> i - \<tau> \<sigma> k \<ge> \<tau> \<sigma> i - \<tau> \<sigma> j" by auto
           then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> k)" using j_props I2_def
-            by (transfer' fixing: \<sigma>) (auto split: if_splits dest: memR_antimono)
+            by (transfer' fixing: I1 \<sigma>) (auto split: if_splits dest: memR_antimono[of I1])
           then have "False" using int_bounded k_props I2_def
             by (transfer' fixing: \<sigma>) (auto split: if_splits)
         }
@@ -1982,9 +2167,9 @@ next
       {
         assume j_leq_x: "x\<ge>j"
         then have "\<tau> \<sigma> x \<ge> \<tau> \<sigma> j" by auto
-        then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> x)" using j_leq_x j_props assms
-          using flip_int_less_lower_props interval_0_bounded_geq memR_zero
-          by blast
+        then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> x)" using interval_0_bounded_geq[OF j_props(1) j_leq_x _ _ j_props(2)]
+            flip_int_less_lower_props[OF _ assms(2)] assms(1)
+          by simp
         then have "False"
           using x_props assms flip_int_less_lower.rep_eq memR.rep_eq memR_zero
           by auto
@@ -2335,8 +2520,12 @@ next
       assume k_props: "k>j" "mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)"
       then have t_geq: "(\<tau> \<sigma> k - \<tau> \<sigma> i) \<ge> (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using diff_le_mono by auto
       from j_props have "mem (flip_int I) (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)" by auto
-      then have "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
-        by (metis \<tau>_mono assms(2) diff_le_mono2 flip_int.rep_eq j_props(1) memL.rep_eq memL_mono prod.sel(1))
+      then have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)"
+        using assms(2) by (simp add: flip_int.rep_eq memL.rep_eq)
+      moreover have "\<tau> \<sigma> (j+1) - \<tau> \<sigma> j \<le> \<tau> \<sigma> (j+1) - \<tau> \<sigma> i"
+        using \<tau>_mono[OF j_props(1)] by (rule diff_le_mono2)
+      ultimately have "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
+        using memR_antimono by blast
       then have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using assms memL_mono by blast
       then have "\<not>memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)" using t_geq memR_antimono by blast
       then have "False" using k_props by auto

@@ -5,15 +5,13 @@ If the dependency graph changed, update pairs below. You can see the graph by co
 
     "Preliminaries" -> "Formula"
     "Regex" -> "Formula"
-    "MFOTL" -> "Formula"
+    "Abstract_Monitor" -> "Formula"
     "Containers" -> "Formula"
     "Formula" -> "Safety"
     "Formula" -> "Rewriting"
     "Safety" -> "Progress"
     "Safety" -> "Typing"
-    "Safety" -> "Slicing"
     "Progress" -> "Safety_Proofs"
-    "Typing" -> "Type_Soundness"
     "Typing" -> "Monitor"
     "Optimized_Join" -> "Monitor"
     "Monitor" -> "Correct_Un_Ops"
@@ -32,7 +30,6 @@ If the dependency graph changed, update pairs below. You can see the graph by co
     "Correct_Regex" -> "Correctness"
     "Correct_Since" -> "Correctness"
     "Correct_Trigger" -> "Correctness"
-    "Correctness" -> "Sat"
     "Monitor" -> "Optimized_Common"
     "Monitor" -> "Optimized_Agg"
     "Optimized_Common" -> "Optimized_Since"
@@ -43,7 +40,8 @@ If the dependency graph changed, update pairs below. You can see the graph by co
     "Optimized_Until" -> "Optimized_Agg_Temporal"
     "Optimized_Trigger" -> "Monitor_Impl"
     "Optimized_Agg_Temporal" -> "Monitor_Impl"
-    "Monitor_Impl" -> "Monitor_Code"
+    "Monitor_Impl" -> "Code_Opt"
+    "Code_Opt" -> "Monomorphic_Code"
 
 ## 2. Update ROOT file
 Add any new theories to the `ROOT` file. All theory-files should appear in the `ROOT` file in the order of the dependency graph.

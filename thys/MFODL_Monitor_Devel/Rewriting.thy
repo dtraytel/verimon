@@ -152,6 +152,20 @@ primrec project :: "'a formula \<Rightarrow> 'a Formula.formula"
   | "project (TP t) = Formula.TP t"
   | "project (TS t) = Formula.TS t"
 
+text \<open>The embedding recognises the derived operators @{const once}, @{const Formula.eventually},
+@{const historically}, and @{const always} of the input formula, so that the rewrite rules for
+these operators become applicable. We avoid comparing formulas for equality to not impose an
+equality constraint on the type of aggregation parameters.\<close>
+
+definition is_TT :: "'a Formula.formula \<Rightarrow> bool" where
+  "is_TT \<phi> = (case \<phi> of Formula.Eq t1 t2 \<Rightarrow> t1 = Formula.Const (EInt 0) \<and> t2 = Formula.Const (EInt 0) | _ \<Rightarrow> False)"
+
+lemma is_TT_iff[simp]: "is_TT \<phi> \<longleftrightarrow> \<phi> = Formula.TT"
+  by (auto simp: is_TT_def Formula.TT_def split: Formula.formula.splits)
+
+definition neg_r :: "'a formula \<Rightarrow> 'a formula" where
+  "neg_r \<phi> = (case \<phi> of Once I (Neg \<psi>) \<Rightarrow> Historically I \<psi> | Eventually I (Neg \<psi>) \<Rightarrow> Always I \<psi> | _ \<Rightarrow> Neg \<phi>)"
+
 primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   where "embed (p \<dagger> ts) = p \<dagger>\<^sub>R ts"
   | "embed (Formula.Let p \<phi> \<psi>) = Let p (embed \<phi>) (embed \<psi>)"
@@ -160,7 +174,7 @@ primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   | "embed (t1 =\<^sub>F t2) = (t1 =\<^sub>R t2)"
   | "embed (t1 \<le>\<^sub>F t2) = (t1 \<le>\<^sub>R t2)"
   | "embed (t1 <\<^sub>F t2) = (t1 <\<^sub>R t2)"
-  | "embed (\<not>\<^sub>F \<phi>) = \<not>\<^sub>R (embed \<phi>)"
+  | "embed (\<not>\<^sub>F \<phi>) = neg_r (embed \<phi>)"
   | "embed (\<phi> \<or>\<^sub>F \<psi>) = (embed \<phi>) \<or>\<^sub>R (embed \<psi>)"
   | "embed (\<phi> \<and>\<^sub>F \<psi>) = (embed \<phi>) \<and>\<^sub>R (embed \<psi>)"
   | "embed (\<And>\<^sub>F \<phi>s) = \<And>\<^sub>R (map embed \<phi>s)"
@@ -168,8 +182,8 @@ primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   | "embed (Formula.Agg y \<omega> b' f \<phi>) = Agg y \<omega> b' f (embed \<phi>)"
   | "embed (\<^bold>Y I \<phi>) = \<^bold>Y\<^sub>R I (embed \<phi>)"
   | "embed (\<^bold>X I \<phi>) = \<^bold>X\<^sub>R I (embed \<phi>)"
-  | "embed (\<phi> \<^bold>S I \<psi>) = (embed \<phi>) \<^bold>S\<^sub>R I (embed \<psi>)"
-  | "embed (\<phi> \<^bold>U I \<psi>) = (embed \<phi>) \<^bold>U\<^sub>R I (embed \<psi>)"
+  | "embed (\<phi> \<^bold>S I \<psi>) = (if is_TT \<phi> then \<^bold>P\<^sub>R I (embed \<psi>) else (embed \<phi>) \<^bold>S\<^sub>R I (embed \<psi>))"
+  | "embed (\<phi> \<^bold>U I \<psi>) = (if is_TT \<phi> then \<^bold>F\<^sub>R I (embed \<psi>) else (embed \<phi>) \<^bold>U\<^sub>R I (embed \<psi>))"
   | "embed (\<phi> \<^bold>T I \<psi>) = (embed \<phi>) \<^bold>T\<^sub>R I (embed \<psi>)"
   | "embed (\<phi> \<^bold>R I \<psi>) = (embed \<phi>) \<^bold>R\<^sub>R I (embed \<psi>)"
   | "embed (Formula.MatchF I r) = MatchF I (regex.map_regex embed r)"
@@ -177,9 +191,13 @@ primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   | "embed (Formula.TP t) = TP t"
   | "embed (Formula.TS t) = TS t"
 
+lemma project_neg_r[simp]: "project (neg_r \<phi>) = \<not>\<^sub>F (project \<phi>)"
+  by (auto simp: neg_r_def historically_def always_def once_def Formula.eventually_def
+      split: formula.splits)
+
 lemma project_embed: "project (embed \<phi>) = \<phi>"
   by (induct \<phi>)
-    (auto simp: list.map_ident_strong 
+    (auto simp: list.map_ident_strong once_def Formula.eventually_def
       regex.map_comp regex.map_ident_strong)
 
 fun fvi :: "nat \<Rightarrow> 't formula \<Rightarrow> nat set" 
@@ -259,13 +277,11 @@ next
     by (auto simp: fvi_Suc Formula.fvi_Suc)
 next
   case (Agg y \<omega> b' f \<phi>)
-  hence "Formula.fvi (length b') (project \<phi>) \<subseteq> fvi (length b') \<phi>"
-    apply (clarsimp simp: subset_eq)
-    by (subst (asm) Formula.fvi_iff_fv, subst fvi_iff_fv) simp
-  moreover have "fvi (length b') \<phi> \<subseteq> Formula.fvi (length b') (project \<phi>)"
-    using Agg apply (clarsimp simp: subset_eq)
-    by (subst (asm) fvi_iff_fv, subst Formula.fvi_iff_fv, simp)
-  ultimately show ?case
+  have "x \<in> Formula.fvi (length b') (project \<phi>) \<longleftrightarrow> x \<in> fvi (length b') \<phi>" for x
+    using Agg by (simp add: Formula.fvi_iff_fv[of x] fvi_iff_fv[of x])
+  hence "Formula.fvi (length b') (project \<phi>) = fvi (length b') \<phi>"
+    by blast
+  then show ?case
     by auto
 next
   case (MatchP I r)
@@ -281,30 +297,7 @@ lemma nfv_project: "Formula.nfv (project \<phi>) = nfv \<phi>"
   by (simp add: nfv_def Formula.nfv_def fv_project)
 
 lemma fvi_embed[simp]: "fvi 0 (embed \<phi>) = FV \<phi>"
-proof (induct \<phi>)
-next
-  case (Exists t \<phi>)
-  thus ?case
-    by (auto simp: fvi_Suc Formula.fvi_Suc)
-next
-  case (Agg y \<omega> b' f \<phi>)
-  hence "Formula.fvi (length b') \<phi> \<subseteq> fvi (length b') (embed \<phi>)"
-    apply (clarsimp simp: subset_eq)
-    by (subst (asm) Formula.fvi_iff_fv, subst fvi_iff_fv) simp
-  moreover have "fvi (length b') (embed \<phi>) \<subseteq> Formula.fvi (length b') \<phi>"
-    using Agg apply (clarsimp simp: subset_eq)
-    by (subst (asm) fvi_iff_fv, subst Formula.fvi_iff_fv, simp)
-  ultimately show ?case
-    by auto
-next
-  case (MatchP I r)
-  thus ?case
-    by (induct r; clarsimp)
-next
-  case (MatchF I r)
-  thus ?case
-    by (induct r; clarsimp)
-qed auto
+  by (simp flip: fv_project add: project_embed)
 
 lemma nfv_embed[simp]: "nfv (embed \<phi>) = Formula.nfv \<phi>"
   by (simp add: nfv_def Formula.nfv_def)
@@ -349,36 +342,22 @@ lemma sat_project: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> project \<p
 proof (induct \<phi> arbitrary: \<sigma> V v i)
 next
   case (MatchP I r)
-  then show ?case 
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
+  have "Regex.match (Formula.sat \<sigma> V v) (regex.map_regex project r) = Regex.match (sat \<sigma> V v) r"
+    unfolding match_map_regex by (rule match_cong[OF refl]) (simp add: MatchP)
+  then show ?case
+    by simp
 next
   case (MatchF I r)
+  have "Regex.match (Formula.sat \<sigma> V v) (regex.map_regex project r) = Regex.match (sat \<sigma> V v) r"
+    unfolding match_map_regex by (rule match_cong[OF refl]) (simp add: MatchF)
   then show ?case
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
+    by simp
 qed (auto simp: fv_project nfv_project 
     simp del: fun_upd_apply 
     split: nat.splits)
 
 lemma sat_embed: "sat \<sigma> V v i (embed \<phi>) \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
-proof (induct \<phi> arbitrary: \<sigma> V v i)
-next
-  case (MatchP I r)
-  then show ?case 
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
-next
-  case (MatchF I r)
-  then show ?case
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
-qed (auto simp del: fun_upd_apply 
-    split: nat.splits)
+  by (simp flip: sat_project add: project_embed)
 
 
 subsubsection \<open> Definition of rewriting function \<close>
@@ -658,8 +637,7 @@ next
       Formula.sat \<sigma> V (zs @ xs @ v) i \<phi> \<and> Formula.eval_trm (zs @ xs @ v) x4 = x}"
     using rw11 rw12 by auto
   have rw2: "fv (shiftI (b + x3) \<phi>) \<subseteq> {0..<x3} \<longleftrightarrow> fv \<phi> \<subseteq> {0..<x3}" 
-    using no_shift[where b'=0]
-    apply (auto simp del:x3_def) using atLeastLessThan_iff by blast
+    using no_shift[of 0 x3 b \<phi>] by (simp del: x3_def)
   show ?case
     using Agg(2)
     by (auto simp add: rw1 rw2 nth_append simp flip:x3_def)
@@ -670,9 +648,7 @@ next
   case (MatchF I r)
   have rw: "Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    apply (rule match_map_regex)
-    using MatchF
-    by auto
+    by (rule match_map_regex) (simp add: MatchF)
   show ?case
     using MatchF
     by (simp add: rw)
@@ -680,9 +656,7 @@ next
   case (MatchP I r)
   have rw: "\<And>j. Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    apply (rule match_map_regex)
-    using MatchP
-    by auto
+    by (rule match_map_regex) (simp add: MatchP)
   show ?case
     by (simp add: rw)
 qed (auto simp: eval_trm_shiftTI)
@@ -692,9 +666,7 @@ lift_definition init_ivl :: "\<I> \<Rightarrow> \<I>" is "\<lambda>(_,r,n). ((\<
   using zero_enat_def upclosed_def by auto
 
 lemma left_init_ivl[simp]: "memL (init_ivl I) n"
-  apply (clarsimp simp: memL_def init_ivl_def split: prod.splits)
-  by (subst Abs_\<I>_inverse, transfer)
-    (auto simp: upclosed_def downclosed_def)
+  by (transfer fixing: n) (auto split: prod.splits)
 
 lemma right_init_ivl[simp]: "memR (init_ivl I) = memR I" 
   by (transfer; auto)+
@@ -846,11 +818,171 @@ lemma my_size_regex_estimation'[termination_simp]:
   "x \<in> regex.atms r \<Longrightarrow> y \<le> f x \<Longrightarrow> y \<le> my_size_regex f r"
   by (induct r) auto
 
-(* The function is inspired from "Section 5.3.4: 
-Propagation of Range Restrictions" of Samuel Mueller's 
+subsubsection \<open> Fresh predicates for frozen snapshots \<close>
+
+text \<open> Several rewrite rules below propagate a range restriction from a conjunct @{term \<alpha>}
+into a temporal operator. Instead of copying @{term \<alpha>} under an opposite temporal operator,
+which overapproximates @{term \<alpha>}'s satisfactions and may destroy the monitor's progress,
+we freeze @{term \<alpha>} at the current time-point into a fresh predicate @{term q} with
+@{term "Frz q \<alpha> \<psi>"} and use @{term q} inside the temporal operator in @{term \<psi>}.
+To guarantee freshness, @{term q} is chosen to differ from all predicate names occurring in
+the involved subformulas. \<close>
+
+text \<open> The predicates (with arities) that occur freely in a formula. Unlike
+@{const Formula.contains_pred}, this is a purely syntactic notion, which also accounts for
+definitions of unused @{const Formula.Let}-bound predicates. \<close>
+
+fun preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) set" where
+  "preds (Formula.Pred e ts) = {(e, length ts)}"
+| "preds (Formula.Let p \<phi> \<psi>) = preds \<phi> \<union> (preds \<psi> - {(p, Formula.nfv \<phi>)})"
+| "preds (Formula.Frz p \<phi> \<psi>) = preds \<phi> \<union> (preds \<psi> - {(p, Formula.nfv \<phi>)})"
+| "preds (Formula.LetPast p \<phi> \<psi>) = (preds \<phi> \<union> preds \<psi>) - {(p, Formula.nfv \<phi>)}"
+| "preds (Formula.Eq t1 t2) = {}"
+| "preds (Formula.Less t1 t2) = {}"
+| "preds (Formula.LessEq t1 t2) = {}"
+| "preds (Formula.Neg \<phi>) = preds \<phi>"
+| "preds (Formula.Or \<phi> \<psi>) = preds \<phi> \<union> preds \<psi>"
+| "preds (Formula.And \<phi> \<psi>) = preds \<phi> \<union> preds \<psi>"
+| "preds (Formula.Ands \<phi>s) = (\<Union>\<phi>\<in>set \<phi>s. preds \<phi>)"
+| "preds (Formula.Exists t \<phi>) = preds \<phi>"
+| "preds (Formula.Agg y \<omega> tys f \<phi>) = preds \<phi>"
+| "preds (Formula.Prev I \<phi>) = preds \<phi>"
+| "preds (Formula.Next I \<phi>) = preds \<phi>"
+| "preds (Formula.Since \<phi> I \<psi>) = preds \<phi> \<union> preds \<psi>"
+| "preds (Formula.Until \<phi> I \<psi>) = preds \<phi> \<union> preds \<psi>"
+| "preds (Formula.Trigger \<phi> I \<psi>) = preds \<phi> \<union> preds \<psi>"
+| "preds (Formula.Release \<phi> I \<psi>) = preds \<phi> \<union> preds \<psi>"
+| "preds (Formula.MatchF I r) = Regex.fv_regex preds r"
+| "preds (Formula.MatchP I r) = Regex.fv_regex preds r"
+| "preds (Formula.TP t) = {}"
+| "preds (Formula.TS t) = {}"
+
+primrec regex_list :: "('a \<Rightarrow> 'b list) \<Rightarrow> 'a Regex.regex \<Rightarrow> 'b list" where
+  "regex_list f (Regex.Skip n) = []"
+| "regex_list f (Regex.Test \<phi>) = f \<phi>"
+| "regex_list f (Regex.Plus r s) = regex_list f r @ regex_list f s"
+| "regex_list f (Regex.Times r s) = regex_list f r @ regex_list f s"
+| "regex_list f (Regex.Star r) = regex_list f r"
+
+lemma regex_list_cong[fundef_cong]:
+  "r = r' \<Longrightarrow> (\<And>z. z \<in> Regex.atms r \<Longrightarrow> f z = f' z) \<Longrightarrow> regex_list f r = regex_list f' r'"
+  by (induct r arbitrary: r') auto
+
+lemma set_regex_list[simp]: "set (regex_list f r) = (\<Union>z \<in> Regex.atms r. set (f z))"
+  by (induct r) auto
+
+text \<open> All predicate names (including bound ones) occurring in a formula. \<close>
+
+fun pred_names :: "'t Formula.formula \<Rightarrow> Formula.name list" where
+  "pred_names (Formula.Pred e ts) = [e]"
+| "pred_names (Formula.Let p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Frz p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.LetPast p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Eq t1 t2) = []"
+| "pred_names (Formula.Less t1 t2) = []"
+| "pred_names (Formula.LessEq t1 t2) = []"
+| "pred_names (Formula.Neg \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Or \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.And \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Ands \<phi>s) = concat (map pred_names \<phi>s)"
+| "pred_names (Formula.Exists t \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Agg y \<omega> tys f \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Prev I \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Next I \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Since \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Until \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Trigger \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Release \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.MatchF I r) = regex_list pred_names r"
+| "pred_names (Formula.MatchP I r) = regex_list pred_names r"
+| "pred_names (Formula.TP t) = []"
+| "pred_names (Formula.TS t) = []"
+
+lemma finite_preds[simp]: "finite (preds \<phi>)"
+  by (induction \<phi> rule: preds.induct) (auto simp: fv_regex_alt)
+
+lemma preds_pred_names: "(e, n) \<in> preds \<phi> \<Longrightarrow> e \<in> set (pred_names \<phi>)"
+  by (induction \<phi> arbitrary: n rule: preds.induct) (auto simp: fv_regex_alt split: if_splits)
+
+lemma contains_pred_preds: "Formula.contains_pred p \<phi> \<Longrightarrow> p \<in> preds \<phi>"
+  by (induction p \<phi> rule: Formula.contains_pred.induct) (auto simp: fv_regex_alt)
+
+text \<open> A name that does not occur in the given list: among the @{term "Suc (length ns)"}
+pairwise distinct candidates @{text "q, qq, qqq, \<dots>"} at least one is not in @{term ns}. \<close>
+
+definition frz_cand :: "nat \<Rightarrow> Formula.name" where
+  "frz_cand k = string8_literal (String.implode (replicate (Suc k) CHR ''q''))"
+
+lemma inj_frz_cand: "inj frz_cand"
+proof (rule injI)
+  fix k l
+  assume "frz_cand k = frz_cand l"
+  then have "length (Rep_string8 (frz_cand k)) = length (Rep_string8 (frz_cand l))"
+    by simp
+  then show "k = l"
+    by (simp add: frz_cand_def string8_literal.rep_eq)
+qed
+
+definition fresh_name :: "Formula.name list \<Rightarrow> Formula.name" where
+  "fresh_name ns = (case find (\<lambda>c. c \<notin> set ns) (map frz_cand [0..<Suc (length ns)]) of
+     Some c \<Rightarrow> c | None \<Rightarrow> frz_cand 0)"
+
+lemma fresh_name: "fresh_name ns \<notin> set ns"
+proof -
+  let ?cs = "map frz_cand [0..<Suc (length ns)]"
+  have "card (set ?cs) = Suc (length ns)"
+    by (subst distinct_card) (auto simp: distinct_map inj_on_subset[OF inj_frz_cand] simp del: upt_Suc)
+  moreover have "card (set ns) \<le> length ns"
+    by (rule card_length)
+  ultimately have "\<not> set ?cs \<subseteq> set ns"
+    by (metis card_mono finite_set not_less_eq_eq)
+  then have "\<exists>c \<in> set ?cs. c \<notin> set ns"
+    by blast
+  then obtain c where "find (\<lambda>c. c \<notin> set ns) ?cs = Some c"
+    by (metis find_None_iff not_Some_eq)
+  then show ?thesis
+    by (auto simp: fresh_name_def dest: find_Some_iff[THEN iffD1])
+qed
+
+text \<open> The fresh name for freezing a snapshot in the context of the given subformulas. \<close>
+
+definition frz_name :: "'a formula list \<Rightarrow> Formula.name" where
+  "frz_name \<phi>s = fresh_name (concat (map (\<lambda>\<phi>. pred_names (project \<phi>)) \<phi>s))"
+
+lemma frz_name_fresh: "\<phi> \<in> set \<phi>s \<Longrightarrow> (frz_name \<phi>s, n) \<notin> preds (project \<phi>)"
+  using fresh_name[of "concat (map (\<lambda>\<phi>. pred_names (project \<phi>)) \<phi>s)"]
+  by (auto simp: frz_name_def dest!: preds_pred_names)
+
+text \<open> The frozen snapshot is applied to all variables @{term "[0..<n]"} of the frozen formula.
+This requires the frozen formula's free variables to have no gaps, which is also required by
+the monitor for @{const Formula.Frz}. \<close>
+
+definition frz_atom :: "Formula.name \<Rightarrow> nat \<Rightarrow> 'a formula" where
+  "frz_atom q n = Pred q (map Formula.Var [0..<n])"
+
+lemma my_size_frz_atom[simp]: "my_size (frz_atom q n) = 1"
+  by (simp add: frz_atom_def)
+
+definition frz_ok :: "'a formula \<Rightarrow> bool" where
+  "frz_ok \<alpha> = ({0..<nfv \<alpha>} \<subseteq> fvi 0 \<alpha>)"
+
+text \<open> The sequential patterns of @{text rewrite} below expand to more than 150 equations,
+whose pairwise compatibility yields more than 10000 proof obligations. Methods like
+@{method simp_all} or @{method auto} take minutes for that many subgoals, because they integrate
+the solution of each subgoal separately into the proof state, which each time costs time
+proportional to the size of the entire proof state. @{method safe} instead works on the first
+subgoal only, and closes each of these obligations by the injectivity and distinctness rules of
+the constructors, without such a cost. \<close>
+
+(* The function is inspired from "Section 5.3.4:
+Propagation of Range Restrictions" of Samuel Mueller's
 ETH PhD-thesis: Theory and applications of runtime
-monitoring MFOTL. *)
-function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula" 
+monitoring MFOTL.
+The rules that would copy a conjunct under an opposite temporal operator (introducing
+future dependencies for past operators and reducing the progress of future operators) have been
+replaced by rules using the freeze operator (see Krstic and Traytel: "From Harbin with Love:
+Freezing MFOTL"), which preserve the monitor's progress. *)
+function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
   where
 (*1*)  "rewrite (And \<alpha> (Or \<beta> \<gamma>)) t =
        (if prop_cond \<alpha> \<beta> \<or> prop_cond \<alpha> \<gamma>
@@ -858,13 +990,15 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Or \<beta>' \<gamma>'))" (*added prop_cond gamma because the rewrite shouldn't be position dependent*)
 
 (*2*) | "rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t =
-      (if prop_cond \<alpha> \<beta>
-       then And (rewrite \<alpha> Same) (Release (rewrite (And \<beta> (Once (init_ivl I) \<alpha>)) Same) I (rewrite (And \<gamma> (Once I \<alpha>)) Same))
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Release (rewrite (And q\<alpha> \<beta>) Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in (And \<alpha>' (Release \<beta>' I \<gamma>')))"
 
 (*3*) | "rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t =
-      (if prop_cond \<alpha> \<beta>
-       then And (rewrite \<alpha> Same) (Trigger (rewrite (And \<beta> (Eventually (init_ivl I) \<alpha>)) Same) I (rewrite (And \<gamma> (Eventually I \<alpha>)) Same))
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Trigger (rewrite (And q\<alpha> \<beta>) Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in (And \<alpha>' (Trigger \<beta>' I \<gamma>')))"
 
 (*4*) | "rewrite (And \<alpha> (Exists k \<beta>)) t =
@@ -878,33 +1012,45 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Neg \<beta>'))"
 
 (*10,12*) | "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t =
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Since (rewrite (And (Eventually (init_ivl I) \<alpha>) \<beta>) Same) I (rewrite \<gamma> Same))
-       else if (prop_cond \<alpha> \<gamma>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Since (rewrite \<beta> Same) I (rewrite (And (Eventually I \<alpha>) \<gamma>) Same))
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Since (rewrite (And q\<alpha> \<beta>) Same) I (rewrite \<gamma> Same)))
+       else if prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Since (rewrite \<beta> Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Since \<beta>' I \<gamma>'))"
 
 (*11,13*) | "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t =
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Until (rewrite (And (Once (init_ivl I) \<alpha>) \<beta>) Same) I (rewrite \<gamma> Same))
-       else if (prop_cond \<alpha> \<gamma>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Until (rewrite \<beta> Same) I (rewrite (And (Once I \<alpha>) \<gamma>) Same))
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Until (rewrite (And q\<alpha> \<beta>) Same) I (rewrite \<gamma> Same)))
+       else if prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Until (rewrite \<beta> Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Until \<beta>' I \<gamma>'))"
 
 (*18*) | "rewrite (And \<alpha> (Once I \<beta>)) t =
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I)
-       then And (rewrite \<alpha> Same) (Once I (And (Eventually I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Once I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Once I \<beta>'))"
 
 (*19*) | "rewrite (And \<alpha> (Eventually I \<beta>)) t =
-      (if (prop_cond \<alpha> \<beta>)
-       then And (rewrite \<alpha> Same) (Eventually I (And (Once I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Eventually I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Eventually I \<beta>'))"
 
- (*20*) | "rewrite (And \<alpha> (Historically I \<beta>)) t =
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I)
-       then And (rewrite \<alpha> Same) (Historically I (And (Eventually I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Historically I \<beta>'))" (*some of these rules don't rewrite the conjunction, of diamond/square, because it doesn't increase rr of the conjunction more than recursing the leaves*)
+(*20*) | "rewrite (And \<alpha> (Historically I \<beta>)) t =
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Historically I (rewrite (And q\<alpha> \<beta>) Same)))
+       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Historically I \<beta>'))"
 
- (*21*) | "rewrite (And \<alpha> (Always I \<beta>)) t =
-      (if (prop_cond \<alpha> \<beta>)
-       then And (rewrite \<alpha> Same) (Always I (And (Once I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
+(*21*) | "rewrite (And \<alpha> (Always I \<beta>)) t =
+      (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+       then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+         Frz q \<alpha>' (And \<alpha>' (Always I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Always I \<beta>'))"
 
  (*22*) | "rewrite (And \<alpha> (Prev I \<beta>)) t =
@@ -918,27 +1064,37 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in (And \<alpha>' (Next I \<beta>')))"
 
 (*6 first, then 8*)
+(* the Same cases freeze \<alpha> (resp. \<gamma>), which necessarily holds at the current time-point;
+   the Swapped cases are restricted to intervals containing 0 to preserve progress *)
 | "rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t =
-             (let l = rewrite (And \<alpha> \<gamma>) Same;
-                  r =      if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> then rewrite (And (Eventually I \<alpha>) \<beta>) Same
-                      else if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> then rewrite (And (Eventually I \<gamma>) \<beta>) Same
-                      else if t=Swapped \<and> bounded I \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once (init_ivl I) \<alpha>) \<beta>) Same
-                      else if t=Swapped \<and> bounded I \<and> prop_cond \<gamma> \<beta> then rewrite (And (Once (init_ivl I) \<gamma>) \<beta>) Same
+             (let l = rewrite (And \<alpha> \<gamma>) Same in
+              if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
+              then let q = frz_name [\<alpha>, \<gamma>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
+                Frz q (rewrite \<alpha> Same) (Since l I (rewrite (And q\<alpha> \<beta>) Same))
+              else if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> \<and> frz_ok \<gamma>
+              then let q = frz_name [\<alpha>, \<gamma>, \<beta>]; q\<gamma> = frz_atom q (nfv \<gamma>) in
+                Frz q (rewrite \<gamma> Same) (Since l I (rewrite (And q\<gamma> \<beta>) Same))
+              else let r = if t=Swapped \<and> mem I 0 \<and> bounded I \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once (init_ivl I) \<alpha>) \<beta>) Same
+                      else if t=Swapped \<and> mem I 0 \<and> bounded I \<and> prop_cond \<gamma> \<beta> then rewrite (And (Once (init_ivl I) \<gamma>) \<beta>) Same
                       else rewrite \<beta> Same
               in fix_r (Since l I r) t)"
 
-(*7 first, else 9*) (*don't check bounded for 9 because rewrite doesn't alter monitorability for future unbounded temporal operators*)
+(*7 first*) (* the Swapped case (9) has been removed as it does not preserve progress *)
 | "rewrite (Until (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same;
                   r =      if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once I \<alpha>) \<beta>) Same
                       else if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> then rewrite (And (Once I \<gamma>) \<beta>) Same
-                      else if t=Swapped \<and> prop_cond \<alpha> \<beta> then rewrite (And (Eventually (init_ivl I) \<alpha>) \<beta>) Same
-                      else if t=Swapped \<and> prop_cond \<gamma> \<beta> then rewrite (And (Eventually (init_ivl I) \<gamma>) \<beta>) Same
                       else rewrite \<beta> Same
               in fix_r (Until l I r) t)"
 
 | "rewrite (Since l I r) Same = rewrite (Since r I l) Swapped"
 | "rewrite (Until l I r) Same = rewrite (Until r I l) Swapped"
+(* a disjunction one level down a conjunction, as from EQUIV: the conjunction of the other
+   two conjuncts is distributed over it, as in (1) *)
+| "rewrite (And l (And \<beta> (Or \<gamma>1 \<gamma>2))) Same =
+     (if prop_cond (And l \<beta>) \<gamma>1 \<or> prop_cond (And l \<beta>) \<gamma>2
+     then Or (rewrite (And (And l \<beta>) \<gamma>1) Same) (rewrite (And (And l \<beta>) \<gamma>2) Same)
+     else rewrite (And (And \<beta> (Or \<gamma>1 \<gamma>2)) l) Swapped)"
 | "rewrite (And l r) Same = rewrite (And r l) Swapped"
 
 | "rewrite (Since l I r) Swapped = Since (rewrite r Same) I (rewrite l Same)" (*swap back before recursing on subformulas*)
@@ -966,10 +1122,15 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 | "rewrite (Ands \<phi>s) t = Ands (map (\<lambda>r. rewrite r Same) \<phi>s)"
 
 | "rewrite f t =  f"
-  by pat_completeness auto
+  by pat_completeness safe
 
 (* 
-(* TODO: Replace function above with the faster-loading version below *)
+(* TODO: The following case-based variant of the function above has much fewer equations and
+   therefore loads faster. However, it is outdated: its temporal cases do not use the freeze
+   operator and thus do not match the current definition. Since the compatibility proof above
+   uses safe instead of auto, the main loading time issue of the function is fixed. Switching
+   to a case-based definition would still reduce the time spent on the function command and
+   its proof, but would change rewrite.simps and rewrite.induct, on which later proofs rely. *)
 function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
   where "rewrite (And \<alpha> \<zeta>) t = (case \<zeta> of
       (Or \<beta> \<gamma>) \<Rightarrow> (if prop_cond \<alpha> \<beta> \<or> prop_cond \<alpha> \<gamma>
@@ -1083,6 +1244,19 @@ termination
 
 subsubsection \<open> Proof of correct rewriting \<close>
 
+lemma fvi_less_nfv_r: "x \<in> fvi 0 \<alpha> \<Longrightarrow> x < nfv \<alpha>"
+  using Formula.fvi_less_nfv[of "project \<alpha>"] by (auto simp: fv_project nfv_project)
+
+lemma frz_ok_fvi: "frz_ok \<alpha> \<Longrightarrow> fvi 0 \<alpha> = {0..<nfv \<alpha>}"
+  using fvi_less_nfv_r[of _ \<alpha>] by (auto simp: frz_ok_def)
+
+lemma fvi_frz_atom: "frz_ok \<alpha> \<Longrightarrow> Formula.fvi b (project (frz_atom q (nfv \<alpha>))) = Formula.fvi b (project \<alpha>)"
+  by (auto simp: frz_atom_def Formula.fvi_iff_fv[of _ b "project \<alpha>"] fv_project frz_ok_fvi image_iff
+    intro!: bexI[of _ "_ + b"])
+
+lemma preds_frz_atom[simp]: "preds (project (frz_atom q n)) = {(q, n)}"
+  by (simp add: frz_atom_def)
+
 (* TODO: Unused definition, move to formula or delete? *)
 definition trigger :: "'a Formula.formula \<Rightarrow> \<I> \<Rightarrow> 'a Formula.formula \<Rightarrow> 'a Formula.formula"
   where "trigger \<phi> I \<psi> = \<not>\<^sub>F (\<not>\<^sub>F \<phi> \<^bold>S I \<not>\<^sub>F \<psi>)"
@@ -1096,278 +1270,38 @@ lemma sat_trigger_eq: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> trigger 
   \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi> \<^bold>T I \<psi>"
   by auto
 
-lemma rewrite_fv: "Formula.fvi b (project \<alpha>) = Formula.fvi b (project (rewrite \<alpha> t))"
+lemma rewrite_fv': "Formula.fvi b (project (rewrite \<alpha> t)) = Formula.fvi b (project \<alpha>)"
 proof(induction \<alpha> t arbitrary:b rule:rewrite.induct)
-  case (1 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis using 1 by fastforce
-  next
-    case False
-    then show ?thesis using 1 by auto
-  qed
-next
-  case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis using 2 by fastforce
-  next
-    case False
-    then show ?thesis using 2 by auto
-  qed
-next
-  case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta>")
-    case T1:True
-    then show ?thesis
-    proof(cases "prop_cond \<beta> \<alpha>")
-      case T2:True
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        thm 3(1)
-        case True
-        then show ?thesis using 3[where ?b=b] T1 T2 by auto
-      next
-        case False
-        then show ?thesis using 3[where ?b=b] T1 T2 by auto
-      qed
-    next
-      case F1:False
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        case True
-        then show ?thesis using 3[where ?b=b] T1 F1 by auto
-      next
-        case False
-        then show ?thesis using 3[where ?b=b] T1 F1 by auto
-      qed
-    qed
-  next
-    case F1:False
-    then show ?thesis
-      proof(cases "prop_cond \<beta> \<alpha>")
-      case T2:True
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        case True
-        then show ?thesis using 3 F1 T2 by auto
-      next
-        case False
-        then show ?thesis using 3 F1 T2 by auto
-      qed
-    next
-      case F1:False
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        case True
-        then show ?thesis using 3[where ?b=b] F1 F1 by auto
-      next
-        case False
-        then show ?thesis using 3[where ?b=b] F1 F1 by auto
-      qed
-    qed
-  qed
-next
   case (4 \<alpha> t \<beta>)
   then show ?case
-    proof(cases "prop_cond \<alpha> \<beta>")
-      case True
-      have helper:"fvi_r b \<alpha>  = Formula.fvi (Suc b) (Rewriting.shift (project \<alpha>))" 
-        using fvi_shift by auto
-      from True show ?thesis using 4 helper
-        apply(simp only:rewrite.simps if_True)
-        apply(simp only:project.simps)
-        apply(simp only:Formula.fvi.simps)
-        apply(simp only: 4(1)[OF True,of "Suc b",symmetric])
-        apply(simp only:project.simps)
-        apply(simp only: project_shift)
-        apply(simp only:Formula.fvi.simps)
-        done
-    next
-      case False
-      then show ?thesis using 4 by auto
-    qed
-next
-  case (5 \<alpha> \<beta> I t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
+  proof(cases "prop_cond \<alpha> \<beta>")
     case True
-    then show ?thesis using 5 by fastforce
+    have "fvi_r b \<alpha> = Formula.fvi (Suc b) (Rewriting.shift (project \<alpha>))"
+      using fvi_shift by auto
+    with True show ?thesis
+      using 4(1)[OF True, of "Suc b"] by (simp add: project_shift)
   next
     case False
-    then show ?thesis using 5 by auto
-  qed
-next
-  case (6 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-      apply(simp add: 6(1)[symmetric])
-    by fastforce
-next
-  case (7 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-      apply(simp add: 7(1)[symmetric])
-      by fastforce
-next
-  case (10 \<alpha> I \<beta> b t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis 
-      using 10
-      by (clarsimp simp: historically_def)
-  next
-    case False
-    then show ?thesis
-      using 10
-      by (clarsimp simp: historically_def)
-  qed
-next
-  case (11 \<alpha> I \<beta> b t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis 
-      using 11
-      by (clarsimp simp: once_def always_def)
-  next
-    case False
-    then show ?thesis
-      using 11
-      by (clarsimp simp: once_def always_def)
+    then show ?thesis using 4 by auto
   qed
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> bounded I \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> bounded I \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
   then show ?case
-  proof(cases)
-    case a(*TODO use simplifier for these proofs, also prove shift_fv2*)
-    then show ?thesis using 14
-      apply(simp add: 14(1)[symmetric])
-      by auto
-  next
-    case b
-    then show ?thesis
-    proof(cases "prop_cond \<alpha> \<beta>")
-      case True
-      then show ?thesis using b 14 by blast
-    next
-      case False
-      then show ?thesis using b 14 by fastforce
-    qed
-  next
-    case c
-    then show ?thesis using 14
-      apply(simp add: 14(1)[symmetric])
-      by blast
-  next
-    case d
-    then show ?thesis using 14
-      apply(simp add: 14(1)[symmetric])
-      by blast
-  next
-    case e
-    then show ?thesis
-      proof(cases "t=Swapped")
-        case True
-        then show ?thesis using e 14
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      next
-        case False
-        then show ?thesis using e 14 not_swapped[OF False]
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      qed
-  qed
+    by (cases t) (auto simp: Let_def fvi_frz_atom split: if_splits)
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
   then show ?case
-  proof(cases)
-    case a(*TODO use simplifier for these proofs, also prove shift_fv2*)
-    then show ?thesis using 15
-      apply(simp add: 15(1)[symmetric])
-      by auto
-  next
-    case b
-    then show ?thesis
-    proof(cases "prop_cond \<alpha> \<beta>")
-      case True
-      then show ?thesis using b 15 by blast
-    next
-      case False
-      then show ?thesis using b 15 by fastforce
-    qed
-  next
-    case c
-    then show ?thesis using 15
-      apply(simp add: 15(1)[symmetric])
-      by blast
-  next
-    case d
-    then show ?thesis using 15
-      apply(simp add: 15(1)[symmetric])
-      by blast
-  next
-    case e
-    then show ?thesis
-      proof(cases "t=Swapped")
-        case True
-        then show ?thesis using e 15
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      next
-        case False
-        then show ?thesis using e 15 not_swapped[OF False]
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      qed
-    qed
-next
-  case ("16_12" v va vb vc vd I r)
-  then show ?case by fastforce
-next
-  case ("17_12" v va vb vc vd I r)
-  then show ?case by fastforce
-next
-  case ("18_10" l v va vb vc vd)
-  then show ?case by fastforce
-next
-  case (23 \<phi> t)
-  then show ?case by simp
-next
-  case (24 y \<omega> b' f \<phi> t)
-  then show ?case by simp
-next
-case (34 I r t)
-  then show ?case by (induction r;auto)
+    by (cases t) (auto simp: Let_def split: if_splits)
 next
   case (35 I r t)
   then show ?case by (induction r;auto)
-qed (auto simp: always_def historically_def)
+next
+  case (36 I r t)
+  then show ?case by (induction r;auto)
+qed (auto simp: Let_def fvi_frz_atom once_def eventually_def always_def historically_def)
+
+lemma rewrite_fv: "Formula.fvi b (project \<alpha>) = Formula.fvi b (project (rewrite \<alpha> t))"
+  by (rule rewrite_fv'[symmetric])
 
 lemma equiv_2: "sat \<sigma> V v i (Until \<alpha> I \<beta>) = sat \<sigma> V v i (Until (And \<alpha> (Eventually (init_ivl I) \<beta>) ) I \<beta>)"
 (is "?L = ?R")
@@ -1605,12 +1539,16 @@ lemma rsub_1: "f_conr P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i \<alpha
 proof -
   assume A: "f_conr P" "(\<And>v i. sat \<sigma> V v i \<alpha> = sat \<sigma> V v i \<beta>)"
   then obtain P2 where P2: "trans P P2" using trans3[OF A(1)] by auto
-  moreover have L1: "f_con P2" using trans1[OF P2] by auto
-  moreover have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project \<alpha>) = Formula.sat \<sigma> V v i (project \<beta>))" 
+  have L1: "f_con P2" using trans1[OF P2] by auto
+  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project \<alpha>) = Formula.sat \<sigma> V v i (project \<beta>))" 
     using A(2) sat_project by simp
-  ultimately show ?thesis
-    using Rewriting.trans2 sub_1
-    by (smt (verit, ccfv_SIG) sat_project)
+  have "sat \<sigma> V v i (P \<alpha>) = Formula.sat \<sigma> V v i (P2 (project \<alpha>))"
+    by (simp add: sat_project flip: Rewriting.trans2[OF P2])
+  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project \<beta>))"
+    by (rule sub_1[OF L1 L2])
+  also have "\<dots> = sat \<sigma> V v i (P \<beta>)"
+    by (simp add: sat_project flip: Rewriting.trans2[OF P2])
+  finally show ?thesis .
 qed
 
 
@@ -1651,23 +1589,25 @@ lemma trans2_2: "trans2 P P' \<Longrightarrow> project (P r r2) = P' (project r)
   by (induction P P' rule:trans2.induct;simp)
 
 lemma trans2_3: "f_conr2 P \<Longrightarrow> \<exists>P'. trans2 P P'"
-  apply(induction P rule:f_conr2.induct)
-  using trans2.trans2_1 trans2.trans2_2 trans2.trans2_3 trans2.trans2_4 trans2.trans2_5 trans2.trans2_6 apply blast+
-  done
+  by (induction P rule: f_conr2.induct) (blast intro: trans2.intros)+
 
 lemma rsub_2: "f_conr2 P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1) \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2) \<Longrightarrow> sat \<sigma> V v i (P a1 a2) = sat \<sigma> V v i (P b1 b2)"
 proof -
   assume A: "f_conr2 P" "(\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1)" "(\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2)"
-  then obtain P2 where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
-  moreover have L1: "f_con2 P2" using trans2_1[OF P2] by auto
-  moreover have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
+  then obtain P2 :: "ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula"
+    where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
+  have L1: "f_con2 P2" using trans2_1[OF P2] by auto
+  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
     using A(2) by (simp add: sat_project)
-  moreover have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
+  have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
     using A(3) by (simp add: sat_project)
-  ultimately show ?thesis
-    using Rewriting.trans2_2 sub_2
-    by (smt (verit, ccfv_SIG) Rewriting.trans2_1 sat_project
-        \<open>\<And>thesis. (\<And>P2. trans2 P P2 \<Longrightarrow> thesis) \<Longrightarrow> thesis\<close>) 
+  have "sat \<sigma> V v i (P a1 a2) = Formula.sat \<sigma> V v i (P2 (project a1) (project a2))"
+    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
+  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project b1) (project b2))"
+    by (rule sub_2[OF L1 L2 L3])
+  also have "\<dots> = sat \<sigma> V v i (P b1 b2)"
+    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
+  finally show ?thesis .
 qed
 
 
@@ -1694,9 +1634,7 @@ lemma trans_agg_2: "trans_agg P P' \<Longrightarrow> project (P r) = P' (project
   by (induction P P' rule:trans_agg.induct;simp)
 
 lemma trans_agg_3: "f_conr_agg P \<Longrightarrow> \<exists>P'. trans_agg P P'"
-  apply(induction P rule:f_conr_agg.induct)
-  using trans_agg.trans_agg_1 apply blast
-  done
+  by (induction P rule: f_conr_agg.induct) (blast intro: trans_agg.intros)
 
 lemma rsub_agg: "f_conr_agg P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a = sat \<sigma> V v i b) 
   \<Longrightarrow> fv (project a) = fv (project b)
@@ -1713,40 +1651,74 @@ proof -
     by (metis (mono_tags, lifting) sat_project)
 qed
 
+lemma nfv_rewrite[simp]: "nfv (rewrite \<alpha> t) = nfv \<alpha>"
+  unfolding nfv_project[symmetric] Formula.nfv_def rewrite_fv[symmetric] ..
+
+lemma preds_shiftI[simp]: "preds (shiftI k \<phi>) = preds \<phi>"
+  by (induction \<phi> arbitrary: k) (auto simp: fv_regex_alt regex.set_map)
+
+lemma preds_TT[simp]: "preds Formula.TT = {}"
+  by (simp add: Formula.TT_def)
+
+lemma Diff_fresh: "x \<notin> A \<Longrightarrow> A - {x} = A"
+  by blast
+
+lemma preds_rewrite[simp]: "preds (project (rewrite \<phi> t)) = preds (project \<phi>)"
+proof (induction \<phi> t rule: rewrite.induct)
+  case (14 \<alpha> \<gamma> I \<beta> t)
+  then show ?case
+    by (cases t) (simp_all add: Let_def once_def nfv_project frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
+next
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  then show ?case
+    by (cases t) (simp_all add: Let_def once_def Un_ac split: if_splits)
+next
+  case (35 I r t)
+  then show ?case by (simp add: fv_regex_alt regex.set_map)
+next
+  case (36 I r t)
+  then show ?case by (simp add: fv_regex_alt regex.set_map)
+qed (simp_all add: Let_def nfv_project project_shift once_def eventually_def historically_def
+  always_def frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
+
+lemma fresh_rewrite: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
+  by simp
+
+lemma sat_fun_upd_fresh[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> sat \<sigma> (V(p \<mapsto> X)) v i \<phi> = sat \<sigma> V v i \<phi>"
+  unfolding sat_project[symmetric]
+  by (rule not_contains_pred_sat) (auto dest: contains_pred_preds)
+
+lemma sat_frz_atom[simp]: "nfv \<alpha> = n \<Longrightarrow>
+  sat \<sigma> (V((q, n) \<mapsto> \<lambda>w j. sat \<sigma> V w i \<alpha>)) v k (frz_atom q n) = sat \<sigma> V v i \<alpha>"
+  unfolding sat_project[symmetric]
+  by (auto simp: frz_atom_def fv_project comp_def dest!: fvi_less_nfv_r intro!: Formula.sat_fv_cong)
+
 lemma sat_rewrite: "sat \<sigma> V v i (rewrite r t) = sat \<sigma> V v i (fix_r r t)"
-proof(induction r t arbitrary: v i rule: rewrite.induct)
+proof(induction r t arbitrary: V v i rule: rewrite.induct)
   case (1 \<alpha> \<beta> \<gamma> t)
-  thm rsub_2[OF f_conr2_1_t 1(1-2)]
   then show ?case 
     using sat_main_1 by simp
 next
   case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case 
-    using sat_main_2 by simp
+  then show ?case
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case 
-    using sat_main_3 by simp
+  then show ?case
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (4 \<alpha> t \<beta>)
-
   then show ?case
   proof(cases "prop_cond \<alpha> \<beta>")
     case True
     moreover have obs: "project (shiftI_r 0 \<alpha>) = shiftI 0 (project \<alpha>)" 
       by (rule project_shift[of 0])
-    ultimately show ?thesis using
-       sat_main_4
-      apply (simp only: fix_r.simps rewrite.simps if_True)
-      apply(simp only: rsub_1[OF f_conr_1_t 4(1)[OF True] ] fix_r.simps)
-      apply(simp only:  project.simps  fix_r.simps project_shift)
-      by (metis obs project.simps(12) project.simps(10) sat_project)(*remove embedding*)
+    ultimately show ?thesis
+      using 4(1)[OF True] sat_main_4 by (simp add: sat_project[symmetric] obs)
   next
     case False
     then show ?thesis
-      apply(simp only: fix_r.simps rewrite.simps if_False Let_def)
-      apply(simp only: rsub_2[OF f_conr2_2_t 4(2)[OF False] rsub_1[OF f_conr_1_t 4(3)[OF False refl]]] fix_r.simps)
-      done
+      using 4(2,3)[OF False] by simp
   qed
 next
   case (5 \<alpha> \<beta> t)
@@ -1756,253 +1728,117 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-  proof(cases"(prop_cond \<alpha> \<beta>) \<and> (bounded I)")
-    case True
-  then show ?thesis
-    apply(simp only:rewrite.simps rsub_2[OF f_conr2_2_t 6(1)[OF True] rsub_2[OF f_conr2_5_t 6(2,3)[OF True]]] split:if_splits)
-    apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_10[symmetric]) (*rewrite lemma*)
-    apply(simp)
-    done
-next
-  case F1:False
-  then show ?thesis
-  proof(cases "(prop_cond \<alpha> \<gamma>) \<and> (bounded I)")
-    case True
-    then show ?thesis using F1
-      apply(simp only: rewrite.simps rsub_2[OF f_conr2_2_t 6(4)[OF F1 True] rsub_2[OF f_conr2_5_t 6(5,6)[OF F1 True]]] split:if_splits)
-      apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_12[symmetric]) (*rewrite lemma*)
-    apply(simp)
-      done
-next
-  case False
-  then show ?thesis using F1 6
-    apply(simp only:rewrite.simps Let_def  split:if_splits)
-    apply(simp only: rsub_2[OF f_conr2_2_t 6(7)[OF F1 False] rsub_2[OF f_conr2_5_t 6(8)[OF F1 False refl] 6(9)[OF F1 False refl refl]]])
-    apply(simp)
-      done
-qed
-qed
-
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-  proof(cases"(prop_cond \<alpha> \<beta>) \<and> (bounded I)")
-    case True
-  then show ?thesis
-    apply(simp only:rewrite.simps rsub_2[OF f_conr2_2_t 7(1)[OF True] rsub_2[OF f_conr2_6_t 7(2,3)[OF True]]] split:if_splits)
-    apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_11[symmetric]) (*rewrite lemma*)
-    apply(simp)
-    done
-next
-  case F1:False
-  then show ?thesis
-  proof(cases "(prop_cond \<alpha> \<gamma>) \<and> (bounded I)")
-    case True
-    then show ?thesis using F1
-      apply(simp only: rewrite.simps rsub_2[OF f_conr2_2_t 7(4)[OF F1 True] rsub_2[OF f_conr2_6_t 7(5,6)[OF F1 True]]] split:if_splits)
-      apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_13[symmetric]) (*rewrite lemma*)
-    apply(simp)
-      done
-next
-  case False
-  then show ?thesis using F1
-    apply(simp only:rewrite.simps Let_def  split:if_splits)
-    apply(simp only: rsub_2[OF f_conr2_2_t 7(7)[OF F1 False] rsub_2[OF f_conr2_6_t 7(8)[OF F1 False refl] 7(9)[OF F1 False refl refl]]])
-    apply(simp)
-      done
-  qed
-  qed
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (8 \<alpha> I \<beta> t)
-  then show ?case by (auto simp add:)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (9 \<alpha> I \<beta> t)
-  then show ?case  by (auto simp add:)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
-case (10 \<alpha> I \<beta> t)
-  then show ?case  by (auto simp add:)
+  case (10 \<alpha> I \<beta> t)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (11 \<alpha> I \<beta> t)
-  then show ?case by (auto simp add:)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (12 \<alpha> I \<beta> t)
   then show ?case
-proof(cases "prop_cond \<alpha> \<beta> ")
-  case True
-  then show ?thesis using rsub_2[OF f_conr2_2_t 12(1)[OF True] rsub_1[OF f_conr_6_t rsub_2[OF f_conr2_2_t rsub_1[OF f_conr_5_t 12(1)[OF True]] 12(3)[OF True]]]] sat_main_22[symmetric]
-    apply(simp only: rewrite.simps fix_r.simps  split:if_splits)
-    apply(simp split: nat.splits)
-    using "12.IH"(1) "12.IH"(3) by force
-next
-  case False
-  then show ?thesis 
-    using rsub_2[OF f_conr2_2_t 12(4)[OF False] rsub_1[OF f_conr_6_t 12(5)[OF False refl]]] by simp
-qed
+    by (auto split: nat.splits)
 next
   case (13 \<alpha> I \<beta> t)
   then show ?case by (auto simp add: )
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> bounded I \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> bounded I \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
-  then show ?case
-  proof(cases)
-    case a
-    then have ex:"\<not> mem I 0" by auto
-    from a show ?thesis
-          apply(simp del: sat.simps add: rsub_2[OF f_conr2_5_t 14(1) 14(2)[OF refl a ]]  split:if_splits )
-          apply(simp only:sat_main_6[OF ex, symmetric])(*apply rewrite lemma*)
-      done
+  have mem0: "\<not> mem I 0 \<Longrightarrow> mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<Longrightarrow> j \<le> i \<Longrightarrow> i \<in> {j<..i}" for j
+    by (cases "j = i") auto
+  show ?case
+  proof (cases t)
+    case Same
+    with 14 mem0 show ?thesis
+      by (auto simp: Let_def frz_name_fresh; blast)
   next
-    case b
-    then have ex:"\<not> mem I 0" by auto
-    have swap: "sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I (And (Eventually I \<gamma>) \<beta>)) = sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I \<beta>) \<longleftrightarrow>
-                sat \<sigma> V v i (Since (And \<gamma> \<alpha>) I (And (Eventually I \<gamma>) \<beta>)) = sat \<sigma> V v i (Since (And \<gamma> \<alpha>) I \<beta>)" 
-      by (simp add: ;fast)
-    from b show ?thesis using swap
-      apply(simp only:rewrite.simps)
-        apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(1) 14(3)[OF refl b]]  split:if_splits) (*remove recursion*)
-        apply(rule sat_main_6[OF ex, symmetric])(*apply rewrite lemma*)
-      done
-next
-  case c
-  then show ?thesis
-    apply(simp only:rewrite.simps)
-        apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(4)[OF refl c] 14(1)]  split:if_splits) (*remove recursion*)
-    apply(rule sat_main_8[symmetric])
-    done
-next
-  case d
-  have swap:"sat \<sigma> V v i (Since (And (Once (init_ivl I) \<gamma>) \<beta>) I (And \<alpha> \<gamma>)) =
-             sat \<sigma> V v i (Since (And (Once (init_ivl I) \<gamma>) \<beta>) I (And \<gamma> \<alpha>))"
-            "sat \<sigma> V v i (Since \<beta> I (And \<alpha> \<gamma>)) = sat \<sigma> V v i (Since \<beta> I (And \<gamma> \<alpha>))" 
-    by auto
-  from d show ?thesis
-    apply(simp only:rewrite.simps)
-    apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(5)[OF refl d] 14(1)]  split:if_splits) (*remove recursion*)
-    apply(simp only: swap)
-    apply(rule sat_main_8[symmetric])
-    done
-next
-  case e
-  then show ?thesis
-  proof(cases "t=Swapped")
-    case True
-    then show ?thesis using e
-      apply(simp only:rewrite.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(6)[OF refl e]] 14(1)  split:if_splits) (*remove recursion*)
-      done
-  next
-    case False
-    then show ?thesis using e not_swapped[OF False]
-      apply(simp only:rewrite.simps fix_r.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(1) 14(6)[OF refl e]]  split:if_splits) (*remove recursion*)
-      done
+    case Swapped
+    with 14 show ?thesis
+      using sat_main_8[of \<sigma> V v i \<beta> I \<alpha> \<gamma>] sat_main_8[of \<sigma> V v i \<beta> I \<gamma> \<alpha>]
+      by (auto simp: Let_def)
   qed
-qed
 next
-case (15 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
-  then show ?case
-  proof(cases)
-    case a
-    then have ex:"\<not> mem I 0" by auto
-    from a show ?thesis
-          apply(simp del: sat.simps add: rsub_2[OF f_conr2_6_t 15(1) 15(2)[OF refl a ]]  split:if_splits )
-          apply(simp only:sat_main_7[OF ex, symmetric])(*apply rewrite lemma*)
-      done
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  have lt: "\<not> memL I 0 \<Longrightarrow> memL I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<Longrightarrow> i \<le> j \<Longrightarrow> i \<in> {i..<j}" for j
+    by (cases "j = i") auto
+  have r: "sat \<sigma> V v i (Until (rewrite (And \<alpha> \<gamma>) Same) I X) = sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I Y)"
+    if "\<And>v i. sat \<sigma> V v i X = sat \<sigma> V v i Y" for X Y
+    using 15(1) that by simp
+  have eq\<gamma>: "sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I (And (Once I \<gamma>) \<beta>)) = sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I \<beta>)"
+    if "\<not> mem I 0"
+    using that lt by (auto 0 4)
+  show ?case
+  proof (cases t)
+    case Same
+    consider (a) "\<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
+      | (b) "\<not> (\<not> mem I 0 \<and> prop_cond \<alpha> \<beta>)" "\<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
+      | (c) "\<not> (\<not> mem I 0 \<and> prop_cond \<alpha> \<beta>)" "\<not> (\<not> mem I 0 \<and> prop_cond \<gamma> \<beta>)"
+      by blast
+    then show ?thesis
+    proof cases
+      case a
+      have "sat \<sigma> V v i (rewrite (And (Once I \<alpha>) \<beta>) Same) = sat \<sigma> V v i (And (Once I \<alpha>) \<beta>)" for v i
+        using 15(2)[OF refl] Same a by simp
+      from r[OF this] Same a show ?thesis
+        using sat_main_7[of I \<sigma> V v i \<alpha> \<gamma> \<beta>]
+        by (simp add: Let_def del: sat.simps)
+    next
+      case b
+      have "sat \<sigma> V v i (rewrite (And (Once I \<gamma>) \<beta>) Same) = sat \<sigma> V v i (And (Once I \<gamma>) \<beta>)" for v i
+        using 15(3)[OF refl] Same b by simp
+      from r[OF this] Same b show ?thesis
+        using eq\<gamma>
+        by (simp add: Let_def del: sat.simps)
+    next
+      case c
+      have "sat \<sigma> V v i (rewrite \<beta> Same) = sat \<sigma> V v i \<beta>" for v i
+        using 15(4)[OF refl] Same c by simp
+      from r[OF this] Same c show ?thesis
+        by (auto simp: Let_def simp del: sat.simps)
+    qed
   next
-    case b
-    then have ex:"\<not> mem I 0" by auto
-    have swap: "sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I (And (Once I \<gamma>) \<beta>)) = sat \<sigma> V v i (Until (And \<gamma> \<alpha>) I (And (Once I \<gamma>) \<beta>))"
-               "sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I \<beta>) = sat \<sigma> V v i (Since (And \<gamma> \<alpha>) I \<beta>)"
-      by auto
-    from b show ?thesis
-      apply(simp only:rewrite.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(1) 15(3)[OF refl b]]  split:if_splits) (*remove recursion*)
-      apply(simp only: swap)
-      apply(simp only: sat_main_7[OF ex, symmetric])(*apply rewrite lemma*)
-      apply(auto)
-      done
-next
-  case c
-  thm 15(1)
-  thm 15(4)[OF refl ]
-  thm rsub_2[OF f_conr2_5_t  ]
-  thm sat_main_8[symmetric]
-  then show ?thesis
-    apply(simp only:rewrite.simps)
-        apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(4)[OF refl c] 15(1)]  split:if_splits) (*remove recursion*)
-    apply(rule sat_main_9[symmetric])
-    done
-next
-  case d
-  have swap:"sat \<sigma> V v i (Until (And (Eventually (init_ivl I) \<gamma>) \<beta>) I (And \<alpha> \<gamma>)) =
-             sat \<sigma> V v i (Until (And (Eventually (init_ivl I) \<gamma>) \<beta>) I (And \<gamma> \<alpha>))"
-            "sat \<sigma> V v i (Until \<beta> I (And \<alpha> \<gamma>)) = sat \<sigma> V v i (Until \<beta> I (And \<gamma> \<alpha>))" 
-    by auto
-  from d show ?thesis using swap
-    apply(simp only:rewrite.simps)
-    apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(5)[OF refl d] 15(1)]  split:if_splits) (*remove recursion*)
-    apply(simp only: swap)
-    apply(rule sat_main_9[symmetric])
-    done
-next
-  case e
-  then show ?thesis
-  proof(cases "t=Swapped")
-    case True
-    then show ?thesis using e
-      apply(simp only:rewrite.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(6)[OF refl e]] 15(1)  split:if_splits) (*remove recursion*)
-      done
-  next
-    case False
-    then show ?thesis using e not_swapped[OF False]
-      apply(simp only:rewrite.simps fix_r.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(1) 15(6)[OF refl e]]  split:if_splits) (*remove recursion*)
-      done
+    case Swapped
+    with 15 show ?thesis
+      by (auto simp: Let_def)
   qed
-qed
 next
-  case (24 y \<omega> b' f \<phi> t)
+  case (25 y \<omega> b' f \<phi> t)
+  have "sat \<sigma> V v i (Agg y \<omega> b' f (rewrite \<phi> Same)) = sat \<sigma> V v i (Agg y \<omega> b' f \<phi>)"
+    by (rule rsub_agg[OF f_conr_agg_t]) (simp_all add: 25 flip: rewrite_fv)
   then show ?case
-    apply(simp only:rewrite.simps fix_r.simps rsub_agg[OF f_conr_agg_t 24[symmetric],simplified fix_r.simps, OF rewrite_fv])
-    done
+    by simp
 next
-  case (25 I \<phi> t)
+  case (26 I \<phi> t)
+  have "sat \<sigma> V v i (Prev I (rewrite \<phi> Same)) = sat \<sigma> V v i (Prev I \<phi>)"
+    by (rule rsub_1[OF f_conr_6_t]) (simp add: 26)
   then show ?case
-    apply(simp only:rewrite.simps fix_r.simps rsub_1[OF f_conr_6_t 25])
-    done
-next
-  case (34 I r t)
-  then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
+    by simp
 next
   case (35 I r t)
   then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
+next
+  case (36 I r t)
+  then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
 qed (simp only:rewrite.simps fix_r.simps;auto)+
 
-lemma final_sat: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> (project (rewrite (embed \<phi>) Same)) \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
-  unfolding sat_project sat_rewrite
+definition "rrewrite \<phi> = project (rewrite (embed \<phi>) Same)"
+
+lemma final_sat: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> rrewrite \<phi> \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
+  unfolding sat_project sat_rewrite rrewrite_def
   unfolding sat_embed[symmetric]
   by simp
 

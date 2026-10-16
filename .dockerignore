@@ -1,6 +1,0 @@
-.dockerignore
-.git
-_build
-Dockerfile*
-evaluation
-thys

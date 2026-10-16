@@ -7,14 +7,6 @@ session MFOTL_Monitor_Devel (AFP) = "Containers" +
     Table
     Abstract_Monitor
     Interval
-    MFOTL
-    Monitor
-    Slicing
-  theories [document=false]
-    Monitor_Code
-    Examples
   document_files
     "root.tex"
     "root.bib"
-  export_files (in ".") [2]
-   "MFOTL_Monitor_Devel.Monitor_Code:code/**"

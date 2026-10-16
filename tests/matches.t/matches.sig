@@ -1,2 +1,0 @@
-P(string)
-Q(string)

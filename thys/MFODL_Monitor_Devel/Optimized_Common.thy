@@ -291,9 +291,20 @@ proof (induction ds arbitrary: ts Y)
     show ?thesis
     proof (cases "Mapping.lookup ts'' as")
       case None
-      have "False"
-        using Cons(2,3) None step
-        by (auto simp: Pair filter_set.simps Let_def) (smt (z3) Mapping_lookup_filter_Some option.distinct(1) option.inject)
+      have ts'': "ts'' = Mapping.filter (filter_cond X' ts t') ts"
+        using step by (simp add: Pair filter_set.simps Let_def)
+      have "as \<in> X' \<and> Mapping.lookup ts as = Some t'"
+      proof (rule ccontr)
+        assume "\<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t')"
+        then have "Mapping.lookup ts'' as = Mapping.lookup ts as"
+          unfolding ts'' by (rule Mapping_lookup_filter_Some)
+        with None Cons(2) show False
+          by simp
+      qed
+      with Cons(2) Pair have "(t, X') \<in> set (a # ds)" and "as \<in> X'"
+        by simp_all
+      with Cons(3) have "False"
+        by blast
       then show ?thesis ..
     next
       case (Some t'')
@@ -341,12 +352,16 @@ proof -
     show ?case
     proof (cases a)
       case (Pair t' X')
-      show ?thesis
-        using Cons(2)
-        apply (simp add: Pair upd_set_keys.simps)
-        apply (drule Cons(1))
-        apply (auto simp: Mapping_upd_set_keys)
-        done
+      let ?ts = "upd_set ts (\<lambda>_. t') (Z X' t')"
+      have "fold (upd_set_keys Z) mv (?ts, Y0 \<union> Z X' t') = (ts', Y)"
+        using Cons(2) by (simp add: Pair upd_set_keys.simps)
+      then have "Y0 \<union> Z X' t' \<subseteq> Y \<and> Mapping.keys ?ts \<subseteq> Mapping.keys ts' \<and>
+        Mapping.keys ts' \<union> (Y0 \<union> Z X' t') = Mapping.keys ?ts \<union> Y"
+        by (rule Cons(1))
+      moreover have "Mapping.keys ?ts = Mapping.keys ts \<union> Z X' t'"
+        by (rule Mapping_upd_set_keys)
+      ultimately show ?thesis
+        by blast
     qed
   qed simp
   show "Mapping.keys ts' = Mapping.keys ts \<union> Y"
@@ -481,7 +496,7 @@ lemma fold_pair_fst: "fst (fold (\<lambda> a (x, y). (f1 a x, f2 a x y)) as (x, 
 proof (induction as arbitrary: rule: rev_induct)
   case (snoc a as)
   then show ?case
-    by (smt (z3) fold.simps(1) fold.simps(2) fold_append fst_conv id_o o_apply split_beta)
+    by (simp add: split_beta)
 qed (auto)
 
 lemma Mapping_update_keys: "Mapping.keys (Mapping.update a b m) = Mapping.keys m \<union> {a}"
@@ -497,7 +512,7 @@ next
 qed
 
 lemma list_all_split: "list_all (\<lambda>(x, y). f x y \<and> g x y) xs \<longleftrightarrow> list_all (\<lambda>(x, y). f x y) xs \<and> list_all (\<lambda>(x, y). g x y) xs"
-  by (smt (z3) Ball_set case_prodI2 old.prod.case)
+  by (induction xs) auto
 
 lemma list_all2_weaken: "list_all2 f xs ys \<Longrightarrow>
   (\<And>x y. (x, y) \<in> set (zip xs ys) \<Longrightarrow> f x y \<Longrightarrow> f' x y) \<Longrightarrow> list_all2 f' xs ys"
@@ -531,6 +546,18 @@ lemma Mapping_keys_filterD: "k \<in> Mapping.keys (Mapping.filter f m) \<Longrig
 lemma list_appendE: "xs = ys @ zs \<Longrightarrow> x \<in> set xs \<Longrightarrow>
   (x \<in> set ys \<Longrightarrow> P) \<Longrightarrow> (x \<in> set zs \<Longrightarrow> P) \<Longrightarrow> P"
   by auto
+
+text \<open>The join of two tables over the same columns is their intersection or difference.\<close>
+
+lemma join_eq:
+  assumes "table cs t1" "table cs t2" "distinct cs"
+  shows "join cs t2 pos cs t1 = (if pos then t2 \<inter> t1 else t2 - t1)"
+proof -
+  have idle: "restrict cs cs x = x" if "x \<in> t2" for x
+    using restrict_idle[OF assms(3) tableD[OF assms(2) that]] .
+  show ?thesis
+    using join_sub[OF assms(3,3,2,1) subset_refl, of pos] by (auto simp: idle)
+qed
 
 (*<*)
 end

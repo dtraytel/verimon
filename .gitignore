@@ -1,22 +1,15 @@
 *.o
 _build
+_build_*/
 _coverage
 *.coverage
-/monpoly*.install
+*.install
 
 *~
 \#*\#
 
 /thys/*/*.ocaml
+/thys/MFODL_Parser/Parser/Code/*.ocaml
 .DS_Store
+__pycache__/
 .vscode
-libmonpoly.install
-
-# trigger and release ignored files
-trigger-performance-evaluation/experiments*/
-trigger-performance-evaluation/asymptotic-experiments*/
-trigger-performance-evaluation/asymptotic-experiments-rewritten/
-trigger-performance-evaluation/asymptotic-experiments-constant-interval/
-trigger-performance-evaluation/asymptotic-experiments-fraction-interval/
-
-release-performance-evaluation/experiments*/

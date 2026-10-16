@@ -1,0 +1,25 @@
+chapter AFP
+
+session MFODL_Grammar = LR_Parser +
+  description
+    "The grammar of MonPoly's formula syntax, with its semantic actions and the
+     relation it defines (a separate session because the grammar command is slow)."
+  options [timeout = 7200]
+  theories
+    MFODL_Syntax
+    MFODL_Grammar
+
+session MFODL_Parser in Parser = MFODL_Grammar +
+  description
+    "A verified parser for MonPoly's formula syntax, generated from the grammar by the
+     parser command of the grammar package."
+  options [timeout = 0]
+  theories
+    MFODL_Parser
+
+session MFODL_Parser_Code in "Parser/Code" = MFODL_Parser +
+  description
+    "The lexer's code equations, and examples of the verified parser checked by evaluation."
+  theories
+    MFODL_Lexer_Code
+    MFODL_Parser_Code

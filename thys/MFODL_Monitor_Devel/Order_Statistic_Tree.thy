@@ -125,9 +125,8 @@ text \<open>We do not make use of these constraints and do not prove that they g
 preservation of the invariant. Instead, we provide generic proofs of invariant preservation
 that work for many (all?) interpretations of locale \<open>WBT\<close> (below) with valid parameters.
 Further down we demonstrate this by interpreting \<open>WBT\<close> with a selection of valid parameters.
-[For some parameters, some \<open>smt\<close> proofs fail because \<open>smt\<close> on \<open>nat\<close>s fails although
-on non-negative \<open>int\<close>s it succeeds, i.e.\ the goal should be provable.
-This is a shortcoming of \<open>smt\<close> that is under investigation.]
+[A few arithmetic facts in the proofs below hold for natural numbers but not for rationals;
+they are derived by hand for the chosen parameters and have to be adapted for other ones.]
 
 Locale \<open>WBT\<close> comes with some minimal assumptions (\<open>\<Gamma>1 > \<Gamma>2\<close> and \<open>\<Delta>1 > \<Delta>2\<close>) which follow
 from @{const valid_params} and from which we conclude some simple lemmas.
@@ -483,9 +482,21 @@ proof -
     show ?thesis
     proof (cases "single lr rr")
       case single: True
-      have "singly_balanced_arith (size l') (size lr) (size rr)"
+      have "10 * size lr \<le> 15 + 25 * size l'"
+      proof (rule ccontr)
+        assume contra: "\<not> ?thesis"
+        have "balanced1 l r" "wbt l" using assms(1) by (simp_all only: wbt.simps)
+        hence "10 * size lr + 10 * size rr \<le> 30 + 25 * size l'"
+          using assms(3) rBalanced by simp
+        with contra have "size rr \<le> 1" by arith
+        moreover have "10 * size lr < 4 + 14 * size rr"
+          using single rBalanced by simp
+        ultimately have "size lr \<le> 1" by arith
+        with contra show False by linarith
+      qed
+      then have "singly_balanced_arith (size l') (size lr) (size rr)"
         using assms(1) notBalanced rl'Balanced rBalanced single assms
-        by (simp) (smt?)
+        by simp
       thus ?thesis using notBalanced single assms(2) rBalanced by simp
     next
       case isDouble: False
@@ -494,7 +505,7 @@ proof -
         by(meson neq_Leaf2_iff)
       have "doubly_balanced_arith (size l') (size llr) (size rlr) (size rr)"
         using assms(1) notBalanced rl'Balanced rBalanced isDouble assms(2,3)
-        apply (auto) apply((thin_tac "_ = _")+, smt)? done
+        by auto
       thus ?thesis using notBalanced isDouble assms(2) rBalanced by simp
     qed
   qed
@@ -516,9 +527,21 @@ proof -
     show ?thesis
     proof (cases "single rl ll")
       case single: True
-      have "singly_balanced_arith (size rl) (size r') (size ll)"
+      have "10 * size rl \<le> 15 + 25 * size r'"
+      proof (rule ccontr)
+        assume contra: "\<not> ?thesis"
+        have "balanced1 r l" "wbt r" using assms(1) by (simp_all only: wbt.simps)
+        hence "10 * size ll + 10 * size rl \<le> 30 + 25 * size r'"
+          using assms(3) lBalanced by simp
+        with contra have "size ll \<le> 1" by arith
+        moreover have "10 * size rl < 4 + 14 * size ll"
+          using single lBalanced by simp
+        ultimately have "size rl \<le> 1" by arith
+        with contra show False by linarith
+      qed
+      then have "singly_balanced_arith (size rl) (size r') (size ll)"
         using assms(1) notBalanced lr'Balanced lBalanced single assms(2,3)
-        apply (auto) apply((thin_tac "_ = _")+, smt)? done
+        by simp
       thus ?thesis using assms(2) lBalanced notBalanced single by simp
     next
       case isDouble: False
@@ -527,7 +550,7 @@ proof -
         by(meson neq_Leaf2_iff)
       have "doubly_balanced_arith (size ll) (size lrl) (size rrl) (size r')"
         using assms(1) notBalanced lr'Balanced lBalanced isDouble assms(2,3)
-        apply (auto) apply((thin_tac "_ = _")+, smt)? done
+        by auto
       thus ?thesis using assms(2) lBalanced notBalanced isDouble by simp
     qed
   qed
