@@ -10,10 +10,132 @@ lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_form
   by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
     (auto simp: letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
+subsection \<open>Negated past operands\<close>
+
+text \<open>A past operator with a negated right operand, @{term "Formula.Since \<phi> I (Formula.Neg \<psi>)"},
+  is not safe on its own. The rewriting (@{const rrewrite}) makes it monitorable by freezing the
+  conjunct that restricts its free variables (@{const Formula.Frz}), which the monitor evaluates
+  by replaying the operator for every time point. If the interval contains 0, the dual
+  @{term "Formula.Neg (Formula.Trigger (Formula.Neg \<phi>) I \<psi>)"} is equivalent and has the same
+  progress, and it is safe in a conjunction with a formula that restricts its free variables:
+  the negation is the difference with the trigger, whose tables are contained in those of
+  @{term \<psi>}. This is the unnesting of a correlated @{text "NOT EXISTS"} into an anti-join, which
+  needs no freezing. The negation of the left operand removes a double negation
+  (@{const neg_dual}), as for @{term "Formula.Since (Formula.Neg \<phi>) I (Formula.Neg \<psi>)"}.
+  Without 0 in the interval, the trigger is not safe on its own (its tables are infinite at the
+  time points without any in the interval), and the progress of the since operator is larger.\<close>
+
+definition neg_dual :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
+  "neg_dual \<phi> = (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> \<phi>' | _ \<Rightarrow> Formula.Neg \<phi>)"
+
+fun dual_since :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
+  "dual_since (Formula.Since \<phi> I (Formula.Neg \<psi>)) = (if mem I 0
+     then Formula.Neg (Formula.Trigger (neg_dual (dual_since \<phi>)) I (dual_since \<psi>))
+     else Formula.Since (dual_since \<phi>) I (Formula.Neg (dual_since \<psi>)))"
+| "dual_since (Formula.Let p \<phi> \<psi>) = Formula.Let p (dual_since \<phi>) (dual_since \<psi>)"
+| "dual_since (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (dual_since \<phi>) (dual_since \<psi>)"
+| "dual_since (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (dual_since \<phi>) (dual_since \<psi>)"
+| "dual_since (Formula.Neg \<phi>) = Formula.Neg (dual_since \<phi>)"
+| "dual_since (Formula.Or \<phi> \<psi>) = Formula.Or (dual_since \<phi>) (dual_since \<psi>)"
+| "dual_since (Formula.And \<phi> \<psi>) = Formula.And (dual_since \<phi>) (dual_since \<psi>)"
+| "dual_since (Formula.Ands l) = Formula.Ands (map dual_since l)"
+| "dual_since (Formula.Exists t \<phi>) = Formula.Exists t (dual_since \<phi>)"
+| "dual_since (Formula.Agg y \<omega> tys f \<phi>) = Formula.Agg y \<omega> tys f (dual_since \<phi>)"
+| "dual_since (Formula.Prev I \<phi>) = Formula.Prev I (dual_since \<phi>)"
+| "dual_since (Formula.Next I \<phi>) = Formula.Next I (dual_since \<phi>)"
+| "dual_since (Formula.Since \<phi> I \<psi>) = Formula.Since (dual_since \<phi>) I (dual_since \<psi>)"
+| "dual_since (Formula.Until \<phi> I \<psi>) = Formula.Until (dual_since \<phi>) I (dual_since \<psi>)"
+| "dual_since (Formula.MatchP I r) = Formula.MatchP I (regex.map_regex dual_since r)"
+| "dual_since (Formula.MatchF I r) = Formula.MatchF I (regex.map_regex dual_since r)"
+| "dual_since \<phi> = \<phi>"
+
+lemma neg_dual_fvi[simp]: "Formula.fvi b (neg_dual \<phi>) = Formula.fvi b \<phi>"
+  by (cases \<phi>) (auto simp: neg_dual_def)
+
+lemma neg_dual_sat[simp]: "Formula.sat \<sigma> V v i (neg_dual \<phi>) \<longleftrightarrow> \<not> Formula.sat \<sigma> V v i \<phi>"
+  by (cases \<phi>) (auto simp: neg_dual_def)
+
+lemma dual_since_fvi: "Formula.fvi b (dual_since \<phi>) = Formula.fvi b \<phi>"
+  by (induction \<phi> arbitrary: b rule: dual_since.induct) (auto simp: fv_regex_alt regex.set_map)
+
+lemma dual_since_nfv: "Formula.nfv (dual_since \<phi>) = Formula.nfv \<phi>"
+  unfolding Formula.nfv_def dual_since_fvi by auto
+
+lemma dual_since_sat: "Formula.sat \<sigma> V v i (dual_since \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+proof (induction \<phi> arbitrary: V v i rule: dual_since.induct)
+  case (2 p \<phi> \<psi>)
+  then show ?case unfolding dual_since.simps Formula.sat.simps 2 dual_since_nfv by auto
+next
+  case (3 p \<phi> \<psi>)
+  then show ?case unfolding dual_since.simps Formula.sat.simps 3 dual_since_nfv by auto
+next
+  case (4 p \<phi> \<psi>)
+  then show ?case unfolding dual_since.simps Formula.sat.simps 4 dual_since_nfv by auto
+qed (auto simp: Rewriting.match_map_regex dual_since_fvi split: nat.splits)
+
+lemma wty_neg_dual: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> neg_dual \<phi>"
+  by (cases \<phi>) (auto simp: neg_dual_def intro!: wty_formula.Neg elim: wty_formula.cases)
+
+lemma wty_dual_since: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> dual_since \<phi>"
+proof (induction S E \<phi> rule: wty_formula.induct)
+  case (Let S E' \<phi> p E \<psi>)
+  then show ?case
+    by (auto simp del: fun_upd_apply simp: dual_since_nfv intro!: wty_formula.Let)
+next
+  case (Frz S E' \<phi> p E \<psi>)
+  then show ?case
+    by (auto simp del: fun_upd_apply simp: dual_since_nfv intro!: wty_formula.Frz)
+next
+  case (LetPast S p \<phi> E' E \<psi>)
+  then show ?case
+    by (auto simp del: fun_upd_apply simp: dual_since_nfv intro!: wty_formula.LetPast)
+next
+  case (Since S E \<phi> \<psi> I)
+  then show ?case
+    by (cases \<psi>) (auto intro!: wty_formula.intros wty_neg_dual elim: wty_formula.cases)
+next
+  case (MatchP S E r I)
+  then show ?case
+    by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+next
+  case (MatchF S E r I)
+  then show ?case
+    by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+qed (auto intro!: wty_formula.intros)
+
+lemma NonFutuRec_times[simp]: "NonFutuRec * x = x"
+  by (cases x) auto
+
+lemma safe_letpast_neg_dual[simp]: "safe_letpast p (neg_dual \<phi>) = safe_letpast p \<phi>"
+  by (cases \<phi>) (auto simp: neg_dual_def)
+
+lemma safe_letpast_dual_since[simp]: "safe_letpast (p, n) (dual_since \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induction \<phi> arbitrary: p n rule: dual_since.induct)
+    (auto simp: dual_since_nfv image_image regex.set_map)
+
+lemma future_bounded_neg_dual[simp]: "Safety.future_bounded (neg_dual \<phi>) = Safety.future_bounded \<phi>"
+  by (cases \<phi>) (auto simp: neg_dual_def)
+
+lemma future_bounded_dual_since: "Safety.future_bounded (dual_since \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  by (induction \<phi> rule: dual_since.induct)
+    (auto simp: dual_since_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong
+      split: if_splits)
+
+lemma progress_neg_dual[simp]: "progress \<sigma> P (neg_dual \<phi>) j = progress \<sigma> P \<phi> j"
+  by (cases \<phi>) (auto simp: neg_dual_def)
+
+lemma progress_dual_since: "progress \<sigma> P (dual_since \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induction \<phi> arbitrary: P j rule: dual_since.induct)
+    (auto simp: dual_since_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
+
+subsection \<open>Preparation\<close>
+
 text \<open>VeriMon's preparation of an input formula: type checking and, if the formula is not
-  monitorable and rewriting is requested (@{text rw}), normalization and then rewriting, until
-  the formula becomes monitorable. It does not depend on the auxiliary data structures of the
-  monitor, so all monitors (the kernel and the dense one) share it.\<close>
+  monitorable and rewriting is requested (@{text rw}), normalization, then the duals of negated
+  past operands (@{const dual_since}), and then rewriting, until the formula becomes
+  monitorable. The duals come before the rewriting, which would freeze where they need not. The
+  preparation does not depend on the auxiliary data structures of the monitor, so all monitors
+  (the kernel and the dense one) share it.\<close>
 
 definition "prepare_verimon rw sig \<phi> =
   (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
@@ -22,8 +144,10 @@ definition "prepare_verimon rw sig \<phi> =
         (if rw then
           let n\<phi> = normalize \<phi> in
             if mmonitorable_exec n\<phi> then Inr n\<phi> else
-              let r\<phi> = rrewrite n\<phi> in
-                if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
+              let d\<phi> = dual_since n\<phi> in
+                if mmonitorable_exec d\<phi> then Inr d\<phi> else
+                  let r\<phi> = rrewrite n\<phi> in
+                    if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
          else Inl STR ''not monitorable'')))"
 
 context maux begin
@@ -1517,13 +1641,13 @@ proof -
   have wty: "map_sig ?f sig, ?f o TAny \<turnstile> ?\<phi>"
     using check_sound_proven[OF check_check_subst wf] wf_f_check_subst wf_f_TCst_convert_tysym
     unfolding wty_result_fX_def by blast
-  have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = rrewrite (normalize ?\<phi>)"
+  have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = dual_since (normalize ?\<phi>) \<or> \<psi> = rrewrite (normalize ?\<phi>)"
     using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def split: if_splits)
   have "mmonitorable \<psi>"
     using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def monitorable_formula_code
       split: if_splits)
   moreover have "map_sig ?f sig, ?f o TAny \<turnstile> \<psi>"
-    using \<psi>_cases by (elim disjE) (simp_all add: wty wty_normalize wty_rrewrite)
+    using \<psi>_cases by (elim disjE) (simp_all add: wty wty_normalize wty_dual_since wty_rrewrite)
   ultimately show ?thesis
     by (intro verimon_spec.intro wty_mfodl.intro verimon_spec_axioms.intro)
 qed
@@ -1542,14 +1666,15 @@ proof -
     unfolding wty_result_fX_def by blast
   moreover have "Safety.future_bounded ?\<phi>"
   proof -
-    have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = rrewrite (normalize ?\<phi>)"
+    have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = dual_since (normalize ?\<phi>) \<or> \<psi> = rrewrite (normalize ?\<phi>)"
       using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def split: if_splits)
     have "mmonitorable \<psi>"
       using verimon_spec_\<psi> by (rule verimon_spec.monitorable)
     then have "Safety.future_bounded \<psi>"
       by (simp add: mmonitorable_def)
     with \<psi>_cases show ?thesis
-      using future_bounded_normalize[OF future_bounded_rrewrite] future_bounded_normalize
+      using future_bounded_normalize[OF future_bounded_rrewrite] future_bounded_normalize[OF future_bounded_dual_since]
+        future_bounded_normalize
       by auto
   qed
   ultimately show ?thesis
@@ -1565,20 +1690,20 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
 
 lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi rrewrite_fvi type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi dual_since_fvi rrewrite_fvi type_check_def check_check_subst)
 
 lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv dual_since_nfv rrewrite_nfv type_check_def check_check_subst)
 
 lemma sat_\<psi>:
   "Formula.sat \<sigma> V v i \<psi> = Formula.sat \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def final_sat normalize_sat type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def final_sat dual_since_sat normalize_sat type_check_def check_check_subst)
 
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: progress_normalize progress_rrewrite Let_def type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: progress_normalize progress_dual_since progress_rrewrite Let_def type_check_def check_check_subst)
 
 text \<open>The rewriting preserves the free variables, but not necessarily the order in which
   @{const Formula.fv_list} lists them: the kernel's verdicts on @{term \<psi>} are those of the
@@ -1641,7 +1766,7 @@ lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst)
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
   using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
   by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
-    intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
+    intro!: wf_mstate_minit wty_rrewrite wty_dual_since wty_normalize dest!: spec[of _ "convert_tysym"])
 
 (* Correctness of output of the monitor (verdicts of \phi is the output) *)
 lemmas wf_mstate_minit = verimon_wf_mstate_minit

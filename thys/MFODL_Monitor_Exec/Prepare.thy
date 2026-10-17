@@ -9,7 +9,8 @@ section \<open>VeriMon's preparation of the formula for the verified executable 
 text \<open>
   The verified executable monitor runs on the formula that VeriMon prepares (@{const prepare_verimon}):
   the input formula is type checked and, if it is not monitorable and rewriting is requested,
-  normalized and rewritten until it becomes monitorable. Optionally (@{text mw}), the prepared
+  normalized, its negated past operands replaced by their duals (@{const dual_since}), and
+  rewritten, until it becomes monitorable. Optionally (@{text mw}), the prepared
   formula is converted into multi-way joins. The executable state is then built from it by
   @{const eminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
   can (@{theory MFODL_Monitor_Exec.Frz_Rewrite}), moves existential quantifiers into the
