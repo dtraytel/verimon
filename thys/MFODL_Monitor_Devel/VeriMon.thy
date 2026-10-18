@@ -70,14 +70,14 @@ lemma dual_since_nfv: "Formula.nfv (dual_since \<phi>) = Formula.nfv \<phi>"
 
 lemma dual_since_sat: "Formula.sat \<sigma> V v i (dual_since \<phi>) = Formula.sat \<sigma> V v i \<phi>"
 proof (induction \<phi> arbitrary: V v i rule: dual_since.induct)
-  case (2 p \<phi> \<psi>)
-  then show ?case unfolding dual_since.simps Formula.sat.simps 2 dual_since_nfv by auto
-next
   case (3 p \<phi> \<psi>)
   then show ?case unfolding dual_since.simps Formula.sat.simps 3 dual_since_nfv by auto
 next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding dual_since.simps Formula.sat.simps 4 dual_since_nfv by auto
+next
+  case (5 p \<phi> \<psi>)
+  then show ?case unfolding dual_since.simps Formula.sat.simps 5 dual_since_nfv by auto
 qed (auto simp: Rewriting.match_map_regex dual_since_fvi split: nat.splits)
 
 lemma wty_neg_dual: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> neg_dual \<phi>"
