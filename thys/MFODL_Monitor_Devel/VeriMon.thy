@@ -1534,7 +1534,8 @@ proof (induction \<phi> arbitrary: S E rule: measure_induct_rule[of size'])
         by blast
       show ?thesis
         using c\<alpha> c\<beta> cr[OF \<beta>] w\<beta> unfolding And \<beta>
-        by (auto intro!: wty_formula.And wty_formula.Release wty_Ands_get_and_list
+        by (auto simp del: convert_multiway.simps(19) safe_formula.simps(19)
+            intro!: wty_formula.And wty_formula.Release wty_Ands_get_and_list
             wty_Ands_Cons_get_and_list)
     next
       case False
