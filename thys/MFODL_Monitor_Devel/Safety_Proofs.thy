@@ -87,6 +87,10 @@ next
       qed
     qed
   qed
+next
+  case (19 \<phi> I \<psi>)
+  then show ?case
+    by (cases "mem I 0") auto
 qed (simp_all add: fv_regex_alt regex.set_map)
 
 lemma nfv_convert_multiway: "Formula.nfv (convert_multiway \<phi>) = Formula.nfv \<phi>"
@@ -220,7 +224,9 @@ next
   then have "\<not> contains_pred p (convert_multiway \<phi>)" "\<not> contains_pred p (convert_multiway \<psi>)"
     by simp_all
   then show ?case
-    by (simp add: no_pred_cmultiway_release_safe_0I no_pred_cmultiway_release_safe_boundedI)
+    by (cases "mem I 0")
+      (auto simp del: convert_multiway.simps(10) dest!: pred_cmultiway_conjD
+        intro: no_pred_cmultiway_release_safe_boundedI)
 next
   case(20 p I r)
   then show ?case by (auto simp add: regex.set_map)
@@ -300,12 +306,11 @@ next
     by (intro sf_letpast_cmultiway_conj)
 next
   case (19 p \<phi> I \<psi>)
-  hence "memL I 0 \<Longrightarrow> safe_letpast p (convert_multiway (release_safe_0 \<phi> I \<psi>)) 
+  have "safe_letpast p (convert_multiway (\<psi> \<and>\<^sub>F \<phi>)) = safe_letpast p \<psi> \<squnion> safe_letpast p \<phi>"
+    using sf_letpast_cmultiway_conj[of p \<psi> \<phi>] 19 by simp
+  then have "memL I 0 \<Longrightarrow> safe_letpast p ((convert_multiway (\<psi> \<and>\<^sub>F \<phi>)) \<^bold>R I (convert_multiway \<psi>)) 
     = AnyRec * (safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>)"
-    by (clarsimp simp: release_safe_0_def always_safe_0_def mult_sup_distrib mult_assoc[symmetric]
-        sf_letpast_cmultiway_subst4 sf_letpast_cmultiway_subst7 sf_letpast_cmultiway_conj 
-        simp del: convert_multiway.simps(10))
-      (metis sup_commute sup_left_idem)
+    using 19 by (simp add: sup_commute sup_left_commute)
   moreover have "\<not> memL I 0 \<Longrightarrow> safe_letpast p (convert_multiway (release_safe_bounded \<phi> I \<psi>)) 
     = AnyRec * (safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>)"
     using 19 by (clarsimp simp: release_safe_bounded_def mult_sup_distrib mult_assoc[symmetric]
