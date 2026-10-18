@@ -1564,11 +1564,15 @@ function (sequential) convert_multiway :: "'t Formula.formula \<Rightarrow> 't F
   by pat_completeness auto
 termination
 proof (relation "measure size'", simp_all only: in_measure size'_Or,
-    simp_all add: size'_release_aux, goal_cases Ands MatchP MatchF)
+    simp_all add: size'_release_aux, goal_cases Ands R MatchP MatchF)
   case (Ands \<phi>s \<phi>)
   then show ?case
     using sum_list_mem_leq[of \<phi> \<phi>s size']
     by simp
+next
+  case (R I \<psi> \<phi>)
+  then show ?case
+    by (simp split: formula.splits)
 next
   case (MatchP r \<phi>)
   then show ?case
