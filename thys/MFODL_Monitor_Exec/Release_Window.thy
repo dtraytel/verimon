@@ -216,7 +216,7 @@ definition erel' :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> 
      (\<forall>x \<in> set (take (length outs) L). \<not> memR I (c - fst x)) \<and>
      length es = length fr + length bk \<and>
      map fst (drop (length outs) L) = map fst fr @ rev (map fst bk) \<and>
-     sorted (map fst (drop (length outs) L)) \<and> (\<forall>x \<in> set (drop (length outs) L). fst x \<le> cur) \<and>
+     List.sorted (map fst (drop (length outs) L)) \<and> (\<forall>x \<in> set (drop (length outs) L). fst x \<le> cur) \<and>
      (\<forall>e \<in> set es. edisj e) \<and>
      (\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))) \<and>
      map snd bk = rev (drop (length fr) es) \<and> B = efold (drop (length fr) es) \<and>
@@ -251,25 +251,30 @@ proof -
     using pf by (simp_all add: eraux_popfront_def P_def)
   have P: "P = Q \<circ> fst" by (auto simp: P_def Q_def)
   have "map fst (takeWhile P fr) = takeWhile Q (map fst fr)" by (simp add: P takeWhile_map)
-  also have "\<dots> = take (length fr) (takeWhile Q (map fst Os))"
-    using ts by (simp add: take_map[symmetric] takeWhile_take)
+  also have "map fst fr = take (length fr) (map fst Os)" using ts by (simp add: take_map)
+  then have "takeWhile Q (map fst fr) = take (length fr) (takeWhile Q (map fst Os))"
+    by (simp add: takeWhile_take)
   also have "takeWhile Q (map fst Os) = map fst (takeWhile (Q \<circ> fst) Os)" by (simp add: takeWhile_map)
-  finally have "length (takeWhile P fr) = min (length fr) (length (takeWhile (Q \<circ> fst) Os))"
-    by (metis length_map length_take)
+  finally have "map fst (takeWhile P fr) = take (length fr) (map fst (takeWhile (Q \<circ> fst) Os))" .
+  then have "length (map fst (takeWhile P fr)) = length (take (length fr) (map fst (takeWhile (Q \<circ> fst) Os)))"
+    by (rule arg_cong)
+  then have "length (takeWhile P fr) = min (length fr) (length (takeWhile (Q \<circ> fst) Os))"
+    by simp
   then show l: "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) Os))"
     by (simp add: ys Q_def comp_def)
   define p where "p = length ys"
-  have tk: "takeWhile P fr = take p fr" by (simp add: p_def ys takeWhile_eq_take)
-  show "fr' = drop (length ys) fr" by (simp add: fr' p_def[symmetric] tk[symmetric] dropWhile_eq_drop)
+  have lys: "length ys = length (takeWhile P fr)" by (simp add: ys)
+  have tk: "takeWhile P fr = take p fr" unfolding p_def lys by (rule takeWhile_eq_take)
+  show "fr' = drop (length ys) fr" unfolding fr' lys by (rule dropWhile_eq_drop)
   have pf': "p \<le> length fr" using l by (simp add: p_def)
   have elem: "eunion (ecompo (snd (fr ! k)) B) = snd (snd (Os ! k))" if "k < p" for k
   proof -
     have k: "k < length fr" "k \<le> length fr" using that pf' by simp_all
-    have "drop k es = drop k (take (length fr) es) @ drop (length fr) es"
-      using k len(1) by (metis append_take_drop_id drop_append length_take min.absorb2 diff_is_0_eq
-          drop_eq_Nil append_Nil2 drop_drop le_add_diff_inverse2)
-    then have "efold (drop k es) = Some (ecompo (snd (fr ! k)) B)"
-      using fr[rule_format, OF k(1)] B by (simp add: efold_append ecompoo_def)
+    have "drop k es = drop k (take (length fr) es @ drop (length fr) es)" by simp
+    also have "\<dots> = drop k (take (length fr) es) @ drop (length fr) es"
+      using k(2) len(1) by (simp add: drop_append)
+    finally have "efold (drop k es) = Some (ecompo (snd (fr ! k)) B)"
+      using fr[rule_format, OF k(1), symmetric] B by (simp add: efold_append)
     then show ?thesis using out[rule_format, of k] k len by (simp add: snd_eout)
   qed
   show "ys = map (\<lambda>x. snd (snd x)) (take (length ys) Os)"
@@ -277,12 +282,14 @@ proof -
 qed
 
 lemma erel_shift:
+  fixes L :: "(ts \<times> 'b list set \<times> 'b list set) list"
   assumes rel: "erel' I c aux L" and cn: "c \<le> nt"
-  defines "Q \<equiv> \<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x)"
   shows "erel' I nt (eraux_shift I nt aux) L \<and> fst (eraux_shift I nt aux) = fst aux \<and>
-    fst (snd (eraux_shift I nt aux)) = map (\<lambda>x. snd (snd x)) (takeWhile Q L) \<and>
+    fst (snd (eraux_shift I nt aux)) =
+      map (\<lambda>x. snd (snd x)) (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) L) \<and>
     (\<forall>x \<in> set (drop (length (fst (snd (eraux_shift I nt aux)))) L). memR I (nt - fst x))"
 proof -
+  define Q where "Q = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x))"
   obtain cur outs fr bk B where aux: "aux = (cur, outs, fr, bk, B)" by (cases aux) auto
   define m where "m = length outs"
   define Os where "Os = drop m L"
@@ -291,12 +298,12 @@ proof -
     and cl: "\<forall>x \<in> set (take m L). \<not> memR I (c - fst x)"
     and l2: "length es = length fr + length bk"
     and tsO: "map fst Os = map fst fr @ rev (map fst bk)"
-    and so: "sorted (map fst Os)" and le: "\<forall>x \<in> set Os. fst x \<le> cur"
+    and so: "List.sorted (map fst Os)" and le: "\<forall>x \<in> set Os. fst x \<le> cur"
     and dj: "\<forall>e \<in> set es. edisj e"
     and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
     and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
     and out: "\<forall>k < length es. snd (Os ! k) = eout (the (efold (drop k es)))"
-    using rel unfolding erel'_def aux m_def[symmetric] Os_def[symmetric] by auto
+    using rel unfolding erel'_def aux prod.case m_def[symmetric] Os_def[symmetric] by blast
   have lO: "length Os = length es" using l1 by (simp add: Os_def)
   have L: "L = take m L @ Os" by (simp add: Os_def)
   have clQ: "\<forall>x \<in> set (take m L). Q x"
@@ -309,7 +316,7 @@ proof -
     by (subst L) (simp add: takeWhile_append2 clQ)
   define p where "p = length (takeWhile Q Os)"
   have pO: "p \<le> length Os" by (simp add: p_def length_takeWhile_le)
-  have takeO: "takeWhile Q Os = take p Os" by (simp add: p_def takeWhile_eq_take)
+  have takeO: "takeWhile Q Os = take p Os" unfolding p_def by (rule takeWhile_eq_take)
   have mem_after: "\<forall>x \<in> set (drop p Os). memR I (nt - fst x)"
   proof
     fix x assume "x \<in> set (drop p Os)"
@@ -448,7 +455,7 @@ proof -
     show "map (\<lambda>x. snd (snd x)) (take (m + p) L) = outs'" using outs tk' by (simp add: outs'_def)
     show "length (drop p es) = length fr' + length bk'" using ln by simp
     show "map fst (drop (m + p) L) = map fst fr' @ rev (map fst bk')" using ts' dr' by simp
-    show "sorted (map fst (drop (m + p) L))" using so dr' by (simp add: drop_map[symmetric] sorted_wrt_drop)
+    show "List.sorted (map fst (drop (m + p) L))" using so dr' by (simp add: drop_map[symmetric] sorted_wrt_drop)
     show "map snd bk' = rev (drop (length fr') (drop p es))" by (rule bks')
     show "B' = efold (drop (length fr') (drop p es))" by (rule Bs')
   next
@@ -470,7 +477,7 @@ proof -
       using out[rule_format, of "p + k"] dr' pO lO by (simp add: add.commute drop_drop)
   qed
   show ?thesis
-    using sh rel' mem_after lo' dr' tW outs takeO by (simp add: aux outs'_def)
+    using sh rel' mem_after lo' dr' tW outs takeO by (simp add: aux outs'_def Q_def[symmetric])
 qed
 
 lemma eval_until_takeWhile: "eval_until I nt L =
@@ -483,39 +490,35 @@ lemma erel'_drop_outs: "erel' I c (cur, outs, fr, bk, B) L \<Longrightarrow>
   unfolding erel'_def by auto
 
 lemma erel_eval:
+  fixes L :: "(ts \<times> 'b list set \<times> 'b list set) list"
   assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and e: "eraux_eval I nt aux = (ys, aux')"
   shows "fst (eval_until I nt L) = ys \<and> erel I aux' (snd (eval_until I nt L)) \<and> fst aux' = fst aux"
 proof -
-  define Q where "Q = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x))"
-  have sh: "erel' I nt (eraux_shift I nt aux) L \<and> fst (eraux_shift I nt aux) = fst aux \<and>
-    fst (snd (eraux_shift I nt aux)) = map (\<lambda>x. snd (snd x)) (takeWhile Q L) \<and>
-    (\<forall>x \<in> set (drop (length (fst (snd (eraux_shift I nt aux)))) L). memR I (nt - fst x))"
-    using erel_shift[OF rel[unfolded erel_def] le] by (simp add: Q_def)
+  note sh = erel_shift[OF rel[unfolded erel_def] le]
   obtain cur outs fr bk B where s: "eraux_shift I nt aux = (cur, outs, fr, bk, B)"
     by (cases "eraux_shift I nt aux") auto
   have ys: "ys = outs" and aux': "aux' = (cur, [], fr, bk, B)"
     using e by (simp_all add: eraux_eval_def s)
-  have o: "outs = map (\<lambda>x. snd (snd x)) (takeWhile Q L)" using sh by (simp add: s)
-  have "drop (length outs) L = dropWhile Q L"
-    by (simp add: o dropWhile_eq_drop)
-  then have "erel' I cur (cur, [], fr, bk, B) (dropWhile Q L)"
+  have o: "outs = map (\<lambda>x. snd (snd x)) (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) L)"
+    using sh by (simp add: s)
+  have "drop (length outs) L = dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L"
+    unfolding o length_map by (rule dropWhile_eq_drop[symmetric])
+  then have "erel' I cur (cur, [], fr, bk, B) (dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L)"
     using erel'_drop_outs[of I nt cur outs fr bk B L cur] sh by (simp add: s)
-  then show ?thesis
-    using sh s by (simp add: eval_until_takeWhile Q_def[symmetric] ys aux' o erel_def split_beta)
+  moreover have "fst aux = cur" using sh by (simp add: s)
+  ultimately show ?thesis
+    by (simp add: eval_until_takeWhile ys aux' o erel_def split_beta)
 qed
 
 lemma length_eupdate_release[simp]: "length (eupdate_release args msk l r nt L) = Suc (length L)"
   by (simp add: eupdate_release_def)
 
 lemma erel_update:
+  fixes L :: "(ts \<times> 'b list set \<times> 'b list set) list"
   assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and I: "args_ivl args = I"
   shows "erel I (eraux_update args msk l r nt aux) (eupdate_release args msk l r nt L)"
 proof -
-  define Q where "Q = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x))"
-  have sh: "erel' I nt (eraux_shift I nt aux) L \<and> fst (eraux_shift I nt aux) = fst aux \<and>
-    fst (snd (eraux_shift I nt aux)) = map (\<lambda>x. snd (snd x)) (takeWhile Q L) \<and>
-    (\<forall>x \<in> set (drop (length (fst (snd (eraux_shift I nt aux)))) L). memR I (nt - fst x))"
-    using erel_shift[OF rel[unfolded erel_def] le] by (simp add: Q_def)
+  note sh = erel_shift[OF rel[unfolded erel_def] le]
   obtain cur outs fr bk B where s: "eraux_shift I nt aux = (cur, outs, fr, bk, B)"
     by (cases "eraux_shift I nt aux") auto
   define e where "e = esum_of args msk l r"
@@ -530,12 +533,12 @@ proof -
     and cl: "\<forall>x \<in> set (take m L). \<not> memR I (nt - fst x)"
     and l2: "length es = length fr + length bk"
     and tsO: "map fst Os = map fst fr @ rev (map fst bk)"
-    and so: "sorted (map fst Os)" and leO: "\<forall>x \<in> set Os. fst x \<le> cur"
+    and so: "List.sorted (map fst Os)" and leO: "\<forall>x \<in> set Os. fst x \<le> cur"
     and dj: "\<forall>e \<in> set es. edisj e"
     and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
     and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
     and out: "\<forall>k < length es. snd (Os ! k) = eout (the (efold (drop k es)))"
-    using sh unfolding erel'_def s m_def[symmetric] Os_def[symmetric] by auto
+    using sh unfolding erel'_def s prod.case m_def[symmetric] Os_def[symmetric] by blast
   have memO: "\<forall>x \<in> set Os. memR I (nt - fst x)" using sh by (simp add: s Os_def m_def)
   have lO: "length Os = length es" using l1 by (simp add: Os_def)
   have mL: "m \<le> length L" using l1 by simp
@@ -574,7 +577,7 @@ proof -
     show "length (es @ [e]) = length fr + length ((nt, e) # bk)" using l2 by simp
     show "map fst (drop m (eupdate_release args msk l r nt L)) = map fst fr @ rev (map fst ((nt, e) # bk))"
       using tsO by (simp add: dr comp_def g_def split_beta[symmetric] case_prod_unfold if_distrib)
-    show "sorted (map fst (drop m (eupdate_release args msk l r nt L)))"
+    show "List.sorted (map fst (drop m (eupdate_release args msk l r nt L)))"
     proof -
       have "map fst (map g Os) = map fst Os" by (auto simp: g_def split: prod.splits)
       then show ?thesis using so leO curle by (auto simp: dr sorted_append intro: order_trans)
