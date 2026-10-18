@@ -438,7 +438,7 @@ proof -
         have "Some (snd (fr2 ! k)) = efold (drop (length zs + k) (take (length fl) (drop (length fr) es)))"
           using fls[rule_format, of "length zs + k"] k fr2 by simp
         also have "\<dots> = efold (drop k (take (length fr2) (drop p es)))"
-          using fr2 fll pz l2 by (simp add: drop_drop add.commute)
+          using fr2 fll pz l2 by (simp add: drop_drop ac_simps)
         finally show "Some (snd (fr2 ! k)) = efold (drop k (take (length fr2) (drop p es)))" .
       qed
     qed
@@ -490,9 +490,21 @@ lemma eval_until_takeWhile: "eval_until I nt L =
    dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L)"
   by (induct I nt L rule: eval_until.induct) (auto simp: Let_def split: prod.splits)
 
-lemma erel'_drop_outs: "erel' I c (cur, outs, fr, bk, B) L \<Longrightarrow>
-    erel' I c' (cur, [], fr, bk, B) (drop (length outs) L)"
-  unfolding erel'_def by auto
+lemma erel'_drop_outs:
+  assumes "erel' I c (cur, outs, fr, bk, B) L"
+  shows "erel' I c' (cur, [], fr, bk, B) (drop (length outs) L)"
+proof -
+  from assms obtain es where "length outs + length es = length L"
+    "length es = length fr + length bk"
+    "map fst (drop (length outs) L) = map fst fr @ rev (map fst bk)"
+    "List.sorted (map fst (drop (length outs) L))" "\<forall>x \<in> set (drop (length outs) L). fst x \<le> cur"
+    "\<forall>e \<in> set es. edisj e"
+    "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
+    "map snd bk = rev (drop (length fr) es)" "B = efold (drop (length fr) es)"
+    "\<forall>k < length es. snd (drop (length outs) L ! k) = eout (the (efold (drop k es)))"
+    unfolding erel'_def prod.case by blast
+  then show ?thesis unfolding erel'_def prod.case by (intro exI[of _ es]) auto
+qed
 
 lemma erel_eval:
   assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and e: "eraux_eval I nt aux = (ys, aux')"
@@ -504,12 +516,14 @@ proof -
   have ys: "ys = outs" and aux': "aux' = (cur, [], fr, bk, B)"
     using e by (simp_all add: eraux_eval_def s)
   have o: "outs = map (\<lambda>x. snd (snd x)) (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) L)"
-    using sh by (simp add: s)
-  have "drop (length outs) L = dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L"
+    using conjunct1[OF conjunct2[OF conjunct2[OF sh]]] unfolding s snd_conv fst_conv .
+  have dr: "drop (length outs) L = dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L"
     unfolding o length_map by (rule dropWhile_eq_drop[symmetric])
+  have e1: "erel' I nt (cur, outs, fr, bk, B) L" using conjunct1[OF sh] unfolding s .
+  have "erel' I cur (cur, [], fr, bk, B) (drop (length outs) L)" by (rule erel'_drop_outs[OF e1])
   then have "erel' I cur (cur, [], fr, bk, B) (dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L)"
-    using erel'_drop_outs[of I nt cur outs fr bk B L cur] sh by (simp add: s)
-  moreover have "fst aux = cur" using sh by (simp add: s)
+    unfolding dr .
+  moreover have "fst aux = cur" using conjunct1[OF conjunct2[OF sh]] unfolding s fst_conv by simp
   ultimately show ?thesis
     by (simp add: eval_until_takeWhile ys aux' o erel_def split_beta)
 qed
@@ -528,8 +542,10 @@ proof -
   define e where "e = esum_of args msk l r"
   define B' where "B' = Some (case B of None \<Rightarrow> e | Some b \<Rightarrow> ecomp b e)"
   have upd: "eraux_update args msk l r nt aux = (nt, outs, fr, (nt, e) # bk, B')"
-    by (simp add: eraux_update_def s I e_def B'_def Let_def)
-  have curle: "cur \<le> nt" using sh le by (simp add: s)
+    unfolding eraux_update_def s I e_def B'_def Let_def by simp
+  have "cur = fst aux" using conjunct1[OF conjunct2[OF sh]] unfolding s fst_conv by simp
+  then have curle: "cur \<le> nt" using le by simp
+  have sh1: "erel' I nt (cur, outs, fr, bk, B) L" using conjunct1[OF sh] unfolding s .
   define m where "m = length outs"
   define Os where "Os = drop m L"
   obtain es where l1: "m + length es = length L"
@@ -542,8 +558,9 @@ proof -
     and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
     and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
     and out: "\<forall>k < length es. snd (Os ! k) = eout (the (efold (drop k es)))"
-    using sh unfolding erel'_def s prod.case m_def[symmetric] Os_def[symmetric] by blast
-  have memO: "\<forall>x \<in> set Os. memR I (nt - fst x)" using sh by (simp add: s Os_def m_def)
+    using sh1 unfolding erel'_def prod.case m_def[symmetric] Os_def[symmetric] by blast
+  have memO: "\<forall>x \<in> set Os. memR I (nt - fst x)"
+    using conjunct2[OF conjunct2[OF conjunct2[OF sh]]] unfolding s snd_conv fst_conv Os_def m_def .
   have lO: "length Os = length es" using l1 by (simp add: Os_def)
   have mL: "m \<le> length L" using l1 by simp
   define g where "g = (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
@@ -558,7 +575,8 @@ proof -
     using mL by (simp add: L' Os_def drop_map)
   have gO: "snd (g (Os ! k)) = eout (ecomp (the (efold (drop k es))) e)" if "k < length es" for k
   proof -
-    obtain x where x: "efold (drop k es) = Some x" using efold_Some[of "drop k es"] that by auto
+    have "drop k es \<noteq> []" using that by simp
+    then obtain x where x: "efold (drop k es) = Some x" using efold_Some by blast
     have dx: "edisj x" by (rule edisj_efold[OF _ x]) (use dj in \<open>auto dest: in_set_dropD\<close>)
     have m0: "memR (args_ivl args) (nt - fst (Os ! k))" using memO that lO I by (auto simp: nth_mem)
     have so: "snd (Os ! k) = eout x" using out that x by simp
@@ -570,7 +588,8 @@ proof -
   have es_app: "efold (drop k (es @ [e])) = Some (ecomp (the (efold (drop k es))) e)"
     if "k < length es" for k
   proof -
-    obtain x where x: "efold (drop k es) = Some x" using efold_Some[of "drop k es"] that by auto
+    have "drop k es \<noteq> []" using that by simp
+    then obtain x where x: "efold (drop k es) = Some x" using efold_Some by blast
     show ?thesis using that x by (simp add: efold_append ecompoo_def ecompo_def)
   qed
   have "erel' I nt (nt, outs, fr, (nt, e) # bk, B') (eupdate_release args msk l r nt L)"
