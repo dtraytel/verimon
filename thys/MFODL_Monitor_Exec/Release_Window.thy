@@ -602,8 +602,8 @@ proof -
       using tsO by (simp add: dr comp_def g_def split_beta[symmetric] case_prod_unfold if_distrib)
     show "List.sorted (map fst (drop m (eupdate_release args msk l r nt L)))"
     proof -
-      have "map fst (map g Os) = map fst Os" by (auto simp: g_def split: prod.splits)
-      then show ?thesis using so leO curle by (auto simp: dr sorted_append intro: order_trans)
+      have mg: "map (fst \<circ> g) Os = map fst Os" by (induct Os) (auto simp: g_def split: prod.splits)
+      show ?thesis using so leO curle by (auto simp: dr sorted_append mg intro: order_trans)
     qed
     show "map snd ((nt, e) # bk) = rev (drop (length fr) (es @ [e]))" using bks l2 by simp
     show "B' = efold (drop (length fr) (es @ [e]))"
