@@ -101,17 +101,14 @@ function (sequential) progress :: "(Formula.name \<times> nat \<rightharpoonup> 
     Inf {i. \<forall>k. k < j \<and> k \<le> min (progress P \<phi> j) (progress P \<psi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
 | "progress P (Formula.Trigger \<phi> I \<psi>) j = min (progress P \<phi> j) (progress P \<psi> j)"
 | "progress P (Formula.Release \<phi> I \<psi>) j = (
-    \<comment> \<open>for an actual implementation use Inf {i. \<forall>k. k < j \<and> k \<le> min (progress P \<phi> j) (progress P \<psi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)},
-    for the rewrite rules the following is necessary as the rewrite rule of always leads to a
-    funny term\<close>
-    \<comment> \<open>the not bounded condition here just allows the rewrite formula to be applied in the else case\<close>
+    \<comment> \<open>with 0 in the interval, the monitor evaluates the release natively, and its progress is
+    that of the until; otherwise it evaluates its rewriting @{const release_safe_bounded}. The
+    unbounded case is not monitorable; its progress is that of the until, which is 0.\<close>
     if mem I 0 \<or> \<not> bounded I then
-      Inf ({i. \<forall>k. k < j \<and> k \<le> min (progress P \<psi> j) (progress P \<phi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)} \<union>
-          {i. \<forall>k. k < j \<and> k \<le> progress P \<psi> j \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)})
+      Inf {i. \<forall>k. k < j \<and> k \<le> min (progress P \<phi> j) (progress P \<psi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}
     else
       (progress P (release_safe_bounded \<phi> I \<psi>) j)
-    )"
-| "progress P (Formula.MatchP I r) j = min_regex_default (progress P) r j"
+    )"| "progress P (Formula.MatchP I r) j = min_regex_default (progress P) r j"
 | "progress P (Formula.MatchF I r) j =
     Inf {i. \<forall>k. k < j \<and> k \<le> min_regex_default (progress P) r j \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
 | "progress P (Formula.TP t) j = j"
