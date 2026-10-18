@@ -3589,7 +3589,8 @@ next
     by (cases "mbuf2t_take (eupdate_release dags msk) daux
       (map (etabc kL cL) us, map (etabc kR cR) vs) t (nts @ ts)")
   have R: "Rel aux1 daux1 \<and> dbuf1 = (map (etabc kL cL) b1, map (etabc kR cR) b2) \<and> dnt = nt \<and> dnts1 = nts1"
-    by (rule mbuf2t_take_rel[OF step _ e3[unfolded ma bfs] d3])
+    by (rule mbuf2t_take_rel[where R=Rel and f="update_release args" and g="eupdate_release dags msk"
+        and h="etabc kL cL" and k="etabc kR cR", OF step _ e3[unfolded ma bfs] d3])
       (use wfa da in \<open>simp_all add: Rel_def\<close>)
   have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF e3[unfolded ma bfs]])
   have lb1: "list_all (ftable kL) b1" using sb lus by (auto simp: list_all_iff)
