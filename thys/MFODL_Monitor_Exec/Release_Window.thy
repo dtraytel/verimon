@@ -11,141 +11,119 @@ text \<open>
   @{const eupdate_release}: the tuples whose right operand has held and the left one not since
   that point, and the tuples still alive at it.  Every step touches every entry inside the
   interval, so a step costs the window's length times the size of a table.  This structure does
-  the same work once per tuple.
+  a bounded number of operations on tables per step instead.
 
-  A tuple's \<^emph>\<open>run\<close> is a maximal stretch of points at which the right operand holds and the
-  left one does not.  The pending tuples of an entry are those whose current run started at or
-  before it, so a single mapping from each tuple to the start of its current run serves every
-  entry.  A tuple dies at an entry when its run reaches past it and ends at a point, inside the
-  interval, where the right operand fails; the structure records each such end as a
-  \<^emph>\<open>kill\<close> \<open>(p, f, t\<^sub>f)\<close> -- the run started at \<open>p\<close>, ended at \<open>f\<close>, and \<open>t\<^sub>f\<close>
-  is the timestamp of \<open>f\<close> -- in a queue per tuple.  Runs do not overlap, so a tuple's kills are
-  ordered, and the only one that can reach the oldest pending entry is the first.  An entry is
-  read off when it leaves the window: its tuples less those its first kill reaches.  A kill is
-  dropped once the entries it reaches are gone, which happens when the entry just before its end
-  leaves, and that entry contains the tuple.  Most runs end right after they start, and such a
-  run reaches only the entry it started at, which is the last one; its kill is taken out of that
-  entry's table directly instead of being queued.  For the same reason, pruning looks only at the
-  tuples whose first kill is due.
+  The fate of a tuple over a stretch of points is one of three: the right operand held
+  throughout and the left one never did (the tuple is still pending), the left and the right
+  operand held together at some point before the right one first failed (the tuple is released),
+  or neither (it is dead).  A stretch is summarised by its pending and its released tuples,
+  @{typ "'b esum"}, and summaries compose associatively (@{const ecomp}): a tuple pending over the
+  first stretch takes its fate over the second.  An entry's pending and alive tuples are the
+  pending and the pending-or-released tuples of the summary of the points from it to the last
+  one.  So the window is a sliding window aggregation over this monoid, and it is kept as a queue
+  of two lists: the front holds, for each of its points, the summary from that point to the end
+  of the front, and the back holds the points' own summaries, newest first, together with the
+  summary of all of them.  An entry is read off by composing its front summary with the back's.
+  When the front runs out, the back is turned into a new front.  Every point's summary is thus
+  composed a bounded number of times.
 
-  The state is the timestamp of the last point, the index of the oldest pending point, the index
-  of the next one, the pending points' timestamps and right-operand tables, the run starts and
-  the kills.
+  An entry is read off when a point arrives whose timestamp is outside its interval.  That happens
+  before the point is added, so that the entry's summary is the one of the queue, and the result
+  is kept until the structure is read.
 \<close>
 
-text \<open>The table of the last pending point is changed in place.\<close>
+type_synonym 'b esum = "'b list set \<times> 'b list set"
 
-fun map_last_t :: "('a \<Rightarrow> 'a) \<Rightarrow> 'a queue_t \<Rightarrow> 'a queue_t" where
-  "map_last_t g ([], []) = ([], [])"
-| "map_last_t g (fs, l # ls) = (fs, g l # ls)"
-| "map_last_t g (f # fs, []) = (f # fs, [])"
+definition ecomp :: "'b esum \<Rightarrow> 'b esum \<Rightarrow> 'b esum" where
+  "ecomp x y = (case x of (a1, r1) \<Rightarrow> case y of (a2, r2) \<Rightarrow>
+     (a1 \<inter> a2, if Set.is_empty r2 then r1 else r1 \<union> (a1 \<inter> r2)))"
 
-lift_definition map_last_queue :: "('a \<Rightarrow> 'a) \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is map_last_t
-  by (auto simp: queue_invariant_def split: list.splits elim!: map_last_t.elims)
+definition ecompo :: "'b esum \<Rightarrow> 'b esum option \<Rightarrow> 'b esum" where
+  "ecompo x y = (case y of None \<Rightarrow> x | Some y' \<Rightarrow> ecomp x y')"
 
-lemma map_last_queue_rep: "linearize (map_last_queue g q) =
-    (if linearize q = [] then [] else butlast (linearize q) @ [g (last (linearize q))])"
-proof transfer
-  fix g :: "'a \<Rightarrow> 'a" and q :: "'a queue_t"
-  assume "queue_invariant q"
-  then show "(case map_last_t g q of (fs, ls) \<Rightarrow> fs @ rev ls) =
-    (if (case q of (fs, ls) \<Rightarrow> fs @ rev ls) = [] then []
-     else butlast (case q of (fs, ls) \<Rightarrow> fs @ rev ls) @ [g (last (case q of (fs, ls) \<Rightarrow> fs @ rev ls))])"
-    by (cases "(g, q)" rule: map_last_t.cases) (simp_all add: queue_invariant_def butlast_append)
-qed
+definition esum_of :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b esum" where
+  "esum_of args msk l r = (if Set.is_empty l then (if args_pos args then (r, {}) else ({}, r))
+     else (esemi msk (\<not> args_pos args) r l, esemi msk (args_pos args) r l))"
 
-type_synonym 'b eraux = "ts \<times> nat \<times> nat \<times> (ts \<times> 'b list set) queue \<times>
-  ('b list, nat) mapping \<times> ('b list, (nat \<times> nat \<times> ts) queue) mapping"
+definition eunion :: "'b esum \<Rightarrow> 'b list set" where
+  "eunion x = fst x \<union> snd x"
 
-definition kqq :: "('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow> 'b list \<Rightarrow>
-    (nat \<times> nat \<times> ts) queue" where
-  "kqq K v = (case Mapping.lookup K v of None \<Rightarrow> empty_queue | Some q \<Rightarrow> q)"
+type_synonym 'b eraux = "ts \<times> 'b list set list \<times> (ts \<times> 'b esum) list \<times> (ts \<times> 'b esum) list \<times>
+  'b esum option"
 
 definition eraux_init :: "'b eraux" where
-  "eraux_init = (0, 0, 0, empty_queue, Mapping.empty, Mapping.empty)"
+  "eraux_init = (0, [], [], [], None)"
+
+definition eraux_popfront :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b esum option \<Rightarrow> (ts \<times> 'b esum) list \<Rightarrow>
+    'b list set list \<times> (ts \<times> 'b esum) list" where
+  "eraux_popfront I nt B fr =
+     (map (\<lambda>(t, s). eunion (ecompo s B)) (takeWhile (\<lambda>(t, _). \<not> memR I (nt - t)) fr),
+      dropWhile (\<lambda>(t, _). \<not> memR I (nt - t)) fr)"
+
+fun eraux_flip :: "(ts \<times> 'b esum) list \<Rightarrow> (ts \<times> 'b esum) list \<Rightarrow> 'b esum option \<Rightarrow>
+    (ts \<times> 'b esum) list" where
+  "eraux_flip [] fr acc = fr"
+| "eraux_flip ((t, e) # bk) fr acc = (let s = ecompo e acc in eraux_flip bk ((t, s) # fr) (Some s))"
+
+definition eraux_shift :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> 'b eraux" where
+  "eraux_shift I nt aux = (case aux of (cur, outs, fr, bk, B) \<Rightarrow>
+     (case eraux_popfront I nt B fr of (ys, fr') \<Rightarrow>
+       (case fr' of
+         [] \<Rightarrow> (case bk of
+             [] \<Rightarrow> (cur, outs @ ys, [], [], B)
+           | _ \<Rightarrow> (case eraux_popfront I nt None (eraux_flip bk [] None) of (zs, fr'') \<Rightarrow>
+               (cur, outs @ ys @ zs, fr'', [], None)))
+       | _ \<Rightarrow> (cur, outs @ ys, fr', bk, B))))"
 
 definition eraux_update :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> ts \<Rightarrow>
     'b eraux \<Rightarrow> 'b eraux" where
-  "eraux_update args msk l r nt aux = (case aux of (cur, oi, n, pend, P, K) \<Rightarrow>
-     let W = Mapping.keys P;
-         W' = esemi msk (\<not> args_pos args) r l;
-         D = W - r;
-         S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D;
-         pend' = map_last_queue (\<lambda>(tz, Xl).
-           if memR (args_ivl args) (nt - tz) then (tz, Xl - S) else (tz, Xl)) pend;
-         K' = (if oi = n then K
-           else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S));
-         P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)
-     in (nt, oi, Suc n, append_queue (nt, r) pend', P', K'))"
-
-definition front_dead :: "\<I> \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> (nat \<times> nat \<times> ts) queue \<Rightarrow> bool" where
-  "front_dead I i t q = (case hd_queue q of None \<Rightarrow> False
-     | Some (p, f, tf) \<Rightarrow> p \<le> i \<and> memR I (tf - t))"
-
-definition eraux_prune :: "nat \<Rightarrow> ('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow> 'b list set \<Rightarrow>
-    ('b list, (nat \<times> nat \<times> ts) queue) mapping" where
-  "eraux_prune i K X = (let
-     S = Set.filter (\<lambda>v. case hd_queue (kqq K v) of None \<Rightarrow> False
-       | Some (p, f, tf) \<Rightarrow> f \<le> Suc i) X;
-     K1 = upd_set K (\<lambda>v. dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) S
-   in mapping_delete_set K1 (Set.filter (\<lambda>v. hd_queue (kqq K1 v) = None) S))"
-
-fun eraux_pops :: "\<I> \<Rightarrow> nat \<Rightarrow> ('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow>
-    (ts \<times> 'b list set) list \<Rightarrow> 'b list set list \<times> ('b list, (nat \<times> nat \<times> ts) queue) mapping" where
-  "eraux_pops I i K [] = ([], K)"
-| "eraux_pops I i K ((t, X) # xs) =
-     (let Y = Set.filter (\<lambda>v. \<not> front_dead I i t (kqq K v)) X;
-          (ys, K') = eraux_pops I (Suc i) (eraux_prune i K X) xs
-      in (Y # ys, K'))"
+  "eraux_update args msk l r nt aux = (case eraux_shift (args_ivl args) nt aux of
+     (cur, outs, fr, bk, B) \<Rightarrow> let e = esum_of args msk l r in
+       (nt, outs, fr, (nt, e) # bk, Some (case B of None \<Rightarrow> e | Some b \<Rightarrow> ecomp b e)))"
 
 definition eraux_eval :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> 'b list set list \<times> 'b eraux" where
-  "eraux_eval I nt aux = (case aux of (cur, oi, n, pend, P, K) \<Rightarrow>
-     let (pend', taken) = takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) pend;
-         (ys, K') = eraux_pops I oi K taken
-     in (ys, (cur, oi + length taken, n, pend', P, K')))"
+  "eraux_eval I nt aux = (case eraux_shift I nt aux of
+     (cur, outs, fr, bk, B) \<Rightarrow> (outs, (cur, [], fr, bk, B)))"
 
 
-subsection \<open>The structure refines the list\<close>
+subsection \<open>The summaries\<close>
 
-definition kq :: "('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow> 'b list \<Rightarrow>
-    (nat \<times> nat \<times> ts) list" where
-  "kq K v = linearize (kqq K v)"
+lemma ecomp_alt: "ecomp (a1, r1) (a2, r2) = (a1 \<inter> a2, r1 \<union> (a1 \<inter> r2))"
+  by (auto simp: ecomp_def Set.is_empty_def)
 
-definition erdead :: "\<I> \<Rightarrow> (nat \<times> nat \<times> ts) list \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> bool" where
-  "erdead I ks i t = (\<exists>(p, f, tf) \<in> set ks. p \<le> i \<and> i < f \<and> memR I (tf - t))"
+lemma ecomp_assoc: "ecomp (ecomp x y) z = ecomp x (ecomp y z)"
+  by (cases x; cases y; cases z) (auto simp: ecomp_alt)
 
-text \<open>
-  The structure stands for a list of @{const eupdate_release} when the pending points line up
-  with its entries; an entry's alive tuples are its right operand's less those a kill reaches;
-  while the entry is inside the interval, its pending tuples are those whose run started at or
-  before it.  The remaining conjuncts are what keeps this true: run starts lie before the next
-  point and after the kills of their tuple, every running tuple holds at the last point, a kill
-  ends after the oldest pending point and before the next one, at a point that holds the tuple, and
-  a tuple's kills are ordered.
-\<close>
+definition ecompoo :: "'b esum option \<Rightarrow> 'b esum option \<Rightarrow> 'b esum option" where
+  "ecompoo x y = (case x of None \<Rightarrow> y | Some x' \<Rightarrow> Some (ecompo x' y))"
 
-definition erel_list :: "\<I> \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> (ts \<times> 'b list set) list \<Rightarrow>
-    ('b list, nat) mapping \<Rightarrow> ('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow>
-    (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
-  "erel_list I cur oi n ps P K L \<longleftrightarrow> length ps = length L \<and> oi + length L = n \<and>
-     (\<forall>k < length L. fst (ps ! k) = fst (L ! k) \<and>
-       snd (snd (L ! k)) = {v \<in> snd (ps ! k). \<not> erdead I (kq K v) (oi + k) (fst (ps ! k))} \<and>
-       (memR I (cur - fst (ps ! k)) \<longrightarrow>
-         fst (snd (L ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})) \<and>
-     (\<forall>v p. Mapping.lookup P v = Some p \<longrightarrow> p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)) \<and>
-     (ps \<noteq> [] \<longrightarrow> Mapping.keys P \<subseteq> snd (last ps)) \<and>
-     (\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))) \<and>
-     (\<forall>v. sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v))"
+fun efold :: "'b esum list \<Rightarrow> 'b esum option" where
+  "efold [] = None"
+| "efold (e # es) = Some (ecompo e (efold es))"
 
-definition erel :: "\<I> \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
-  "erel I aux L = (case aux of (cur, oi, n, pend, P, K) \<Rightarrow>
-     erel_list I cur oi n (linearize pend) P K L)"
+lemma ecompo_ecompoo: "ecompo e (ecompoo X Y) = ecompo (ecompo e X) Y"
+  by (cases X; cases Y) (auto simp: ecompoo_def ecompo_def ecomp_assoc)
 
-lemma erel_init: "erel I eraux_init []"
-  by (simp add: erel_def eraux_init_def erel_list_def empty_queue_rep kq_def kqq_def)
+lemma efold_append: "efold (xs @ ys) = ecompoo (efold xs) (efold ys)"
+  by (induct xs) (auto simp: ecompoo_def ecompo_ecompoo)
 
-lemma fst_eraux_update[simp]: "fst (eraux_update args msk l r nt aux) = nt"
-  by (simp add: eraux_update_def Let_def split: prod.splits)
+lemma efold_Some: "es \<noteq> [] \<Longrightarrow> \<exists>x. efold es = Some x"
+  by (cases es) auto
+
+definition eout :: "'b esum \<Rightarrow> 'b list set \<times> 'b list set" where
+  "eout x = (fst x, fst x \<union> snd x)"
+
+definition edisj :: "'b esum \<Rightarrow> bool" where
+  "edisj x \<longleftrightarrow> fst x \<inter> snd x = {}"
+
+lemma edisj_ecomp: "edisj x \<Longrightarrow> edisj y \<Longrightarrow> edisj (ecomp x y)"
+  by (cases x; cases y) (auto simp: edisj_def ecomp_alt)
+
+lemma edisj_efold: "\<forall>e \<in> set es. edisj e \<Longrightarrow> efold es = Some x \<Longrightarrow> edisj x"
+proof (induct es arbitrary: x)
+  case (Cons e es)
+  then show ?case by (cases "efold es") (auto simp: ecompo_def intro: edisj_ecomp)
+qed simp
 
 lemma esemi_Int: "esemi msk b (A \<inter> r) l = A \<inter> esemi msk b r l"
   by (auto simp: esemi_def)
@@ -153,457 +131,342 @@ lemma esemi_Int: "esemi msk b (A \<inter> r) l = A \<inter> esemi msk b r l"
 lemma esemi_sub: "esemi msk b r l \<subseteq> r"
   by (auto simp: esemi_def)
 
-lemma length_eupdate_release[simp]: "length (eupdate_release args msk l r nt L) = Suc (length L)"
-  by (simp add: eupdate_release_def)
+lemma esum_of_eq: "esum_of args msk l r =
+    (esemi msk (\<not> args_pos args) r l, esemi msk (args_pos args) r l)"
+  by (auto simp: esum_of_def esemi_def Set.is_empty_def)
 
-lemma eupdate_release_nth: "k < length L \<Longrightarrow> eupdate_release args msk l r nt L ! k =
-  (case L ! k of (t, a1, a2) \<Rightarrow> if memR (args_ivl args) (nt - t)
-    then (t, esemi msk (\<not> args_pos args) (a1 \<inter> r) l, a2 - (a1 - r)) else (t, a1, a2))"
-  by (simp add: eupdate_release_def nth_append)
+lemma edisj_esum_of: "edisj (esum_of args msk l r)"
+  by (auto simp: esum_of_eq edisj_def esemi_def)
 
-lemma eupdate_release_last: "eupdate_release args msk l r nt L ! length L =
-  (nt, esemi msk (\<not> args_pos args) r l, r)"
-  by (simp add: eupdate_release_def nth_append)
+lemma eout_esum_of: "eout (esum_of args msk l r) = (esemi msk (\<not> args_pos args) r l, r)"
+  by (auto simp: esum_of_eq eout_def esemi_def)
 
-lemma erel_update:
-  assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and I: "args_ivl args = I"
-  shows "erel I (eraux_update args msk l r nt aux) (eupdate_release args msk l r nt L)"
-proof -
-  obtain cur oi n pend P K where aux: "aux = (cur, oi, n, pend, P, K)" by (cases aux) auto
-  define ps where "ps = linearize pend"
-  define W where "W = Mapping.keys P"
-  define W' where "W' = esemi msk (\<not> args_pos args) r l"
-  define D where "D = W - r"
-  define S where "S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D"
-  define pend1 where "pend1 = map_last_queue (\<lambda>(tz, Xl).
-    if memR I (nt - tz) then (tz, Xl - S) else (tz, Xl)) pend"
-  define K' where "K' = (if oi = n then K
-    else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S))"
-  define P' where "P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)"
-  have upd: "eraux_update args msk l r nt aux = (nt, oi, Suc n, append_queue (nt, r) pend1, P', K')"
-    unfolding aux eraux_update_def Let_def W_def W'_def D_def S_def pend1_def K'_def P'_def I
-    by simp
-  have R: "erel_list I cur oi n ps P K L" using rel by (simp add: erel_def aux ps_def)
-  have cur: "cur \<le> nt" using le by (simp add: aux)
-  have len: "length ps = length L" and on: "oi + length L = n"
-    and E0: "\<forall>k < length L. fst (ps ! k) = fst (L ! k) \<and>
-       snd (snd (L ! k)) = {v \<in> snd (ps ! k). \<not> erdead I (kq K v) (oi + k) (fst (ps ! k))} \<and>
-       (memR I (cur - fst (ps ! k)) \<longrightarrow>
-         fst (snd (L ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})"
-    and Pv0: "\<forall>v p. Mapping.lookup P v = Some p \<longrightarrow> p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)"
-    and Pl0: "ps \<noteq> [] \<longrightarrow> Mapping.keys P \<subseteq> snd (last ps)"
-    and Kv0: "\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))"
-    and Ks0: "\<forall>v. sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)"
-    using R unfolding erel_list_def by - (elim conjE; assumption)+
-  have Ks: "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)" for v
-    using Ks0 by blast
-  have E: "fst (ps ! k) = fst (L ! k) \<and>
-      snd (snd (L ! k)) = {v \<in> snd (ps ! k). \<not> erdead I (kq K v) (oi + k) (fst (ps ! k))} \<and>
-      (memR I (cur - fst (ps ! k)) \<longrightarrow>
-        fst (snd (L ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})"
-    if "k < length L" for k
-    using E0 that by blast
-  have Pv: "p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)" if "Mapping.lookup P v = Some p" for v p
-    using Pv0 that by blast
-  have PW: "the (Mapping.lookup P v) < n" if "v \<in> W" for v
-    using that Pv unfolding W_def by (auto dest: Mapping.in_keysD)
-  have Pl: "Mapping.keys P \<subseteq> snd (last ps)" if "ps \<noteq> []"
-    using Pl0 that by blast
-  have Kv: "oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))" if "(p, f, tf) \<in> set (kq K v)"
-    for v p f tf
-    using Kv0 that by fast
-  define md where "md \<longleftrightarrow> oi \<noteq> n \<and> memR I (nt - fst (last ps))"
-  define ps1 where "ps1 = (if md then butlast ps @ [(fst (last ps), snd (last ps) - S)] else ps)"
-  have lp1: "linearize pend1 = ps1"
-  proof (cases "oi = n")
-    case True
-    then have e: "ps = []" using len on by simp
-    then show ?thesis using True by (simp add: pend1_def ps1_def md_def map_last_queue_rep ps_def[symmetric])
-  next
-    case False
-    then have ne: "ps \<noteq> []" using len on by auto
-    obtain tz Xl where tX: "last ps = (tz, Xl)" by fastforce
-    show ?thesis using False ne tX
-      by (auto simp: pend1_def ps1_def md_def map_last_queue_rep ps_def[symmetric])
-        (metis append_butlast_last_id)
-  qed
-  have len1: "length ps1 = length ps"
-    using len on by (auto simp: ps1_def md_def)
-  have p1: "fst (ps1 ! k) = fst (ps ! k) \<and>
-      snd (ps1 ! k) = (if md \<and> oi + k = n - 1 then snd (ps ! k) - S else snd (ps ! k))"
-    if "k < length ps" for k
-  proof (cases "md")
-    case True
-    then have ne: "ps \<noteq> []" using len on by (auto simp: md_def)
-    show ?thesis
-    proof (cases "k = length ps - 1")
-      case True
-      have "oi + k = n - 1" using True ne on len by (cases ps) auto
-      moreover have "ps1 ! k = (fst (last ps), snd (last ps) - S)"
-        using True ne \<open>md\<close> by (simp add: ps1_def nth_append)
-      moreover have "last ps = ps ! k" using True ne by (simp add: last_conv_nth)
-      ultimately show ?thesis using \<open>md\<close> by simp
-    next
-      case False
-      have k: "k < length (butlast ps)" using False that by simp
-      have "oi + k \<noteq> n - 1" using False that on len by arith
-      moreover have "ps1 ! k = ps ! k"
-        using k \<open>md\<close> by (simp add: ps1_def nth_append nth_butlast)
-      ultimately show ?thesis by simp
-    qed
-  qed (simp add: ps1_def)
-  have lP': "Mapping.lookup P' v = (if v \<in> W' then (if v \<in> W then Mapping.lookup P v else Some n)
-      else None)" for v
-    by (auto simp: P'_def W_def Mapping_lookup_upd_set Mapping.lookup_filter keys_is_none_rep
-        split: option.splits)
-  have kP': "Mapping.keys P' = W'"
-    by (auto simp: keys_is_none_rep lP' W_def split: if_splits)
-  have kK': "kq K' v = (if oi \<noteq> n \<and> v \<in> D - S
-      then kq K v @ [(the (Mapping.lookup P v), n, nt)] else kq K v)" for v
-    by (auto simp: K'_def kq_def kqq_def Mapping_lookup_upd_set append_queue_rep)
-  define L' where "L' = eupdate_release args msk l r nt L"
-  define ps' where "ps' = ps1 @ [(nt, r)]"
-  have ed: "erdead I (kq K' v) i t \<longleftrightarrow> erdead I (kq K v) i t \<or>
-      (oi \<noteq> n \<and> v \<in> D - S \<and> the (Mapping.lookup P v) \<le> i \<and> memR I (nt - t))"
-    if "i < n" for v i t
-    using that by (auto simp: kK' erdead_def)
-  have ed_n: "\<not> erdead I (kq K' v) n t" for v t
-  proof -
-    have "f \<le> n" if "(p, f, tf) \<in> set (kq K' v)" for p f tf
-      using that by (auto simp: kK' split: if_splits dest: Kv)
-    then show ?thesis by (fastforce simp: erdead_def)
-  qed
-  have P'n: "the (Mapping.lookup P' v) \<le> n" if "v \<in> W'" for v
-    using that Pv by (cases "Mapping.lookup P v") (auto simp: lP' W_def keys_is_none_rep less_imp_le)
-  have entries: "fst (ps' ! k) = fst (L' ! k) \<and>
-      snd (snd (L' ! k)) = {v \<in> snd (ps' ! k). \<not> erdead I (kq K' v) (oi + k) (fst (ps' ! k))} \<and>
-      (memR I (nt - fst (ps' ! k)) \<longrightarrow>
-        fst (snd (L' ! k)) = {v \<in> Mapping.keys P'. the (Mapping.lookup P' v) \<le> oi + k})"
-    if k: "k < Suc (length L)" for k
-  proof (cases "k < length L")
-    case True
-    obtain t a1 a2 where Lk: "L ! k = (t, a1, a2)" by (cases "L ! k") auto
-    have kp: "k < length ps" using True len by simp
-    have t: "fst (ps ! k) = t"
-      and a2: "a2 = {v \<in> snd (ps ! k). \<not> erdead I (kq K v) (oi + k) t}"
-      and a1: "memR I (cur - t) \<Longrightarrow> a1 = {v \<in> W. the (Mapping.lookup P v) \<le> oi + k}"
-      using E[OF True] Lk by (auto simp: W_def)
-    have i: "oi + k < n" and nn: "oi \<noteq> n" using True on by simp_all
-    have pk: "ps' ! k = ps1 ! k" using kp len1 by (simp add: ps'_def nth_append)
-    have lastk: "fst (last ps) = t" if "oi + k = n - 1"
-    proof -
-      have "k = length ps - 1" using that kp on len by arith
-      moreover have "ps \<noteq> []" using kp by auto
-      ultimately show ?thesis using t by (simp add: last_conv_nth)
-    qed
-    have md_iff: "(md \<and> oi + k = n - 1) \<longleftrightarrow> (oi + k = n - 1 \<and> memR I (nt - t))"
-      using nn lastk by (auto simp: md_def)
-    have X1: "snd (ps1 ! k) = (if oi + k = n - 1 \<and> memR I (nt - t) then snd (ps ! k) - S
-        else snd (ps ! k))"
-      using p1[OF kp] md_iff by simp
-    show ?thesis
-    proof (cases "memR I (nt - t)")
-      case True2: True
-      have mc: "memR I (cur - t)" by (rule memR_antimono[OF True2 diff_le_mono[OF cur]])
-      have L'k: "L' ! k = (t, esemi msk (\<not> args_pos args) (a1 \<inter> r) l, a2 - (a1 - r))"
-        using True True2 Lk by (simp add: L'_def eupdate_release_nth I)
-      have "a2 - (a1 - r) = {v \<in> snd (ps1 ! k). \<not> erdead I (kq K' v) (oi + k) t}"
-      proof (cases "oi + k = n - 1")
-        case True3: True
-        have "{v \<in> W. the (Mapping.lookup P v) \<le> oi + k} = W" using PW True3 by fastforce
-        then show ?thesis unfolding a2 a1[OF mc] ed[OF i] X1 using nn True2 True3
-          by (auto simp: D_def S_def)
-      next
-        case False3: False
-        have "the (Mapping.lookup P v) \<le> oi + k \<Longrightarrow> v \<notin> S" for v
-          using False3 i by (auto simp: S_def)
-        then show ?thesis unfolding a2 a1[OF mc] ed[OF i] X1 using nn True2 False3
-          by (auto simp: D_def)
-      qed
-      moreover have "esemi msk (\<not> args_pos args) (a1 \<inter> r) l =
-          {v \<in> Mapping.keys P'. the (Mapping.lookup P' v) \<le> oi + k}"
-        unfolding esemi_Int a1[OF mc] kP' W'_def[symmetric] using i
-        by (auto simp: lP')
-      ultimately show ?thesis using L'k pk t p1[OF kp] by simp
-    next
-      case False2: False
-      have L'k: "L' ! k = (t, a1, a2)"
-        using True False2 Lk by (simp add: L'_def eupdate_release_nth I)
-      have "a2 = {v \<in> snd (ps1 ! k). \<not> erdead I (kq K' v) (oi + k) t}"
-        unfolding a2 ed[OF i] X1 using False2 by auto
-      then show ?thesis using L'k pk t p1[OF kp] False2 by simp
-    qed
-  next
-    case False
-    then have kl: "k = length L" using k by simp
-    have pk: "ps' ! k = (nt, r)" using kl len len1 by (simp add: ps'_def nth_append)
-    have L'k: "L' ! k = (nt, W', r)" using kl by (simp add: L'_def eupdate_release_last W'_def)
-    have "W' = {v \<in> Mapping.keys P'. the (Mapping.lookup P' v) \<le> oi + k}"
-      using P'n on kl by (auto simp: kP')
-    then show ?thesis using pk L'k on kl ed_n by simp
-  qed
-  have Pv': "p < Suc n \<and> (\<forall>(p', f, tf) \<in> set (kq K' v). f \<le> p)"
-    if "Mapping.lookup P' v = Some p" for v p
-  proof (cases "v \<in> W")
-    case True
-    then have v: "v \<in> W'" "Mapping.lookup P v = Some p" using that by (auto simp: lP' split: if_splits)
-    have "v \<notin> D - S" using v(1) esemi_sub[of msk _ r l] by (auto simp: W'_def D_def)
-    then show ?thesis using Pv[OF v(2)] by (simp add: kK')
-  next
-    case False
-    then have "p = n" using that by (auto simp: lP' split: if_splits)
-    then show ?thesis using Kv False by (fastforce simp: kK' D_def)
-  qed
-  have Pl': "Mapping.keys P' \<subseteq> snd (last ps')"
-    using esemi_sub[of msk _ r l] by (simp add: kP' W'_def ps'_def)
-  have Kv': "oi < f \<and> f < Suc n \<and> p < f \<and> v \<in> snd (ps' ! (f - Suc oi))"
-    if "(p, f, tf) \<in> set (kq K' v)" for v p f tf
-  proof (cases "(p, f, tf) \<in> set (kq K v)")
-    case True
-    have j: "f - Suc oi < length ps" and nl: "oi + (f - Suc oi) \<noteq> n - 1"
-      using Kv[OF True] on len by arith+
-    then show ?thesis using Kv[OF True] p1[OF j] len1 by (simp add: ps'_def nth_append)
-  next
-    case False
-    then have new: "oi \<noteq> n" "v \<in> D - S" "p = the (Mapping.lookup P v)" "f = n"
-      using that by (auto simp: kK' split: if_splits)
-    have ne: "ps \<noteq> []" using new(1) on len by auto
-    have vW: "v \<in> W" using new(2) by (simp add: D_def)
-    have j: "n - Suc oi < length ps" and jl: "oi + (n - Suc oi) = n - 1" "n - Suc oi = length ps - 1"
-      using new(1) on len by arith+
-    have "ps' ! (f - Suc oi) = ps1 ! (n - Suc oi)" using j len1 new(4) by (simp add: ps'_def nth_append)
-    moreover have "v \<in> snd (ps ! (n - Suc oi))"
-      using Pl[OF ne] vW jl(2) ne by (auto simp: W_def last_conv_nth)
-    ultimately show ?thesis using new PW[OF vW] p1[OF j] on len by auto
-  qed
-  have Ks': "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K' v)" for v
-  proof (cases "oi \<noteq> n \<and> v \<in> D - S")
-    case True
-    obtain q where q: "Mapping.lookup P v = Some q"
-      using True unfolding D_def W_def by (auto dest: Mapping.in_keysD)
-    show ?thesis using True Ks[of v] Pv[OF q] by (auto simp: kK' sorted_wrt_append q)
-  qed (auto simp: kK' Ks)
-  have "erel_list I nt oi (Suc n) ps' P' K' L'"
-    unfolding erel_list_def
-    using entries Pv' Pl' Kv' Ks' len len1 on by (simp add: L'_def ps'_def; blast)
-  then show ?thesis
-    by (simp add: upd erel_def append_queue_rep lp1 L'_def ps'_def)
-qed
+text \<open>An entry the list updates is the composition of its summary with the new point's.\<close>
 
-lemma erdead_dropWhile:
-  assumes "j \<le> i"
-  shows "erdead I (dropWhile (\<lambda>(p, f, tf). f \<le> j) ks) i t = erdead I ks i t"
-proof
-  assume "erdead I (dropWhile (\<lambda>(p, f, tf). f \<le> j) ks) i t"
-  then show "erdead I ks i t" by (fastforce simp: erdead_def dest: set_dropWhileD)
-next
-  assume "erdead I ks i t"
-  then obtain p f tf where x: "(p, f, tf) \<in> set ks" "p \<le> i" "i < f" "memR I (tf - t)"
-    by (auto simp: erdead_def)
-  have "(p, f, tf) \<notin> set (takeWhile (\<lambda>(p, f, tf). f \<le> j) ks)"
-    using x(3) assms by (auto dest: set_takeWhileD)
-  then have "(p, f, tf) \<in> set (dropWhile (\<lambda>(p, f, tf). f \<le> j) ks)"
-    using x(1) takeWhile_dropWhile_id[of "\<lambda>(p, f, tf). f \<le> j" ks] by (metis Un_iff set_append)
-  then show "erdead I (dropWhile (\<lambda>(p, f, tf). f \<le> j) ks) i t"
-    using x by (fastforce simp: erdead_def)
-qed
+lemma eout_ecomp_esum_of:
+  assumes "edisj x"
+  shows "(esemi msk (\<not> args_pos args) (fst (eout x) \<inter> r) l, snd (eout x) - (fst (eout x) - r)) =
+    eout (ecomp x (esum_of args msk l r))"
+  using assms by (cases x) (auto simp: eout_def ecomp_alt esum_of_eq esemi_def edisj_def)
 
-lemma sorted_wrt_dropWhile: "sorted_wrt R xs \<Longrightarrow> sorted_wrt R (dropWhile P xs)"
-  using takeWhile_dropWhile_id[of P xs] by (metis sorted_wrt_append)
+lemma snd_eout: "snd (eout x) = eunion x"
+  by (simp add: eout_def eunion_def)
 
-lemma dropWhile_kills_after:
-  fixes xs :: "(nat \<times> nat \<times> ts) list"
-  assumes "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') xs" and "\<forall>(p, f, tf) \<in> set xs. p < f"
-    and "(p, f, tf) \<in> set (dropWhile (\<lambda>(p, f, tf). f \<le> j) xs)"
-  shows "j < f"
-  using assms
-proof (induct xs)
-  case (Cons x xs)
-  obtain p0 f0 tf0 where x: "x = (p0, f0, tf0)" by (cases x) auto
+lemma eraux_flip_length: "length (eraux_flip bk fr acc) = length bk + length fr"
+  by (induct bk fr acc rule: eraux_flip.induct) (auto simp: Let_def)
+
+lemma eraux_flip_fst: "map fst (eraux_flip bk fr acc) = rev (map fst bk) @ map fst fr"
+  by (induct bk fr acc rule: eraux_flip.induct) (auto simp: Let_def)
+
+lemma eraux_flip_nth_fr: "k < length fr \<Longrightarrow> eraux_flip bk fr acc ! (length bk + k) = fr ! k"
+proof (induct bk fr acc arbitrary: k rule: eraux_flip.induct)
+  case (2 t e bk fr acc)
+  have "eraux_flip bk ((t, ecompo e acc) # fr) (Some (ecompo e acc)) ! (length bk + Suc k) =
+      ((t, ecompo e acc) # fr) ! Suc k"
+    by (rule 2) (use 2(2) in simp)
+  then show ?case by (simp add: Let_def)
+qed simp
+
+lemma eraux_flip_snd: "k < length bk \<Longrightarrow>
+    Some (snd (eraux_flip bk fr (efold ys) ! k)) = efold (drop k (rev (map snd bk)) @ ys)"
+proof (induct bk arbitrary: fr ys k)
+  case (Cons x bk)
+  obtain t e where x: "x = (t, e)" by (cases x)
+  have eq: "eraux_flip (x # bk) fr (efold ys) = eraux_flip bk ((t, ecompo e (efold ys)) # fr) (efold (e # ys))"
+    by (simp add: x Let_def)
   show ?case
-  proof (cases "f0 \<le> j")
+  proof (cases "k < length bk")
     case True
-    then show ?thesis using Cons by (simp add: x)
+    then show ?thesis using Cons(1)[OF True, of "(t, ecompo e (efold ys)) # fr" "e # ys"]
+      by (simp add: eq x)
   next
     case False
-    then have "(p, f, tf) = x \<or> (p, f, tf) \<in> set xs" using Cons(4) by (simp add: x)
-    then show ?thesis
-    proof (elim disjE)
-      assume "(p, f, tf) = x"
-      then show ?thesis using False by (simp add: x)
-    next
-      assume m: "(p, f, tf) \<in> set xs"
-      have "f0 \<le> p" using Cons(2) m by (auto simp: x)
-      moreover have "p < f" using Cons(3) m by auto
-      ultimately show ?thesis using False by simp
+    then have k: "k = length bk" using Cons(2) by simp
+    have "eraux_flip bk ((t, ecompo e (efold ys)) # fr) (efold (e # ys)) ! k = (t, ecompo e (efold ys))"
+    proof -
+      have "eraux_flip bk ((t, ecompo e (efold ys)) # fr) (efold (e # ys)) ! (length bk + 0) =
+          ((t, ecompo e (efold ys)) # fr) ! 0"
+        by (rule eraux_flip_nth_fr) simp
+      then show ?thesis by (simp add: k)
     qed
+    then show ?thesis by (simp add: eq x k)
   qed
 qed simp
 
-lemma Nil_eq_dropWhile_conv: "([] = dropWhile P xs) = (\<forall>x \<in> set xs. P x)"
-  by (metis dropWhile_eq_Nil_conv)
+subsection \<open>The structure refines the list\<close>
 
-lemma kq_prune: "kq (eraux_prune i K X) v =
-    (if v \<in> X then dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) else kq K v)"
+text \<open>
+  The structure stands for a list of @{const eupdate_release} as follows.  The results kept but
+  not yet read are the alive tuples of the list's first entries, whose points are outside the
+  interval as seen from @{term c}.  The other entries line up with the front and the reversed
+  back; there are summaries @{term es} of their points such that the front holds the summaries of
+  its suffixes, the back holds the summaries themselves and its aggregate, and each entry's
+  pending and alive tuples are read off the summary from its point to the last one.  Their
+  timestamps are sorted and at most the last one.
+\<close>
+
+definition erel' :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
+  "erel' I c aux L \<longleftrightarrow> (case aux of (cur, outs, fr, bk, B) \<Rightarrow> \<exists>es.
+     length outs + length es = length L \<and>
+     map (\<lambda>x. snd (snd x)) (take (length outs) L) = outs \<and>
+     (\<forall>x \<in> set (take (length outs) L). \<not> memR I (c - fst x)) \<and>
+     length es = length fr + length bk \<and>
+     map fst (drop (length outs) L) = map fst fr @ rev (map fst bk) \<and>
+     sorted (map fst (drop (length outs) L)) \<and> (\<forall>x \<in> set (drop (length outs) L). fst x \<le> cur) \<and>
+     (\<forall>e \<in> set es. edisj e) \<and>
+     (\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))) \<and>
+     map snd bk = rev (drop (length fr) es) \<and> B = efold (drop (length fr) es) \<and>
+     (\<forall>k < length es. snd (drop (length outs) L ! k) = eout (the (efold (drop k es)))))"
+
+definition erel :: "\<I> \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
+  "erel I aux L = erel' I (fst aux) aux L"
+
+lemma erel_init: "erel I eraux_init []"
+  by (auto simp: erel_def erel'_def eraux_init_def intro!: exI[of _ "[]"])
+
+lemma fst_eraux_update[simp]: "fst (eraux_update args msk l r nt aux) = nt"
+  by (simp add: eraux_update_def Let_def split: prod.splits)
+
+lemma takeWhile_take: "takeWhile P (take n xs) = take n (takeWhile P xs)"
+  by (induct xs arbitrary: n) (auto simp: take_Cons split: nat.splits)
+
+lemma popfront_rel:
+  fixes O :: "(ts \<times> 'b list set \<times> 'b list set) list"
+  assumes pf: "eraux_popfront I nt B fr = (ys, fr')"
+    and fr: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
+    and B: "B = efold (drop (length fr) es)" and len: "length fr \<le> length es" "length es = length O"
+    and ts: "map fst (take (length fr) O) = map fst fr"
+    and out: "\<forall>k < length es. snd (O ! k) = eout (the (efold (drop k es)))"
+  shows "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) O))"
+    and "ys = map (\<lambda>x. snd (snd x)) (take (length ys) O)"
+    and "fr' = drop (length ys) fr"
 proof -
-  define S where "S = Set.filter (\<lambda>v. case hd_queue (kqq K v) of None \<Rightarrow> False
-    | Some (p, f, tf) \<Rightarrow> f \<le> Suc i) X"
-  define K1 where "K1 = upd_set K (\<lambda>v. dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) S"
-  have pr: "eraux_prune i K X = mapping_delete_set K1 (Set.filter (\<lambda>v. hd_queue (kqq K1 v) = None) S)"
-    by (simp add: eraux_prune_def Let_def S_def K1_def)
-  have l1: "Mapping.lookup K1 v = (if v \<in> S
-      then Some (dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) else Mapping.lookup K v)"
-    by (simp add: K1_def Mapping_lookup_upd_set)
-  have mS: "v \<in> S \<longleftrightarrow> v \<in> X \<and> (case kq K v of [] \<Rightarrow> False | (p, f, tf) # _ \<Rightarrow> f \<le> Suc i)"
-    by (auto simp: S_def kq_def hd_queue_rep split: list.splits)
-  show ?thesis
-  proof (cases "v \<in> S")
+  define P :: "ts \<times> 'b esum \<Rightarrow> bool" where "P = (\<lambda>(t, _). \<not> memR I (nt - t))"
+  define Q where "Q = (\<lambda>t. \<not> memR I (nt - t))"
+  have ys: "ys = map (\<lambda>(t, s). eunion (ecompo s B)) (takeWhile P fr)" and fr': "fr' = dropWhile P fr"
+    using pf by (simp_all add: eraux_popfront_def P_def)
+  have P: "P = Q \<circ> fst" by (auto simp: P_def Q_def)
+  have "map fst (takeWhile P fr) = takeWhile Q (map fst fr)" by (simp add: P takeWhile_map)
+  also have "\<dots> = take (length fr) (takeWhile Q (map fst O))"
+    using ts by (simp add: take_map[symmetric] takeWhile_take)
+  also have "takeWhile Q (map fst O) = map fst (takeWhile (Q \<circ> fst) O)" by (simp add: takeWhile_map)
+  finally have "length (takeWhile P fr) = min (length fr) (length (takeWhile (Q \<circ> fst) O))"
+    by (metis length_map length_take)
+  then show l: "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) O))"
+    by (simp add: ys Q_def comp_def)
+  define p where "p = length ys"
+  have tk: "takeWhile P fr = take p fr" by (simp add: p_def ys takeWhile_eq_take)
+  show "fr' = drop (length ys) fr" by (simp add: fr' p_def[symmetric] tk[symmetric] dropWhile_eq_drop)
+  have pf': "p \<le> length fr" using l by (simp add: p_def)
+  have elem: "eunion (ecompo (snd (fr ! k)) B) = snd (snd (O ! k))" if "k < p" for k
+  proof -
+    have k: "k < length fr" "k \<le> length fr" using that pf' by simp_all
+    have "drop k es = drop k (take (length fr) es) @ drop (length fr) es"
+      using k len(1) by (metis append_take_drop_id drop_append length_take min.absorb2 diff_is_0_eq
+          drop_eq_Nil append_Nil2 drop_drop le_add_diff_inverse2)
+    then have "efold (drop k es) = Some (ecompo (snd (fr ! k)) B)"
+      using fr[rule_format, OF k(1)] B by (simp add: efold_append ecompoo_def)
+    then show ?thesis using out[rule_format, of k] k len by (simp add: snd_eout)
+  qed
+  show "ys = map (\<lambda>x. snd (snd x)) (take (length ys) O)"
+    using pf' len elem by (intro nth_equalityI) (auto simp: ys tk p_def[symmetric] split_beta)
+qed
+
+lemma erel_shift:
+  assumes rel: "erel' I c aux L" and cn: "c \<le> nt"
+  defines "Q \<equiv> \<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x)"
+  shows "erel' I nt (eraux_shift I nt aux) L \<and> fst (eraux_shift I nt aux) = fst aux \<and>
+    fst (snd (eraux_shift I nt aux)) = map (\<lambda>x. snd (snd x)) (takeWhile Q L) \<and>
+    (\<forall>x \<in> set (drop (length (fst (snd (eraux_shift I nt aux)))) L). memR I (nt - fst x))"
+proof -
+  obtain cur outs fr bk B where aux: "aux = (cur, outs, fr, bk, B)" by (cases aux) auto
+  define m where "m = length outs"
+  define O where "O = drop m L"
+  obtain es where l1: "m + length es = length L"
+    and outs: "map (\<lambda>x. snd (snd x)) (take m L) = outs"
+    and cl: "\<forall>x \<in> set (take m L). \<not> memR I (c - fst x)"
+    and l2: "length es = length fr + length bk"
+    and tsO: "map fst O = map fst fr @ rev (map fst bk)"
+    and so: "sorted (map fst O)" and le: "\<forall>x \<in> set O. fst x \<le> cur"
+    and dj: "\<forall>e \<in> set es. edisj e"
+    and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
+    and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
+    and out: "\<forall>k < length es. snd (O ! k) = eout (the (efold (drop k es)))"
+    using rel unfolding erel'_def aux m_def[symmetric] O_def[symmetric] by auto
+  have lO: "length O = length es" using l1 by (simp add: O_def)
+  have L: "L = take m L @ O" by (simp add: O_def)
+  have clQ: "\<forall>x \<in> set (take m L). Q x"
+  proof
+    fix x assume "x \<in> set (take m L)"
+    then have "\<not> memR I (c - fst x)" using cl by blast
+    then show "Q x" unfolding Q_def by (auto dest: memR_antimono[OF _ diff_le_mono[OF cn]])
+  qed
+  have tW: "takeWhile Q L = take m L @ takeWhile Q O"
+    by (subst L) (simp add: takeWhile_append2 clQ)
+  define p where "p = length (takeWhile Q O)"
+  have pO: "p \<le> length O" by (simp add: p_def length_takeWhile_le)
+  have takeO: "takeWhile Q O = take p O" by (simp add: p_def takeWhile_eq_take)
+  have mem_after: "\<forall>x \<in> set (drop p O). memR I (nt - fst x)"
+  proof
+    fix x assume "x \<in> set (drop p O)"
+    then obtain j where j: "j < length O - p" "x = drop p O ! j" by (metis in_set_conv_nth length_drop)
+    have pl: "p < length O" using j by simp
+    have "\<not> Q (O ! p)" using nth_length_takeWhile[of Q O] pl by (simp add: p_def)
+    then have m0: "memR I (nt - fst (O ! p))" by (simp add: Q_def)
+    have "fst (O ! p) \<le> fst (O ! (p + j))"
+      using sorted_nth_mono[OF so, of p "p + j"] j by simp
+    then show "memR I (nt - fst x)" using j pl
+      by (auto intro: memR_antimono[OF m0])
+  qed
+  have tsfr: "map fst (take (length fr) O) = map fst fr"
+    using tsO by (metis append_eq_conv_conj length_map take_map)
+  obtain ys fr1 where pf: "eraux_popfront I nt B fr = (ys, fr1)" by fastforce
+  have ly: "length ys = min (length fr) p" and yso: "ys = map (\<lambda>x. snd (snd x)) (take (length ys) O)"
+    and fr1: "fr1 = drop (length ys) fr"
+    using popfront_rel[OF pf frs Bs _ _ tsfr out] l2 lO by (simp_all add: p_def Q_def)
+  have main: "\<exists>fr' bk' B'. eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr', bk', B') \<and>
+     length fr' + length bk' = length es - p \<and>
+     map fst (drop p O) = map fst fr' @ rev (map fst bk') \<and>
+     (\<forall>k < length fr'. Some (snd (fr' ! k)) = efold (drop k (take (length fr') (drop p es)))) \<and>
+     map snd bk' = rev (drop (length fr') (drop p es)) \<and> B' = efold (drop (length fr') (drop p es))"
+  proof (cases "length ys < length fr")
     case True
-    define q' where "q' = dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)"
-    have k1: "kqq K1 v = q'" by (simp add: kqq_def l1 True q'_def del: dropWhile_queue.simps)
-    have lq: "linearize q' = dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v)"
-      by (simp add: q'_def dropWhile_queue_rep kq_def del: dropWhile_queue.simps)
-    have "kq (eraux_prune i K X) v = linearize q'"
-    proof (cases "hd_queue q' = None")
-      case True
-      then have "linearize q' = []" by (simp add: hd_queue_rep split: list.splits)
-      then show ?thesis using True \<open>v \<in> S\<close>
-        by (simp add: pr delete_set_lookup kq_def kqq_def k1[unfolded kqq_def] empty_queue_rep)
+    then have pe: "p = length ys" using ly by simp
+    obtain x xs where fr1C: "fr1 = x # xs" using True fr1 by (cases fr1) auto
+    have sh: "eraux_shift I nt aux = (cur, outs @ ys, fr1, bk, B)"
+      by (simp add: aux eraux_shift_def pf fr1C)
+    have pfr: "p \<le> length fr" using True pe by simp
+    show ?thesis
+    proof (intro exI conjI allI impI)
+      show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr1, bk, B)"
+        using sh yso pe by simp
+      show "length fr1 + length bk = length es - p" using fr1 pe l2 pfr by simp
+      show "map fst (drop p O) = map fst fr1 @ rev (map fst bk)"
+        using tsO pfr fr1 pe by (simp add: drop_map[symmetric])
+      show "map snd bk = rev (drop (length fr1) (drop p es))" using bks fr1 pe pfr by simp
+      show "B = efold (drop (length fr1) (drop p es))" using Bs fr1 pe pfr by simp
     next
-      case False
-      have "Mapping.lookup K1 v = Some q'" using \<open>v \<in> S\<close> by (simp add: l1 q'_def del: dropWhile_queue.simps)
-      then show ?thesis using False k1
-        by (auto simp: pr delete_set_lookup kq_def kqq_def simp del: dropWhile_queue.simps)
+      fix k assume k: "k < length fr1"
+      have "Some (snd (fr1 ! k)) = efold (drop (p + k) (take (length fr) es))"
+        using frs[rule_format, of "p + k"] k fr1 pe by simp
+      also have "drop (p + k) (take (length fr) es) = drop k (take (length fr1) (drop p es))"
+        using fr1 pe by (simp add: drop_take add.commute drop_drop)
+      finally show "Some (snd (fr1 ! k)) = efold (drop k (take (length fr1) (drop p es)))" .
     qed
-    then show ?thesis using lq True mS by simp
   next
     case False
-    have "kq (eraux_prune i K X) v = kq K v"
-      using False by (simp add: pr delete_set_lookup kq_def kqq_def l1)
-    moreover have "dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) = kq K v" if "v \<in> X"
-      using False mS that by (auto split: list.splits)
-    ultimately show ?thesis by simp
-  qed
-qed
-
-lemma front_dead_erdead:
-  assumes "\<forall>(p, f, tf) \<in> set (kq K v). i < f \<and> p < f"
-    and "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)"
-  shows "front_dead I i t (kqq K v) = erdead I (kq K v) i t"
-proof (cases "kq K v")
-  case (Cons x xs)
-  obtain p f tf where x: "x = (p, f, tf)" by (cases x) auto
-  have "\<not> p' \<le> i" if "(p', f', tf') \<in> set xs" for p' f' tf'
-    using assms that by (fastforce simp: Cons x)
-  then show ?thesis using assms
-    by (auto simp: front_dead_def hd_queue_rep kq_def[symmetric] Cons x erdead_def)
-qed (simp add: front_dead_def hd_queue_rep kq_def[symmetric] erdead_def)
-
-lemma erel_pop:
-  assumes R: "erel_list I cur oi n ((t, X) # ps) P K ((t', a1, a2) # L)"
-  shows "Set.filter (\<lambda>v. \<not> front_dead I oi t (kqq K v)) X = a2 \<and>
-    erel_list I cur (Suc oi) n ps P (eraux_prune oi K X) L"
-proof -
-  have len0: "length ((t, X) # ps) = length ((t', a1, a2) # L)"
-    and on: "oi + length ((t', a1, a2) # L) = n"
-    and E0: "\<forall>k < length ((t', a1, a2) # L). fst (((t, X) # ps) ! k) = fst (((t', a1, a2) # L) ! k) \<and>
-       snd (snd (((t', a1, a2) # L) ! k)) = {v \<in> snd (((t, X) # ps) ! k).
-         \<not> erdead I (kq K v) (oi + k) (fst (((t, X) # ps) ! k))} \<and>
-       (memR I (cur - fst (((t, X) # ps) ! k)) \<longrightarrow>
-         fst (snd (((t', a1, a2) # L) ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})"
-    and Pv0: "\<forall>v p. Mapping.lookup P v = Some p \<longrightarrow> p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)"
-    and Pl0: "(t, X) # ps \<noteq> [] \<longrightarrow> Mapping.keys P \<subseteq> snd (last ((t, X) # ps))"
-    and Kv0: "\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f < n \<and> p < f \<and>
-      v \<in> snd (((t, X) # ps) ! (f - Suc oi))"
-    and Ks0: "\<forall>v. sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)"
-    using R unfolding erel_list_def by - (elim conjE; assumption)+
-  have len: "length ps = length L" using len0 by simp
-  have Kv: "oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (((t, X) # ps) ! (f - Suc oi))"
-    if "(p, f, tf) \<in> set (kq K v)" for v p f tf
-    using Kv0 that by fast
-  have Ks: "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)" for v
-    using Ks0 by blast
-  have a2: "a2 = {v \<in> X. \<not> erdead I (kq K v) oi t}"
-    using E0 by (auto dest: spec[of _ 0])
-  have fd: "front_dead I oi t (kqq K v) = erdead I (kq K v) oi t" for v
-    by (rule front_dead_erdead) (use Kv Ks in fast)+
-  define K' where "K' = eraux_prune oi K X"
-  have kK': "kq K' v = (if v \<in> X then dropWhile (\<lambda>(p, f, tf). f \<le> Suc oi) (kq K v) else kq K v)"
-    for v by (simp add: K'_def kq_prune)
-  have sub: "x \<in> set (kq K v)" if "x \<in> set (kq K' v)" for x v
-    using that by (auto simp: kK' split: if_splits dest: set_dropWhileD)
-  have after: "Suc oi < f" if "(p, f, tf) \<in> set (kq K' v)" for p f tf v
-  proof (cases "v \<in> X")
-    case True
-    have "\<forall>(p, f, tf) \<in> set (kq K v). p < f" using Kv by fast
-    moreover have "(p, f, tf) \<in> set (dropWhile (\<lambda>(p, f, tf). f \<le> Suc oi) (kq K v))"
-      using that True by (simp add: kK')
-    ultimately show ?thesis by (rule dropWhile_kills_after[OF Ks])
-  next
-    case False
-    then have "(p, f, tf) \<in> set (kq K v)" using that by (simp add: kK')
-    from Kv[OF this] False show ?thesis by (cases "f = Suc oi") auto
-  qed
-  have ed: "erdead I (kq K' v) i u = erdead I (kq K v) i u" if "Suc oi \<le> i" for v i u
-    using that by (simp add: kK' erdead_dropWhile)
-  have "erel_list I cur (Suc oi) n ps P K' L"
-    unfolding erel_list_def
-  proof (intro conjI allI impI)
-    show "length ps = length L" by (rule len)
-    show "Suc oi + length L = n" using on by simp
-  next
-    fix k assume k: "k < length L"
-    have "Suc k < length ((t', a1, a2) # L)" using k by simp
-    note e = E0[rule_format, OF this]
-    show "fst (ps ! k) = fst (L ! k)" using e by simp
-    show "snd (snd (L ! k)) = {v \<in> snd (ps ! k). \<not> erdead I (kq K' v) (Suc oi + k) (fst (ps ! k))}"
-      using e by (simp add: ed)
-    show "fst (snd (L ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> Suc oi + k}"
-      if "memR I (cur - fst (ps ! k))" using e that by simp
-  next
-    fix v p assume "Mapping.lookup P v = Some p"
-    then show "p < n" "\<forall>(p', f, tf) \<in> set (kq K' v). f \<le> p" using Pv0 sub by fast+
-  next
-    assume "ps \<noteq> []"
-    then show "Mapping.keys P \<subseteq> snd (last ps)" using Pl0 by simp
-  next
-    fix v
-    show "\<forall>(p, f, tf) \<in> set (kq K' v). Suc oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc (Suc oi)))"
-    proof (intro ballI, clarify)
-      fix p f tf assume x: "(p, f, tf) \<in> set (kq K' v)"
-      have a: "Suc oi < f" by (rule after[OF x])
-      have "f - Suc oi = Suc (f - Suc (Suc oi))" using a by simp
-      then show "Suc oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc (Suc oi)))"
-        using Kv[OF sub[OF x]] a by simp
+    then have lyf: "length ys = length fr" using ly by simp
+    then have pge: "length fr \<le> p" using ly by simp
+    have fr1N: "fr1 = []" using fr1 lyf by simp
+    show ?thesis
+    proof (cases bk)
+      case Nil
+      have pe: "p = length fr" using pge pO lO l2 Nil by simp
+      have sh: "eraux_shift I nt aux = (cur, outs @ ys, [], [], B)"
+        by (simp add: aux eraux_shift_def pf fr1N Nil)
+      show ?thesis
+      proof (intro exI conjI allI impI)
+        show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), [], [], B)"
+          using sh yso lyf pe by simp
+        show "B = efold (drop (length ([] :: (ts \<times> 'b esum) list)) (drop p es))"
+          using Bs l2 Nil pe by simp
+      qed (use tsO l2 Nil pe lO in auto)
+    next
+      case (Cons y bk')
+      define fl where "fl = eraux_flip bk [] None"
+      have fll: "length fl = length bk" by (simp add: fl_def eraux_flip_length)
+      have flf: "map fst fl = rev (map fst bk)" by (simp add: fl_def eraux_flip_fst)
+      have rbk: "rev (map snd bk) = drop (length fr) es" using bks by (metis rev_rev_ident)
+      have fls: "\<forall>k < length fl. Some (snd (fl ! k)) = efold (drop k (take (length fl) (drop (length fr) es)))"
+      proof (intro allI impI)
+        fix k assume "k < length fl"
+        then have "Some (snd (eraux_flip bk [] (efold []) ! k)) = efold (drop k (rev (map snd bk)) @ [])"
+          by (intro eraux_flip_snd) (simp add: fll)
+        then show "Some (snd (fl ! k)) = efold (drop k (take (length fl) (drop (length fr) es)))"
+          using rbk fll l2 by (simp add: fl_def)
+      qed
+      obtain zs fr2 where pf2: "eraux_popfront I nt None fl = (zs, fr2)" by fastforce
+      have tsfl: "map fst (take (length fl) (drop (length fr) O)) = map fst fl"
+        using tsO flf fll by (simp add: drop_map[symmetric] take_map[symmetric])
+      have outd: "\<forall>k < length (drop (length fr) es). snd (drop (length fr) O ! k) =
+          eout (the (efold (drop k (drop (length fr) es))))"
+        using out lO by (simp add: add.commute)
+      have lz: "length zs = min (length fl) (length (takeWhile Q (drop (length fr) O)))"
+        and zso: "zs = map (\<lambda>x. snd (snd x)) (take (length zs) (drop (length fr) O))"
+        and fr2: "fr2 = drop (length zs) fl"
+        using popfront_rel[OF pf2 fls _ _ _ tsfl outd] fll l2 lO by (simp_all add: Q_def)
+      have allQ: "\<forall>x \<in> set (take (length fr) O). Q x"
+        using pge by (metis takeO set_takeWhileD take_take min.absorb1)
+      have tW2: "takeWhile Q O = take (length fr) O @ takeWhile Q (drop (length fr) O)"
+        by (subst append_take_drop_id[symmetric, of O "length fr"], subst takeWhile_append2)
+          (use allQ in simp_all)
+      have pz: "p = length fr + length zs"
+        using lz tW2 fll l2 lO length_takeWhile_le[of Q "drop (length fr) O"]
+        by (simp add: p_def)
+      have sh: "eraux_shift I nt aux = (cur, outs @ ys @ zs, fr2, [], None)"
+        by (simp add: aux eraux_shift_def pf fr1N Cons pf2[unfolded fl_def, folded Cons])
+      show ?thesis
+      proof (intro exI conjI allI impI)
+        show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr2, [], None)"
+          using sh yso zso lyf pz by (simp add: take_add)
+        show "length fr2 + length ([] :: (ts \<times> 'b esum) list) = length es - p"
+          using fr2 fll pz l2 by simp
+        show "map fst (drop p O) = map fst fr2 @ rev (map fst ([] :: (ts \<times> 'b esum) list))"
+          using tsO flf fr2 pz by (simp add: drop_map[symmetric] add.commute drop_drop)
+        show "map snd ([] :: (ts \<times> 'b esum) list) = rev (drop (length fr2) (drop p es))"
+          using fr2 fll pz l2 by simp
+        show "None = efold (drop (length fr2) (drop p es))"
+          using fr2 fll pz l2 by simp
+      next
+        fix k assume k: "k < length fr2"
+        have "Some (snd (fr2 ! k)) = efold (drop (length zs + k) (take (length fl) (drop (length fr) es)))"
+          using fls[rule_format, of "length zs + k"] k fr2 by simp
+        also have "\<dots> = efold (drop k (take (length fr2) (drop p es)))"
+          using fr2 fll pz l2 by (simp add: drop_drop add.commute)
+        finally show "Some (snd (fr2 ! k)) = efold (drop k (take (length fr2) (drop p es)))" .
+      qed
     qed
-    show "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K' v)"
-      using Ks[of v] by (simp add: kK')
   qed
-  moreover have "Set.filter (\<lambda>v. \<not> front_dead I oi t (kqq K v)) X = a2"
-    by (auto simp: a2 fd)
-  ultimately show ?thesis by (simp add: K'_def)
-qed
-
-lemma erel_pops:
-  "erel_list I cur oi n (xs @ ps) P K (L1 @ L2) \<Longrightarrow> length xs = length L1 \<Longrightarrow>
-   eraux_pops I oi K xs = (ys, K') \<Longrightarrow>
-   ys = map (\<lambda>(t, a1, a2). a2) L1 \<and> erel_list I cur (oi + length xs) n ps P K' L2"
-proof (induct xs arbitrary: oi K L1 ys K')
-  case Nil
-  then show ?case by simp
-next
-  case (Cons x xs)
-  obtain t X where x: "x = (t, X)" by (cases x)
-  obtain l L1' where L1: "L1 = l # L1'" using Cons(3) by (cases L1) auto
-  obtain t' a1 a2 where l: "l = (t', a1, a2)" by (cases l)
-  have pop: "Set.filter (\<lambda>v. \<not> front_dead I oi t (kqq K v)) X = a2 \<and>
-      erel_list I cur (Suc oi) n (xs @ ps) P (eraux_prune oi K X) (L1' @ L2)"
-    by (rule erel_pop) (use Cons(2) in \<open>simp add: x L1 l\<close>)
-  obtain ys' K'' where rec: "eraux_pops I (Suc oi) (eraux_prune oi K X) xs = (ys', K'')"
-    by fastforce
-  have ih: "ys' = map (\<lambda>(t, a1, a2). a2) L1' \<and> erel_list I cur (Suc oi + length xs) n ps P K'' L2"
-    by (rule Cons(1)[OF pop[THEN conjunct2] _ rec]) (use Cons(3) in \<open>simp add: L1\<close>)
-  show ?case using Cons(4) pop ih rec by (simp add: x L1 l Let_def)
+  then obtain fr' bk' B' where sh: "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr', bk', B')"
+    and ln: "length fr' + length bk' = length es - p"
+    and ts': "map fst (drop p O) = map fst fr' @ rev (map fst bk')"
+    and frs': "\<forall>k < length fr'. Some (snd (fr' ! k)) = efold (drop k (take (length fr') (drop p es)))"
+    and bks': "map snd bk' = rev (drop (length fr') (drop p es))"
+    and Bs': "B' = efold (drop (length fr') (drop p es))" by blast
+  define outs' where "outs' = outs @ map (\<lambda>x. snd (snd x)) (take p O)"
+  have lo': "length outs' = m + p" using pO by (simp add: outs'_def m_def)
+  have tk': "take (m + p) L = take m L @ take p O" by (simp add: O_def take_add)
+  have dr': "drop (m + p) L = drop p O" by (simp add: O_def add.commute drop_drop)
+  have rel': "erel' I nt (cur, outs', fr', bk', B') L"
+    unfolding erel'_def prod.case lo'
+  proof (intro exI[of _ "drop p es"] conjI ballI allI impI)
+    show "m + p + length (drop p es) = length L" using l1 pO lO by simp
+    show "map (\<lambda>x. snd (snd x)) (take (m + p) L) = outs'" using outs tk' by (simp add: outs'_def)
+    show "length (drop p es) = length fr' + length bk'" using ln by simp
+    show "map fst (drop (m + p) L) = map fst fr' @ rev (map fst bk')" using ts' dr' by simp
+    show "sorted (map fst (drop (m + p) L))" using so dr' by (simp add: drop_map[symmetric] sorted_wrt_drop)
+    show "map snd bk' = rev (drop (length fr') (drop p es))" by (rule bks')
+    show "B' = efold (drop (length fr') (drop p es))" by (rule Bs')
+  next
+    fix x assume "x \<in> set (take (m + p) L)"
+    then have "x \<in> set (take m L) \<or> x \<in> set (takeWhile Q O)" using tk' takeO by auto
+    then show "\<not> memR I (nt - fst x)" using clQ by (auto dest: set_takeWhileD simp: Q_def)
+  next
+    fix x assume "x \<in> set (drop (m + p) L)"
+    then show "fst x \<le> cur" using le dr' by (auto dest: in_set_dropD)
+  next
+    fix e assume "e \<in> set (drop p es)"
+    then show "edisj e" using dj by (auto dest: in_set_dropD)
+  next
+    fix k assume "k < length fr'"
+    then show "Some (snd (fr' ! k)) = efold (drop k (take (length fr') (drop p es)))" using frs' by blast
+  next
+    fix k assume k: "k < length (drop p es)"
+    then show "snd (drop (m + p) L ! k) = eout (the (efold (drop k (drop p es))))"
+      using out[rule_format, of "p + k"] dr' pO lO by (simp add: add.commute drop_drop)
+  qed
+  show ?thesis
+    using sh rel' mem_after lo' dr' tW outs takeO by (simp add: aux outs'_def)
 qed
 
 lemma eval_until_takeWhile: "eval_until I nt L =
@@ -611,39 +474,138 @@ lemma eval_until_takeWhile: "eval_until I nt L =
    dropWhile (\<lambda>x. \<not> memR I (nt - fst x)) L)"
   by (induct I nt L rule: eval_until.induct) (auto simp: Let_def split: prod.splits)
 
+lemma erel'_drop_outs: "erel' I c (cur, outs, fr, bk, B) L \<Longrightarrow>
+    erel' I c' (cur, [], fr, bk, B) (drop (length outs) L)"
+  unfolding erel'_def by auto
+
 lemma erel_eval:
-  assumes rel: "erel I aux L" and e: "eraux_eval I nt aux = (ys, aux')"
+  assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and e: "eraux_eval I nt aux = (ys, aux')"
   shows "fst (eval_until I nt L) = ys \<and> erel I aux' (snd (eval_until I nt L)) \<and> fst aux' = fst aux"
 proof -
-  obtain cur oi n pend P K where aux: "aux = (cur, oi, n, pend, P, K)" by (cases aux) auto
-  define ps where "ps = linearize pend"
-  define Q :: "ts \<Rightarrow> bool" where "Q = (\<lambda>t. \<not> memR I (nt - t))"
-  have R: "erel_list I cur oi n ps P K L" using rel by (simp add: erel_def aux ps_def)
-  have len: "length ps = length L" using R by (simp add: erel_list_def)
-  have mf: "map fst ps = map fst L"
-    using R by (intro nth_equalityI) (auto simp: erel_list_def)
-  have qe: "(\<lambda>(t, _). \<not> memR I (nt - t)) = Q \<circ> fst" by (auto simp: Q_def fun_eq_iff)
-  have qe': "(\<lambda>x. \<not> memR I (nt - fst x)) = Q \<circ> fst" by (auto simp: Q_def fun_eq_iff)
-  define xs where "xs = takeWhile (Q \<circ> fst) ps"
-  have td: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) pend =
-      (dropWhile_queue (Q \<circ> fst) pend, xs)"
-    by (simp add: prod_eq_iff takedropWhile_queue_fst takedropWhile_queue_snd qe xs_def ps_def
-      del: takedropWhile_queue.simps dropWhile_queue.simps)
-  obtain ys0 K' where p: "eraux_pops I oi K xs = (ys0, K')" by fastforce
-  have e': "ys = ys0 \<and> aux' = (cur, oi + length xs, n, dropWhile_queue (Q \<circ> fst) pend, P, K')"
-    using e by (simp add: eraux_eval_def aux td p Let_def
-      del: takedropWhile_queue.simps dropWhile_queue.simps)
-  have lx: "length xs = length (takeWhile (Q \<circ> fst) L)"
-    using arg_cong[OF mf, of "\<lambda>xs. length (takeWhile Q xs)"] by (simp add: takeWhile_map xs_def)
-  have "erel_list I cur oi n (xs @ dropWhile (Q \<circ> fst) ps) P K
-      (takeWhile (Q \<circ> fst) L @ dropWhile (Q \<circ> fst) L)"
-    using R by (simp add: xs_def)
-  from erel_pops[OF this lx p]
-  have "ys0 = map (\<lambda>(t, a1, a2). a2) (takeWhile (Q \<circ> fst) L) \<and>
-      erel_list I cur (oi + length xs) n (dropWhile (Q \<circ> fst) ps) P K' (dropWhile (Q \<circ> fst) L)" .
+  define Q where "Q = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x))"
+  have sh: "erel' I nt (eraux_shift I nt aux) L \<and> fst (eraux_shift I nt aux) = fst aux \<and>
+    fst (snd (eraux_shift I nt aux)) = map (\<lambda>x. snd (snd x)) (takeWhile Q L) \<and>
+    (\<forall>x \<in> set (drop (length (fst (snd (eraux_shift I nt aux)))) L). memR I (nt - fst x))"
+    using erel_shift[OF rel[unfolded erel_def] le] by (simp add: Q_def)
+  obtain cur outs fr bk B where s: "eraux_shift I nt aux = (cur, outs, fr, bk, B)"
+    by (cases "eraux_shift I nt aux") auto
+  have ys: "ys = outs" and aux': "aux' = (cur, [], fr, bk, B)"
+    using e by (simp_all add: eraux_eval_def s)
+  have o: "outs = map (\<lambda>x. snd (snd x)) (takeWhile Q L)" using sh by (simp add: s)
+  have "drop (length outs) L = dropWhile Q L"
+    by (simp add: o dropWhile_eq_drop)
+  then have "erel' I cur (cur, [], fr, bk, B) (dropWhile Q L)"
+    using erel'_drop_outs[of I nt cur outs fr bk B L cur] sh by (simp add: s)
   then show ?thesis
-    using e' by (simp add: eval_until_takeWhile qe' erel_def dropWhile_queue_rep ps_def[symmetric] aux
-      del: takedropWhile_queue.simps dropWhile_queue.simps)
+    using sh s by (simp add: eval_until_takeWhile Q_def[symmetric] ys aux' o erel_def split_beta)
+qed
+
+lemma length_eupdate_release[simp]: "length (eupdate_release args msk l r nt L) = Suc (length L)"
+  by (simp add: eupdate_release_def)
+
+lemma erel_update:
+  assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and I: "args_ivl args = I"
+  shows "erel I (eraux_update args msk l r nt aux) (eupdate_release args msk l r nt L)"
+proof -
+  define Q where "Q = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. \<not> memR I (nt - fst x))"
+  have sh: "erel' I nt (eraux_shift I nt aux) L \<and> fst (eraux_shift I nt aux) = fst aux \<and>
+    fst (snd (eraux_shift I nt aux)) = map (\<lambda>x. snd (snd x)) (takeWhile Q L) \<and>
+    (\<forall>x \<in> set (drop (length (fst (snd (eraux_shift I nt aux)))) L). memR I (nt - fst x))"
+    using erel_shift[OF rel[unfolded erel_def] le] by (simp add: Q_def)
+  obtain cur outs fr bk B where s: "eraux_shift I nt aux = (cur, outs, fr, bk, B)"
+    by (cases "eraux_shift I nt aux") auto
+  define e where "e = esum_of args msk l r"
+  define B' where "B' = Some (case B of None \<Rightarrow> e | Some b \<Rightarrow> ecomp b e)"
+  have upd: "eraux_update args msk l r nt aux = (nt, outs, fr, (nt, e) # bk, B')"
+    by (simp add: eraux_update_def s I e_def B'_def Let_def)
+  have curle: "cur \<le> nt" using sh le by (simp add: s)
+  define m where "m = length outs"
+  define O where "O = drop m L"
+  obtain es where l1: "m + length es = length L"
+    and outs: "map (\<lambda>x. snd (snd x)) (take m L) = outs"
+    and cl: "\<forall>x \<in> set (take m L). \<not> memR I (nt - fst x)"
+    and l2: "length es = length fr + length bk"
+    and tsO: "map fst O = map fst fr @ rev (map fst bk)"
+    and so: "sorted (map fst O)" and leO: "\<forall>x \<in> set O. fst x \<le> cur"
+    and dj: "\<forall>e \<in> set es. edisj e"
+    and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
+    and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
+    and out: "\<forall>k < length es. snd (O ! k) = eout (the (efold (drop k es)))"
+    using sh unfolding erel'_def s m_def[symmetric] O_def[symmetric] by auto
+  have memO: "\<forall>x \<in> set O. memR I (nt - fst x)" using sh by (simp add: s O_def m_def)
+  have lO: "length O = length es" using l1 by (simp add: O_def)
+  have mL: "m \<le> length L" using l1 by simp
+  define g where "g = (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
+    then (t, esemi msk (\<not> args_pos args) (a1 \<inter> r) l, a2 - (a1 - r)) else (t, a1, a2))"
+  have L': "eupdate_release args msk l r nt L = map g L @ [(nt, esemi msk (\<not> args_pos args) r l, r)]"
+    by (simp add: eupdate_release_def g_def)
+  have gC: "map g (take m L) = take m L"
+    using cl by (intro map_idI) (auto simp: g_def I split: prod.splits)
+  have tk: "take m (eupdate_release args msk l r nt L) = take m L"
+    using mL gC by (simp add: L' take_map[symmetric])
+  have dr: "drop m (eupdate_release args msk l r nt L) = map g O @ [(nt, esemi msk (\<not> args_pos args) r l, r)]"
+    using mL by (simp add: L' O_def drop_map)
+  have gO: "snd (g (O ! k)) = eout (ecomp (the (efold (drop k es))) e)" if "k < length es" for k
+  proof -
+    obtain x where x: "efold (drop k es) = Some x" using efold_Some[of "drop k es"] that by auto
+    have dx: "edisj x" by (rule edisj_efold[OF _ x]) (use dj in \<open>auto dest: in_set_dropD\<close>)
+    have m0: "memR (args_ivl args) (nt - fst (O ! k))" using memO that lO I by (auto simp: nth_mem)
+    have so: "snd (O ! k) = eout x" using out that x by simp
+    obtain t a1 a2 where Ok: "O ! k = (t, a1, a2)" by (cases "O ! k") auto
+    show ?thesis
+      using eout_ecomp_esum_of[OF dx, of msk args r l] m0 so Ok x
+      by (simp add: g_def e_def eout_def)
+  qed
+  have es_app: "efold (drop k (es @ [e])) = Some (ecomp (the (efold (drop k es))) e)"
+    if "k < length es" for k
+  proof -
+    obtain x where x: "efold (drop k es) = Some x" using efold_Some[of "drop k es"] that by auto
+    show ?thesis using that x by (simp add: efold_append ecompoo_def ecompo_def)
+  qed
+  have "erel' I nt (nt, outs, fr, (nt, e) # bk, B') (eupdate_release args msk l r nt L)"
+    unfolding erel'_def prod.case m_def[symmetric]
+  proof (intro exI[of _ "es @ [e]"] conjI ballI allI impI)
+    show "m + length (es @ [e]) = length (eupdate_release args msk l r nt L)" using l1 by simp
+    show "map (\<lambda>x. snd (snd x)) (take m (eupdate_release args msk l r nt L)) = outs" using tk outs by simp
+    show "length (es @ [e]) = length fr + length ((nt, e) # bk)" using l2 by simp
+    show "map fst (drop m (eupdate_release args msk l r nt L)) = map fst fr @ rev (map fst ((nt, e) # bk))"
+      using tsO by (simp add: dr comp_def g_def split_beta[symmetric] case_prod_unfold if_distrib)
+    show "sorted (map fst (drop m (eupdate_release args msk l r nt L)))"
+    proof -
+      have "map fst (map g O) = map fst O" by (auto simp: g_def split: prod.splits)
+      then show ?thesis using so leO curle by (auto simp: dr sorted_append intro: order_trans)
+    qed
+    show "map snd ((nt, e) # bk) = rev (drop (length fr) (es @ [e]))" using bks l2 by simp
+    show "B' = efold (drop (length fr) (es @ [e]))"
+      using Bs l2 by (cases "drop (length fr) es = []")
+        (auto simp: B'_def efold_append ecompoo_def ecompo_def split: option.splits dest: efold_Some)
+  next
+    fix x assume "x \<in> set (take m (eupdate_release args msk l r nt L))"
+    then show "\<not> memR I (nt - fst x)" using tk cl by simp
+  next
+    fix x assume "x \<in> set (drop m (eupdate_release args msk l r nt L))"
+    then show "fst x \<le> nt" using leO curle by (auto simp: dr g_def split: prod.splits)
+  next
+    fix x assume "x \<in> set (es @ [e])"
+    then show "edisj x" using dj edisj_esum_of by (auto simp: e_def)
+  next
+    fix k assume k: "k < length fr"
+    have "take (length fr) (es @ [e]) = take (length fr) es" using l2 by simp
+    then show "Some (snd (fr ! k)) = efold (drop k (take (length fr) (es @ [e])))" using frs k by simp
+  next
+    fix k assume k: "k < length (es @ [e])"
+    show "snd (drop m (eupdate_release args msk l r nt L) ! k) = eout (the (efold (drop k (es @ [e]))))"
+    proof (cases "k < length es")
+      case True
+      then show ?thesis using gO[OF True] es_app[OF True] lO by (simp add: dr nth_append)
+    next
+      case False
+      then have "k = length es" using k by simp
+      then show ?thesis using lO eout_esum_of[of args msk l r]
+        by (simp add: dr nth_append e_def ecompo_def)
+    qed
+  qed
+  then show ?thesis by (simp add: upd erel_def)
 qed
 
 subsection \<open>The release node's structure\<close>

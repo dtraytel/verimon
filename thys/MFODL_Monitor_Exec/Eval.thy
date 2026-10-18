@@ -804,7 +804,7 @@ proof -
     by (rule eauxlist3_eval_until[OF wev])
   have dz: "dzs = map (etabc kR cR) zs" and e2: "erel (args_ivl args) daux2 (eauxlist3 kR cR kR cR aux2)"
     and f2: "fst daux2 = fst daux1"
-    using erel_eval[OF e1 dev[unfolded dn]] ev by simp_all
+    using erel_eval[OF e1 order_trans[OF f1 unt] dev[unfolded dn]] ev by simp_all
   have w2: "\<forall>(u, a1, a2) \<in> set aux2. table kR a1 \<and> table kR a2"
     by (rule eauxlist3_wf_eval_until[OF w1 wev])
   have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
