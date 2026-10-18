@@ -45,7 +45,14 @@ lift_definition map_last_queue :: "('a \<Rightarrow> 'a) \<Rightarrow> 'a queue 
 
 lemma map_last_queue_rep: "linearize (map_last_queue g q) =
     (if linearize q = [] then [] else butlast (linearize q) @ [g (last (linearize q))])"
-  by transfer (auto simp: queue_invariant_def butlast_append split: list.splits elim!: map_last_t.elims)
+proof transfer
+  fix g :: "'a \<Rightarrow> 'a" and q :: "'a queue_t"
+  assume "queue_invariant q"
+  then show "(case map_last_t g q of (fs, ls) \<Rightarrow> fs @ rev ls) =
+    (if (case q of (fs, ls) \<Rightarrow> fs @ rev ls) = [] then []
+     else butlast (case q of (fs, ls) \<Rightarrow> fs @ rev ls) @ [g (last (case q of (fs, ls) \<Rightarrow> fs @ rev ls))])"
+    by (cases q rule: map_last_t.cases) (simp_all add: queue_invariant_def)
+qed
 
 type_synonym 'b eraux = "ts \<times> nat \<times> nat \<times> (ts \<times> 'b list set) queue \<times>
   ('b list, nat) mapping \<times> ('b list, (nat \<times> nat \<times> ts) queue) mapping"
