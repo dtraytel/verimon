@@ -853,7 +853,7 @@ lemma safe_eventually_TT [simp]: "safe_formula (\<not>\<^sub>F Formula.eventuall
 (* [0, b] *)
 lemma historically_safe_0_safe[simp]: 
   "safe_formula (historically_safe_0 I \<phi>) = safe_formula \<phi>"
-  by (cases "safe_formula \<phi>") (auto simp: historically_safe_0_def)
+  by (cases \<phi>) (auto simp: historically_safe_0_def safe_assignment_def)
 
 lemma historically_safe_0_fv[simp]: "fv (historically_safe_0 I \<phi>) = fv \<phi>"
   by (auto simp: historically_safe_0_def)
@@ -1514,7 +1514,7 @@ proof (induction \<phi> rule: get_and_list.induct)
   then have "pos \<noteq> []" using "1.prems" by simp
   then obtain x where "x \<in> set pos" by fastforce
   then show ?case using posneg using Bex_set_list_ex by fastforce
-qed simp_all
+qed auto
 
 function (sequential) convert_multiway :: "'t Formula.formula \<Rightarrow> 't Formula.formula" 
   where "convert_multiway (Formula.Pred p ts) = (Formula.Pred p ts)"
@@ -1552,7 +1552,7 @@ function (sequential) convert_multiway :: "'t Formula.formula \<Rightarrow> 't F
   | "convert_multiway (\<phi> \<^bold>T I \<psi>) = (convert_multiway \<phi>) \<^bold>T I (convert_multiway \<psi>)"
   | "convert_multiway (\<phi> \<^bold>R I \<psi>) = (
       if mem I 0 then
-        convert_multiway (release_safe_0 \<phi> I \<psi>)
+        (convert_multiway (\<psi> \<and>\<^sub>F \<phi>)) \<^bold>R I (convert_multiway \<psi>)
       else (
         convert_multiway (release_safe_bounded \<phi> I \<psi>)
       )
