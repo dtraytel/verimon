@@ -224,9 +224,9 @@ next
   then have "\<not> contains_pred p (convert_multiway \<phi>)" "\<not> contains_pred p (convert_multiway \<psi>)"
     by simp_all
   then show ?case
+    using no_pred_cmultiway_release_safe_boundedI[of p \<phi> \<psi> I]
     by (cases "mem I 0")
-      (auto simp del: convert_multiway.simps(10) dest!: pred_cmultiway_conjD
-        intro: no_pred_cmultiway_release_safe_boundedI)
+      (auto simp del: convert_multiway.simps(10) dest!: pred_cmultiway_conjD)
 next
   case(20 p I r)
   then show ?case by (auto simp add: regex.set_map)
