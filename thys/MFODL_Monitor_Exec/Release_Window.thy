@@ -51,8 +51,8 @@ definition eraux_update :: "args \<Rightarrow> bool list \<Rightarrow> 'b list s
          D = W - r;
          S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D;
          pend' = (case safe_last pend of (None, q) \<Rightarrow> q
-           | (Some (tl, Xl), q) \<Rightarrow>
-             if memR (args_ivl args) (nt - tl) then replace_last (tl, Xl - S) q else q);
+           | (Some (tz, Xl), q) \<Rightarrow>
+             if memR (args_ivl args) (nt - tz) then replace_last (tz, Xl - S) q else q);
          K' = (if oi = n then K
            else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S));
          P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)
@@ -156,7 +156,7 @@ proof -
   define D where "D = W - r"
   define S where "S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D"
   define pend1 where "pend1 = (case safe_last pend of (None, q) \<Rightarrow> q
-    | (Some (tl, Xl), q) \<Rightarrow> if memR I (nt - tl) then replace_last (tl, Xl - S) q else q)"
+    | (Some (tz, Xl), q) \<Rightarrow> if memR I (nt - tz) then replace_last (tz, Xl - S) q else q)"
   define K' where "K' = (if oi = n then K
     else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S))"
   define P' where "P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)"
@@ -207,8 +207,8 @@ proof -
     obtain \<alpha> q where sl: "safe_last pend = (\<alpha>, q)" by fastforce
     have q: "linearize q = ps" and \<alpha>: "\<alpha> = Some (last ps)"
       using safe_last_rep[OF sl] ne by (auto simp: ps_def split: option.splits)
-    obtain tl Xl where tX: "last ps = (tl, Xl)" by fastforce
-    have bl: "linearize q = butlast ps @ [(tl, Xl)]" using q ne tX by (metis append_butlast_last_id)
+    obtain tz Xl where tX: "last ps = (tz, Xl)" by fastforce
+    have bl: "linearize q = butlast ps @ [(tz, Xl)]" using q ne tX by (metis append_butlast_last_id)
     show ?thesis using False sl \<alpha> tX replace_last_rep[OF bl] q by (auto simp: pend1_def ps1_def md_def)
   qed
   have len1: "length ps1 = length ps"
@@ -222,12 +222,18 @@ proof -
     show ?thesis
     proof (cases "k = length ps - 1")
       case True
-      then show ?thesis using \<open>md\<close> ne on len
-        by (simp add: ps1_def nth_append last_conv_nth)
+      have "oi + k = n - 1" using True ne on len by (cases ps) auto
+      moreover have "ps1 ! k = (fst (last ps), snd (last ps) - S)"
+        using True ne \<open>md\<close> by (simp add: ps1_def nth_append)
+      moreover have "last ps = ps ! k" using True ne by (simp add: last_conv_nth)
+      ultimately show ?thesis using \<open>md\<close> by simp
     next
       case False
-      then show ?thesis using \<open>md\<close> ne on len that
-        by (simp add: ps1_def nth_append nth_butlast)
+      have k: "k < length (butlast ps)" using False that by simp
+      have "oi + k \<noteq> n - 1" using False that on len by arith
+      moreover have "ps1 ! k = ps ! k"
+        using k \<open>md\<close> by (simp add: ps1_def nth_append nth_butlast)
+      ultimately show ?thesis by simp
     qed
   qed (simp add: ps1_def)
   have lP': "Mapping.lookup P' v = (if v \<in> W' then (if v \<in> W then Mapping.lookup P v else Some n)
@@ -269,7 +275,10 @@ proof -
     have i: "oi + k < n" and nn: "oi \<noteq> n" using True on by simp_all
     have pk: "ps' ! k = ps1 ! k" using kp len1 by (simp add: ps'_def nth_append)
     have lastk: "fst (last ps) = t" if "oi + k = n - 1"
-      using that kp on len t by (simp add: last_conv_nth)
+    proof -
+      have "k = length ps - 1" "ps \<noteq> []" using that kp on len by arith+
+      then show ?thesis using t by (simp add: last_conv_nth)
+    qed
     have md_iff: "(md \<and> oi + k = n - 1) \<longleftrightarrow> (oi + k = n - 1 \<and> memR I (nt - t))"
       using nn lastk by (auto simp: md_def)
     have X1: "snd (ps1 ! k) = (if oi + k = n - 1 \<and> memR I (nt - t) then snd (ps ! k) - S
@@ -422,14 +431,42 @@ lemma kq_prune: "kq (eraux_prune i K X) v =
 proof -
   define S where "S = Set.filter (\<lambda>v. case hd_queue (kqq K v) of None \<Rightarrow> False
     | Some (p, f, tf) \<Rightarrow> f \<le> Suc i) X"
-  have dw: "dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) = kq K v" if "v \<notin> S" "v \<in> X"
-    using that by (auto simp: S_def kq_def hd_queue_rep split: list.splits)
-  have "kq (eraux_prune i K X) v =
-      (if v \<in> S then dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) else kq K v)"
-    by (auto simp: eraux_prune_def S_def[symmetric] kq_def kqq_def Let_def delete_set_lookup
-        Mapping_lookup_upd_set dropWhile_queue_rep hd_queue_rep empty_queue_rep Nil_eq_dropWhile_conv
-        split: option.splits list.splits simp del: dropWhile_queue.simps)
-  then show ?thesis using dw by (auto simp: S_def)
+  define K1 where "K1 = upd_set K (\<lambda>v. dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) S"
+  have pr: "eraux_prune i K X = mapping_delete_set K1 (Set.filter (\<lambda>v. hd_queue (kqq K1 v) = None) S)"
+    by (simp add: eraux_prune_def Let_def S_def K1_def)
+  have l1: "Mapping.lookup K1 v = (if v \<in> S
+      then Some (dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) else Mapping.lookup K v)"
+    by (simp add: K1_def Mapping_lookup_upd_set)
+  have mS: "v \<in> S \<longleftrightarrow> v \<in> X \<and> (case kq K v of [] \<Rightarrow> False | (p, f, tf) # _ \<Rightarrow> f \<le> Suc i)"
+    by (auto simp: S_def kq_def hd_queue_rep split: list.splits)
+  show ?thesis
+  proof (cases "v \<in> S")
+    case True
+    define q' where "q' = dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)"
+    have k1: "kqq K1 v = q'" by (simp add: kqq_def l1 True q'_def del: dropWhile_queue.simps)
+    have lq: "linearize q' = dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v)"
+      by (simp add: q'_def dropWhile_queue_rep kq_def del: dropWhile_queue.simps)
+    have "kq (eraux_prune i K X) v = linearize q'"
+    proof (cases "hd_queue q' = None")
+      case True
+      then have "linearize q' = []" by (simp add: hd_queue_rep split: list.splits)
+      then show ?thesis using True \<open>v \<in> S\<close>
+        by (simp add: pr delete_set_lookup kq_def kqq_def k1[unfolded kqq_def] empty_queue_rep)
+    next
+      case False
+      have "Mapping.lookup K1 v = Some q'" using \<open>v \<in> S\<close> by (simp add: l1 q'_def del: dropWhile_queue.simps)
+      then show ?thesis using False k1
+        by (simp add: pr delete_set_lookup kq_def kqq_def del: dropWhile_queue.simps)
+    qed
+    then show ?thesis using lq True mS by simp
+  next
+    case False
+    have "kq (eraux_prune i K X) v = kq K v"
+      using False by (simp add: pr delete_set_lookup kq_def kqq_def l1)
+    moreover have "dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) = kq K v" if "v \<in> X"
+      using False mS that by (auto split: list.splits)
+    ultimately show ?thesis by simp
+  qed
 qed
 
 lemma front_dead_erdead:
