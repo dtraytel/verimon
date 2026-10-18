@@ -2305,7 +2305,7 @@ next
     ultimately show ?thesis by blast
   next
     case False
-    then show ?thesis using Trigger_0 by (cases \<phi>) (auto)
+    then show ?thesis using Trigger_0 by (cases \<phi>) (auto simp del: convert_multiway.simps(19) safe_formula.simps(19))
   qed
 next
   case (Release_0 \<phi> I \<psi>)

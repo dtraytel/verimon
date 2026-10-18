@@ -84,8 +84,7 @@ next
 next
   case (R4 \<phi> I \<psi>)
   then show ?case 
-    using size'_Release[of \<phi> I \<psi>]
-    by auto
+    by (simp split: formula.splits)
 next
   case (Ands1 \<phi>s \<phi>)
   then show ?case
