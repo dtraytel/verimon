@@ -270,10 +270,12 @@ proof -
   have elem: "eunion (ecompo (snd (fr ! k)) B) = snd (snd (Os ! k))" if "k < p" for k
   proof -
     have k: "k < length fr" "k \<le> length fr" using that pf' by simp_all
-    have "drop k es = drop k (take (length fr) es @ drop (length fr) es)" by simp
-    also have "\<dots> = drop k (take (length fr) es) @ drop (length fr) es"
-      using k(2) len(1) by (simp add: drop_append)
-    finally have "efold (drop k es) = Some (ecompo (snd (fr ! k)) B)"
+    have "drop k (take (length fr) es @ drop (length fr) es) =
+        drop k (take (length fr) es) @ drop (k - length (take (length fr) es)) (drop (length fr) es)"
+      by (rule drop_append)
+    then have "drop k es = drop k (take (length fr) es) @ drop (length fr) es"
+      using k(2) len(1) by simp
+    then have "efold (drop k es) = Some (ecompo (snd (fr ! k)) B)"
       using fr[rule_format, OF k(1), symmetric] B by (simp add: efold_append)
     then show ?thesis using out[rule_format, of k] k len by (simp add: snd_eout)
   qed
@@ -343,7 +345,8 @@ proof -
   proof (cases "length ys < length fr")
     case True
     then have pe: "p = length ys" using ly by simp
-    obtain x xs where fr1C: "fr1 = x # xs" using True fr1 by (cases fr1) auto
+    have "fr1 \<noteq> []" using True fr1 by simp
+    then obtain x xs where fr1C: "fr1 = x # xs" by (cases fr1) auto
     have sh: "eraux_shift I nt aux = (cur, outs @ ys, fr1, bk, B)"
       by (simp add: aux eraux_shift_def pf fr1C)
     have pfr: "p \<le> length fr" using True pe by simp
@@ -406,8 +409,10 @@ proof -
         and zso: "zs = map (\<lambda>x. snd (snd x)) (take (length zs) (drop (length fr) Os))"
         and fr2: "fr2 = drop (length zs) fl"
         using popfront_rel[OF pf2 fls _ _ _ tsfl outd] fll l2 lO by (simp_all add: Q_def)
-      have allQ: "\<forall>x \<in> set (take (length fr) Os). Q x"
-        using pge by (metis takeO set_takeWhileD take_take min.absorb1)
+      have "take (length fr) Os = take (length fr) (takeWhile Q Os)"
+        using pge by (simp add: takeO min_def)
+      then have allQ: "\<forall>x \<in> set (take (length fr) Os). Q x"
+        by (auto dest: in_set_takeD set_takeWhileD)
       have tW2: "takeWhile Q Os = take (length fr) Os @ takeWhile Q (drop (length fr) Os)"
         by (subst append_take_drop_id[symmetric, of Os "length fr"], subst takeWhile_append2)
           (use allQ in simp_all)
@@ -415,7 +420,7 @@ proof -
         using lz tW2 fll l2 lO length_takeWhile_le[of Q "drop (length fr) Os"]
         by (simp add: p_def)
       have sh: "eraux_shift I nt aux = (cur, outs @ ys @ zs, fr2, [], None)"
-        by (simp add: aux eraux_shift_def pf fr1N Cons pf2[unfolded fl_def, folded Cons])
+        using pf2[unfolded fl_def Cons] by (simp add: aux eraux_shift_def pf fr1N Cons)
       show ?thesis
       proof (intro exI conjI allI impI)
         show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p Os), fr2, [], None)"
@@ -490,7 +495,6 @@ lemma erel'_drop_outs: "erel' I c (cur, outs, fr, bk, B) L \<Longrightarrow>
   unfolding erel'_def by auto
 
 lemma erel_eval:
-  fixes L :: "(ts \<times> 'b list set \<times> 'b list set) list"
   assumes rel: "erel I aux L" and le: "fst aux \<le> nt" and e: "eraux_eval I nt aux = (ys, aux')"
   shows "fst (eval_until I nt L) = ys \<and> erel I aux' (snd (eval_until I nt L)) \<and> fst aux' = fst aux"
 proof -
