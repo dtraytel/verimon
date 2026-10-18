@@ -59474,6 +59474,88 @@ let rec push_negation
 let rec normalize
   x = comp (comp elim_double_negation push_negation) simplify_terms x;;
 
+let rec neg_dual
+  phi = (match phi with Pred (_, _) -> Neg phi | Let (_, _, _) -> Neg phi
+          | Frz (_, _, _) -> Neg phi | LetPast (_, _, _) -> Neg phi
+          | Eq (_, _) -> Neg phi | Less (_, _) -> Neg phi
+          | LessEq (_, _) -> Neg phi | Neg phia -> phia | Or (_, _) -> Neg phi
+          | And (_, _) -> Neg phi | Ands _ -> Neg phi | Exists (_, _) -> Neg phi
+          | Agg (_, _, _, _, _) -> Neg phi | Prev (_, _) -> Neg phi
+          | Next (_, _) -> Neg phi | Since (_, _, _) -> Neg phi
+          | Until (_, _, _) -> Neg phi | Trigger (_, _, _) -> Neg phi
+          | Release (_, _, _) -> Neg phi | MatchF (_, _) -> Neg phi
+          | MatchP (_, _) -> Neg phi | TP _ -> Neg phi | TS _ -> Neg phi);;
+
+let rec dual_since
+  = function
+    Since (phi, i, Neg psi) ->
+      (if memL i zero_nata && memR i zero_nata
+        then Neg (Trigger (neg_dual (dual_since phi), i, dual_since psi))
+        else Since (dual_since phi, i, Neg (dual_since psi)))
+    | Let (p, phi, psi) -> Let (p, dual_since phi, dual_since psi)
+    | Frz (p, phi, psi) -> Frz (p, dual_since phi, dual_since psi)
+    | LetPast (p, phi, psi) -> LetPast (p, dual_since phi, dual_since psi)
+    | Neg phi -> Neg (dual_since phi)
+    | Or (phi, psi) -> Or (dual_since phi, dual_since psi)
+    | And (phi, psi) -> And (dual_since phi, dual_since psi)
+    | Ands l -> Ands (mapa dual_since l)
+    | Exists (t, phi) -> Exists (t, dual_since phi)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, dual_since phi)
+    | Prev (i, phi) -> Prev (i, dual_since phi)
+    | Next (i, phi) -> Next (i, dual_since phi)
+    | Since (phi, i, Pred (v, va)) ->
+        Since (dual_since phi, i, dual_since (Pred (v, va)))
+    | Since (phi, i, Let (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (Let (v, va, vb)))
+    | Since (phi, i, Frz (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (Frz (v, va, vb)))
+    | Since (phi, i, LetPast (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (LetPast (v, va, vb)))
+    | Since (phi, i, Eq (v, va)) ->
+        Since (dual_since phi, i, dual_since (Eq (v, va)))
+    | Since (phi, i, Less (v, va)) ->
+        Since (dual_since phi, i, dual_since (Less (v, va)))
+    | Since (phi, i, LessEq (v, va)) ->
+        Since (dual_since phi, i, dual_since (LessEq (v, va)))
+    | Since (phi, i, Or (v, va)) ->
+        Since (dual_since phi, i, dual_since (Or (v, va)))
+    | Since (phi, i, And (v, va)) ->
+        Since (dual_since phi, i, dual_since (And (v, va)))
+    | Since (phi, i, Ands v) -> Since (dual_since phi, i, dual_since (Ands v))
+    | Since (phi, i, Exists (v, va)) ->
+        Since (dual_since phi, i, dual_since (Exists (v, va)))
+    | Since (phi, i, Agg (v, va, vb, vc, vd)) ->
+        Since (dual_since phi, i, dual_since (Agg (v, va, vb, vc, vd)))
+    | Since (phi, i, Prev (v, va)) ->
+        Since (dual_since phi, i, dual_since (Prev (v, va)))
+    | Since (phi, i, Next (v, va)) ->
+        Since (dual_since phi, i, dual_since (Next (v, va)))
+    | Since (phi, i, Since (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (Since (v, va, vb)))
+    | Since (phi, i, Until (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (Until (v, va, vb)))
+    | Since (phi, i, Trigger (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (Trigger (v, va, vb)))
+    | Since (phi, i, Release (v, va, vb)) ->
+        Since (dual_since phi, i, dual_since (Release (v, va, vb)))
+    | Since (phi, i, MatchF (v, va)) ->
+        Since (dual_since phi, i, dual_since (MatchF (v, va)))
+    | Since (phi, i, MatchP (v, va)) ->
+        Since (dual_since phi, i, dual_since (MatchP (v, va)))
+    | Since (phi, i, TP v) -> Since (dual_since phi, i, dual_since (TP v))
+    | Since (phi, i, TS v) -> Since (dual_since phi, i, dual_since (TS v))
+    | Until (phi, i, psi) -> Until (dual_since phi, i, dual_since psi)
+    | MatchP (i, r) -> MatchP (i, map_regex dual_since r)
+    | MatchF (i, r) -> MatchF (i, map_regex dual_since r)
+    | Pred (v, va) -> Pred (v, va)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | Release (v, va, vb) -> Release (v, va, vb)
+    | TP v -> TP v
+    | TS v -> TS v;;
+
 let rec equal_argpos x0 x1 = match x0, x1 with Same, Swapped -> false
                        | Swapped, Same -> false
                        | Swapped, Swapped -> true
@@ -61019,9 +61101,10 @@ let rec prepare_verimon
           else (if rw
                  then (let n_phi = normalize phia in
                         (if mmonitorable_exec n_phi then Inr n_phi
-                          else (let r_phi = rrewrite n_phi in
-                                 (if mmonitorable_exec r_phi then Inr r_phi
-                                   else Inl "not monitorable"))))
+                          else (let d_phi = dual_since n_phi in
+                                 (if mmonitorable_exec d_phi then Inr d_phi
+                                   else (let r_phi = rrewrite n_phi in
+  (if mmonitorable_exec r_phi then Inr r_phi else Inl "not monitorable"))))))
                  else Inl "not monitorable")));;
 
 let rec get_and_list = function Ands l -> (if null l then [Ands l] else l)
