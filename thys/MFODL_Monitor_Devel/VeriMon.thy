@@ -10,7 +10,7 @@ lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_form
   by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
     (auto simp: letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
-subsection \<open>Negated past operands\<close>
+subsection \<open>Negated right operands\<close>
 
 text \<open>A past operator with a negated right operand, @{term "Formula.Since \<phi> I (Formula.Neg \<psi>)"},
   is not safe on its own. The rewriting (@{const rrewrite}) makes it monitorable by freezing the
@@ -23,7 +23,11 @@ text \<open>A past operator with a negated right operand, @{term "Formula.Since 
   needs no freezing. The negation of the left operand removes a double negation
   (@{text neg_dual}), as for @{term "Formula.Since (Formula.Neg \<phi>) I (Formula.Neg \<psi>)"}.
   Without 0 in the interval, the trigger is not safe on its own (its tables are infinite at the
-  time points without any in the interval), and the progress of the since operator is larger.\<close>
+  time points without any in the interval), and the progress of the since operator is larger.
+  Dually, a future operator with a negated right operand,
+  @{term "Formula.Until \<phi> I (Formula.Neg \<psi>)"}, is the negation of the release
+  @{term "Formula.Release (Formula.Neg \<phi>) I \<psi>"}, which the monitor evaluates natively with 0 in
+  the interval and with the progress of the until operator.\<close>
 
 definition neg_dual :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "neg_dual \<phi> = (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> \<phi>' | _ \<Rightarrow> Formula.Neg \<phi>)"
@@ -32,6 +36,9 @@ fun dual_since :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "dual_since (Formula.Since \<phi> I (Formula.Neg \<psi>)) = (if mem I 0
      then Formula.Neg (Formula.Trigger (neg_dual (dual_since \<phi>)) I (dual_since \<psi>))
      else Formula.Since (dual_since \<phi>) I (Formula.Neg (dual_since \<psi>)))"
+| "dual_since (Formula.Until \<phi> I (Formula.Neg \<psi>)) = (if mem I 0
+     then Formula.Neg (Formula.Release (neg_dual (dual_since \<phi>)) I (dual_since \<psi>))
+     else Formula.Until (dual_since \<phi>) I (Formula.Neg (dual_since \<psi>)))"
 | "dual_since (Formula.Let p \<phi> \<psi>) = Formula.Let p (dual_since \<phi>) (dual_since \<psi>)"
 | "dual_since (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (dual_since \<phi>) (dual_since \<psi>)"
 | "dual_since (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (dual_since \<phi>) (dual_since \<psi>)"
@@ -81,6 +88,11 @@ lemma dual_since_Since_not_Neg:
    dual_since (Formula.Since \<phi> I \<psi>) = Formula.Since (dual_since \<phi>) I (dual_since \<psi>)"
   by (cases \<psi>) auto
 
+lemma dual_since_Until_not_Neg:
+  "(\<And>\<psi>'. \<psi> \<noteq> Formula.Neg \<psi>') \<Longrightarrow>
+   dual_since (Formula.Until \<phi> I \<psi>) = Formula.Until (dual_since \<phi>) I (dual_since \<psi>)"
+  by (cases \<psi>) auto
+
 lemma wty_dual_since: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> dual_since \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
   case (Let S E' \<phi> p E \<psi>)
@@ -109,6 +121,22 @@ next
     case False
     with Since.IH show ?thesis
       by (auto simp: dual_since_Since_not_Neg intro!: wty_formula.Since)
+  qed
+next
+  case (Until S E \<phi> \<psi> I)
+  show ?case
+  proof (cases "\<exists>\<psi>'. \<psi> = Formula.Neg \<psi>'")
+    case True
+    then obtain \<psi>' where \<psi>: "\<psi> = Formula.Neg \<psi>'"
+      by blast
+    with Until.IH(2) have "S, E \<turnstile> dual_since \<psi>'"
+      by (auto dest: wty_formula_NegD)
+    with Until.IH(1) show ?thesis
+      unfolding \<psi> by (auto intro!: wty_formula.Neg wty_formula.Release wty_formula.Until wty_neg_dual)
+  next
+    case False
+    with Until.IH show ?thesis
+      by (auto simp: dual_since_Until_not_Neg intro!: wty_formula.Until)
   qed
 next
   case (MatchP S E r I)
@@ -148,8 +176,8 @@ lemma progress_dual_since: "progress \<sigma> P (dual_since \<phi>) j = progress
 subsection \<open>Preparation\<close>
 
 text \<open>VeriMon's preparation of an input formula: type checking and, if the formula is not
-  monitorable and rewriting is requested (@{text rw}), normalization, then the duals of negated
-  past operands (@{const dual_since}), and then rewriting, until the formula becomes
+  monitorable and rewriting is requested (@{text rw}), normalization, then the duals of the
+  temporal operators with negated right operands (@{const dual_since}), and then rewriting, until the formula becomes
   monitorable. The duals come before the rewriting, which would freeze where they need not. The
   preparation does not depend on the auxiliary data structures of the monitor, so all monitors
   (the kernel and the dense one) share it.\<close>

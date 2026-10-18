@@ -9,8 +9,8 @@ section \<open>VeriMon's preparation of the formula for the verified executable 
 text \<open>
   The verified executable monitor runs on the formula that VeriMon prepares (@{const prepare_verimon}):
   the input formula is type checked and, if it is not monitorable and rewriting is requested,
-  normalized, its negated past operands replaced by their duals (@{const dual_since}), and
-  rewritten, until it becomes monitorable. Optionally (@{text mw}), the prepared
+  normalized, its temporal operators with negated right operands replaced by their duals
+  (@{const dual_since}), and rewritten, until it becomes monitorable. Optionally (@{text mw}), the prepared
   formula is converted into multi-way joins. The executable state is then built from it by
   @{const eminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
   can (@{theory MFODL_Monitor_Exec.Frz_Rewrite}), moves existential quantifiers into the
@@ -39,9 +39,9 @@ next
     by (induction r) auto
 qed (auto simp: fold_map comp_def cong: fold_cong)
 
-text \<open>The multiway conversion expands a release into an until over several copies of its right
-  operand; @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies
-  are all occurrences of one predicate.\<close>
+text \<open>The multiway conversion copies the right operand of a release into its left operand;
+  @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies are
+  all occurrences of one predicate.\<close>
 
 definition eminit_verimon where
   "eminit_verimon mw rw sig \<phi> =
