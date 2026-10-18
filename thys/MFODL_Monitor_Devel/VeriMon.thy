@@ -1549,14 +1549,14 @@ proof (induction \<phi> arbitrary: S E rule: measure_induct_rule[of size'])
     from less.prems have w\<alpha>: "S, E \<turnstile> \<alpha>" and w\<beta>: "S, E \<turnstile> \<beta>"
       by (auto simp: Release)
     have "S, E \<turnstile> convert_multiway (Formula.And \<beta> \<alpha>)"
-      by (rule IH[OF _ wty_formula.And[OF w\<beta> w\<alpha>]]) (simp add: Release split: formula.splits)
+      by (rule IH[OF _ wty_formula.And[OF w\<beta> w\<alpha>]]) (cases \<alpha>; simp add: Release)
     moreover have "S, E \<turnstile> convert_multiway \<beta>"
       by (rule IH[OF _ w\<beta>]) (simp add: Release)
     moreover have "S, E \<turnstile> convert_multiway (release_safe_bounded \<alpha> I \<beta>)"
       by (rule IH[OF _ wty_release_safe_bounded[OF w\<alpha> w\<beta>]])
         (use size'_Release[of \<alpha> I \<beta>] in \<open>simp add: Release\<close>)
     ultimately show ?thesis
-      by (auto simp: Release intro: wty_formula.Release)
+      by (auto simp: Release simp del: convert_multiway.simps(10) intro: wty_formula.Release)
   next
     case (Ands \<phi>s)
     have "S, E \<turnstile> convert_multiway \<chi>" if "\<chi> \<in> set \<phi>s" for \<chi>

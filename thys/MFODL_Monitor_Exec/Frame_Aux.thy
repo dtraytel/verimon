@@ -2030,12 +2030,14 @@ proof (intro equalityI subsetI)
   have "z \<notin> etabc ks cs T'"
   proof
     assume "z \<in> etabc ks cs T'"
-    then obtain a' where "a' \<in> T'" "z = restrict cs ks a'"
+    then obtain a' where a': "a' \<in> T'" "z = restrict cs ks a'"
       by (auto simp: etabc_def)
-    then have "a = a'"
-      using a restrict_inv[OF f, of a] restrict_inv[OF f, of a'] t1 t2 by (auto simp: table_def)
+    have wa: "wf_tuple ks a" using t1 a(1) by (auto simp: table_def)
+    have wa': "wf_tuple ks a'" using t2 a'(1) by (auto simp: table_def)
+    have "a = a'"
+      using restrict_inv[OF f wa] restrict_inv[OF f wa'] a(3) a'(2) by simp
     then show False
-      using a \<open>a' \<in> T'\<close> by simp
+      using a a'(1) by simp
   qed
   then show "z \<in> etabc ks cs T - etabc ks cs T'"
     using a by (auto simp: etabc_def)
@@ -2072,7 +2074,7 @@ lemma eauxlist3_wf_update_release:
     and aL: "args_L args = kL" and aR: "args_R args = kR"
   shows "\<forall>(t, a1, a2) \<in> set (update_release args rel1 rel2 nt aux). table kR a1 \<and> table kR a2"
   using wf t1 t2 sub
-  by (auto simp: update_release_def aL aR intro!: table_join_sub table_Int table_Diff)
+  by (auto simp: update_release_def aL aR split: if_splits intro!: table_join_sub table_Int table_Diff)
 
 lemma eauxlist3_wf_eval_until:
   assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
