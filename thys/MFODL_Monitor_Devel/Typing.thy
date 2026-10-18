@@ -1781,16 +1781,15 @@ next
     by simp
 next
   case (Release_0 \<phi> I \<psi>)
-  have xfv: "x \<in> fv \<psi>"
-    using Release_0(4,9)
-    by auto
-  moreover have "S, E \<turnstile> release_safe_0 \<phi> I \<psi> \<longleftrightarrow> S, E \<turnstile> Formula.Release \<phi> I \<psi>" for S E
-    unfolding release_safe_0_def
-    by (auto simp: always_safe_0_def 
-        intro!: wty_formula.intros dest: wty_formulaD)
+  \<comment> \<open>with 0 in the interval, the release implies its right operand\<close>
+  have "x \<in> fv \<psi>"
+    using Release_0.hyps(4) Release_0.prems(4) by auto
+  moreover have "sat' \<sigma> V v i \<psi>"
+    using Release_0.hyps(1) Release_0.prems(3) by auto
+  moreover have "S, E \<turnstile> \<psi>"
+    using Release_0.prems(1) by (cases rule: wty_formula.cases) auto
   ultimately show ?case
-    using sat'_release_rewrite_0[OF Release_0.hyps(1,2), symmetric] Release_0 
-    by (auto elim: wty_formula.cases)
+    using Release_0(6) Release_0.prems(2) by blast
 next
   case (MatchP I r)
   have "(\<exists>j. Regex.match (sat' \<sigma> V v) r j i)" 
@@ -2363,21 +2362,17 @@ next
     by simp
 next
   case (Release_0 \<phi>' I \<psi>')
-  have obs: "formula.rel_formula f \<phi>' \<gamma>1 \<Longrightarrow> formula.rel_formula f \<psi>' \<gamma>2 
-    \<Longrightarrow> formula.rel_formula f (release_safe_0 \<phi>' I \<psi>') (release_safe_0 \<gamma>1 I \<gamma>2)" 
-    for \<gamma>1 \<gamma>2 :: "'b Formula.formula"
-    by (clarsimp simp: release_safe_0_def always_safe_0_def Formula.TT_def)
   from Release_0.prems obtain \<gamma>1 \<gamma>2 where \<psi>_def: "\<psi> = Formula.Release \<gamma>1 I \<gamma>2"
     and rel1: "formula.rel_formula f \<phi>' \<gamma>1" and rel2: "formula.rel_formula f \<psi>' \<gamma>2"
     by (cases \<psi>) auto
-  from obs[OF rel1 rel2] have safe0: "safe_formula (release_safe_0 \<gamma>1 I \<gamma>2)"
-    by (rule Release_0.IH)
-  then have "safe_formula \<gamma>2"
-    by (simp add: release_safe_0_def)
+  have "safe_formula \<gamma>2"
+    by (rule Release_0(6)[OF rel2])
+  moreover have "safe_formula (Formula.And \<gamma>2 \<gamma>1)"
+    by (rule Release_0(7)) (simp add: rel1 rel2)
   moreover have "fv \<gamma>1 \<subseteq> fv \<gamma>2"
     using Release_0.hyps(4) rel_formula_fv[OF rel1] rel_formula_fv[OF rel2] by simp
   ultimately show ?case
-    using Release_0.hyps(1,2) safe0 by (simp add: \<psi>_def)
+    using Release_0.hyps(1,2) by (simp add: \<psi>_def)
 next
   case (MatchP I r)
   have "Regex.safe_regex fv rgx_safe_pred Past Strict r'"

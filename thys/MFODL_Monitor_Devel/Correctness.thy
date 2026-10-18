@@ -272,11 +272,16 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> wf_mbuf2' \<sigma> P V j n R \<phi>' \<psi>' buf \<Longrightarrow> wf_ts \<sigma> P j \<phi>' \<psi>' nts
     \<Longrightarrow> wf_trigger_aux \<sigma> V R args \<phi>' \<psi>' aux (progress \<sigma> P (Formula.Trigger \<phi>'' I \<psi>') j)
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MTrigger args \<phi> \<psi> buf nts aux) (Formula.Trigger \<phi>'' I \<psi>')"
-  | Release_0: "mem I 0 \<Longrightarrow> bounded I \<Longrightarrow> Formula.fv \<phi>' \<subseteq> Formula.fv \<psi>' 
-    \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow> safe_formula (release_safe_0 \<phi>' I \<psi>')
-    \<Longrightarrow> wf_mbuf2' \<sigma> P V j n R (Formula.Until \<psi>' I (Formula.And \<psi>' \<phi>')) (always_safe_0 I \<psi>') buf
-    \<Longrightarrow> wf_mformula \<sigma> j P V n R (MOr cs1 L\<^sub>M cs2 R\<^sub>M buf) (release_safe_0 \<phi>' I \<psi>')
-    \<Longrightarrow> wf_mformula \<sigma> j P V n R (MOr cs1 L\<^sub>M cs2 R\<^sub>M buf) (Formula.Release \<phi>' I \<psi>')"
+  | Release: "wf_mformula \<sigma> j P V n R \<phi> \<phi>' \<Longrightarrow> wf_mformula \<sigma> j P V n R \<psi> \<psi>'
+    \<Longrightarrow> release_left \<alpha> \<psi>' = (\<phi>', args_pos args)
+    \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow> args_ivl args = I \<Longrightarrow> args_n args = n
+    \<Longrightarrow> args_L args = Formula.fv_list \<phi>' \<Longrightarrow> args_R args = Formula.fv_list \<psi>'
+    \<Longrightarrow> mem I 0 \<Longrightarrow> bounded I \<Longrightarrow> Formula.fv \<alpha> \<subseteq> Formula.fv \<psi>'
+    \<Longrightarrow> wf_mbuf2' \<sigma> P V j n R \<phi>' \<psi>' buf \<Longrightarrow> wf_ts \<sigma> P j \<phi>' \<psi>' nts
+    \<Longrightarrow> t = (if j = 0 then 0 else \<tau> \<sigma> (min (j - 1) (min (progress \<sigma> P \<phi>' j) (progress \<sigma> P \<psi>' j))))
+    \<Longrightarrow> wf_release_auxlist \<sigma> V n R (args_pos args) \<phi>' I \<psi>' aux (progress \<sigma> P (Formula.Release \<alpha> I \<psi>') j)
+    \<Longrightarrow> progress \<sigma> P (Formula.Release \<alpha> I \<psi>') j + length aux = min (progress \<sigma> P \<phi>' j) (progress \<sigma> P \<psi>' j)
+    \<Longrightarrow> wf_mformula \<sigma> j P V n R (MRelease args \<phi> \<psi> buf nts t aux) (Formula.Release \<alpha> I \<psi>')"
   | MatchP: "(case to_mregex r of (mr', \<phi>s') 
       \<Rightarrow> list_all2 (wf_mformula \<sigma> j P V n R) \<phi>s \<phi>s' \<and> mr = mr' \<and> dss = map Formula.fv_list \<phi>s')
     \<Longrightarrow> cs = regex_cols r
@@ -615,8 +620,8 @@ next
         fvi_iff_fv[where b="length (aggargs_tys args)"])
   with Agg show ?case by (auto 0 3 simp: Un_absorb2 fvi_iff_fv[where b="length (aggargs_tys args)"])
 next
-  case (Release_0)
-  then show ?case using release_fvi(1) by auto
+  case (Release)
+  then show ?case by fastforce
 next
   case (MatchP r P V n R \<phi>s mr mrs buf nts I aux)
   then obtain \<phi>s' where conv: "to_mregex r = (mr, \<phi>s')" by blast
@@ -1253,20 +1258,37 @@ next
   then show ?case by auto
 next
   case (Release_0 \<phi> I \<psi>)
-  hence "safe_formula \<psi>"
-    by auto
-  moreover have "wf_mformula \<sigma> 0 P V n R (minit0 n (release_safe_0 \<phi> I \<psi>)) (release_safe_0 \<phi> I \<psi>)"
-    using Release_0.IH[OF Release_0.prems[unfolded release_fvi(1)]]
-    by auto
-  moreover with this have "safe_formula (release_safe_0 \<phi> I \<psi>)"
-    unfolding release_safe_0_def
-    by (cases rule: wf_mformula.cases)
-      (auto simp: packagg_def split: option.splits)
-  moreover have "wf_mbuf2' \<sigma> P V 0 n R (formula.Until \<psi> I (formula.And \<psi> \<phi>)) (always_safe_0 I \<psi>) ([],[])"
-    by (auto simp: wf_mbuf2'_def wf_mbuf2_def)
-  ultimately show ?case
-    using minit0_release_0[OF Release_0(1)] wf_mformula.Release_0[OF Release_0(1-2,4)]
-    by (auto simp: release_safe_0_def)
+  obtain \<phi>'' pos where rl: "release_left \<phi> \<psi> = (\<phi>'', pos)"
+    by (cases "release_left \<phi> \<psi>")
+  have fv'': "Formula.fv \<phi>'' \<subseteq> Formula.fv \<psi>"
+    by (rule fv_release_left[OF rl Release_0(4)])
+  have fvn: "\<forall>x\<in>Formula.fv \<psi>. x < n"
+    using Release_0.prems(1) by auto
+  have wf_\<psi>: "wf_mformula \<sigma> 0 P V n R (minit0 n \<psi>) \<psi>"
+    by (rule Release_0(6)[OF fvn Release_0.prems(2)])
+  have wf_\<phi>'': "wf_mformula \<sigma> 0 P V n R (minit0 n \<phi>'') \<phi>''"
+    using release_left_cases[OF rl]
+  proof (elim disjE conjE)
+    assume "\<phi>'' = \<phi>" "safe_formula \<phi>"
+    then show ?thesis
+      using Release_0(8)[of n P V R] fv'' fvn Release_0.prems(2) by auto
+  next
+    assume "\<phi> = Formula.Neg \<phi>''" "safe_formula \<phi>''"
+    then show ?thesis
+      using Release_0(9)[of \<phi>'' n P V R] fv'' fvn Release_0.prems(2) by auto
+  next
+    assume "\<phi>'' = Formula.And \<psi> \<phi>"
+    then show ?thesis
+      using Release_0(7)[of n P V R] Release_0(4) fvn Release_0.prems(2) by auto
+  qed
+  have m: "minit0 n (Formula.Release \<phi> I \<psi>) = MRelease (init_args I n (Formula.fv_list \<phi>'') (Formula.fv_list \<psi>) pos None)
+      (minit0 n \<phi>'') (minit0 n \<psi>) ([], []) [] 0 []"
+    using Release_0(1) rl by simp
+  show ?case
+    unfolding m
+    by (rule wf_mformula.Release[OF wf_\<phi>'' wf_\<psi> _ safe_release_left[OF rl Release_0(5)] Release_0(3) _ _ _ _
+        Release_0(1,2,4) wf_mbuf2'_0[OF Release_0.prems(2)] wf_ts_0])
+      (simp_all add: rl init_args_def wf_release_auxlist_Nil progress_0_gen[OF Release_0.prems(2)])
 next
   case (Release \<phi> I \<psi>)
   then show ?case 
@@ -3763,7 +3785,7 @@ next
 next
   case (MOr cs1 \<phi> cs2 \<psi> buf)
   from MOr.prems obtain \<phi>'' \<psi>'' \<alpha>' J where
-    \<phi>'_eq: "\<phi>' = \<phi>'' \<or>\<^sub>F \<psi>'' \<or> \<phi>' = \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'') \<or> \<phi>' = \<phi>'' \<^bold>R J \<psi>''"
+    \<phi>'_eq: "\<phi>' = \<phi>'' \<or>\<^sub>F \<psi>'' \<or> \<phi>' = \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')"
     by (cases rule: wf_mformula.cases)
       auto
   have pred_mappings: "rel_mapping (\<le>) P P'"
@@ -3773,7 +3795,7 @@ next
   have wty_phi: "S, E \<turnstile> \<phi>''" 
     and wty_psi: "S, E \<turnstile> \<psi>''"
     and wty_alpha: "\<phi>' = \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'') \<Longrightarrow> S, E \<turnstile> \<alpha>'"
-    \<comment> \<open>in all three shapes of @{term \<phi>'}, these are subformulas of the well-typed @{term \<phi>'}\<close>
+    \<comment> \<open>in both shapes of @{term \<phi>'}, these are subformulas of the well-typed @{term \<phi>'}\<close>
     using \<phi>'_eq MOr.prems(3) by (auto dest: wty_formulaD)
   obtain \<phi>s \<phi>\<^sub>M and \<psi>s \<psi>\<^sub>M and \<phi>\<psi>s buf'
     where meval_defs: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db \<phi> = (\<phi>s, \<phi>\<^sub>M)"
@@ -3783,7 +3805,7 @@ next
   have meval_eq: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db (MOr cs1 \<phi> cs2 \<psi> buf) =
       (\<phi>\<psi>s, MOr cs1 \<phi>\<^sub>M cs2 \<psi>\<^sub>M buf')"
     by (simp only: meval.simps Let_def meval_defs prod.case)
-  \<comment> \<open>all three shapes evaluate a disjunction\<close>
+  \<comment> \<open>both shapes evaluate a disjunction\<close>
   have or_step: "wf_mformula \<sigma> (j + \<delta>) P' V n R (MOr cs1 \<phi>\<^sub>M cs2 \<psi>\<^sub>M buf') (Formula.Or \<phi>1 \<psi>1) \<and>
       wf_mbuf2' \<sigma> P' V (j + \<delta>) n R \<phi>1 \<psi>1 buf' \<and>
       list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>1) i \<chi>)
@@ -3863,42 +3885,6 @@ next
       have prog: "progress \<sigma> Q \<phi>' k = progress \<sigma> Q (Formula.Or (\<alpha>' \<and>\<^sub>F ?ff) (\<alpha>' \<and>\<^sub>F ?Rbdd)) k" for Q k
         unfolding phi'_eq progress_and_release_rewrite_bounded[OF \<open>\<not> mem J 0\<close> \<open>bounded J\<close>, symmetric]
         by (simp only: and_release_safe_bounded_def)
-      show ?thesis
-        unfolding prog fvl using step by blast
-    qed
-    ultimately have ?case
-      unfolding meval_eq phi'_eq prod.case by (rule conjI)
-  } moreover {
-    let ?R0 = "release_safe_0 \<phi>'' J \<psi>''" and ?A0 = "always_safe_0 J \<psi>''"
-    assume phi'_eq: "\<phi>' = \<phi>'' \<^bold>R J \<psi>''"
-    with MOr.prems have "mem J 0"
-      and "bounded J"
-      and "FV \<phi>'' \<subseteq> FV \<psi>''"
-      and safes: "safe_formula \<psi>''" "safe_formula (?R0)"
-      and wf_mOr: "wf_mformula \<sigma> j P V n R (MOr cs1 \<phi> cs2 \<psi> buf) (?R0)"
-      unfolding phi'_eq
-      by (cases rule: wf_mformula.cases, clarsimp)+
-    have wtys: "S, E \<turnstile> \<psi>'' \<^bold>U J \<psi>'' \<and>\<^sub>F \<phi>''" "S, E \<turnstile> ?A0"
-      using wty_phi wty_psi
-      unfolding always_safe_0_def
-      by (auto intro!: wty_formula.intros)
-    have sat: "Formula.sat \<sigma> V v i \<phi>' \<longleftrightarrow> Formula.sat \<sigma> V v i (Formula.Or (\<psi>'' \<^bold>U J \<psi>'' \<and>\<^sub>F \<phi>'') ?A0)" for v i
-      unfolding phi'_eq sat_release_rewrite_0[OF \<open>mem J 0\<close> \<open>bounded J\<close>]
-      by (simp only: release_safe_0_def)
-    note step = or_step[OF wf_mOr[unfolded release_safe_0_def] wtys sat]
-    have fvl: "Formula.fv_list \<phi>' = Formula.fv_list (\<psi>'' \<^bold>U J \<psi>'' \<and>\<^sub>F \<phi>'')"
-      using \<open>FV \<phi>'' \<subseteq> FV \<psi>''\<close> unfolding phi'_eq
-      by (simp add: cols_union_subset)
-    have "wf_mformula \<sigma> (j + \<delta>) P' V n R (MOr cs1 \<phi>\<^sub>M cs2 \<psi>\<^sub>M buf') (\<phi>'' \<^bold>R J \<psi>'')"
-      using step
-      by (intro wf_mformula.Release_0[OF \<open>mem J 0\<close> \<open>bounded J\<close> \<open>FV \<phi>'' \<subseteq> FV \<psi>''\<close> safes])
-        (simp_all add: release_safe_0_def)
-    moreover have "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
-       [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] \<phi>\<psi>s"
-    proof -
-      have prog: "progress \<sigma> Q \<phi>' k = progress \<sigma> Q (Formula.Or (\<psi>'' \<^bold>U J \<psi>'' \<and>\<^sub>F \<phi>'') ?A0) k" for Q k
-        unfolding phi'_eq progress_release_rewrite_0[OF \<open>mem J 0\<close>, symmetric]
-        by (simp only: release_safe_0_def)
       show ?thesis
         unfolding prog fvl using step by blast
     qed
@@ -4750,6 +4736,86 @@ next
   ultimately show ?case
     unfolding zs_def \<eta>_def phi'_eq
     by auto
+next
+  case (MRelease args \<phi> \<psi> buf nts t aux db P P' V n R \<phi>')
+  note sat.simps[simp del] progress_simps[simp del]
+  from MRelease.prems obtain \<alpha> \<phi>'' \<psi>'' I where Release_eq: "\<phi>' = Formula.Release \<alpha> I \<psi>''"
+    and rl: "release_left \<alpha> \<psi>'' = (\<phi>'', args_pos args)"
+    and safe1: "safe_formula \<phi>''"
+    and safe2: "safe_formula \<psi>''"
+    and \<phi>: "wf_mformula \<sigma> j P V n R \<phi> \<phi>''"
+    and \<psi>: "wf_mformula \<sigma> j P V n R \<psi> \<psi>''"
+    and args_ivl: "args_ivl args = I"
+    and args_n: "args_n args = n"
+    and args_L: "args_L args = Formula.fv_list \<phi>''"
+    and args_R: "args_R args = Formula.fv_list \<psi>''"
+    and mem: "mem I 0"
+    and bdd: "bounded I"
+    and fv_\<alpha>: "Formula.fv \<alpha> \<subseteq> Formula.fv \<psi>''"
+    and buf: "wf_mbuf2' \<sigma> P V j n R \<phi>'' \<psi>'' buf"
+    and nts: "wf_ts \<sigma> P j \<phi>'' \<psi>'' nts"
+    and t: "t = (if j = 0 then 0 else \<tau> \<sigma> (min (j - 1) (min (progress \<sigma> P \<phi>'' j) (progress \<sigma> P \<psi>'' j))))"
+    and aux: "wf_release_auxlist \<sigma> V n R (args_pos args) \<phi>'' I \<psi>'' aux (progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j)"
+    and length_aux: "progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j + length aux =
+      min (progress \<sigma> P \<phi>'' j) (progress \<sigma> P \<psi>'' j)"
+    by (cases rule: wf_mformula.cases) auto
+  define pos where "pos = args_pos args"
+  note prog_eq = progress_release_left[OF rl mem, symmetric]
+  have fvi_subset: "Formula.fv \<phi>'' \<subseteq> Formula.fv \<psi>''"
+    by (rule fv_release_left[OF rl fv_\<alpha>])
+  from MRelease.prems(3) have wty\<alpha>: "S, E \<turnstile> \<alpha>" and wty\<psi>: "S, E \<turnstile> \<psi>''"
+    unfolding Release_eq by (auto elim: wty_formula.cases)
+  have wty\<phi>: "S, E \<turnstile> \<phi>''"
+    by (rule wty_release_left[OF rl wty\<alpha> wty\<psi>])
+  have fvl: "Formula.fv_list \<phi>' = Formula.fv_list \<psi>''"
+    using fv_\<alpha> unfolding Release_eq by (simp add: cols_union_subset)
+  from MRelease.prems(2) have nts_snoc: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i)
+    [min (progress \<sigma> P \<phi>'' j) (progress \<sigma> P \<psi>'' j)..< j + \<delta>] (nts @ map (\<tau> \<sigma>) [j ..< j + \<delta>])"
+    using nts unfolding wf_ts_def
+    by (subst upt_add_eq_append) (auto simp add: wf_envs_progress_le[THEN min.coboundedI1] list.rel_map
+      intro!: list_all2_appendI list.rel_refl)
+  obtain xs \<phi>n where eq_\<phi>: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> = (xs, \<phi>n)"
+    by (elim prod.exhaust)
+  obtain ys \<psi>n where eq_\<psi>: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<psi> = (ys, \<psi>n)"
+    by (elim prod.exhaust)
+  obtain aux' buf' nt nts' where eq1: "mbuf2t_take (update_release args) aux (mbuf2_add xs ys buf) t
+      (nts @ map (\<tau> \<sigma>) [j ..< j + \<delta>]) = (aux', buf', nt, nts')"
+    by (elim prod_cases4)
+  obtain zs aux'' where eq2: "eval_until I nt aux' = (zs, aux'')"
+    by (elim prod.exhaust)
+  note IH\<phi> = MRelease.IH(1)[OF \<phi> MRelease.prems(2) wty\<phi>, unfolded eq_\<phi> prod.case]
+  note IH\<psi> = MRelease.IH(2)[OF \<psi> MRelease.prems(2) wty\<psi>, unfolded eq_\<psi> prod.case]
+  from update_release'[OF IH\<phi>[THEN conjunct2] IH\<psi>[THEN conjunct2] eq1 eq2 MRelease.prems(2)
+      fvi_subset mem buf nts aux[folded prog_eq] args_ivl args_L args_R refl t length_aux[folded prog_eq] nts_snoc]
+  obtain wf_aux'': "wf_release_auxlist \<sigma> V n R (args_pos args) \<phi>'' I \<psi>'' aux''
+      (progress \<sigma> P' (Formula.Release \<alpha> I \<psi>'') (j + \<delta>))"
+    and len_zs: "progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j + length zs =
+      progress \<sigma> P' (Formula.Release \<alpha> I \<psi>'') (j + \<delta>)"
+    and len_aux'': "progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j + length zs + length aux'' =
+      min (progress \<sigma> P' \<phi>'' (j + \<delta>)) (progress \<sigma> P' \<psi>'' (j + \<delta>))"
+    and zs: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<psi>'') i (Releasep (args_pos args) \<phi>'' I \<psi>''))
+      [progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j..<progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j + length zs] zs"
+    and nt: "nt = (if j + \<delta> = 0 then 0 else \<tau> \<sigma> (min (j + \<delta> - 1)
+      (min (progress \<sigma> P' \<phi>'' (j + \<delta>)) (progress \<sigma> P' \<psi>'' (j + \<delta>)))))"
+    unfolding prog_eq by blast
+  note buf'_nts' = mbuf2t_take_add'[OF eq1 wf_envs_P_simps[OF MRelease.prems(2)] buf nts_snoc
+      IH\<phi>[THEN conjunct2] IH\<psi>[THEN conjunct2] le_add1]
+  have len: "progress \<sigma> P' (Formula.Release \<alpha> I \<psi>'') (j + \<delta>) + length aux'' =
+      min (progress \<sigma> P' \<phi>'' (j + \<delta>)) (progress \<sigma> P' \<psi>'' (j + \<delta>))"
+    using len_zs len_aux'' by linarith
+  have wf_new: "wf_mformula \<sigma> (j + \<delta>) P' V n R (MRelease args \<phi>n \<psi>n buf' nts' nt aux'') \<phi>'"
+    unfolding Release_eq
+    by (rule wf_mformula.Release[OF IH\<phi>[THEN conjunct1] IH\<psi>[THEN conjunct1] rl safe1 safe2 args_ivl
+        args_n args_L args_R mem bdd fv_\<alpha> buf'_nts' nt wf_aux'' len])
+  have out: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
+      [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] zs"
+    unfolding fvl Release_eq len_zs[symmetric]
+    by (rule list.rel_mono_strong[OF zs]) (simp add: sat_release_left[OF rl mem])
+  have meval_eq: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db (MRelease args \<phi> \<psi> buf nts t aux) =
+      (zs, MRelease args \<phi>n \<psi>n buf' nts' nt aux'')"
+    by (simp add: args_ivl eq_\<phi> eq_\<psi> eq1 eq2 Let_def)
+  show ?case
+    unfolding meval_eq prod.case using wf_new out by (rule conjI)
 next
   case (MMatchP I cs dss mr mrs \<phi>s buf nts aux)
   note sat.simps[simp del] mbufnt_take.simps[simp del] mbufn_add.simps[simp del]

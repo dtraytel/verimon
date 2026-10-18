@@ -950,7 +950,7 @@ next
 next
   case (Release_0 \<phi> I \<psi>)
   then show ?case
-    using sat_release_conj_0[OF Release_0(1), of \<sigma> V v i \<phi> \<psi>]
+    using sat_release_conj_0[OF Release_0(1), where \<phi>=\<phi> and \<psi>=\<psi>]
     by (simp del: convert_multiway.simps(10))
 qed (auto simp: nfv_convert_multiway cong: nat.case_cong)
 

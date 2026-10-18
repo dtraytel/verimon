@@ -32,6 +32,38 @@ definition wf_release_auxlist :: "Formula.trace \<Rightarrow> _ \<Rightarrow> na
             else \<not> Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) v) k \<phi>)) r2)
       auxlist [ne..<ne+length auxlist]"
 
+text \<open>The left operand the monitor evaluates (@{const release_left}) gives the release the
+  same verdicts and the same progress.\<close>
+
+lemma release_left_cases: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow>
+  pos \<and> \<phi> = \<alpha> \<and> safe_formula \<alpha> \<or> \<not> pos \<and> \<alpha> = Formula.Neg \<phi> \<and> safe_formula \<phi> \<or>
+  pos \<and> \<phi> = Formula.And \<psi> \<alpha>"
+  by (auto simp: release_left_def split: if_splits formula.splits)
+
+lemma sat_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> mem I 0 \<Longrightarrow>
+  Formula.sat \<sigma> V v i (Releasep pos \<phi> I \<psi>) \<longleftrightarrow> Formula.sat \<sigma> V v i (Formula.Release \<alpha> I \<psi>)"
+  by (auto simp: Releasep_def sat_release_conj_0 simp del: sat.simps dest!: release_left_cases)
+
+lemma progress_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> mem I 0 \<Longrightarrow>
+  progress \<sigma> P (Releasep pos \<phi> I \<psi>) j = progress \<sigma> P (Formula.Release \<alpha> I \<psi>) j"
+  by (auto simp: Releasep_def min.commute min.left_commute dest!: release_left_cases)
+
+lemma progress_release_left_min: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow>
+  min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) = min (progress \<sigma> P \<alpha> j) (progress \<sigma> P \<psi> j)"
+  by (auto simp: min.commute min.left_commute dest!: release_left_cases)
+
+lemma fv_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> Formula.fv \<alpha> \<subseteq> Formula.fv \<psi> \<Longrightarrow>
+  Formula.fv \<phi> \<subseteq> Formula.fv \<psi>"
+  by (auto dest!: release_left_cases)
+
+lemma safe_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> safe_formula (Formula.And \<psi> \<alpha>) \<Longrightarrow>
+  safe_formula \<phi>"
+  by (auto dest!: release_left_cases)
+
+lemma wty_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow>
+  S, E \<turnstile> \<phi>"
+  by (auto dest!: release_left_cases dest: wty_formula_NegD intro: wty_formula.intros)
+
 lemma wf_release_auxlist_Nil: "wf_release_auxlist \<sigma> V n R pos \<phi> I \<psi> [] ne"
   unfolding wf_release_auxlist_def by simp
 
