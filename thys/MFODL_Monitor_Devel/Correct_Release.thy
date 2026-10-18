@@ -40,17 +40,26 @@ lemma release_left_cases: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longri
   pos \<and> \<phi> = Formula.And \<psi> \<alpha>"
   by (auto simp: release_left_def split: if_splits formula.splits)
 
-lemma sat_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> mem I 0 \<Longrightarrow>
-  Formula.sat \<sigma> V v i (Releasep pos \<phi> I \<psi>) \<longleftrightarrow> Formula.sat \<sigma> V v i (Formula.Release \<alpha> I \<psi>)"
-  by (auto simp: Releasep_def sat_release_conj_0 simp del: sat.simps dest!: release_left_cases)
-
-lemma progress_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> mem I 0 \<Longrightarrow>
-  progress \<sigma> P (Releasep pos \<phi> I \<psi>) j = progress \<sigma> P (Formula.Release \<alpha> I \<psi>) j"
-  by (auto simp: Releasep_def min.commute min.left_commute dest!: release_left_cases)
+lemma sat_release_left:
+  assumes "release_left \<alpha> \<psi> = (\<phi>, pos)" "mem I 0"
+  shows "Formula.sat \<sigma> V v i (Releasep pos \<phi> I \<psi>) \<longleftrightarrow> Formula.sat \<sigma> V v i (Formula.Release \<alpha> I \<psi>)"
+  using release_left_cases[OF assms(1)] sat_release_conj_0[OF assms(2), where \<psi>=\<psi> and \<phi>=\<alpha>]
+  by (elim disjE conjE) (simp_all add: Releasep_def del: sat.simps)
 
 lemma progress_release_left_min: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow>
   min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) = min (progress \<sigma> P \<alpha> j) (progress \<sigma> P \<psi> j)"
   by (auto simp: min.commute min.left_commute dest!: release_left_cases)
+
+lemma progress_release_left:
+  assumes "release_left \<alpha> \<psi> = (\<phi>, pos)" "mem I 0"
+  shows "progress \<sigma> P (Releasep pos \<phi> I \<psi>) j = progress \<sigma> P (Formula.Release \<alpha> I \<psi>) j"
+proof -
+  have "min (progress \<sigma> P (if pos then \<phi> else Formula.Neg \<phi>) j) (progress \<sigma> P \<psi> j) =
+    min (progress \<sigma> P \<alpha> j) (progress \<sigma> P \<psi> j)"
+    using progress_release_left_min[OF assms(1)] by (cases pos) simp_all
+  then show ?thesis
+    by (simp only: Releasep_def progress.simps assms(2) simp_thms if_True)
+qed
 
 lemma fv_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> Formula.fv \<alpha> \<subseteq> Formula.fv \<psi> \<Longrightarrow>
   Formula.fv \<phi> \<subseteq> Formula.fv \<psi>"
@@ -84,11 +93,20 @@ lemma release_alive_step:
     \<not> ((\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<and> \<not> L j) \<and> \<not> S m)"
 proof
   assume A: "\<forall>j\<in>{i..<Suc m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<or> (\<exists>k\<in>{i..<j}. L k)"
-  then have "S m \<or> (\<exists>k\<in>{i..<m}. L k)"
+  then have m: "S m \<or> (\<exists>k\<in>{i..<m}. L k)"
     using win[of m] \<open>i \<le> m\<close> by auto
-  then show "(\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<or> (\<exists>k\<in>{i..<j}. L k)) \<and>
+  show "(\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<or> (\<exists>k\<in>{i..<j}. L k)) \<and>
     \<not> ((\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<and> \<not> L j) \<and> \<not> S m)"
-    using A win by (fastforce simp: less_Suc_eq)
+  proof (intro conjI notI)
+    show "\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<or> (\<exists>k\<in>{i..<j}. L k)"
+      using A by auto
+  next
+    assume P: "(\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<and> \<not> L j) \<and> \<not> S m"
+    with m obtain k where "k \<in> {i..<m}" "L k"
+      by blast
+    with P win[of k] show False
+      by auto
+  qed
 next
   assume B: "(\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<or> (\<exists>k\<in>{i..<j}. L k)) \<and>
     \<not> ((\<forall>j\<in>{i..<m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> S j \<and> \<not> L j) \<and> \<not> S m)"
@@ -155,7 +173,8 @@ proof (rule list_all2_appendI, unfold list.rel_map, goal_cases old new)
     proof (cases "memR I (\<tau> \<sigma> ?m - \<tau> \<sigma> i)")
       case True
       have win: "mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)" if "i \<le> k" "k \<le> ?m" for k
-        using mem True memR_antimono[OF True diff_le_mono[OF \<tau>_mono[OF that(2)], of "\<tau> \<sigma> i"]]
+        using mem True that memR_antimono[of I "\<tau> \<sigma> ?m - \<tau> \<sigma> i" "\<tau> \<sigma> k - \<tau> \<sigma> i"]
+          diff_le_mono[OF \<tau>_mono[of k ?m \<sigma>], of "\<tau> \<sigma> i"]
         by auto
       have A1': "qtable ?\<psi>s (mem_restr R ?\<psi>s) (\<lambda>v. (\<forall>j\<in>{i..<?m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow>
         ?sat v j \<psi> \<and> (if pos then \<not> ?sat v j \<phi> else ?sat v j \<phi>)) \<and> ?sat v ?m \<psi>) (a1 \<inter> rel2)"
@@ -176,11 +195,14 @@ proof (rule list_all2_appendI, unfold list.rel_map, goal_cases old new)
         using t B1 B2 by simp
     next
       case False
-      have "\<not> mem I (\<tau> \<sigma> ?m - \<tau> \<sigma> i)"
+      have nm: "\<not> mem I (\<tau> \<sigma> ?m - \<tau> \<sigma> i)"
         using False by auto
-      then show ?thesis
+      have eq: "(\<forall>j\<in>{i..<Suc ?m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> Q j) \<longleftrightarrow>
+        (\<forall>j\<in>{i..<?m}. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> Q j)" for Q
+        using nm by (auto simp: less_Suc_eq)
+      show ?thesis
         unfolding x prod.case args_ivl if_not_P[OF False[folded t]]
-        using t by (auto simp: less_Suc_eq intro!: qtable_cong[OF A1 refl] qtable_cong[OF A2 refl])
+        by (simp only: eq t A1 A2 simp_thms)
     qed
   qed
 next
