@@ -656,8 +656,6 @@ definition erelease_rel :: "cols \<Rightarrow> cols \<Rightarrow> \<I> \<Rightar
 lemma erelease_rel_init: "erelease_rel kR cR I tw 0 [] eraux_init []"
   by (simp add: erelease_rel_def eauxlist3_def erel_init) (simp add: eraux_init_def)
 
-export_code eraux_init eraux_update eraux_eval checking OCaml?
-
 (*<*)
 end
 (*>*)
