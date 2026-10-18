@@ -17,7 +17,7 @@ text \<open>
   throughout and the left one never did (the tuple is still pending), the left and the right
   operand held together at some point before the right one first failed (the tuple is released),
   or neither (it is dead).  A stretch is summarised by its pending and its released tuples,
-  @{typ "'b esum"}, and summaries compose associatively (@{const ecomp}): a tuple pending over the
+  and summaries compose associatively: a tuple pending over the
   first stretch takes its fate over the second.  An entry's pending and alive tuples are the
   pending and the pending-or-released tuples of the summary of the points from it to the last
   one.  So the window is a sliding window aggregation over this monoid, and it is kept as a queue
@@ -36,13 +36,13 @@ type_synonym 'b esum = "'b list set \<times> 'b list set"
 
 definition ecomp :: "'b esum \<Rightarrow> 'b esum \<Rightarrow> 'b esum" where
   "ecomp x y = (case x of (a1, r1) \<Rightarrow> case y of (a2, r2) \<Rightarrow>
-     (a1 \<inter> a2, if Set.is_empty r2 then r1 else r1 \<union> (a1 \<inter> r2)))"
+     (a1 \<inter> a2, if r2 = {} then r1 else r1 \<union> (a1 \<inter> r2)))"
 
 definition ecompo :: "'b esum \<Rightarrow> 'b esum option \<Rightarrow> 'b esum" where
   "ecompo x y = (case y of None \<Rightarrow> x | Some y' \<Rightarrow> ecomp x y')"
 
 definition esum_of :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b esum" where
-  "esum_of args msk l r = (if Set.is_empty l then (if args_pos args then (r, {}) else ({}, r))
+  "esum_of args msk l r = (if l = {} then (if args_pos args then (r, {}) else ({}, r))
      else (esemi msk (\<not> args_pos args) r l, esemi msk (args_pos args) r l))"
 
 definition eunion :: "'b esum \<Rightarrow> 'b list set" where
@@ -89,7 +89,7 @@ definition eraux_eval :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightar
 subsection \<open>The summaries\<close>
 
 lemma ecomp_alt: "ecomp (a1, r1) (a2, r2) = (a1 \<inter> a2, r1 \<union> (a1 \<inter> r2))"
-  by (auto simp: ecomp_def Set.is_empty_def)
+  by (auto simp: ecomp_def)
 
 lemma ecomp_assoc: "ecomp (ecomp x y) z = ecomp x (ecomp y z)"
   by (cases x; cases y; cases z) (auto simp: ecomp_alt)
@@ -101,11 +101,14 @@ fun efold :: "'b esum list \<Rightarrow> 'b esum option" where
   "efold [] = None"
 | "efold (e # es) = Some (ecompo e (efold es))"
 
+lemma ecompoo_simps[simp]: "ecompoo None y = y" "ecompoo (Some x) y = Some (ecompo x y)"
+  by (simp_all add: ecompoo_def)
+
 lemma ecompo_ecompoo: "ecompo e (ecompoo X Y) = ecompo (ecompo e X) Y"
   by (cases X; cases Y) (auto simp: ecompoo_def ecompo_def ecomp_assoc)
 
 lemma efold_append: "efold (xs @ ys) = ecompoo (efold xs) (efold ys)"
-  by (induct xs) (auto simp: ecompoo_def ecompo_ecompoo)
+  by (induct xs) (simp_all add: ecompo_ecompoo)
 
 lemma efold_Some: "es \<noteq> [] \<Longrightarrow> \<exists>x. efold es = Some x"
   by (cases es) auto
@@ -133,7 +136,7 @@ lemma esemi_sub: "esemi msk b r l \<subseteq> r"
 
 lemma esum_of_eq: "esum_of args msk l r =
     (esemi msk (\<not> args_pos args) r l, esemi msk (args_pos args) r l)"
-  by (auto simp: esum_of_def esemi_def Set.is_empty_def)
+  by (auto simp: esum_of_def esemi_def)
 
 lemma edisj_esum_of: "edisj (esum_of args msk l r)"
   by (auto simp: esum_of_eq edisj_def esemi_def)
@@ -159,12 +162,13 @@ lemma eraux_flip_fst: "map fst (eraux_flip bk fr acc) = rev (map fst bk) @ map f
   by (induct bk fr acc rule: eraux_flip.induct) (auto simp: Let_def)
 
 lemma eraux_flip_nth_fr: "k < length fr \<Longrightarrow> eraux_flip bk fr acc ! (length bk + k) = fr ! k"
-proof (induct bk fr acc arbitrary: k rule: eraux_flip.induct)
-  case (2 t e bk fr acc)
+proof (induct bk arbitrary: fr acc k)
+  case (Cons x bk)
+  obtain t e where x: "x = (t, e)" by (cases x)
   have "eraux_flip bk ((t, ecompo e acc) # fr) (Some (ecompo e acc)) ! (length bk + Suc k) =
       ((t, ecompo e acc) # fr) ! Suc k"
-    by (rule 2) (use 2(2) in simp)
-  then show ?case by (simp add: Let_def)
+    by (rule Cons(1)) (use Cons(2) in simp)
+  then show ?case by (simp add: x Let_def)
 qed simp
 
 lemma eraux_flip_snd: "k < length bk \<Longrightarrow>
@@ -178,7 +182,7 @@ proof (induct bk arbitrary: fr ys k)
   proof (cases "k < length bk")
     case True
     then show ?thesis using Cons(1)[OF True, of "(t, ecompo e (efold ys)) # fr" "e # ys"]
-      by (simp add: eq x)
+      by (simp add: eq x Let_def)
   next
     case False
     then have k: "k = length bk" using Cons(2) by simp
@@ -189,7 +193,7 @@ proof (induct bk arbitrary: fr ys k)
         by (rule eraux_flip_nth_fr) simp
       then show ?thesis by (simp add: k)
     qed
-    then show ?thesis by (simp add: eq x k)
+    then show ?thesis by (simp add: eq x k Let_def)
   qed
 qed simp
 
@@ -231,14 +235,14 @@ lemma takeWhile_take: "takeWhile P (take n xs) = take n (takeWhile P xs)"
   by (induct xs arbitrary: n) (auto simp: take_Cons split: nat.splits)
 
 lemma popfront_rel:
-  fixes O :: "(ts \<times> 'b list set \<times> 'b list set) list"
+  fixes Os :: "(ts \<times> 'b list set \<times> 'b list set) list"
   assumes pf: "eraux_popfront I nt B fr = (ys, fr')"
     and fr: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
-    and B: "B = efold (drop (length fr) es)" and len: "length fr \<le> length es" "length es = length O"
-    and ts: "map fst (take (length fr) O) = map fst fr"
-    and out: "\<forall>k < length es. snd (O ! k) = eout (the (efold (drop k es)))"
-  shows "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) O))"
-    and "ys = map (\<lambda>x. snd (snd x)) (take (length ys) O)"
+    and B: "B = efold (drop (length fr) es)" and len: "length fr \<le> length es" "length es = length Os"
+    and ts: "map fst (take (length fr) Os) = map fst fr"
+    and out: "\<forall>k < length es. snd (Os ! k) = eout (the (efold (drop k es)))"
+  shows "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) Os))"
+    and "ys = map (\<lambda>x. snd (snd x)) (take (length ys) Os)"
     and "fr' = drop (length ys) fr"
 proof -
   define P :: "ts \<times> 'b esum \<Rightarrow> bool" where "P = (\<lambda>(t, _). \<not> memR I (nt - t))"
@@ -247,18 +251,18 @@ proof -
     using pf by (simp_all add: eraux_popfront_def P_def)
   have P: "P = Q \<circ> fst" by (auto simp: P_def Q_def)
   have "map fst (takeWhile P fr) = takeWhile Q (map fst fr)" by (simp add: P takeWhile_map)
-  also have "\<dots> = take (length fr) (takeWhile Q (map fst O))"
+  also have "\<dots> = take (length fr) (takeWhile Q (map fst Os))"
     using ts by (simp add: take_map[symmetric] takeWhile_take)
-  also have "takeWhile Q (map fst O) = map fst (takeWhile (Q \<circ> fst) O)" by (simp add: takeWhile_map)
-  finally have "length (takeWhile P fr) = min (length fr) (length (takeWhile (Q \<circ> fst) O))"
+  also have "takeWhile Q (map fst Os) = map fst (takeWhile (Q \<circ> fst) Os)" by (simp add: takeWhile_map)
+  finally have "length (takeWhile P fr) = min (length fr) (length (takeWhile (Q \<circ> fst) Os))"
     by (metis length_map length_take)
-  then show l: "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) O))"
+  then show l: "length ys = min (length fr) (length (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) Os))"
     by (simp add: ys Q_def comp_def)
   define p where "p = length ys"
   have tk: "takeWhile P fr = take p fr" by (simp add: p_def ys takeWhile_eq_take)
   show "fr' = drop (length ys) fr" by (simp add: fr' p_def[symmetric] tk[symmetric] dropWhile_eq_drop)
   have pf': "p \<le> length fr" using l by (simp add: p_def)
-  have elem: "eunion (ecompo (snd (fr ! k)) B) = snd (snd (O ! k))" if "k < p" for k
+  have elem: "eunion (ecompo (snd (fr ! k)) B) = snd (snd (Os ! k))" if "k < p" for k
   proof -
     have k: "k < length fr" "k \<le> length fr" using that pf' by simp_all
     have "drop k es = drop k (take (length fr) es) @ drop (length fr) es"
@@ -268,7 +272,7 @@ proof -
       using fr[rule_format, OF k(1)] B by (simp add: efold_append ecompoo_def)
     then show ?thesis using out[rule_format, of k] k len by (simp add: snd_eout)
   qed
-  show "ys = map (\<lambda>x. snd (snd x)) (take (length ys) O)"
+  show "ys = map (\<lambda>x. snd (snd x)) (take (length ys) Os)"
     using pf' len elem by (intro nth_equalityI) (auto simp: ys tk p_def[symmetric] split_beta)
 qed
 
@@ -281,52 +285,52 @@ lemma erel_shift:
 proof -
   obtain cur outs fr bk B where aux: "aux = (cur, outs, fr, bk, B)" by (cases aux) auto
   define m where "m = length outs"
-  define O where "O = drop m L"
+  define Os where "Os = drop m L"
   obtain es where l1: "m + length es = length L"
     and outs: "map (\<lambda>x. snd (snd x)) (take m L) = outs"
     and cl: "\<forall>x \<in> set (take m L). \<not> memR I (c - fst x)"
     and l2: "length es = length fr + length bk"
-    and tsO: "map fst O = map fst fr @ rev (map fst bk)"
-    and so: "sorted (map fst O)" and le: "\<forall>x \<in> set O. fst x \<le> cur"
+    and tsO: "map fst Os = map fst fr @ rev (map fst bk)"
+    and so: "sorted (map fst Os)" and le: "\<forall>x \<in> set Os. fst x \<le> cur"
     and dj: "\<forall>e \<in> set es. edisj e"
     and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
     and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
-    and out: "\<forall>k < length es. snd (O ! k) = eout (the (efold (drop k es)))"
-    using rel unfolding erel'_def aux m_def[symmetric] O_def[symmetric] by auto
-  have lO: "length O = length es" using l1 by (simp add: O_def)
-  have L: "L = take m L @ O" by (simp add: O_def)
+    and out: "\<forall>k < length es. snd (Os ! k) = eout (the (efold (drop k es)))"
+    using rel unfolding erel'_def aux m_def[symmetric] Os_def[symmetric] by auto
+  have lO: "length Os = length es" using l1 by (simp add: Os_def)
+  have L: "L = take m L @ Os" by (simp add: Os_def)
   have clQ: "\<forall>x \<in> set (take m L). Q x"
   proof
     fix x assume "x \<in> set (take m L)"
     then have "\<not> memR I (c - fst x)" using cl by blast
     then show "Q x" unfolding Q_def by (auto dest: memR_antimono[OF _ diff_le_mono[OF cn]])
   qed
-  have tW: "takeWhile Q L = take m L @ takeWhile Q O"
+  have tW: "takeWhile Q L = take m L @ takeWhile Q Os"
     by (subst L) (simp add: takeWhile_append2 clQ)
-  define p where "p = length (takeWhile Q O)"
-  have pO: "p \<le> length O" by (simp add: p_def length_takeWhile_le)
-  have takeO: "takeWhile Q O = take p O" by (simp add: p_def takeWhile_eq_take)
-  have mem_after: "\<forall>x \<in> set (drop p O). memR I (nt - fst x)"
+  define p where "p = length (takeWhile Q Os)"
+  have pO: "p \<le> length Os" by (simp add: p_def length_takeWhile_le)
+  have takeO: "takeWhile Q Os = take p Os" by (simp add: p_def takeWhile_eq_take)
+  have mem_after: "\<forall>x \<in> set (drop p Os). memR I (nt - fst x)"
   proof
-    fix x assume "x \<in> set (drop p O)"
-    then obtain j where j: "j < length O - p" "x = drop p O ! j" by (metis in_set_conv_nth length_drop)
-    have pl: "p < length O" using j by simp
-    have "\<not> Q (O ! p)" using nth_length_takeWhile[of Q O] pl by (simp add: p_def)
-    then have m0: "memR I (nt - fst (O ! p))" by (simp add: Q_def)
-    have "fst (O ! p) \<le> fst (O ! (p + j))"
+    fix x assume "x \<in> set (drop p Os)"
+    then obtain j where j: "j < length Os - p" "x = drop p Os ! j" by (metis in_set_conv_nth length_drop)
+    have pl: "p < length Os" using j by simp
+    have "\<not> Q (Os ! p)" using nth_length_takeWhile[of Q Os] pl by (simp add: p_def)
+    then have m0: "memR I (nt - fst (Os ! p))" by (simp add: Q_def)
+    have "fst (Os ! p) \<le> fst (Os ! (p + j))"
       using sorted_nth_mono[OF so, of p "p + j"] j by simp
     then show "memR I (nt - fst x)" using j pl
       by (auto intro: memR_antimono[OF m0])
   qed
-  have tsfr: "map fst (take (length fr) O) = map fst fr"
+  have tsfr: "map fst (take (length fr) Os) = map fst fr"
     using tsO by (metis append_eq_conv_conj length_map take_map)
   obtain ys fr1 where pf: "eraux_popfront I nt B fr = (ys, fr1)" by fastforce
-  have ly: "length ys = min (length fr) p" and yso: "ys = map (\<lambda>x. snd (snd x)) (take (length ys) O)"
+  have ly: "length ys = min (length fr) p" and yso: "ys = map (\<lambda>x. snd (snd x)) (take (length ys) Os)"
     and fr1: "fr1 = drop (length ys) fr"
     using popfront_rel[OF pf frs Bs _ _ tsfr out] l2 lO by (simp_all add: p_def Q_def)
-  have main: "\<exists>fr' bk' B'. eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr', bk', B') \<and>
+  have main: "\<exists>fr' bk' B'. eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p Os), fr', bk', B') \<and>
      length fr' + length bk' = length es - p \<and>
-     map fst (drop p O) = map fst fr' @ rev (map fst bk') \<and>
+     map fst (drop p Os) = map fst fr' @ rev (map fst bk') \<and>
      (\<forall>k < length fr'. Some (snd (fr' ! k)) = efold (drop k (take (length fr') (drop p es)))) \<and>
      map snd bk' = rev (drop (length fr') (drop p es)) \<and> B' = efold (drop (length fr') (drop p es))"
   proof (cases "length ys < length fr")
@@ -338,10 +342,10 @@ proof -
     have pfr: "p \<le> length fr" using True pe by simp
     show ?thesis
     proof (intro exI conjI allI impI)
-      show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr1, bk, B)"
+      show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p Os), fr1, bk, B)"
         using sh yso pe by simp
       show "length fr1 + length bk = length es - p" using fr1 pe l2 pfr by simp
-      show "map fst (drop p O) = map fst fr1 @ rev (map fst bk)"
+      show "map fst (drop p Os) = map fst fr1 @ rev (map fst bk)"
         using tsO pfr fr1 pe by (simp add: drop_map[symmetric])
       show "map snd bk = rev (drop (length fr1) (drop p es))" using bks fr1 pe pfr by simp
       show "B = efold (drop (length fr1) (drop p es))" using Bs fr1 pe pfr by simp
@@ -366,7 +370,7 @@ proof -
         by (simp add: aux eraux_shift_def pf fr1N Nil)
       show ?thesis
       proof (intro exI conjI allI impI)
-        show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), [], [], B)"
+        show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p Os), [], [], B)"
           using sh yso lyf pe by simp
         show "B = efold (drop (length ([] :: (ts \<times> 'b esum) list)) (drop p es))"
           using Bs l2 Nil pe by simp
@@ -386,32 +390,32 @@ proof -
           using rbk fll l2 by (simp add: fl_def)
       qed
       obtain zs fr2 where pf2: "eraux_popfront I nt None fl = (zs, fr2)" by fastforce
-      have tsfl: "map fst (take (length fl) (drop (length fr) O)) = map fst fl"
+      have tsfl: "map fst (take (length fl) (drop (length fr) Os)) = map fst fl"
         using tsO flf fll by (simp add: drop_map[symmetric] take_map[symmetric])
-      have outd: "\<forall>k < length (drop (length fr) es). snd (drop (length fr) O ! k) =
+      have outd: "\<forall>k < length (drop (length fr) es). snd (drop (length fr) Os ! k) =
           eout (the (efold (drop k (drop (length fr) es))))"
         using out lO by (simp add: add.commute)
-      have lz: "length zs = min (length fl) (length (takeWhile Q (drop (length fr) O)))"
-        and zso: "zs = map (\<lambda>x. snd (snd x)) (take (length zs) (drop (length fr) O))"
+      have lz: "length zs = min (length fl) (length (takeWhile Q (drop (length fr) Os)))"
+        and zso: "zs = map (\<lambda>x. snd (snd x)) (take (length zs) (drop (length fr) Os))"
         and fr2: "fr2 = drop (length zs) fl"
         using popfront_rel[OF pf2 fls _ _ _ tsfl outd] fll l2 lO by (simp_all add: Q_def)
-      have allQ: "\<forall>x \<in> set (take (length fr) O). Q x"
+      have allQ: "\<forall>x \<in> set (take (length fr) Os). Q x"
         using pge by (metis takeO set_takeWhileD take_take min.absorb1)
-      have tW2: "takeWhile Q O = take (length fr) O @ takeWhile Q (drop (length fr) O)"
-        by (subst append_take_drop_id[symmetric, of O "length fr"], subst takeWhile_append2)
+      have tW2: "takeWhile Q Os = take (length fr) Os @ takeWhile Q (drop (length fr) Os)"
+        by (subst append_take_drop_id[symmetric, of Os "length fr"], subst takeWhile_append2)
           (use allQ in simp_all)
       have pz: "p = length fr + length zs"
-        using lz tW2 fll l2 lO length_takeWhile_le[of Q "drop (length fr) O"]
+        using lz tW2 fll l2 lO length_takeWhile_le[of Q "drop (length fr) Os"]
         by (simp add: p_def)
       have sh: "eraux_shift I nt aux = (cur, outs @ ys @ zs, fr2, [], None)"
         by (simp add: aux eraux_shift_def pf fr1N Cons pf2[unfolded fl_def, folded Cons])
       show ?thesis
       proof (intro exI conjI allI impI)
-        show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr2, [], None)"
+        show "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p Os), fr2, [], None)"
           using sh yso zso lyf pz by (simp add: take_add)
         show "length fr2 + length ([] :: (ts \<times> 'b esum) list) = length es - p"
           using fr2 fll pz l2 by simp
-        show "map fst (drop p O) = map fst fr2 @ rev (map fst ([] :: (ts \<times> 'b esum) list))"
+        show "map fst (drop p Os) = map fst fr2 @ rev (map fst ([] :: (ts \<times> 'b esum) list))"
           using tsO flf fr2 pz by (simp add: drop_map[symmetric] add.commute drop_drop)
         show "map snd ([] :: (ts \<times> 'b esum) list) = rev (drop (length fr2) (drop p es))"
           using fr2 fll pz l2 by simp
@@ -427,16 +431,16 @@ proof -
       qed
     qed
   qed
-  then obtain fr' bk' B' where sh: "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p O), fr', bk', B')"
+  then obtain fr' bk' B' where sh: "eraux_shift I nt aux = (cur, outs @ map (\<lambda>x. snd (snd x)) (take p Os), fr', bk', B')"
     and ln: "length fr' + length bk' = length es - p"
-    and ts': "map fst (drop p O) = map fst fr' @ rev (map fst bk')"
+    and ts': "map fst (drop p Os) = map fst fr' @ rev (map fst bk')"
     and frs': "\<forall>k < length fr'. Some (snd (fr' ! k)) = efold (drop k (take (length fr') (drop p es)))"
     and bks': "map snd bk' = rev (drop (length fr') (drop p es))"
     and Bs': "B' = efold (drop (length fr') (drop p es))" by blast
-  define outs' where "outs' = outs @ map (\<lambda>x. snd (snd x)) (take p O)"
+  define outs' where "outs' = outs @ map (\<lambda>x. snd (snd x)) (take p Os)"
   have lo': "length outs' = m + p" using pO by (simp add: outs'_def m_def)
-  have tk': "take (m + p) L = take m L @ take p O" by (simp add: O_def take_add)
-  have dr': "drop (m + p) L = drop p O" by (simp add: O_def add.commute drop_drop)
+  have tk': "take (m + p) L = take m L @ take p Os" by (simp add: Os_def take_add)
+  have dr': "drop (m + p) L = drop p Os" by (simp add: Os_def add.commute drop_drop)
   have rel': "erel' I nt (cur, outs', fr', bk', B') L"
     unfolding erel'_def prod.case lo'
   proof (intro exI[of _ "drop p es"] conjI ballI allI impI)
@@ -449,7 +453,7 @@ proof -
     show "B' = efold (drop (length fr') (drop p es))" by (rule Bs')
   next
     fix x assume "x \<in> set (take (m + p) L)"
-    then have "x \<in> set (take m L) \<or> x \<in> set (takeWhile Q O)" using tk' takeO by auto
+    then have "x \<in> set (take m L) \<or> x \<in> set (takeWhile Q Os)" using tk' takeO by auto
     then show "\<not> memR I (nt - fst x)" using clQ by (auto dest: set_takeWhileD simp: Q_def)
   next
     fix x assume "x \<in> set (drop (m + p) L)"
@@ -520,20 +524,20 @@ proof -
     by (simp add: eraux_update_def s I e_def B'_def Let_def)
   have curle: "cur \<le> nt" using sh le by (simp add: s)
   define m where "m = length outs"
-  define O where "O = drop m L"
+  define Os where "Os = drop m L"
   obtain es where l1: "m + length es = length L"
     and outs: "map (\<lambda>x. snd (snd x)) (take m L) = outs"
     and cl: "\<forall>x \<in> set (take m L). \<not> memR I (nt - fst x)"
     and l2: "length es = length fr + length bk"
-    and tsO: "map fst O = map fst fr @ rev (map fst bk)"
-    and so: "sorted (map fst O)" and leO: "\<forall>x \<in> set O. fst x \<le> cur"
+    and tsO: "map fst Os = map fst fr @ rev (map fst bk)"
+    and so: "sorted (map fst Os)" and leO: "\<forall>x \<in> set Os. fst x \<le> cur"
     and dj: "\<forall>e \<in> set es. edisj e"
     and frs: "\<forall>k < length fr. Some (snd (fr ! k)) = efold (drop k (take (length fr) es))"
     and bks: "map snd bk = rev (drop (length fr) es)" and Bs: "B = efold (drop (length fr) es)"
-    and out: "\<forall>k < length es. snd (O ! k) = eout (the (efold (drop k es)))"
-    using sh unfolding erel'_def s m_def[symmetric] O_def[symmetric] by auto
-  have memO: "\<forall>x \<in> set O. memR I (nt - fst x)" using sh by (simp add: s O_def m_def)
-  have lO: "length O = length es" using l1 by (simp add: O_def)
+    and out: "\<forall>k < length es. snd (Os ! k) = eout (the (efold (drop k es)))"
+    using sh unfolding erel'_def s m_def[symmetric] Os_def[symmetric] by auto
+  have memO: "\<forall>x \<in> set Os. memR I (nt - fst x)" using sh by (simp add: s Os_def m_def)
+  have lO: "length Os = length es" using l1 by (simp add: Os_def)
   have mL: "m \<le> length L" using l1 by simp
   define g where "g = (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
     then (t, esemi msk (\<not> args_pos args) (a1 \<inter> r) l, a2 - (a1 - r)) else (t, a1, a2))"
@@ -543,15 +547,15 @@ proof -
     using cl by (intro map_idI) (auto simp: g_def I split: prod.splits)
   have tk: "take m (eupdate_release args msk l r nt L) = take m L"
     using mL gC by (simp add: L' take_map[symmetric])
-  have dr: "drop m (eupdate_release args msk l r nt L) = map g O @ [(nt, esemi msk (\<not> args_pos args) r l, r)]"
-    using mL by (simp add: L' O_def drop_map)
-  have gO: "snd (g (O ! k)) = eout (ecomp (the (efold (drop k es))) e)" if "k < length es" for k
+  have dr: "drop m (eupdate_release args msk l r nt L) = map g Os @ [(nt, esemi msk (\<not> args_pos args) r l, r)]"
+    using mL by (simp add: L' Os_def drop_map)
+  have gO: "snd (g (Os ! k)) = eout (ecomp (the (efold (drop k es))) e)" if "k < length es" for k
   proof -
     obtain x where x: "efold (drop k es) = Some x" using efold_Some[of "drop k es"] that by auto
     have dx: "edisj x" by (rule edisj_efold[OF _ x]) (use dj in \<open>auto dest: in_set_dropD\<close>)
-    have m0: "memR (args_ivl args) (nt - fst (O ! k))" using memO that lO I by (auto simp: nth_mem)
-    have so: "snd (O ! k) = eout x" using out that x by simp
-    obtain t a1 a2 where Ok: "O ! k = (t, a1, a2)" by (cases "O ! k") auto
+    have m0: "memR (args_ivl args) (nt - fst (Os ! k))" using memO that lO I by (auto simp: nth_mem)
+    have so: "snd (Os ! k) = eout x" using out that x by simp
+    obtain t a1 a2 where Ok: "Os ! k = (t, a1, a2)" by (cases "Os ! k") auto
     show ?thesis
       using eout_ecomp_esum_of[OF dx, of msk args r l] m0 so Ok x
       by (simp add: g_def e_def eout_def)
@@ -572,7 +576,7 @@ proof -
       using tsO by (simp add: dr comp_def g_def split_beta[symmetric] case_prod_unfold if_distrib)
     show "sorted (map fst (drop m (eupdate_release args msk l r nt L)))"
     proof -
-      have "map fst (map g O) = map fst O" by (auto simp: g_def split: prod.splits)
+      have "map fst (map g Os) = map fst Os" by (auto simp: g_def split: prod.splits)
       then show ?thesis using so leO curle by (auto simp: dr sorted_append intro: order_trans)
     qed
     show "map snd ((nt, e) # bk) = rev (drop (length fr) (es @ [e]))" using bks l2 by simp
