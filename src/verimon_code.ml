@@ -13894,6 +13894,12 @@ let rec de_geval_matchF
           then (let (xs, a) = de_geval_matchF i mr nt aux in (rel :: xs, a))
           else ([], (t, (rels, rel)) :: aux));;
 
+let rec map_last_t g x1 = match g, x1 with g, ([], []) -> ([], [])
+                     | g, (fs, l :: ls) -> (fs, g l :: ls)
+                     | g, (f :: fs, []) -> (f :: fs, []);;
+
+let rec map_last_queue xb xc = Abs_queue (map_last_t xb (rep_queue xc));;
+
 let rec de_upd_set_kills
   m f x2 = match m, f, x2 with
     m, f, RBT_set rbt ->
@@ -13964,18 +13970,31 @@ let rec de_eraux_update
     (let (_, (oi, (n, (pend, (p, k))))) = aux in
      let w = unbox ed_keys_nat_v p in
      let wa = de_esemi msk (not (args_pos args)) r l in
+     let d = ed_minus w r in
+     let s =
+       ed_filter
+         (fun v -> equal_nata (the (ed_lookup_nat p v)) (minus_nata n one_nata))
+         d
+       in
+     let penda =
+       map_last_queue
+         (fun (tz, xl) ->
+           (if memR (args_ivl args) (minus_nata nt tz) then (tz, ed_minus xl s)
+             else (tz, xl)))
+         pend
+       in
      let ka =
        (if equal_nata oi n then k
          else de_upd_set_kills k
                 (fun v ->
                   append_queue (the (ed_lookup_nat p v), (n, nt)) (de_kqq k v))
-                (ed_minus w r))
+                (ed_minus d s))
        in
      let pa =
        de_upd_set_nat (edl_mfilter_nat (fun v _ -> ed_member v wa) p)
          (fun _ -> n) (ed_minus wa w)
        in
-      (nt, (oi, (suc n, (append_queue (nt, r) pend, (pa, ka))))));;
+      (nt, (oi, (suc n, (append_queue (nt, r) penda, (pa, ka))))));;
 
 let rec append_queue_list
   xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
@@ -14307,15 +14326,22 @@ let rec de_mapping_delete_set_kills
 
 let rec de_eraux_prune
   i k x =
-    (let k1 =
+    (let s =
+       ed_filter
+         (fun v ->
+           (match hd_queue (de_kqq k v) with None -> false
+             | Some (_, (f, _)) -> less_eq_nat f (suc i)))
+         x
+       in
+     let k1 =
        de_upd_set_kills k
          (fun v ->
            dropWhile_queue (fun (_, (f, _)) -> less_eq_nat f (suc i))
              (de_kqq k v))
-         x
+         s
        in
       de_mapping_delete_set_kills k1
-        (ed_filter (fun v -> is_none (hd_queue (de_kqq k1 v))) x));;
+        (ed_filter (fun v -> is_none (hd_queue (de_kqq k1 v))) s));;
 
 let rec front_dead
   ia i t q =
