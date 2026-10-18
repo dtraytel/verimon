@@ -3569,7 +3569,7 @@ next
   have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
   have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
   obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
-  define Rel where "Rel = (\<lambda>z z'. z' = eauxlist3 kR cR kR cR z \<and>
+  define Rel :: "event_data muaux \<Rightarrow> event_data muaux \<Rightarrow> bool" where "Rel = (\<lambda>z z'. z' = eauxlist3 kR cR kR cR z \<and>
       (\<forall>(u, a1, a2) \<in> set z. table kR a1 \<and> table kR a2))"
   have step: "Rel (update_release args a b u za) (eupdate_release dags msk (etabc kL cL a) (etabc kR cR b) u z'a)"
     if "a \<in> set us" "b \<in> set vs" "Rel za z'a" for a b u za z'a
