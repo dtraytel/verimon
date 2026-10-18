@@ -1,6 +1,6 @@
 (*<*)
 theory Eval
-  imports Window_Dispatch Trigger_Window Kernel_Call
+  imports Window_Dispatch Trigger_Window Release_Window Kernel_Call
 begin
 (*>*)
 
@@ -69,7 +69,7 @@ datatype eformula =
       eformula nat nat "ts list" "event_data table list" enat bool bool "nat option" eformula
   | ELetPast Formula.name nat eformula eformula nat "event_data table option"
   | ETrigger args "nat option list" eformula eformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
-  | ERelease args "bool list" eformula eformula uebuf2 "ts mbuf_t" ts "event_data muaux"
+  | ERelease args "bool list" eformula eformula uebuf2 "ts mbuf_t" ts "event_data eraux"
   | EAndTrigger ejoin_plan eformula "event_data table mbuf_t \<times> event_data table option mbuf_t"
       args eformula eformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
   | EMatchP nat \<I> mregex "mregex list" "nat option list list" "eformula list"
@@ -229,9 +229,9 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
       in (zs, EMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
 | "eeval j ts db (ERelease dags msk \<phi> \<psi> buf nts t aux) =
      (let (xs, \<phi>') = eeval j ts db \<phi>; (ys, \<psi>') = eeval j ts db \<psi>;
-          (aux', buf', nt, nts') = mebuf2t_take (eupdate_release dags msk) aux
+          (aux', buf', nt, nts') = mebuf2t_take (eraux_update dags msk) aux
             (mebuf2_add xs ys buf) t (nts @@ ts);
-          (zs, aux'') = eval_until (args_ivl dags) nt aux'
+          (zs, aux'') = eraux_eval (args_ivl dags) nt aux'
       in (zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
   by pat_completeness (simp_all only: prod.inject eformula.inject eformula.distinct simp_thms)
 
@@ -705,6 +705,114 @@ proof -
   then have "euntil_rel kR cR kL cL args (enext tw tss) nt aux2 daux2 buf1 dbuf1 nts1"
     unfolding euntil_rel_def by blast
   then show ?thesis using ev dn dns dbf bfs by simp
+qed
+
+subsection \<open>The release structure at the ascending frame\<close>
+
+text \<open>
+  The release node steps its structure through the buffer like the Until node, with the
+  timestamp-indexed relation, and reads it with @{const eraux_eval}, which pops the same entries
+  as @{const eval_until} pops from the list the structure stands for.
+\<close>
+
+lemma release_step_rel:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and rel: "erelease_rel kR cR (args_ivl args) tw t aux daux nts"
+    and lu: "list_all (ftable kL) (fst buf)" and lv: "list_all (ftable kR) (snd buf)"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and s: "sorted tss" and bnd: "\<forall>u \<in> set tss. tw \<le> u"
+    and we: "mbuf2t_take (update_release args) aux (mbuf2_add as bs buf) t (nts @ tss)
+      = (aux1, buf1, nt, nts1)"
+    and de: "mbuf2t_take (eraux_update (eargs cR cL args) (emsk cR cL)) daux
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs)
+        (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))) t (nts @ tss)
+      = (daux1, dbuf1, dnt, dnts1)"
+    and wev: "eval_until (args_ivl args) nt aux1 = (zs, aux2)"
+    and dev: "eraux_eval (args_ivl args) dnt daux1 = (dzs, daux2)"
+  shows "dzs = map (etabc kR cR) zs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+     dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
+     list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+     erelease_rel kR cR (args_ivl args) (enext tw tss) nt aux2 daux2 nts1"
+proof -
+  have wfa: "\<forall>(u, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and er: "erel (args_ivl args) daux (eauxlist3 kR cR kR cR aux)"
+    and ct: "fst daux \<le> t" and ttw: "t \<le> tw"
+    and sn: "sorted nts" and cn: "\<forall>u \<in> set nts. fst daux \<le> u \<and> u \<le> tw"
+    using rel unfolding erelease_rel_def by blast+
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have mda: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs)
+      (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))
+      = (map (etabc kL cL) us, map (etabc kR cR) vs)"
+    unfolding us_def vs_def by simp
+  have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
+  define Rel :: "ts \<Rightarrow> event_data muaux \<Rightarrow> event_data eraux \<Rightarrow> bool" where
+    "Rel = (\<lambda>u z z'. (\<forall>(u, a1, a2) \<in> set z. table kR a1 \<and> table kR a2) \<and>
+      erel (args_ivl args) z' (eauxlist3 kR cR kR cR z) \<and> fst z' \<le> u)"
+  have step: "Rel t' (update_release args a b t' z)
+      (eraux_update (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t' z')"
+    if a: "a \<in> set us" and b: "b \<in> set vs" and r: "Rel u z z'" and ut: "u \<le> t'"
+    for a b t' u z z'
+  proof -
+    have t1: "table kL a" and t2: "table kR b" using a b lus lvs by (auto simp: list_all_iff)
+    have w: "\<forall>(u, a1, a2) \<in> set z. table kR a1 \<and> table kR a2"
+      and e: "erel (args_ivl args) z' (eauxlist3 kR cR kR cR z)" and f: "fst z' \<le> u"
+      using r by (simp_all add: Rel_def)
+    have eq: "eauxlist3 kR cR kR cR (update_release args a b t' z) =
+        eupdate_release (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t'
+          (eauxlist3 kR cR kR cR z)"
+      by (rule eauxlist3_update_release[OF fR fL sub w t1 t2 aL aR]) simp_all
+    have "erel (args_ivl args)
+        (eraux_update (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t' z')
+        (eupdate_release (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t'
+          (eauxlist3 kR cR kR cR z))"
+      by (rule erel_update[OF e]) (use f ut in simp_all)
+    then show ?thesis
+      using eauxlist3_wf_update_release[OF w sub t1 t2 aL aR] by (simp add: Rel_def eq)
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>u \<in> set (nts @ tss). fst daux \<le> u" using cn bnd ct ttw by fastforce
+  have tdn: "t \<le> enext tw tss" using ttw enext_ge[OF bnd] by simp
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> enext tw tss"
+    using cn enext_ge[OF bnd] enext_bound[OF s] by fastforce
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  have we': "mbuf2t_take (update_release args) aux (us, vs) t (nts @ tss)
+      = (aux1, (b1, b2), nt, nts1)" using we unfolding ma bfs by simp
+  have de': "mbuf2t_take (eraux_update (eargs cR cL args) (emsk cR cL)) daux
+      (map (etabc kL cL) us, map (etabc kR cR) vs) t (nts @ tss) = (daux1, dbuf1, dnt, dnts1)"
+    using de unfolding mda by simp
+  have vr: "Rel (fst daux) aux daux" using wfa er by (simp add: Rel_def)
+  have R: "(\<exists>u. Rel u aux1 daux1 \<and> u \<le> nt \<and> (\<forall>v \<in> set nts1. u \<le> v)) \<and> sorted nts1 \<and>
+      (nt = t \<or> nt \<in> set (nts @ tss)) \<and> set nts1 \<subseteq> set (nts @ tss) \<and>
+      dbuf1 = (map (etabc kL cL) b1, map (etabc kR cR) b2) \<and> dnt = nt \<and> dnts1 = nts1"
+    by (rule mbuf2t_take_rel_ts[OF step vr ct sts cts we' de'])
+  obtain u where vu: "Rel u aux1 daux1" and unt: "u \<le> nt"
+    and un: "\<forall>v \<in> set nts1. u \<le> v" using R by blast
+  have dn: "dnt = nt" and dns: "dnts1 = nts1" and sn1: "sorted nts1"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)"
+    and dbf: "dbuf1 = (map (etabc kL cL) b1, map (etabc kR cR) b2)" using R by blast+
+  have ntdn: "nt \<le> enext tw tss" using R tdn bound by blast
+  have w1: "\<forall>(u, a1, a2) \<in> set aux1. table kR a1 \<and> table kR a2"
+    and e1: "erel (args_ivl args) daux1 (eauxlist3 kR cR kR cR aux1)" and f1: "fst daux1 \<le> u"
+    using vu by (simp_all add: Rel_def)
+  have ev: "eval_until (args_ivl args) nt (eauxlist3 kR cR kR cR aux1)
+      = (map (etabc kR cR) zs, eauxlist3 kR cR kR cR aux2)"
+    by (rule eauxlist3_eval_until[OF wev])
+  have dz: "dzs = map (etabc kR cR) zs" and e2: "erel (args_ivl args) daux2 (eauxlist3 kR cR kR cR aux2)"
+    and f2: "fst daux2 = fst daux1"
+    using erel_eval[OF e1 dev[unfolded dn]] ev by simp_all
+  have w2: "\<forall>(u, a1, a2) \<in> set aux2. table kR a1 \<and> table kR a2"
+    by (rule eauxlist3_wf_eval_until[OF w1 wev])
+  have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
+  have lb1: "list_all (ftable kL) b1" using sb lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable kR) b2" using sb lvs by (auto simp: list_all_iff)
+  have "erelease_rel kR cR (args_ivl args) (enext tw tss) nt aux2 daux2 nts1"
+    unfolding erelease_rel_def using w2 e2 f2 f1 unt ntdn sn1 un sub1 bound by fastforce
+  then show ?thesis using dz dn dns dbf lb1 lb2 bfs by simp
 qed
 
 subsection \<open>The Trigger structure at the ascending frame, and its buffer\<close>
@@ -1387,7 +1495,7 @@ inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<
     set kL \<subseteq> set kR \<Longrightarrow> args_L args = kL \<Longrightarrow> args_R args = kR \<Longrightarrow>
     dags = eargs cR cL args \<Longrightarrow> msk = emsk cR cL \<Longrightarrow>
     ebuf2 kL cL kR cR buf (rbuf2 dbuf) \<Longrightarrow> Rep_mbuf_t dnts = nts \<Longrightarrow>
-    (\<forall>(u, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2) \<Longrightarrow> daux = eauxlist3 kR cR kR cR aux \<Longrightarrow>
+    erelease_rel kR cR (args_ivl args) tw t aux daux nts \<Longrightarrow>
     esim n kR cR tw (ERelease dags msk \<phi>d \<psi>d dbuf dnts t daux)
       (mformula.MRelease args \<phi> \<psi> buf nts t aux)"
 | EsAndTrigger: "eframe ks cs \<Longrightarrow>
@@ -3526,15 +3634,15 @@ next
             aL aR m0 dag pe]) (use step ub un in simp_all)
   qed
 next
-  case (EsRelease kR cR n kL cL tw \<phi>d \<phi> \<psi>d \<psi> args dags msk buf dbuf dnts nts aux daux t)
+  case (EsRelease kR cR n kL cL tw \<phi>d \<phi> \<psi>d \<psi> args dags msk buf dbuf dnts nts t aux daux)
   note wf = EsRelease.hyps(1)
     and sim1 = EsRelease.hyps(2) and IH1 = EsRelease.hyps(3)
     and sim2 = EsRelease.hyps(4) and IH2 = EsRelease.hyps(5)
     and sub = EsRelease.hyps(6) and aL = EsRelease.hyps(7) and aR = EsRelease.hyps(8)
     and dag = EsRelease.hyps(9) and pe = EsRelease.hyps(10)
-    and eb = EsRelease.hyps(11) and ne = EsRelease.hyps(12)
-    and wfa = EsRelease.hyps(13) and da = EsRelease.hyps(14)
-    and kg = EsRelease.prems(4) and mts = EsRelease.prems(1) and m = EsRelease.prems(2)
+    and eb = EsRelease.hyps(11) and ne = EsRelease.hyps(12) and rel = EsRelease.hyps(13)
+    and kg = EsRelease.prems(4) and sts = kgood_sorted[OF EsRelease.prems(4)]
+    and mts = EsRelease.prems(1) and m = EsRelease.prems(2)
   have kg1: "kgood n kL j ts db \<phi>" and kg2: "kgood n kR j ts db \<psi>"
     using kgood_MRelease[OF kg] aL aR by simp_all
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
@@ -3557,69 +3665,42 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
-  define us where "us = fst buf @ as"
-  define vs where "vs = snd buf @ bs"
   have lu: "list_all (ftable kL) (fst buf)" and lv: "list_all (ftable kR) (snd buf)"
     and dbe: "rbuf2 dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))"
     using eb unfolding ebuf2_def by blast+
-  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
-  have mda: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)
-      = (map (etabc kL cL) us, map (etabc kR cR) vs)"
-    unfolding dbe us_def vs_def by (cases buf) simp
-  have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
-  have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
-  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
-  define Rel :: "event_data muaux \<Rightarrow> event_data muaux \<Rightarrow> bool" where "Rel = (\<lambda>z z'. z' = eauxlist3 kR cR kR cR z \<and>
-      (\<forall>(u, a1, a2) \<in> set z. table kR a1 \<and> table kR a2))"
-  have step: "Rel (update_release args a b u za) (eupdate_release dags msk (etabc kL cL a) (etabc kR cR b) u z'a)"
-    if "a \<in> set us" "b \<in> set vs" "Rel za z'a" for a b u za z'a
-  proof -
-    have t1: "table kL a" and t2: "table kR b"
-      using that(1,2) lus lvs by (auto simp: list_all_iff)
-    have w: "\<forall>(u, a1, a2) \<in> set za. table kR a1 \<and> table kR a2" and z: "z'a = eauxlist3 kR cR kR cR za"
-      using that(3) unfolding Rel_def by blast+
-    show ?thesis
-      unfolding Rel_def z dag pe
-      using eauxlist3_update_release[OF wf fL sub w t1 t2 aL aR, of "eargs cR cL args"]
-        eauxlist3_wf_update_release[OF w sub t1 t2 aL aR]
-      by simp
-  qed
-  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eupdate_release dags msk) daux
-      (map (etabc kL cL) us, map (etabc kR cR) vs) t (nts @ ts) = (daux1, dbuf1, dnt, dnts1)"
-    by (cases "mbuf2t_take (eupdate_release dags msk) daux
-      (map (etabc kL cL) us, map (etabc kR cR) vs) t (nts @ ts)")
-  have R: "Rel aux1 daux1 \<and> dbuf1 = (map (etabc kL cL) b1, map (etabc kR cR) b2) \<and> dnt = nt \<and> dnts1 = nts1"
-    by (rule mbuf2t_take_rel[where R=Rel and f="update_release args" and g="eupdate_release dags msk"
-        and h="etabc kL cL" and k="etabc kR cR", OF step _ e3[unfolded ma bfs] d3])
-      (use wfa da in \<open>simp_all add: Rel_def\<close>)
-  have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF e3[unfolded ma bfs]])
-  have lb1: "list_all (ftable kL) b1" using sb lus by (auto simp: list_all_iff)
-  have lb2: "list_all (ftable kR) b2" using sb lvs by (auto simp: list_all_iff)
-  have r1: "daux1 = eauxlist3 kR cR kR cR aux1" and w1: "\<forall>(u, a1, a2) \<in> set aux1. table kR a1 \<and> table kR a2"
-    using R unfolding Rel_def by blast+
-  have ev: "eval_until (args_ivl dags) nt daux1 = (map (etabc kR cR) zs, eauxlist3 kR cR kR cR aux2)"
-    unfolding r1 dag eargs_simps by (rule eauxlist3_eval_until[OF e4])
-  have w2: "\<forall>(u, a1, a2) \<in> set aux2. table kR a1 \<and> table kR a2"
-    by (rule eauxlist3_wf_eval_until[OF w1 e4])
-  obtain ua ub nt' un where eu: "mebuf2t_take (eupdate_release dags msk) daux
+  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eraux_update dags msk) daux
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)
+      = (daux1, dbuf1, dnt, dnts1)"
+    by (cases "mbuf2t_take (eraux_update dags msk) daux
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)")
+  obtain dzs daux2 where d4: "eraux_eval (args_ivl args) dnt daux1 = (dzs, daux2)"
+    by (cases "eraux_eval (args_ivl args) dnt daux1")
+  have st: "dzs = map (etabc kR cR) zs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+      dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
+      list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+      erelease_rel kR cR (args_ivl args) (enext tw ts) nt aux2 daux2 nts1"
+    by (rule release_step_rel[OF wf fL sub aL aR rel lu lv ta tb sts mts e3
+        d3[unfolded dag pe dbe] e4 d4])
+  obtain ua ub nt' un where eu: "mebuf2t_take (eraux_update dags msk) daux
       (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, nt', un)"
-    by (cases "mebuf2t_take (eupdate_release dags msk) daux
+    by (cases "mebuf2t_take (eraux_update dags msk) daux
       (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts)")
   have "(ua, rbuf2 ub, nt', Rep_mbuf_t un) = (daux1, dbuf1, dnt, dnts1)"
-    using mbuf2t_take_rbuf2[of "eupdate_release dags msk" daux
+    using mbuf2t_take_rbuf2[of "eraux_update dags msk" daux
         "mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf" t dnts ts]
-    unfolding eu ne mbuf2_add_rbuf2[symmetric] mda d3 by simp
-  then have ua: "ua = daux1" and ub: "rbuf2 ub = dbuf1" and nt': "nt' = nt" and un: "Rep_mbuf_t un = nts1"
-    using R by simp_all
+    unfolding eu ne mbuf2_add_rbuf2[symmetric] d3 by simp
+  then have ua: "ua = daux1" and ub: "rbuf2 ub = dbuf1" and nt': "nt' = nt"
+    and un: "Rep_mbuf_t un = nts1"
+    using st by simp_all
   show ?case
   proof (intro exI conjI)
     show "eeval j ts db (ERelease dags msk \<phi>d \<psi>d dbuf dnts t daux)
-        = (map (etabc kR cR) xs, ERelease dags msk \<phi>d2 \<psi>d2 ub un nt (eauxlist3 kR cR kR cR aux2))"
-      using d1 d2 eu ev x ua nt' by simp
-    show "esim n kR cR (enext tw ts) (ERelease dags msk \<phi>d2 \<psi>d2 ub un nt (eauxlist3 kR cR kR cR aux2)) \<phi>'"
+        = (map (etabc kR cR) xs, ERelease dags msk \<phi>d2 \<psi>d2 ub un nt daux2)"
+      using d1 d2 eu d4 x ua nt' st by (simp add: dag)
+    show "esim n kR cR (enext tw ts) (ERelease dags msk \<phi>d2 \<psi>d2 ub un nt daux2) \<phi>'"
       unfolding f
-      by (rule esim.EsRelease[OF wf s1 s2 sub aL aR dag pe _ un w2 refl])
-        (use lb1 lb2 ub R bfs in \<open>simp add: ebuf2_def\<close>)
+      by (rule esim.EsRelease[OF wf s1 s2 sub aL aR dag pe _ un])
+        (use st ub in \<open>simp_all add: ebuf2_def\<close>)
   qed
 next
   case (EsAndTrigger ks cs n tw \<alpha>d \<alpha> kL cL \<phi>d \<phi> kR cR \<psi>d \<psi> args dags pl buf1 dbf1 aux daux buf2 dbf2 nts dnts)

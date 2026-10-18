@@ -182,7 +182,8 @@ function (sequential) eof ::
      (let kL = args_L args; kR = args_R args; cL = ecols kL in
       if ks = kR \<and> cs = ecols kR \<and> set kL \<subseteq> set kR \<and> buf = ([], []) \<and> nts = [] \<and> aux = []
       then ERelease (eargs cs cL args) (emsk cs cL)
-             (eof n kL cL \<phi>) (eof n kR cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty t []
+             (eof n kL cL \<phi>) (eof n kR cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty t
+             eraux_init
       else EFail)"
 | "eof n ks cs (MAndTrigger k \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
      (let kL = args_L args; kR = args_R args; cR = ecols kR; cL = ecols kL in
@@ -497,7 +498,7 @@ proof -
   show ?thesis
     by (simp add: ag sub Let_def)
       (rule EsRelease[OF eframe_dcols[OF dR] s1 s2 sub ag refl refl],
-        simp_all add: ebuf2_def eauxlist3_def)
+        simp_all add: ebuf2_def erelease_rel_init)
 qed
 
 lemma esim_dof_minit0_trigger:
