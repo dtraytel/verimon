@@ -812,7 +812,7 @@ function (sequential) safe_formula :: "'t Formula.formula \<Rightarrow> bool"
 
 termination safe_formula
 proof ((relation "measure size'"; simp split: formula.splits), 
-    goal_cases R_self_bdd Ands1 Ands2 R_safe0 rgx1 rgx2 rgx3 rgx4)
+    goal_cases R_self_bdd Ands1 Ands2 rgx1 rgx2 rgx3 rgx4)
   case (R_self_bdd \<phi> \<psi> \<psi>\<^sub>L I \<psi>\<^sub>R)
   then show ?case
     by (clarsimp simp add: and_release_safe_bounded_def release_safe_bounded_def 
@@ -831,11 +831,6 @@ next
     by simp
   then show ?case 
     by simp
-next
-  case (R_safe0 \<phi> I \<psi>)
-  then show ?case 
-    by (clarsimp simp add: release_safe_0_def always_safe_0_def 
-        release_safe_bounded_def Formula.TT_def split: formula.splits)
 qed (auto dest!: regex_atms_size')
 
 lemma safe_abbrevs[simp]: "safe_formula Formula.TT" "safe_formula Formula.FF"
@@ -858,8 +853,7 @@ lemma safe_eventually_TT [simp]: "safe_formula (\<not>\<^sub>F Formula.eventuall
 (* [0, b] *)
 lemma historically_safe_0_safe[simp]: 
   "safe_formula (historically_safe_0 I \<phi>) = safe_formula \<phi>"
-  by (auto simp: historically_safe_0_def safe_assignment_def 
-      split: formula.splits)
+  by (cases "safe_formula \<phi>") (auto simp: historically_safe_0_def)
 
 lemma historically_safe_0_fv[simp]: "fv (historically_safe_0 I \<phi>) = fv \<phi>"
   by (auto simp: historically_safe_0_def)
@@ -1130,7 +1124,8 @@ lemma safe_formula_induct[consumes 1, case_names Eq_Const Eq_Var1 Eq_Var2 Pred L
       \<Longrightarrow> safe_formula \<phi> \<Longrightarrow> safe_formula \<psi> 
       \<Longrightarrow> P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (\<phi> \<^bold>T I \<psi>)"
     and Release_0: "\<And>\<phi> I \<psi>. mem I 0 \<Longrightarrow> bounded I \<Longrightarrow> safe_formula \<psi> \<Longrightarrow> fv \<phi> \<subseteq> fv \<psi> 
-      \<Longrightarrow> P (release_safe_0 \<phi> I \<psi>) \<Longrightarrow> P (\<phi> \<^bold>R I \<psi>)"
+      \<Longrightarrow> safe_formula (\<psi> \<and>\<^sub>F \<phi>) \<Longrightarrow> P \<psi> \<Longrightarrow> P (\<psi> \<and>\<^sub>F \<phi>) \<Longrightarrow> (safe_formula \<phi> \<Longrightarrow> P \<phi>)
+      \<Longrightarrow> (\<And>\<phi>'. \<phi> = \<not>\<^sub>F \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> P \<phi>') \<Longrightarrow> P (\<phi> \<^bold>R I \<psi>)"
     and Release: "\<And>\<phi> I \<psi>. False \<Longrightarrow> \<not>mem I 0 \<Longrightarrow> fv \<phi> = fv \<psi> \<Longrightarrow> safe_formula \<phi> 
       \<Longrightarrow> safe_formula \<psi> \<Longrightarrow> P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (\<phi> \<^bold>R I \<psi>)"
     and MatchP: "\<And>I r. Regex.safe_regex fv rgx_safe_pred Past Strict r \<Longrightarrow> \<forall>\<phi> \<in> safe_atms r. P \<phi> \<Longrightarrow> P (Formula.MatchP I r)"
@@ -1329,10 +1324,12 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
     then show ?thesis
     proof (cases "mem I 0")
       case mem: True
+      have size_and: "size' (\<psi>' \<and>\<^sub>F \<phi>') < size' (\<phi>' \<^bold>R I \<psi>')"
+        by (simp split: formula.splits)
       show ?thesis 
-        using 19 \<open>safe_formula \<phi>\<close>
-        by (auto intro!: Release_0)
-          (auto intro!: IH size'_release_aux(4))
+        unfolding 19
+        using \<open>safe_formula \<phi>\<close>[unfolded 19] size_and
+        by (intro Release_0) (auto intro!: IH[unfolded 19])
     next
       case False
       then show ?thesis 
