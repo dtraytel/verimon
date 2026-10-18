@@ -58,7 +58,7 @@ function (sequential) mmonitorable_exec :: "'t Formula.formula \<Rightarrow> boo
 | "mmonitorable_exec (Formula.Until \<phi> I \<psi>) = (Formula.fv \<phi> \<subseteq> Formula.fv \<psi> \<and> bounded I \<and>
     (mmonitorable_exec \<phi> \<or> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> mmonitorable_exec \<phi>' | _ \<Rightarrow> False)) \<and> mmonitorable_exec \<psi>)"
 | "mmonitorable_exec (Formula.Trigger \<phi> I \<psi>) = safe_dual False mmonitorable_exec \<phi> I \<psi>"
-| "mmonitorable_exec (Formula.Release \<phi> I \<psi>) = (mem I 0 \<and> bounded I \<and> mmonitorable_exec \<psi> \<and> fv \<phi> \<subseteq> fv \<psi> \<and> mmonitorable_exec (release_safe_0 \<phi> I \<psi>))"
+| "mmonitorable_exec (Formula.Release \<phi> I \<psi>) = (mem I 0 \<and> bounded I \<and> mmonitorable_exec \<psi> \<and> fv \<phi> \<subseteq> fv \<psi> \<and> mmonitorable_exec (Formula.And \<psi> \<phi>))"
 | "mmonitorable_exec (Formula.MatchP I r) = Regex.safe_regex fv (\<lambda>g \<phi>. mmonitorable_exec \<phi> \<or> (g = Lax \<and> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> mmonitorable_exec \<phi>' | _ \<Rightarrow> False))) Past Strict r"
 | "mmonitorable_exec (Formula.MatchF I r) = (Regex.safe_regex fv (\<lambda>g \<phi>. mmonitorable_exec \<phi> \<or> (g = Lax \<and> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> mmonitorable_exec \<phi>' | _ \<Rightarrow> False))) Futu Strict r \<and> bounded I)"
 | "mmonitorable_exec (Formula.TP t) = (Formula.is_Var t \<or> Formula.is_Const t)"
@@ -988,6 +988,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   | MSince args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2S" "'msaux"
   | MUntil args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" ts "'muaux"
   | MTrigger args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" "'mtaux"
+  | MRelease args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" ts "event_data muaux"
   | MMatchP \<I> "nat list" "nat list list" "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" "event_data mr\<delta>aux"
   | MMatchF \<I> "nat list" "nat list list" "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" ts "event_data ml\<delta>aux"
   | MTP mtrm nat
@@ -1280,6 +1281,22 @@ lemma eval_until_auxlist': "eval_until I nt auxlist = (res, auxlist') \<Longrigh
   by (induction I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
     (auto split: if_splits prod.splits)
 
+text \<open>The release with 0 in its interval is evaluated natively, dually to the until. For each
+  time point @{term i} whose verdict is pending, the auxiliary list holds the tuples that are still
+  waiting to be released (they satisfied the right operand at every point of the window so far, and
+  the left operand at none) and the tuples that are still alive (each point of the window so far
+  where they did not satisfy the right operand was preceded by one where they satisfied the left
+  operand). Both tables are over the columns of the right operand, which contain those of the left
+  operand. Once the window of @{term i} has been left, the alive tuples are its verdict
+  (@{const eval_until}).\<close>
+
+definition update_release :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data muaux \<Rightarrow> event_data muaux" where
+  "update_release args rel1 rel2 nt aux =
+    map (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
+      then (t, join (args_R args) (a1 \<inter> rel2) (\<not> args_pos args) (args_L args) rel1, a2 - (a1 - rel2))
+      else (t, a1, a2)) aux @
+    [(nt, join (args_R args) rel2 (\<not> args_pos args) (args_L args) rel1, rel2)]"
+
 locale muaux =
   fixes valid_muaux :: "args \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> event_data muaux \<Rightarrow> bool"
     and init_muaux :: "args \<Rightarrow> 'muaux"
@@ -1404,6 +1421,19 @@ lemma (in mtaux) init_trigger_cong[fundef_cong]:
   using assms
   by (auto simp: init_trigger_def split: formula.splits)
 
+text \<open>The left operand that the native release evaluates: the left operand itself if it is
+  safe, the negated formula if it is the negation of a safe formula, and otherwise its conjunction
+  with the right operand, which is equivalent with 0 in the interval
+  (@{thm [source] sat_release_conj_0}).\<close>
+
+definition release_left :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula \<times> bool" where
+  "release_left \<phi> \<psi> = (if safe_formula \<phi> then (\<phi>, True) else (case \<phi> of
+      Formula.Neg \<phi>' \<Rightarrow> if safe_formula \<phi>' then (\<phi>', False) else (Formula.And \<psi> \<phi>, True)
+    | _ \<Rightarrow> (Formula.And \<psi> \<phi>, True)))"
+
+lemma size'_release_left: "size' (fst (release_left \<phi> \<psi>)) < size' (Formula.Release \<phi> I \<psi>)"
+  by (auto simp: release_left_def split: formula.splits)
+
 
 
 subsubsection \<open> minit0 \<close>
@@ -1484,7 +1514,8 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Release \<phi> I \<psi>) = (
   if mem I 0
     then
-      minit0 n (release_safe_0 \<phi> I \<psi>)
+      MRelease (init_args I n (Formula.fv_list (fst (release_left \<phi> \<psi>))) (Formula.fv_list \<psi>)
+        (snd (release_left \<phi> \<psi>)) None) (minit0 n (fst (release_left \<phi> \<psi>))) (minit0 n \<psi>) ([], []) [] 0 []
     else
       minit0 n (release_safe_bounded \<phi> I \<psi>))"
 | "minit0 n (Formula.MatchP I r) =
@@ -1536,7 +1567,7 @@ next
 next
   case (8 \<phi> I \<psi>)
   then show ?case 
-    using size'_release_aux(4)[of \<phi> I \<psi>]
+    using size'_release_left[of \<phi> \<psi> I]
     by simp
 next
   case (9 \<phi> I \<psi>)
@@ -1553,12 +1584,6 @@ next
     by (clarsimp  dest!: to_mregex_ok[OF sym] atms_size')
 qed
   
-
-lemma (in maux) minit0_release_0:
-  assumes mem: "mem I 0"
-  shows "minit0 n (Formula.Release \<phi> I \<psi>) = minit0 n (release_safe_0 \<phi> I \<psi>)"
-  using assms
-  by auto
 
 lemma (in maux) minit0_release_bounded:
   assumes mem: "\<not>mem I 0"
@@ -2488,6 +2513,11 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             (fv_z, z) = result_mtaux args aux
         in (zs @ [(z)], aux)) ([], aux) (mbuf2_add xs ys buf) (nts @ ts)
     in (zs, MTrigger args \<phi> \<psi> buf nts aux))"
+| "meval n ts db (MRelease args \<phi> \<psi> buf nts t aux) =
+    (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
+      (aux, buf, nt, nts') = mbuf2t_take (update_release args) aux (mbuf2_add xs ys buf) t (nts @ ts);
+      (zs, aux) = eval_until (args_ivl args) nt aux
+    in (zs, MRelease args \<phi> \<psi> buf nts' nt aux))"
 | "meval n ts db (MMatchP I cs dss mr mrs \<phi>s buf nts aux) =
     (let (xss, \<phi>s) = map_split id (map (meval n ts db) \<phi>s);
       ((zs, aux), buf, _, nts) = mbufnt_take (\<lambda>rels t (zs, aux).
@@ -2612,7 +2642,7 @@ end (* fixes j *)
 
 lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast 
     MAnd MAndAssign MAndRel MAndTrigger MAnds MOr MNeg
-    MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS]:
+    MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS MRelease]:
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
    (\<And>p m cs \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m cs \<phi> \<psi>)) \<Longrightarrow>
@@ -2637,6 +2667,7 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
    (\<And>I cs dss mr mrs \<phi>s buf nts t aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchF I cs dss mr mrs \<phi>s buf nts t aux)) \<Longrightarrow>
    (\<And>mt i. P (MTP mt i)) \<Longrightarrow>
    (\<And>mt. P (MTS mt)) \<Longrightarrow>
+   (\<And>args \<phi> \<psi> buf nts t aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MRelease args \<phi> \<psi> buf nts t aux)) \<Longrightarrow>
    P mf"
 proof (induct "size mf" arbitrary: mf rule: less_induct)
   case less
@@ -2714,6 +2745,9 @@ proof (induct "size mf" arbitrary: mf rule: less_induct)
   next
     case (MTS mt)
     show ?thesis unfolding MTS by (rule less.prems(23))
+  next
+    case (MRelease args \<phi> \<psi> buf nts t aux)
+    show ?thesis unfolding MRelease by (rule less.prems(24)) (rule IH, simp add: MRelease)+
   qed
 qed
 

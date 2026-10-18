@@ -32,6 +32,7 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Correct_Since
     Correct_Until
     Correct_Trigger
+    Correct_Release
     Correct_Regex
     Correct_Agg
     Correctness

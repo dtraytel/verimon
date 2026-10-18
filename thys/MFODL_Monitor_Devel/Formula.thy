@@ -2769,6 +2769,37 @@ next
   ultimately show "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>)" by auto
 qed
 
+text \<open>With 0 in the interval, the first point of the window where the right operand of a release
+  fails is preceded only by points where it holds, so the left operand may be restricted to the
+  right operand.\<close>
+
+lemma sat_release_conj_0:
+  assumes "mem I 0"
+  shows "Formula.sat \<sigma> V v i (Formula.Release (Formula.And \<psi> \<phi>) I \<psi>) \<longleftrightarrow> Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>)"
+proof (rule iffI)
+  assume R: "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>)"
+  have "Formula.sat \<sigma> V v j \<psi> \<or> (\<exists>k\<in>{i..<j}. Formula.sat \<sigma> V v k \<psi> \<and> Formula.sat \<sigma> V v k \<phi>)"
+    if "i \<le> j" "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)" for j
+    using that
+  proof (induction j rule: less_induct)
+    case (less j)
+    show ?case
+    proof (cases "Formula.sat \<sigma> V v j \<psi>")
+      case False
+      then obtain k where k: "k \<in> {i..<j}" "Formula.sat \<sigma> V v k \<phi>"
+        using R less.prems by auto
+      have "mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)"
+        using assms less.prems(2) k(1) memR_antimono[of I "\<tau> \<sigma> j - \<tau> \<sigma> i" "\<tau> \<sigma> k - \<tau> \<sigma> i"]
+          diff_le_mono[OF \<tau>_mono[of k j \<sigma>], of "\<tau> \<sigma> i"]
+        by auto
+      then show ?thesis
+        using less.IH[of k] k by fastforce
+    qed simp
+  qed
+  then show "Formula.sat \<sigma> V v i (Formula.Release (Formula.And \<psi> \<phi>) I \<psi>)"
+    by auto
+qed auto
+
 lemma sat_release_rewrite:
   fixes I1 I2 :: \<I>
   assumes "bounded I1" "\<not>mem I1 0" (* [a, b] *)

@@ -251,10 +251,10 @@ lemma sf_letpast_cmultiway_subst2:
 lemma sf_letpast_cmultiway_conj: "safe_letpast p (convert_multiway \<phi>) = safe_letpast p \<phi>
  \<Longrightarrow> safe_letpast p (convert_multiway \<psi>) = safe_letpast p \<psi>
   \<Longrightarrow> safe_letpast p (convert_multiway (\<phi> \<and>\<^sub>F \<psi>)) = safe_letpast p (\<phi> \<and>\<^sub>F \<psi>)"
-  by (auto simp add: image_Un Sup_rec_safety_union safe_letpast_get_and sup_commute
-        sf_letpast_cmultiway_subst1 split: formula.splits) 
-      (simp add: and_release_safe_bounded_def bot_rec_safety_def[symmetric] 
-        sf_letpast_cmultiway_subst1 sf_letpast_cmultiway_subst2 
+  by (cases \<psi>; auto simp add: image_Un Sup_rec_safety_union safe_letpast_get_and sup_commute
+        sf_letpast_cmultiway_subst1 simp del: convert_multiway.simps(19) safe_formula.simps(19))
+    (simp add: and_release_safe_bounded_def bot_rec_safety_def[symmetric]
+        sf_letpast_cmultiway_subst1 sf_letpast_cmultiway_subst2
         del: convert_multiway.simps(10))
 
 lemma sf_letpast_cmultiway_subst3: "safe_letpast p (convert_multiway (always_safe_0 I \<psi>)) 
@@ -661,6 +661,10 @@ next
   }
   ultimately show ?case by blast
 next
+  case (Release_0 \<phi> I \<psi>)
+  then show ?case
+    by (auto simp: fv_convert_multiway simp del: convert_multiway.simps(10))
+next
   case (MatchP I r)
   then show ?case
     by (auto 0 3 simp: safe_atms_def fv_convert_multiway intro!: safe_regex_map_regex
@@ -946,8 +950,8 @@ next
 next
   case (Release_0 \<phi> I \<psi>)
   then show ?case
-    using sat_release_rewrite_0 
-    by auto
+    using sat_release_conj_0[OF Release_0(1), of \<sigma> V v i \<phi> \<psi>]
+    by (simp del: convert_multiway.simps(10))
 qed (auto simp: nfv_convert_multiway cong: nat.case_cong)
 
 subsection \<open> Finite @{term safe_formula} \<close>
@@ -2042,9 +2046,16 @@ next
     by blast
 next
   case (Release_0 \<phi> I \<psi>)
-  thus ?case
-    using release_fvi
-    by (auto simp: Formula.nfv_def sat_release_rewrite_0[OF Release_0(1,2), symmetric])
+  \<comment> \<open>with 0 in the interval, the release implies its right operand\<close>
+  from Release_0 have fin: "finite {v. pwf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
+    by (simp add: Formula.nfv_def)
+  have "fv (Formula.Release \<phi> I \<psi>) = fv \<psi>"
+    using Release_0.hyps(4) by (simp add: Un_absorb1)
+  then have "{v. pwf_tuple n (fv (Formula.Release \<phi> I \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Release \<phi> I \<psi>)}
+    \<subseteq> {v. pwf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
+    using Release_0.hyps(1) by auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (MatchP I r)
   have IH: "finite {v. pwf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
@@ -2298,7 +2309,8 @@ next
   qed
 next
   case (Release_0 \<phi> I \<psi>)
-  then show ?case using progress_release_rewrite_0 by auto
+  then show ?case
+    by (simp del: convert_multiway.simps(10) add: min.commute min.left_commute)
 next
   case (MatchP I r)
   from MatchP show ?case

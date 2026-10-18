@@ -4,7 +4,7 @@ theory Correctness
     Correct_Un_Ops
     Correct_Regex
     Correct_Since
-    Correct_Trigger
+    Correct_Release
     "MFOTL_Monitor_Devel.Abstract_Monitor"
 begin
 (*>*)
