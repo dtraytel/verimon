@@ -217,7 +217,8 @@ proof -
     then have ne: "ps \<noteq> []" using len on by auto
     obtain tz Xl where tX: "last ps = (tz, Xl)" by fastforce
     show ?thesis using False ne tX
-      by (auto simp: pend1_def ps1_def md_def map_last_queue_rep ps_def[symmetric] append_butlast_last_id)
+      by (auto simp: pend1_def ps1_def md_def map_last_queue_rep ps_def[symmetric])
+        (metis append_butlast_last_id)
   qed
   have len1: "length ps1 = length ps"
     using len on by (auto simp: ps1_def md_def)
