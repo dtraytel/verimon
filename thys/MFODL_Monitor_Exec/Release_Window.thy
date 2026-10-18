@@ -161,7 +161,8 @@ proof -
     else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S))"
   define P' where "P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)"
   have upd: "eraux_update args msk l r nt aux = (nt, oi, Suc n, append_queue (nt, r) pend1, P', K')"
-    by (simp add: aux eraux_update_def Let_def W_def W'_def D_def S_def pend1_def K'_def P'_def I)
+    unfolding aux eraux_update_def Let_def W_def W'_def D_def S_def pend1_def K'_def P'_def I
+    by simp
   have R: "erel_list I cur oi n ps P K L" using rel by (simp add: erel_def aux ps_def)
   have cur: "cur \<le> nt" using le by (simp add: aux)
   have len: "length ps = length L" and on: "oi + length L = n"
@@ -276,8 +277,9 @@ proof -
     have pk: "ps' ! k = ps1 ! k" using kp len1 by (simp add: ps'_def nth_append)
     have lastk: "fst (last ps) = t" if "oi + k = n - 1"
     proof -
-      have "k = length ps - 1" "ps \<noteq> []" using that kp on len by arith+
-      then show ?thesis using t by (simp add: last_conv_nth)
+      have "k = length ps - 1" using that kp on len by arith
+      moreover have "ps \<noteq> []" using kp by auto
+      ultimately show ?thesis using t by (simp add: last_conv_nth)
     qed
     have md_iff: "(md \<and> oi + k = n - 1) \<longleftrightarrow> (oi + k = n - 1 \<and> memR I (nt - t))"
       using nn lastk by (auto simp: md_def)
@@ -456,7 +458,7 @@ proof -
       case False
       have "Mapping.lookup K1 v = Some q'" using \<open>v \<in> S\<close> by (simp add: l1 q'_def del: dropWhile_queue.simps)
       then show ?thesis using False k1
-        by (simp add: pr delete_set_lookup kq_def kqq_def del: dropWhile_queue.simps)
+        by (auto simp: pr delete_set_lookup kq_def kqq_def simp del: dropWhile_queue.simps)
     qed
     then show ?thesis using lq True mS by simp
   next
