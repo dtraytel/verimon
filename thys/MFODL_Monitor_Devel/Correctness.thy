@@ -4788,7 +4788,7 @@ next
   note IH\<phi> = MRelease.IH(1)[OF \<phi> MRelease.prems(2) wty\<phi>, unfolded eq_\<phi> prod.case]
   note IH\<psi> = MRelease.IH(2)[OF \<psi> MRelease.prems(2) wty\<psi>, unfolded eq_\<psi> prod.case]
   from update_release'[OF IH\<phi>[THEN conjunct2] IH\<psi>[THEN conjunct2] eq1 eq2 MRelease.prems(2)
-      fvi_subset mem buf nts aux[folded prog_eq] args_ivl args_L args_R refl t length_aux[folded prog_eq] nts_snoc]
+      fvi_subset mem buf nts aux[unfolded prog_eq] args_ivl args_L args_R refl t length_aux[unfolded prog_eq] nts_snoc]
   obtain wf_aux'': "wf_release_auxlist \<sigma> V n R (args_pos args) \<phi>'' I \<psi>'' aux''
       (progress \<sigma> P' (Formula.Release \<alpha> I \<psi>'') (j + \<delta>))"
     and len_zs: "progress \<sigma> P (Formula.Release \<alpha> I \<psi>'') j + length zs =
@@ -4811,7 +4811,7 @@ next
         args_n args_L args_R mem bdd fv_\<alpha> buf'_nts' nt wf_aux'' len])
   have out: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
       [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] zs"
-    unfolding fvl Release_eq len_zs[symmetric]
+    unfolding fvl unfolding Release_eq len_zs[symmetric]
     by (rule list.rel_mono_strong[OF zs]) (simp add: sat_release_left[OF rl mem])
   have meval_eq: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db (MRelease args \<phi> \<psi> buf nts t aux) =
       (zs, MRelease args \<phi>n \<psi>n buf' nts' nt aux'')"
