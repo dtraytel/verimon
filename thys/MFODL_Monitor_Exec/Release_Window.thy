@@ -315,7 +315,7 @@ proof -
     then show "Q x" unfolding Q_def by (auto dest: memR_antimono[OF _ diff_le_mono[OF cn]])
   qed
   have tW: "takeWhile Q L = take m L @ takeWhile Q Os"
-    by (subst L) (simp add: takeWhile_append2 clQ)
+    by (subst L) (simp add: clQ)
   define p where "p = length (takeWhile Q Os)"
   have pO: "p \<le> length Os" by (simp add: p_def length_takeWhile_le)
   have takeO: "takeWhile Q Os = take p Os" unfolding p_def by (rule takeWhile_eq_take)
@@ -364,7 +364,7 @@ proof -
       have "Some (snd (fr1 ! k)) = efold (drop (p + k) (take (length fr) es))"
         using frs[rule_format, of "p + k"] k fr1 pe by simp
       also have "drop (p + k) (take (length fr) es) = drop k (take (length fr1) (drop p es))"
-        using fr1 pe by (simp add: drop_take add.commute drop_drop)
+        using fr1 pe by (simp add: drop_take add.commute)
       finally show "Some (snd (fr1 ! k)) = efold (drop k (take (length fr1) (drop p es)))" .
     qed
   next
@@ -428,7 +428,7 @@ proof -
         show "length fr2 + length ([] :: (ts \<times> 'b esum) list) = length es - p"
           using fr2 fll pz l2 by simp
         show "map fst (drop p Os) = map fst fr2 @ rev (map fst ([] :: (ts \<times> 'b esum) list))"
-          using tsO flf fr2 pz by (simp add: drop_map[symmetric] add.commute drop_drop)
+          using tsO flf fr2 pz by (simp add: drop_map[symmetric] add.commute)
         show "map snd ([] :: (ts \<times> 'b esum) list) = rev (drop (length fr2) (drop p es))"
           using fr2 fll pz l2 by simp
         show "None = efold (drop (length fr2) (drop p es))"
@@ -438,7 +438,7 @@ proof -
         have "Some (snd (fr2 ! k)) = efold (drop (length zs + k) (take (length fl) (drop (length fr) es)))"
           using fls[rule_format, of "length zs + k"] k fr2 by simp
         also have "\<dots> = efold (drop k (take (length fr2) (drop p es)))"
-          using fr2 fll pz l2 by (simp add: drop_drop ac_simps)
+          using fr2 fll pz l2 by (simp add: ac_simps)
         finally show "Some (snd (fr2 ! k)) = efold (drop k (take (length fr2) (drop p es)))" .
       qed
     qed
@@ -452,7 +452,7 @@ proof -
   define outs' where "outs' = outs @ map (\<lambda>x. snd (snd x)) (take p Os)"
   have lo': "length outs' = m + p" using pO by (simp add: outs'_def m_def)
   have tk': "take (m + p) L = take m L @ take p Os" by (simp add: Os_def take_add)
-  have dr': "drop (m + p) L = drop p Os" by (simp add: Os_def add.commute drop_drop)
+  have dr': "drop (m + p) L = drop p Os" by (simp add: Os_def add.commute)
   have rel': "erel' I nt (cur, outs', fr', bk', B') L"
     unfolding erel'_def prod.case lo'
   proof (intro exI[of _ "drop p es"] conjI ballI allI impI)
@@ -460,7 +460,7 @@ proof -
     show "map (\<lambda>x. snd (snd x)) (take (m + p) L) = outs'" using outs tk' by (simp add: outs'_def)
     show "length (drop p es) = length fr' + length bk'" using ln by simp
     show "map fst (drop (m + p) L) = map fst fr' @ rev (map fst bk')" using ts' dr' by simp
-    show "List.sorted (map fst (drop (m + p) L))" using so dr' by (simp add: drop_map[symmetric] sorted_wrt_drop)
+    show "List.sorted (map fst (drop (m + p) L))" using so dr' by (simp add: drop_map[symmetric])
     show "map snd bk' = rev (drop (length fr') (drop p es))" by (rule bks')
     show "B' = efold (drop (length fr') (drop p es))" by (rule Bs')
   next
@@ -479,7 +479,7 @@ proof -
   next
     fix k assume k: "k < length (drop p es)"
     then show "snd (drop (m + p) L ! k) = eout (the (efold (drop k (drop p es))))"
-      using out[rule_format, of "p + k"] dr' pO lO by (simp add: add.commute drop_drop)
+      using out[rule_format, of "p + k"] dr' pO lO by (simp add: add.commute)
   qed
   show ?thesis
     using sh rel' mem_after lo' dr' tW outs takeO by (simp add: aux outs'_def Q_def[symmetric])
@@ -578,7 +578,7 @@ proof -
     have "drop k es \<noteq> []" using that by simp
     then obtain x where x: "efold (drop k es) = Some x" using efold_Some by blast
     have dx: "edisj x" by (rule edisj_efold[OF _ x]) (use dj in \<open>auto dest: in_set_dropD\<close>)
-    have m0: "memR (args_ivl args) (nt - fst (Os ! k))" using memO that lO I by (auto simp: nth_mem)
+    have m0: "memR (args_ivl args) (nt - fst (Os ! k))" using memO that lO I by auto
     have so: "snd (Os ! k) = eout x" using out that x by simp
     obtain t a1 a2 where Ok: "Os ! k = (t, a1, a2)" by (cases "Os ! k") auto
     show ?thesis
@@ -655,6 +655,8 @@ definition erelease_rel :: "cols \<Rightarrow> cols \<Rightarrow> \<I> \<Rightar
 
 lemma erelease_rel_init: "erelease_rel kR cR I tw 0 [] eraux_init []"
   by (simp add: erelease_rel_def eauxlist3_def erel_init) (simp add: eraux_init_def)
+
+export_code eraux_init eraux_update eraux_eval checking OCaml?
 
 (*<*)
 end
