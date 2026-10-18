@@ -23,7 +23,10 @@ text \<open>
   ordered, and the only one that can reach the oldest pending entry is the first.  An entry is
   read off when it leaves the window: its tuples less those its first kill reaches.  A kill is
   dropped once the entries it reaches are gone, which happens when the entry just before its end
-  leaves, and that entry contains the tuple.
+  leaves, and that entry contains the tuple.  Most runs end right after they start, and such a
+  run reaches only the entry it started at, which is the last one; its kill is taken out of that
+  entry's table directly instead of being queued.  For the same reason, pruning looks only at the
+  tuples whose first kill is due.
 
   The state is the timestamp of the last point, the index of the oldest pending point, the index
   of the next one, the pending points' timestamps and right-operand tables, the run starts and
@@ -45,10 +48,15 @@ definition eraux_update :: "args \<Rightarrow> bool list \<Rightarrow> 'b list s
   "eraux_update args msk l r nt aux = (case aux of (cur, oi, n, pend, P, K) \<Rightarrow>
      let W = Mapping.keys P;
          W' = esemi msk (\<not> args_pos args) r l;
+         D = W - r;
+         S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D;
+         pend' = (case safe_last pend of (None, q) \<Rightarrow> q
+           | (Some (tl, Xl), q) \<Rightarrow>
+             if memR (args_ivl args) (nt - tl) then replace_last (tl, Xl - S) q else q);
          K' = (if oi = n then K
-           else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (W - r));
+           else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S));
          P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)
-     in (nt, oi, Suc n, append_queue (nt, r) pend, P', K'))"
+     in (nt, oi, Suc n, append_queue (nt, r) pend', P', K'))"
 
 definition front_dead :: "\<I> \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> (nat \<times> nat \<times> ts) queue \<Rightarrow> bool" where
   "front_dead I i t q = (case hd_queue q of None \<Rightarrow> False
@@ -57,8 +65,10 @@ definition front_dead :: "\<I> \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> 
 definition eraux_prune :: "nat \<Rightarrow> ('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow> 'b list set \<Rightarrow>
     ('b list, (nat \<times> nat \<times> ts) queue) mapping" where
   "eraux_prune i K X = (let
-     K1 = upd_set K (\<lambda>v. dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) X
-   in mapping_delete_set K1 (Set.filter (\<lambda>v. hd_queue (kqq K1 v) = None) X))"
+     S = Set.filter (\<lambda>v. case hd_queue (kqq K v) of None \<Rightarrow> False
+       | Some (p, f, tf) \<Rightarrow> f \<le> Suc i) X;
+     K1 = upd_set K (\<lambda>v. dropWhile_queue (\<lambda>(p, f, tf). f \<le> Suc i) (kqq K v)) S
+   in mapping_delete_set K1 (Set.filter (\<lambda>v. hd_queue (kqq K1 v) = None) S))"
 
 fun eraux_pops :: "\<I> \<Rightarrow> nat \<Rightarrow> ('b list, (nat \<times> nat \<times> ts) queue) mapping \<Rightarrow>
     (ts \<times> 'b list set) list \<Rightarrow> 'b list set list \<times> ('b list, (nat \<times> nat \<times> ts) queue) mapping" where
@@ -90,8 +100,8 @@ text \<open>
   while the entry is inside the interval, its pending tuples are those whose run started at or
   before it.  The remaining conjuncts are what keeps this true: run starts lie before the next
   point and after the kills of their tuple, every running tuple holds at the last point, a kill
-  ends after the oldest pending point at a point that holds the tuple, and a tuple's kills are
-  ordered.
+  ends after the oldest pending point and before the next one, at a point that holds the tuple, and
+  a tuple's kills are ordered.
 \<close>
 
 definition erel_list :: "\<I> \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> (ts \<times> 'b list set) list \<Rightarrow>
@@ -104,7 +114,7 @@ definition erel_list :: "\<I> \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> n
          fst (snd (L ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})) \<and>
      (\<forall>v p. Mapping.lookup P v = Some p \<longrightarrow> p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)) \<and>
      (ps \<noteq> [] \<longrightarrow> Mapping.keys P \<subseteq> snd (last ps)) \<and>
-     (\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f \<le> n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))) \<and>
+     (\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))) \<and>
      (\<forall>v. sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v))"
 
 definition erel :: "\<I> \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
@@ -143,11 +153,15 @@ proof -
   define ps where "ps = linearize pend"
   define W where "W = Mapping.keys P"
   define W' where "W' = esemi msk (\<not> args_pos args) r l"
+  define D where "D = W - r"
+  define S where "S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D"
+  define pend1 where "pend1 = (case safe_last pend of (None, q) \<Rightarrow> q
+    | (Some (tl, Xl), q) \<Rightarrow> if memR I (nt - tl) then replace_last (tl, Xl - S) q else q)"
   define K' where "K' = (if oi = n then K
-    else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (W - r))"
+    else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S))"
   define P' where "P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)"
-  have upd: "eraux_update args msk l r nt aux = (nt, oi, Suc n, append_queue (nt, r) pend, P', K')"
-    by (simp add: aux eraux_update_def Let_def W_def W'_def K'_def P'_def)
+  have upd: "eraux_update args msk l r nt aux = (nt, oi, Suc n, append_queue (nt, r) pend1, P', K')"
+    by (simp add: aux eraux_update_def Let_def W_def W'_def D_def S_def pend1_def K'_def P'_def I)
   have R: "erel_list I cur oi n ps P K L" using rel by (simp add: erel_def aux ps_def)
   have cur: "cur \<le> nt" using le by (simp add: aux)
   have len: "length ps = length L" and on: "oi + length L = n"
@@ -157,7 +171,7 @@ proof -
          fst (snd (L ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})"
     and Pv0: "\<forall>v p. Mapping.lookup P v = Some p \<longrightarrow> p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)"
     and Pl0: "ps \<noteq> [] \<longrightarrow> Mapping.keys P \<subseteq> snd (last ps)"
-    and Kv0: "\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f \<le> n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))"
+    and Kv0: "\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))"
     and Ks0: "\<forall>v. sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)"
     using R unfolding erel_list_def by - (elim conjE; assumption)+
   have Ks: "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)" for v
@@ -170,24 +184,65 @@ proof -
     using E0 that by blast
   have Pv: "p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)" if "Mapping.lookup P v = Some p" for v p
     using Pv0 that by blast
+  have PW: "the (Mapping.lookup P v) < n" if "v \<in> W" for v
+    using that Pv unfolding W_def by (auto dest: Mapping.in_keysD)
   have Pl: "Mapping.keys P \<subseteq> snd (last ps)" if "ps \<noteq> []"
     using Pl0 that by blast
-  have Kv: "oi < f \<and> f \<le> n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))" if "(p, f, tf) \<in> set (kq K v)"
+  have Kv: "oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc oi))" if "(p, f, tf) \<in> set (kq K v)"
     for v p f tf
     using Kv0 that by fast
+  define md where "md \<longleftrightarrow> oi \<noteq> n \<and> memR I (nt - fst (last ps))"
+  define ps1 where "ps1 = (if md then butlast ps @ [(fst (last ps), snd (last ps) - S)] else ps)"
+  have lp1: "linearize pend1 = ps1"
+  proof (cases "oi = n")
+    case True
+    then have e: "ps = []" using len on by simp
+    obtain \<alpha> q where sl: "safe_last pend = (\<alpha>, q)" by fastforce
+    have "linearize q = []" and "\<alpha> = None"
+      using safe_last_rep[OF sl] e by (auto simp: ps_def split: option.splits)
+    then show ?thesis using sl e True by (simp add: pend1_def ps1_def md_def)
+  next
+    case False
+    then have ne: "ps \<noteq> []" using len on by auto
+    obtain \<alpha> q where sl: "safe_last pend = (\<alpha>, q)" by fastforce
+    have q: "linearize q = ps" and \<alpha>: "\<alpha> = Some (last ps)"
+      using safe_last_rep[OF sl] ne by (auto simp: ps_def split: option.splits)
+    obtain tl Xl where tX: "last ps = (tl, Xl)" by fastforce
+    have bl: "linearize q = butlast ps @ [(tl, Xl)]" using q ne tX by (metis append_butlast_last_id)
+    show ?thesis using False sl \<alpha> tX replace_last_rep[OF bl] q by (auto simp: pend1_def ps1_def md_def)
+  qed
+  have len1: "length ps1 = length ps"
+    using len on by (auto simp: ps1_def md_def)
+  have p1: "fst (ps1 ! k) = fst (ps ! k) \<and>
+      snd (ps1 ! k) = (if md \<and> oi + k = n - 1 then snd (ps ! k) - S else snd (ps ! k))"
+    if "k < length ps" for k
+  proof (cases "md")
+    case True
+    then have ne: "ps \<noteq> []" using len on by (auto simp: md_def)
+    show ?thesis
+    proof (cases "k = length ps - 1")
+      case True
+      then show ?thesis using \<open>md\<close> ne on len
+        by (simp add: ps1_def nth_append last_conv_nth)
+    next
+      case False
+      then show ?thesis using \<open>md\<close> ne on len that
+        by (simp add: ps1_def nth_append nth_butlast)
+    qed
+  qed (simp add: ps1_def)
   have lP': "Mapping.lookup P' v = (if v \<in> W' then (if v \<in> W then Mapping.lookup P v else Some n)
       else None)" for v
     by (auto simp: P'_def W_def Mapping_lookup_upd_set Mapping.lookup_filter keys_is_none_rep
         split: option.splits)
   have kP': "Mapping.keys P' = W'"
     by (auto simp: keys_is_none_rep lP' W_def split: if_splits)
-  have kK': "kq K' v = (if oi \<noteq> n \<and> v \<in> W - r
+  have kK': "kq K' v = (if oi \<noteq> n \<and> v \<in> D - S
       then kq K v @ [(the (Mapping.lookup P v), n, nt)] else kq K v)" for v
     by (auto simp: K'_def kq_def kqq_def Mapping_lookup_upd_set append_queue_rep)
   define L' where "L' = eupdate_release args msk l r nt L"
-  define ps' where "ps' = ps @ [(nt, r)]"
+  define ps' where "ps' = ps1 @ [(nt, r)]"
   have ed: "erdead I (kq K' v) i t \<longleftrightarrow> erdead I (kq K v) i t \<or>
-      (oi \<noteq> n \<and> v \<in> W - r \<and> the (Mapping.lookup P v) \<le> i \<and> memR I (nt - t))"
+      (oi \<noteq> n \<and> v \<in> D - S \<and> the (Mapping.lookup P v) \<le> i \<and> memR I (nt - t))"
     if "i < n" for v i t
     using that by (auto simp: kK' erdead_def)
   have ed_n: "\<not> erdead I (kq K' v) n t" for v t
@@ -206,37 +261,56 @@ proof -
   proof (cases "k < length L")
     case True
     obtain t a1 a2 where Lk: "L ! k = (t, a1, a2)" by (cases "L ! k") auto
-    have pk: "ps' ! k = ps ! k" using True len by (simp add: ps'_def nth_append)
+    have kp: "k < length ps" using True len by simp
     have t: "fst (ps ! k) = t"
       and a2: "a2 = {v \<in> snd (ps ! k). \<not> erdead I (kq K v) (oi + k) t}"
       and a1: "memR I (cur - t) \<Longrightarrow> a1 = {v \<in> W. the (Mapping.lookup P v) \<le> oi + k}"
       using E[OF True] Lk by (auto simp: W_def)
     have i: "oi + k < n" and nn: "oi \<noteq> n" using True on by simp_all
+    have pk: "ps' ! k = ps1 ! k" using kp len1 by (simp add: ps'_def nth_append)
+    have lastk: "fst (last ps) = t" if "oi + k = n - 1"
+      using that kp on len t by (simp add: last_conv_nth)
+    have md_iff: "(md \<and> oi + k = n - 1) \<longleftrightarrow> (oi + k = n - 1 \<and> memR I (nt - t))"
+      using nn lastk by (auto simp: md_def)
+    have X1: "snd (ps1 ! k) = (if oi + k = n - 1 \<and> memR I (nt - t) then snd (ps ! k) - S
+        else snd (ps ! k))"
+      using p1[OF kp] md_iff by simp
     show ?thesis
     proof (cases "memR I (nt - t)")
       case True2: True
       have mc: "memR I (cur - t)" by (rule memR_antimono[OF True2 diff_le_mono[OF cur]])
       have L'k: "L' ! k = (t, esemi msk (\<not> args_pos args) (a1 \<inter> r) l, a2 - (a1 - r))"
         using True True2 Lk by (simp add: L'_def eupdate_release_nth I)
-      have "a2 - (a1 - r) = {v \<in> snd (ps ! k). \<not> erdead I (kq K' v) (oi + k) t}"
-        unfolding a2 a1[OF mc] ed[OF i] using nn True2 by auto
+      have "a2 - (a1 - r) = {v \<in> snd (ps1 ! k). \<not> erdead I (kq K' v) (oi + k) t}"
+      proof (cases "oi + k = n - 1")
+        case True3: True
+        have "{v \<in> W. the (Mapping.lookup P v) \<le> oi + k} = W" using PW True3 by fastforce
+        then show ?thesis unfolding a2 a1[OF mc] ed[OF i] X1 using nn True2 True3
+          by (auto simp: D_def S_def)
+      next
+        case False3: False
+        have "the (Mapping.lookup P v) \<le> oi + k \<Longrightarrow> v \<notin> S" for v
+          using False3 i by (auto simp: S_def)
+        then show ?thesis unfolding a2 a1[OF mc] ed[OF i] X1 using nn True2 False3
+          by (auto simp: D_def)
+      qed
       moreover have "esemi msk (\<not> args_pos args) (a1 \<inter> r) l =
           {v \<in> Mapping.keys P'. the (Mapping.lookup P' v) \<le> oi + k}"
         unfolding esemi_Int a1[OF mc] kP' W'_def[symmetric] using i
         by (auto simp: lP')
-      ultimately show ?thesis using L'k pk t by simp
+      ultimately show ?thesis using L'k pk t p1[OF kp] by simp
     next
       case False2: False
       have L'k: "L' ! k = (t, a1, a2)"
         using True False2 Lk by (simp add: L'_def eupdate_release_nth I)
-      have "a2 = {v \<in> snd (ps ! k). \<not> erdead I (kq K' v) (oi + k) t}"
-        unfolding a2 ed[OF i] using False2 by auto
-      then show ?thesis using L'k pk t False2 by simp
+      have "a2 = {v \<in> snd (ps1 ! k). \<not> erdead I (kq K' v) (oi + k) t}"
+        unfolding a2 ed[OF i] X1 using False2 by auto
+      then show ?thesis using L'k pk t p1[OF kp] False2 by simp
     qed
   next
     case False
     then have kl: "k = length L" using k by simp
-    have pk: "ps' ! k = (nt, r)" using kl len by (simp add: ps'_def nth_append)
+    have pk: "ps' ! k = (nt, r)" using kl len len1 by (simp add: ps'_def nth_append)
     have L'k: "L' ! k = (nt, W', r)" using kl by (simp add: L'_def eupdate_release_last W'_def)
     have "W' = {v \<in> Mapping.keys P'. the (Mapping.lookup P' v) \<le> oi + k}"
       using P'n on kl by (auto simp: kP')
@@ -247,42 +321,47 @@ proof -
   proof (cases "v \<in> W")
     case True
     then have v: "v \<in> W'" "Mapping.lookup P v = Some p" using that by (auto simp: lP' split: if_splits)
-    have "v \<notin> W - r" using v(1) esemi_sub[of msk _ r l] by (auto simp: W'_def)
+    have "v \<notin> D - S" using v(1) esemi_sub[of msk _ r l] by (auto simp: W'_def D_def)
     then show ?thesis using Pv[OF v(2)] by (simp add: kK')
   next
     case False
     then have "p = n" using that by (auto simp: lP' split: if_splits)
-    then show ?thesis using Kv False by (fastforce simp: kK')
+    then show ?thesis using Kv False by (fastforce simp: kK' D_def)
   qed
   have Pl': "Mapping.keys P' \<subseteq> snd (last ps')"
     using esemi_sub[of msk _ r l] by (simp add: kP' W'_def ps'_def)
-  have Kv': "oi < f \<and> f \<le> Suc n \<and> p < f \<and> v \<in> snd (ps' ! (f - Suc oi))"
+  have Kv': "oi < f \<and> f < Suc n \<and> p < f \<and> v \<in> snd (ps' ! (f - Suc oi))"
     if "(p, f, tf) \<in> set (kq K' v)" for v p f tf
   proof (cases "(p, f, tf) \<in> set (kq K v)")
     case True
-    have "f - Suc oi < length ps" using Kv[OF True] on len by arith
-    then show ?thesis using Kv[OF True] by (simp add: ps'_def nth_append)
+    have j: "f - Suc oi < length ps" and nl: "oi + (f - Suc oi) \<noteq> n - 1"
+      using Kv[OF True] on len by arith+
+    then show ?thesis using Kv[OF True] p1[OF j] len1 by (simp add: ps'_def nth_append)
   next
     case False
-    then have new: "oi \<noteq> n" "v \<in> W - r" "p = the (Mapping.lookup P v)" "f = n"
+    then have new: "oi \<noteq> n" "v \<in> D - S" "p = the (Mapping.lookup P v)" "f = n"
       using that by (auto simp: kK' split: if_splits)
     have ne: "ps \<noteq> []" using new(1) on len by auto
-    obtain q where q: "Mapping.lookup P v = Some q" using new(2) unfolding W_def by (auto dest: Mapping.in_keysD)
-    have "n - Suc oi = length ps - 1" using on len by simp
-    then have "ps' ! (f - Suc oi) = last ps" using ne new(4) by (simp add: ps'_def nth_append last_conv_nth)
-    then show ?thesis using new q Pv[OF q] Pl[OF ne] on len ne by (auto simp: W_def)
+    have vW: "v \<in> W" using new(2) by (simp add: D_def)
+    have j: "n - Suc oi < length ps" and jl: "oi + (n - Suc oi) = n - 1" "n - Suc oi = length ps - 1"
+      using new(1) on len by arith+
+    have "ps' ! (f - Suc oi) = ps1 ! (n - Suc oi)" using j len1 new(4) by (simp add: ps'_def nth_append)
+    moreover have "v \<in> snd (ps ! (n - Suc oi))"
+      using Pl[OF ne] vW jl(2) ne by (auto simp: W_def last_conv_nth)
+    ultimately show ?thesis using new PW[OF vW] p1[OF j] on len by auto
   qed
   have Ks': "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K' v)" for v
-  proof (cases "oi \<noteq> n \<and> v \<in> W - r")
+  proof (cases "oi \<noteq> n \<and> v \<in> D - S")
     case True
-    obtain q where q: "Mapping.lookup P v = Some q" using True unfolding W_def by (auto dest: Mapping.in_keysD)
+    obtain q where q: "Mapping.lookup P v = Some q"
+      using True unfolding D_def W_def by (auto dest: Mapping.in_keysD)
     show ?thesis using True Ks[of v] Pv[OF q] by (auto simp: kK' sorted_wrt_append q)
   qed (auto simp: kK' Ks)
   have "erel_list I nt oi (Suc n) ps' P' K' L'"
     unfolding erel_list_def
-    using entries Pv' Pl' Kv' Ks' len on by (simp add: L'_def ps'_def; blast)
+    using entries Pv' Pl' Kv' Ks' len len1 on by (simp add: L'_def ps'_def; blast)
   then show ?thesis
-    by (simp add: upd erel_def append_queue_rep ps_def[symmetric] L'_def ps'_def)
+    by (simp add: upd erel_def append_queue_rep lp1 L'_def ps'_def)
 qed
 
 lemma erdead_dropWhile:
@@ -340,10 +419,18 @@ lemma Nil_eq_dropWhile_conv: "([] = dropWhile P xs) = (\<forall>x \<in> set xs. 
 
 lemma kq_prune: "kq (eraux_prune i K X) v =
     (if v \<in> X then dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) else kq K v)"
-  by (auto simp: eraux_prune_def kq_def kqq_def Let_def delete_set_lookup Mapping_lookup_upd_set
-      dropWhile_queue_rep hd_queue_rep empty_queue_rep Nil_eq_dropWhile_conv
-      split: option.splits list.splits
-      simp del: dropWhile_queue.simps)
+proof -
+  define S where "S = Set.filter (\<lambda>v. case hd_queue (kqq K v) of None \<Rightarrow> False
+    | Some (p, f, tf) \<Rightarrow> f \<le> Suc i) X"
+  have dw: "dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) = kq K v" if "v \<notin> S" "v \<in> X"
+    using that by (auto simp: S_def kq_def hd_queue_rep split: list.splits)
+  have "kq (eraux_prune i K X) v =
+      (if v \<in> S then dropWhile (\<lambda>(p, f, tf). f \<le> Suc i) (kq K v) else kq K v)"
+    by (auto simp: eraux_prune_def S_def[symmetric] kq_def kqq_def Let_def delete_set_lookup
+        Mapping_lookup_upd_set dropWhile_queue_rep hd_queue_rep empty_queue_rep Nil_eq_dropWhile_conv
+        split: option.splits list.splits simp del: dropWhile_queue.simps)
+  then show ?thesis using dw by (auto simp: S_def)
+qed
 
 lemma front_dead_erdead:
   assumes "\<forall>(p, f, tf) \<in> set (kq K v). i < f \<and> p < f"
@@ -372,12 +459,12 @@ proof -
          fst (snd (((t', a1, a2) # L) ! k)) = {v \<in> Mapping.keys P. the (Mapping.lookup P v) \<le> oi + k})"
     and Pv0: "\<forall>v p. Mapping.lookup P v = Some p \<longrightarrow> p < n \<and> (\<forall>(p', f, tf) \<in> set (kq K v). f \<le> p)"
     and Pl0: "(t, X) # ps \<noteq> [] \<longrightarrow> Mapping.keys P \<subseteq> snd (last ((t, X) # ps))"
-    and Kv0: "\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f \<le> n \<and> p < f \<and>
+    and Kv0: "\<forall>v. \<forall>(p, f, tf) \<in> set (kq K v). oi < f \<and> f < n \<and> p < f \<and>
       v \<in> snd (((t, X) # ps) ! (f - Suc oi))"
     and Ks0: "\<forall>v. sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)"
     using R unfolding erel_list_def by - (elim conjE; assumption)+
   have len: "length ps = length L" using len0 by simp
-  have Kv: "oi < f \<and> f \<le> n \<and> p < f \<and> v \<in> snd (((t, X) # ps) ! (f - Suc oi))"
+  have Kv: "oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (((t, X) # ps) ! (f - Suc oi))"
     if "(p, f, tf) \<in> set (kq K v)" for v p f tf
     using Kv0 that by fast
   have Ks: "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K v)" for v
@@ -427,12 +514,12 @@ proof -
     then show "Mapping.keys P \<subseteq> snd (last ps)" using Pl0 by simp
   next
     fix v
-    show "\<forall>(p, f, tf) \<in> set (kq K' v). Suc oi < f \<and> f \<le> n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc (Suc oi)))"
+    show "\<forall>(p, f, tf) \<in> set (kq K' v). Suc oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc (Suc oi)))"
     proof (intro ballI, clarify)
       fix p f tf assume x: "(p, f, tf) \<in> set (kq K' v)"
       have a: "Suc oi < f" by (rule after[OF x])
       have "f - Suc oi = Suc (f - Suc (Suc oi))" using a by simp
-      then show "Suc oi < f \<and> f \<le> n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc (Suc oi)))"
+      then show "Suc oi < f \<and> f < n \<and> p < f \<and> v \<in> snd (ps ! (f - Suc (Suc oi)))"
         using Kv[OF sub[OF x]] a by simp
     qed
     show "sorted_wrt (\<lambda>(p, f, _) (p', f', _). f \<le> p') (kq K' v)"
