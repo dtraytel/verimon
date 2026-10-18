@@ -801,7 +801,7 @@ function (sequential) safe_formula :: "'t Formula.formula \<Rightarrow> bool"
       (safe_formula \<phi> \<or> (case \<phi> of \<not>\<^sub>F \<phi>' \<Rightarrow> safe_formula \<phi>' | _ \<Rightarrow> False)) \<and> safe_formula \<psi>)"
   | "safe_formula (\<phi> \<^bold>T I \<psi>) = safe_dual False safe_formula \<phi> I \<psi>"
   | "safe_formula (\<phi> \<^bold>R I \<psi>) = (mem I 0 \<and> bounded I \<and> safe_formula \<psi> 
-        \<and> fv \<phi> \<subseteq> fv \<psi> \<and> safe_formula (release_safe_0 \<phi> I \<psi>))"
+        \<and> fv \<phi> \<subseteq> fv \<psi> \<and> safe_formula (\<psi> \<and>\<^sub>F \<phi>))"
   | "safe_formula (Formula.MatchP I r) = Regex.safe_regex fv (\<lambda>g \<phi>. safe_formula \<phi> \<or>
        (g = Lax \<and> (case \<phi> of \<not>\<^sub>F \<phi>' \<Rightarrow> safe_formula \<phi>' | _ \<Rightarrow> False))) Past Strict r"
   | "safe_formula (Formula.MatchF I r) = Regex.safe_regex fv (\<lambda>g \<phi>. safe_formula \<phi> \<or>
