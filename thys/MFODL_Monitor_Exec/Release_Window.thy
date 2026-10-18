@@ -585,6 +585,7 @@ proof -
       using eout_ecomp_esum_of[OF dx, of msk args r l] m0 so Ok x
       by (simp add: g_def e_def eout_def)
   qed
+  have mg: "map (fst \<circ> g) Os = map fst Os" by (induct Os) (auto simp: g_def split: prod.splits)
   have es_app: "efold (drop k (es @ [e])) = Some (ecomp (the (efold (drop k es))) e)"
     if "k < length es" for k
   proof -
@@ -599,10 +600,9 @@ proof -
     show "map (\<lambda>x. snd (snd x)) (take m (eupdate_release args msk l r nt L)) = outs" using tk outs by simp
     show "length (es @ [e]) = length fr + length ((nt, e) # bk)" using l2 by simp
     show "map fst (drop m (eupdate_release args msk l r nt L)) = map fst fr @ rev (map fst ((nt, e) # bk))"
-      using tsO by (simp add: dr comp_def g_def split_beta[symmetric] case_prod_unfold if_distrib)
+      using tsO by (simp add: dr mg)
     show "List.sorted (map fst (drop m (eupdate_release args msk l r nt L)))"
     proof -
-      have mg: "map (fst \<circ> g) Os = map fst Os" by (induct Os) (auto simp: g_def split: prod.splits)
       show ?thesis using so leO curle by (auto simp: dr sorted_append mg intro: order_trans)
     qed
     show "map snd ((nt, e) # bk) = rev (drop (length fr) (es @ [e]))" using bks l2 by simp
