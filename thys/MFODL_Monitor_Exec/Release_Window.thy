@@ -51,7 +51,7 @@ proof transfer
   then show "(case map_last_t g q of (fs, ls) \<Rightarrow> fs @ rev ls) =
     (if (case q of (fs, ls) \<Rightarrow> fs @ rev ls) = [] then []
      else butlast (case q of (fs, ls) \<Rightarrow> fs @ rev ls) @ [g (last (case q of (fs, ls) \<Rightarrow> fs @ rev ls))])"
-    by (cases q rule: map_last_t.cases) (simp_all add: queue_invariant_def)
+    by (cases "(g, q)" rule: map_last_t.cases) (simp_all add: queue_invariant_def)
 qed
 
 type_synonym 'b eraux = "ts \<times> nat \<times> nat \<times> (ts \<times> 'b list set) queue \<times>
