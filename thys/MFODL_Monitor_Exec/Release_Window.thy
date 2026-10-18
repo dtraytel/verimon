@@ -33,6 +33,20 @@ text \<open>
   the kills.
 \<close>
 
+text \<open>The table of the last pending point is changed in place.\<close>
+
+fun map_last_t :: "('a \<Rightarrow> 'a) \<Rightarrow> 'a queue_t \<Rightarrow> 'a queue_t" where
+  "map_last_t g ([], []) = ([], [])"
+| "map_last_t g (fs, l # ls) = (fs, g l # ls)"
+| "map_last_t g (f # fs, []) = (f # fs, [])"
+
+lift_definition map_last_queue :: "('a \<Rightarrow> 'a) \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is map_last_t
+  by (auto simp: queue_invariant_def split: list.splits elim!: map_last_t.elims)
+
+lemma map_last_queue_rep: "linearize (map_last_queue g q) =
+    (if linearize q = [] then [] else butlast (linearize q) @ [g (last (linearize q))])"
+  by transfer (auto simp: queue_invariant_def butlast_append split: list.splits elim!: map_last_t.elims)
+
 type_synonym 'b eraux = "ts \<times> nat \<times> nat \<times> (ts \<times> 'b list set) queue \<times>
   ('b list, nat) mapping \<times> ('b list, (nat \<times> nat \<times> ts) queue) mapping"
 
@@ -50,9 +64,8 @@ definition eraux_update :: "args \<Rightarrow> bool list \<Rightarrow> 'b list s
          W' = esemi msk (\<not> args_pos args) r l;
          D = W - r;
          S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D;
-         pend' = (case safe_last pend of (None, q) \<Rightarrow> q
-           | (Some (tz, Xl), q) \<Rightarrow>
-             if memR (args_ivl args) (nt - tz) then replace_last (tz, Xl - S) q else q);
+         pend' = map_last_queue (\<lambda>(tz, Xl).
+           if memR (args_ivl args) (nt - tz) then (tz, Xl - S) else (tz, Xl)) pend;
          K' = (if oi = n then K
            else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S));
          P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)
@@ -155,8 +168,8 @@ proof -
   define W' where "W' = esemi msk (\<not> args_pos args) r l"
   define D where "D = W - r"
   define S where "S = Set.filter (\<lambda>v. the (Mapping.lookup P v) = n - 1) D"
-  define pend1 where "pend1 = (case safe_last pend of (None, q) \<Rightarrow> q
-    | (Some (tz, Xl), q) \<Rightarrow> if memR I (nt - tz) then replace_last (tz, Xl - S) q else q)"
+  define pend1 where "pend1 = map_last_queue (\<lambda>(tz, Xl).
+    if memR I (nt - tz) then (tz, Xl - S) else (tz, Xl)) pend"
   define K' where "K' = (if oi = n then K
     else upd_set K (\<lambda>v. append_queue (the (Mapping.lookup P v), n, nt) (kqq K v)) (D - S))"
   define P' where "P' = upd_set (Mapping.filter (\<lambda>v _. v \<in> W') P) (\<lambda>_. n) (W' - W)"
@@ -198,19 +211,13 @@ proof -
   proof (cases "oi = n")
     case True
     then have e: "ps = []" using len on by simp
-    obtain \<alpha> q where sl: "safe_last pend = (\<alpha>, q)" by fastforce
-    have "linearize q = []" and "\<alpha> = None"
-      using safe_last_rep[OF sl] e by (auto simp: ps_def split: option.splits)
-    then show ?thesis using sl e True by (simp add: pend1_def ps1_def md_def)
+    then show ?thesis using True by (simp add: pend1_def ps1_def md_def map_last_queue_rep ps_def[symmetric])
   next
     case False
     then have ne: "ps \<noteq> []" using len on by auto
-    obtain \<alpha> q where sl: "safe_last pend = (\<alpha>, q)" by fastforce
-    have q: "linearize q = ps" and \<alpha>: "\<alpha> = Some (last ps)"
-      using safe_last_rep[OF sl] ne by (auto simp: ps_def split: option.splits)
     obtain tz Xl where tX: "last ps = (tz, Xl)" by fastforce
-    have bl: "linearize q = butlast ps @ [(tz, Xl)]" using q ne tX by (metis append_butlast_last_id)
-    show ?thesis using False sl \<alpha> tX replace_last_rep[OF bl] q by (auto simp: pend1_def ps1_def md_def)
+    show ?thesis using False ne tX
+      by (auto simp: pend1_def ps1_def md_def map_last_queue_rep ps_def[symmetric] append_butlast_last_id)
   qed
   have len1: "length ps1 = length ps"
     using len on by (auto simp: ps1_def md_def)
