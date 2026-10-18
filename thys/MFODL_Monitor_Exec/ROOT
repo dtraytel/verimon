@@ -22,6 +22,7 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Agg_Cache
     Window_Dispatch
     Trigger_Window
+    Release_Window
     Match_Window
     Kernel_Call
     Eval
