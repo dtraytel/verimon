@@ -21,7 +21,7 @@ text \<open>A past operator with a negated right operand, @{term "Formula.Since 
   the negation is the difference with the trigger, whose tables are contained in those of
   @{term \<psi>}. This is the unnesting of a correlated @{text "NOT EXISTS"} into an anti-join, which
   needs no freezing. The negation of the left operand removes a double negation
-  (@{const neg_dual}), as for @{term "Formula.Since (Formula.Neg \<phi>) I (Formula.Neg \<psi>)"}.
+  (@{text neg_dual}), as for @{term "Formula.Since (Formula.Neg \<phi>) I (Formula.Neg \<psi>)"}.
   Without 0 in the interval, the trigger is not safe on its own (its tables are infinite at the
   time points without any in the interval), and the progress of the since operator is larger.\<close>
 
@@ -74,7 +74,12 @@ next
 qed (auto simp: Rewriting.match_map_regex dual_since_fvi split: nat.splits)
 
 lemma wty_neg_dual: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> neg_dual \<phi>"
-  by (cases \<phi>) (auto simp: neg_dual_def intro!: wty_formula.Neg elim: wty_formula.cases)
+  by (cases \<phi>) (auto simp: neg_dual_def intro: wty_formula.Neg dest: wty_formula_NegD)
+
+lemma dual_since_Since_not_Neg:
+  "(\<And>\<psi>'. \<psi> \<noteq> Formula.Neg \<psi>') \<Longrightarrow>
+   dual_since (Formula.Since \<phi> I \<psi>) = Formula.Since (dual_since \<phi>) I (dual_since \<psi>)"
+  by (cases \<psi>) auto
 
 lemma wty_dual_since: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> dual_since \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
@@ -91,8 +96,20 @@ next
     by (auto simp del: fun_upd_apply simp: dual_since_nfv intro!: wty_formula.LetPast)
 next
   case (Since S E \<phi> \<psi> I)
-  then show ?case
-    by (cases \<psi>) (auto intro!: wty_formula.intros wty_neg_dual elim: wty_formula.cases)
+  show ?case
+  proof (cases "\<exists>\<psi>'. \<psi> = Formula.Neg \<psi>'")
+    case True
+    then obtain \<psi>' where \<psi>: "\<psi> = Formula.Neg \<psi>'"
+      by blast
+    with Since.IH(2) have "S, E \<turnstile> dual_since \<psi>'"
+      by (auto dest: wty_formula_NegD)
+    with Since.IH(1) show ?thesis
+      unfolding \<psi> by (auto intro!: wty_formula.Neg wty_formula.Trigger wty_formula.Since wty_neg_dual)
+  next
+    case False
+    with Since.IH show ?thesis
+      by (auto simp: dual_since_Since_not_Neg intro!: wty_formula.Since)
+  qed
 next
   case (MatchP S E r I)
   then show ?case
