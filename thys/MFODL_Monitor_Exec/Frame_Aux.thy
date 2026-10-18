@@ -2001,6 +2001,123 @@ qed simp
 
 end
 
+section \<open>The Release structure's auxiliary list\<close>
+
+text \<open>The native release keeps, for each pending time point, the tables of the tuples waiting to
+  be released and of the tuples still alive, both over the columns of the right operand
+  (@{const update_release}). The executable one keeps their short forms; the join with the left
+  operand's table, whose columns are among the right operand's, is a membership test of a
+  projection (@{const esemi}).\<close>
+
+definition eupdate_release :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> ts \<Rightarrow>
+    (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list" where
+  "eupdate_release args msk rel1 rel2 nt aux =
+    map (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
+      then (t, esemi msk (\<not> args_pos args) (a1 \<inter> rel2) rel1, a2 - (a1 - rel2))
+      else (t, a1, a2)) aux @
+    [(nt, esemi msk (\<not> args_pos args) rel2 rel1, rel2)]"
+
+lemma table_Diff: "table ks X \<Longrightarrow> table ks (X - Y)"
+  by (auto simp: table_def)
+
+lemma etabc_Diff:
+  assumes f: "eframe ks cs" and t1: "table ks T" and t2: "table ks T'"
+  shows "etabc ks cs (T - T') = etabc ks cs T - etabc ks cs T'"
+proof (intro equalityI subsetI)
+  fix z assume "z \<in> etabc ks cs (T - T')"
+  then obtain a where a: "a \<in> T" "a \<notin> T'" "z = restrict cs ks a"
+    by (auto simp: etabc_def)
+  have "z \<notin> etabc ks cs T'"
+  proof
+    assume "z \<in> etabc ks cs T'"
+    then obtain a' where "a' \<in> T'" "z = restrict cs ks a'"
+      by (auto simp: etabc_def)
+    then have "a = a'"
+      using a restrict_inv[OF f, of a] restrict_inv[OF f, of a'] t1 t2 by (auto simp: table_def)
+    then show False
+      using a \<open>a' \<in> T'\<close> by simp
+  qed
+  then show "z \<in> etabc ks cs T - etabc ks cs T'"
+    using a by (auto simp: etabc_def)
+next
+  fix z assume "z \<in> etabc ks cs T - etabc ks cs T'"
+  then show "z \<in> etabc ks cs (T - T')"
+    by (auto simp: etabc_def)
+qed
+
+lemma eauxlist3_update_release:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and t1: "table kL rel1" and t2: "table kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and iv: "args_ivl args' = args_ivl args" and po: "args_pos args' = args_pos args"
+  shows "eauxlist3 kR cR kR cR (update_release args rel1 rel2 nt aux)
+       = eupdate_release args' (emsk cR cL) (etabc kL cL rel1) (etabc kR cR rel2) nt (eauxlist3 kR cR kR cR aux)"
+proof -
+  have subc: "set cL \<subseteq> set cR"
+    using sub eframeD(3)[OF fR] eframeD(3)[OF fL] by simp
+  have J: "etabc kR cR (join kR T b kL rel1) = esemi (emsk cR cL) b (etabc kR cR T) (etabc kL cL rel1)"
+    if "table kR T" for T b
+    using esemi_join[OF fR fL subc that t1] by (simp add: emsk_def)
+  show ?thesis
+    using wf
+    by (induct aux)
+      (auto simp: eauxlist3_def update_release_def eupdate_release_def iv po aL aR J
+        etabc_Int[OF fR _ t2] etabc_Diff[OF fR] table_Int table_Diff t2)
+qed
+
+lemma eauxlist3_wf_update_release:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and sub: "set kL \<subseteq> set kR" and t1: "table kL rel1" and t2: "table kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+  shows "\<forall>(t, a1, a2) \<in> set (update_release args rel1 rel2 nt aux). table kR a1 \<and> table kR a2"
+  using wf t1 t2 sub
+  by (auto simp: update_release_def aL aR intro!: table_join_sub table_Int table_Diff)
+
+lemma eauxlist3_wf_eval_until:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and e: "eval_until I nt aux = (res, aux')"
+  shows "\<forall>(t, a1, a2) \<in> set aux'. table kR a1 \<and> table kR a2"
+  using wf eval_until_auxlist'[OF e] by (auto dest: in_set_dropD)
+
+text \<open>The buffer traversal steps two accumulators in lockstep if every step preserves a relation
+  between them; unlike @{thm [source] mbuf2t_take_rel_ts}, the relation does not mention time.\<close>
+
+lemma mbuf2t_take_rel:
+  "(\<And>a b t za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R za z'a \<Longrightarrow>
+      R (f a b t za) (g (h a) (k b) t z'a)) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
+   R w w2 \<and> buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
+  case Nil
+  then show ?case by (cases ts) auto
+next
+  case (Cons x xs)
+  note IH = Cons.hyps and P = Cons.prems
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P(2-4) by (cases ts) auto
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P(2-4) ysC by auto
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have r: "R (f x y t z) (g (h x) (k y) t z')"
+        using P(1)[of x y z z' t] P(2) ysC by simp
+      show ?thesis
+        by (rule IH[OF _ r, of ys2 t ts3]) (use P ysC tsC in auto)
+    qed
+  qed
+qed
+
 (*<*)
 end
 (*>*)

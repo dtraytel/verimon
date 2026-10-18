@@ -1277,9 +1277,11 @@ next
     then show ?thesis
       using Release_0(9)[of \<phi>'' n P V R] fv'' fvn Release_0.prems(2) by auto
   next
-    assume "\<phi>'' = Formula.And \<psi> \<phi>"
+    assume eq: "\<phi>'' = Formula.And \<psi> \<phi>"
+    have "\<forall>x\<in>Formula.fv (Formula.And \<psi> \<phi>). x < n"
+      using Release_0(4) fvn by auto
     then show ?thesis
-      using Release_0(7)[of n P V R] Release_0(4) fvn Release_0.prems(2) by auto
+      unfolding eq by (rule Release_0(7)[OF _ Release_0.prems(2)])
   qed
   have m: "minit0 n (Formula.Release \<phi> I \<psi>) = MRelease (init_args I n (Formula.fv_list \<phi>'') (Formula.fv_list \<psi>) pos None)
       (minit0 n \<phi>'') (minit0 n \<psi>) ([], []) [] 0 []"
@@ -1288,7 +1290,7 @@ next
     unfolding m
     by (rule wf_mformula.Release[OF wf_\<phi>'' wf_\<psi> _ safe_release_left[OF rl Release_0(5)] Release_0(3) _ _ _ _
         Release_0(1,2,4) wf_mbuf2'_0[OF Release_0.prems(2)] wf_ts_0])
-      (simp_all add: rl init_args_def wf_release_auxlist_Nil progress_0_gen[OF Release_0.prems(2)])
+      (simp_all add: rl init_args_def wf_release_auxlist_Nil progress_0_gen[OF Release_0.prems(2)] Inf_UNIV_nat)
 next
   case (Release \<phi> I \<psi>)
   then show ?case 

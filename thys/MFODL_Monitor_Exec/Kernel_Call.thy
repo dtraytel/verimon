@@ -24,7 +24,7 @@ abbreviation "kletpast_meval_post \<equiv> maux.letpast_meval_post valid_mmasaux
 lemmas kmaux_meval_correct = maux.meval_correct[OF default_maux.maux_axioms, folded meval_def]
 lemmas kmaux_wf_mformula_cases = maux.wf_mformula.cases[OF default_maux.maux_axioms, consumes 1,
   case_names Eq Pred Let Frz LetPast And AndAssign AndRel And_Trigger And_Release Ands Or Neg Exists
-    Agg Prev Next Since Until Trigger_0 Release_0 MatchP MatchF MTP MTS]
+    Agg Prev Next Since Until Trigger_0 Release MatchP MatchF MTP MTS]
 lemmas kmaux_wf_minit0 = maux.wf_minit0[OF default_maux.maux_axioms, folded minit0_def]
 lemmas kmaux_wf_mstate_def = maux.wf_mstate_def[OF default_maux.maux_axioms]
 lemmas kmaux_wf_mstate_minit_safe =
@@ -314,6 +314,28 @@ proof -
     by (auto intro: kgoodI[OF g wf\<phi> envs _ LR(1)] kgoodI[OF g wf\<psi> envs _ LR(2)])
 qed
 
+lemma kgood_MRelease:
+  assumes "kgood n ks j ts db (MRelease args \<phi> \<psi> buf nts t aux)"
+  shows "kgood n (args_L args) j ts db \<phi>" "kgood n (args_R args) j ts db \<psi>"
+proof -
+  obtain S E \<sigma> j0 P P' V R \<chi> where g: "j0 \<le> j" "ts = map (\<tau> \<sigma>) [j0..<j]"
+    and wf: "kwf_mformula \<sigma> j0 P V n R (MRelease args \<phi> \<psi> buf nts t aux) \<chi>"
+    and envs: "wf_envs S \<sigma> j0 (j - j0) P P' V db" and wty: "S, E \<turnstile> \<chi>"
+    using assms by (rule kgoodE)
+  from wf obtain \<alpha> \<gamma> I \<beta> where \<chi>: "\<chi> = Formula.Release \<alpha> I \<beta>"
+    and rl: "release_left \<alpha> \<beta> = (\<gamma>, args_pos args)"
+    and wf\<phi>: "kwf_mformula \<sigma> j0 P V n R \<phi> \<gamma>"
+    and wf\<psi>: "kwf_mformula \<sigma> j0 P V n R \<psi> \<beta>"
+    and LR: "args_L args = Formula.fv_list \<gamma>" "args_R args = Formula.fv_list \<beta>"
+    by (cases rule: kmaux_wf_mformula_cases) auto
+  from wty have "S, E \<turnstile> \<alpha>" "S, E \<turnstile> \<beta>"
+    unfolding \<chi> by (auto dest: wty_formulaD elim: wty_formula.cases)
+  then have "S, E \<turnstile> \<gamma>" "S, E \<turnstile> \<beta>"
+    using wty_release_left[OF rl] by auto
+  then show "kgood n (args_L args) j ts db \<phi>" "kgood n (args_R args) j ts db \<psi>"
+    by (auto intro: kgoodI[OF g wf\<phi> envs _ LR(1)] kgoodI[OF g wf\<psi> envs _ LR(2)])
+qed
+
 lemma kgood_MAndTrigger:
   assumes "kgood n ks j ts db (MAndTrigger k\<alpha> \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)"
   shows "kgood n k\<alpha> j ts db \<alpha>" "kgood n (args_L args) j ts db \<phi>" "kgood n (args_R args) j ts db \<psi>"
@@ -339,8 +361,8 @@ proof -
 qed
 
 
-text \<open>A disjunction node also evaluates the two rewritings of a release; in all three shapes its
-  operands are those of a disjunction of well-typed formulas.\<close>
+text \<open>A disjunction node also evaluates the rewriting of a conjunction with a release; in both
+  shapes its operands are those of a disjunction of well-typed formulas.\<close>
 
 lemma kgood_MOr:
   assumes "kgood n ks j ts db (MOr k1 \<phi> k2 \<psi> buf)"
@@ -371,17 +393,6 @@ proof -
           always_safe_bounded_def once_def intro!: wty_formula.intros)
     with wfR show ?thesis
       by (auto simp: and_release_safe_bounded_def)
-  next
-    case (Release_0 I \<phi>1 \<psi>1)
-    then have \<chi>: "\<chi> = formula.Release \<phi>1 I \<psi>1"
-      and wfR: "kwf_mformula \<sigma> j0 P V n R (MOr k1 \<phi> k2 \<psi> buf) (release_safe_0 \<phi>1 I \<psi>1)"
-      by simp_all
-    from wty have wty\<phi>: "S, E \<turnstile> \<phi>1" and wty\<psi>: "S, E \<turnstile> \<psi>1"
-      unfolding \<chi> by (auto dest: wty_formulaD)
-    have "S, E \<turnstile> formula.Until \<psi>1 I (formula.And \<psi>1 \<phi>1)" "S, E \<turnstile> always_safe_0 I \<psi>1"
-      using wty\<phi> wty\<psi> unfolding always_safe_0_def by (auto intro!: wty_formula.intros)
-    with wfR show ?thesis
-      by (auto simp: release_safe_0_def)
   qed simp_all
   then obtain a b where wfOr: "kwf_mformula \<sigma> j0 P V n R (MOr k1 \<phi> k2 \<psi> buf) (Formula.Or a b)"
     and wtya: "S, E \<turnstile> a" and wtyb: "S, E \<turnstile> b"
