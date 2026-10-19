@@ -2508,7 +2508,9 @@ type eformula = EFail | ERel of (event_data list) set | EPredS of string * nat |
         nat mbuf_t * nat *
         (nat *
           ((event_data list) set list *
-            ((nat * ((event_data list) set * (event_data list) set)) list *
+            ((nat *
+               (((event_data list) set * (event_data list) set) *
+                 ((event_data list) set * (event_data list) set))) list *
               ((nat * ((event_data list) set * (event_data list) set)) list *
                 ((event_data list) set * (event_data list) set) option))))
   | EAndTrigger of
@@ -13708,14 +13710,16 @@ let rec de_geval_matchF
 
 let rec de_eunion x = ed_union (fst x) (snd x);;
 
-let rec de_ecomp
+let rec ecomp (_A1, _A2)
   x y = (let (a1, r1) = x in
          let (a2, r2) = y in
-          (ed_inter a1 a2,
-            (if unbox ed_is_empty_v r2 then r1
-              else ed_union r1 (ed_inter a1 r2))));;
-
-let rec de_ecompo x y = (match y with None -> x | Some a -> de_ecomp x a);;
+          (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 a2,
+            (if is_empty
+                  (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
+                  r2
+              then r1
+              else sup_seta ((ceq_list _A1), (ccompare_list _A2)) r1
+                     (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 r2))));;
 
 let rec takeWhile p x1 = match p, x1 with p, [] -> []
                     | p, x :: xs -> (if p x then x :: takeWhile p xs else []);;
@@ -13723,29 +13727,47 @@ let rec takeWhile p x1 = match p, x1 with p, [] -> []
 let rec dropWhile p x1 = match p, x1 with p, [] -> []
                     | p, x :: xs -> (if p x then dropWhile p xs else x :: xs);;
 
-let rec de_eraux_popfront
-  i nt b fr =
-    (mapa (fun (_, s) -> de_eunion (de_ecompo s b))
-       (takeWhile (fun (t, _) -> not (memR i (minus_nata nt t))) fr),
-      dropWhile (fun (t, _) -> not (memR i (minus_nata nt t))) fr);;
+let rec sw_head fr = (match fr with [] -> None | (_, (_, a)) :: _ -> Some a);;
 
-let rec de_eraux_flip
-  x0 fr acc = match x0, fr, acc with [], fr, acc -> fr
-    | (t, e) :: bk, fr, acc ->
-        (let s = de_ecompo e acc in de_eraux_flip bk ((t, s) :: fr) (Some s));;
+let rec sw_comp f x y = (match y with None -> x | Some a -> f x a);;
+
+let rec sw_flip
+  f g x2 fr = match f, g, x2, fr with f, g, [], fr -> fr
+    | f, g, (t, e) :: bk, fr ->
+        sw_flip f g bk ((t, (e, sw_comp f (g e) (sw_head fr))) :: fr);;
+
+let rec sw_tag b xs = mapa (fun (t, (e, a)) -> (t, (e, (a, b)))) xs;;
+
+let rec sw_popx
+  f g p s =
+    (let (fr, (bk, b)) = s in
+     let ys = sw_tag b (takeWhile (fun (t, _) -> p t) fr) in
+     let fra = dropWhile (fun (t, _) -> p t) fr in
+      (match fra
+        with [] ->
+          (match bk with [] -> (ys, ([], ([], None)))
+            | _ :: _ ->
+              (let fl = sw_flip f g bk [] in
+                (ys @ sw_tag None (takeWhile (fun (t, _) -> p t) fl),
+                  (dropWhile (fun (t, _) -> p t) fl, ([], None)))))
+        | _ :: _ -> (ys, (fra, (bk, b)))));;
+
+let rec sw_out f y = (let (_, (_, (a, b))) = y in sw_comp f a b);;
 
 let rec de_eraux_shift
   i nt aux =
-    (let (cur, (outs, (fr, (bk, b)))) = aux in
-     let (ys, fra) = de_eraux_popfront i nt b fr in
-      (match fra
-        with [] ->
-          (match bk with [] -> (cur, (outs @ ys, ([], ([], b))))
-            | _ :: _ ->
-              (let (zs, frb) =
-                 de_eraux_popfront i nt None (de_eraux_flip bk [] None) in
-                (cur, (outs @ ys @ zs, (frb, ([], None))))))
-        | _ :: _ -> (cur, (outs @ ys, (fra, (bk, b))))));;
+    (let (cur, (outs, s)) = aux in
+     let (ys, sa) =
+       sw_popx (ecomp (ceq_event_data, ccompare_event_data)) id
+         (fun t -> not (memR i (minus_nata nt t))) s
+       in
+      (cur, (outs @
+               mapa (fun y ->
+                      de_eunion
+                        (sw_out (ecomp (ceq_event_data, ccompare_event_data))
+                          y))
+                 ys,
+              sa)));;
 
 let rec de_esum_of
   args msk l r =
@@ -13754,14 +13776,18 @@ let rec de_esum_of
       else (de_esemi msk (not (args_pos args)) r l,
              de_esemi msk (args_pos args) r l));;
 
+let rec sw_push
+  f g t e s =
+    (let (fr, (bk, b)) = s in
+      (fr, ((t, e) :: bk,
+             Some (match b with None -> g e | Some ba -> f ba (g e)))));;
+
 let rec de_eraux_update
   args msk l r nt aux =
-    (let (_, (outs, (fr, (bk, b)))) = de_eraux_shift (args_ivl args) nt aux in
-     let e = de_esum_of args msk l r in
+    (let (_, (outs, s)) = de_eraux_shift (args_ivl args) nt aux in
       (nt, (outs,
-             (fr, ((nt, e) :: bk,
-                    Some (match b with None -> e
-                           | Some ba -> de_ecomp ba e))))));;
+             sw_push (ecomp (ceq_event_data, ccompare_event_data)) id nt
+               (de_esum_of args msk l r) s)));;
 
 let rec append_queue_list
   xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
@@ -14041,8 +14067,7 @@ let rec mebuf2T_take
 
 let rec de_eraux_eval
   i nt aux =
-    (let (cur, (outs, (fr, (bk, b)))) = de_eraux_shift i nt aux in
-      (outs, (cur, ([], (fr, (bk, b))))));;
+    (let (cur, (outs, s)) = de_eraux_shift i nt aux in (outs, (cur, ([], s))));;
 
 let rec meprev_next
   i xs ts =
@@ -14081,24 +14106,7 @@ let rec mebuf2S_add
     (mbuf_t_append xs xsa,
       (mbuf_t_append ys ysa, (mbuf_t_append ts tsa, skew)));;
 
-let rec ecomp (_A1, _A2)
-  x y = (let (a1, r1) = x in
-         let (a2, r2) = y in
-          (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 a2,
-            (if is_empty
-                  (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
-                  r2
-              then r1
-              else sup_seta ((ceq_list _A1), (ccompare_list _A2)) r1
-                     (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 r2))));;
-
 let rec tcomp (_A1, _A2) x y = ecomp (_A1, _A2) y x;;
-
-let rec sw_push
-  f g t e s =
-    (let (fr, (bk, b)) = s in
-      (fr, ((t, e) :: bk,
-             Some (match b with None -> g e | Some ba -> f ba (g e)))));;
 
 let rec de_tw_push
   args msk nt mv w =
@@ -14109,30 +14117,9 @@ let rec de_tw_push
              else wa))
       mv w;;
 
-let rec sw_strip fr = mapa (fun (t, (e, _)) -> (t, e)) fr;;
+let rec sw_strip4 ys = mapa (fun (t, (e, (_, _))) -> (t, e)) ys;;
 
-let rec sw_head fr = (match fr with [] -> None | (_, (_, a)) :: _ -> Some a);;
-
-let rec sw_comp f x y = (match y with None -> x | Some a -> f x a);;
-
-let rec sw_flip
-  f g x2 fr = match f, g, x2, fr with f, g, [], fr -> fr
-    | f, g, (t, e) :: bk, fr ->
-        sw_flip f g bk ((t, (e, sw_comp f (g e) (sw_head fr))) :: fr);;
-
-let rec sw_pop
-  f g p s =
-    (let (fr, (bk, b)) = s in
-     let ys = sw_strip (takeWhile (fun (t, _) -> p t) fr) in
-     let fra = dropWhile (fun (t, _) -> p t) fr in
-      (match fra
-        with [] ->
-          (match bk with [] -> (ys, ([], ([], None)))
-            | _ :: _ ->
-              (let fl = sw_flip f g bk [] in
-                (ys @ sw_strip (takeWhile (fun (t, _) -> p t) fl),
-                  (dropWhile (fun (t, _) -> p t) fl, ([], None)))))
-        | _ :: _ -> (ys, (fra, (bk, b)))));;
+let rec sw_pop f g p s = (let (ys, a) = sw_popx f g p s in (sw_strip4 ys, a));;
 
 let rec de_tw_update
   args nt l r ax =
@@ -14987,12 +14974,17 @@ let rec udsx_init
     (if null (args_L args) then UDSX_win (sw_init args)
       else UDSX_gen (de_einit_msaux args msk));;
 
+let sw_empty : ('a * ('b * 'c)) list * (('a * 'b) list * 'c option)
+  = ([], ([], None));;
+
 let eraux_init :
   nat * (('a list) set list *
-          ((nat * (('a list) set * ('a list) set)) list *
+          ((nat *
+             ((('a list) set * ('a list) set) *
+               (('a list) set * ('a list) set))) list *
             ((nat * (('a list) set * ('a list) set)) list *
               (('a list) set * ('a list) set) option)))
-  = (zero_nata, ([], ([], ([], None))));;
+  = (zero_nata, ([], sw_empty));;
 
 let rec is_simple_pattern
   x0 uu = match x0, uu with [], uu -> true
@@ -15039,9 +15031,6 @@ let rec reindex_constraint
   cs conf =
     (let (t1, (p, (c, t2))) = conf in
       (reindex_trm cs t1, (p, (c, reindex_trm cs t2))));;
-
-let sw_empty : ('a * ('b * 'c)) list * (('a * 'b) list * 'c option)
-  = ([], ([], None));;
 
 let rec de_tw_init args msk = (msk, (sw_empty, sw_empty));;
 
