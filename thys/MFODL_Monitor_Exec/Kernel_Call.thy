@@ -725,8 +725,10 @@ lemma frz_absorb_in:
   using assms(2,3) unfolding frz_absorb_def
   by (induction xs arbitrary: L n f) (auto intro: assms(1) simp: Let_def)
 
-lemma frz_meas_rel: "frz_ops_rel g ops ops' \<Longrightarrow> frz_meas ops' gt rs xs m = frz_meas ops gt rs xs m"
-  by (simp add: frz_meas_def frz_ops_rel_def frz_unions_rel frz_absorb_rel)
+lemma frz_meas_rel:
+  assumes "frz_ops_rel g ops ops'"
+  shows "frz_meas ops' gt rs xs m = frz_meas ops gt rs xs m"
+  unfolding frz_meas_def frz_ops_relD(3,4)[OF assms] frz_absorb_rel[OF assms] frz_unions_rel[OF assms] ..
 
 lemma frz_meas_in:
   assumes "\<And>X Y. X \<in> B \<Longrightarrow> Y \<in> B \<Longrightarrow> fo_un ops X Y \<in> B" "fo_emp ops \<in> B" "Lm \<in> B" "set rs \<subseteq> B"
@@ -1025,6 +1027,8 @@ next
     by (simp only: ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def sB'_def cq'_def)
   have LnB: "Ln \<in> B"
     using LpB L1B by (simp add: Ln_def)
+  have LnsB: "set [Ln] \<subseteq> B"
+    using LnB by simp
   have Lr'B: "Lr' \<in> B"
     using EB Lr1B by (simp add: Lr'_def)
   have sBr: "frz_st_rel R g sB sB'" and KB: "K sB"
@@ -1053,7 +1057,7 @@ next
       using r' unfolding stq' None' by simp
     show ?thesis
       by (rule frz_stock_rel_inv[where K = K and R = R and g = g and A = A and B = B and Rs = Rs,
-          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl EB _ RS RE option.rel_inject(1) r0 r0']) (use LnB in simp)
+          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl EB LnsB RS RE option.rel_inject(1) r0 r0'])
   next
     case (Some cc)
     then obtain \<rho>S2 \<rho>E2 pX2 buf2 where cqS: "cq = Some (\<rho>S2, \<rho>E2, pX2, buf2)"
