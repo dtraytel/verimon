@@ -13708,24 +13708,11 @@ let rec de_geval_matchF
           then (let (xs, a) = de_geval_matchF i mr nt aux in (rel :: xs, a))
           else ([], (t, (rels, rel)) :: aux));;
 
-let rec de_eunion x = ed_union (fst x) (snd x);;
-
-let rec ecomp (_A1, _A2)
-  x y = (let (a1, r1) = x in
-         let (a2, r2) = y in
-          (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 a2,
-            (if is_empty
-                  (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
-                  r2
-              then r1
-              else sup_seta ((ceq_list _A1), (ccompare_list _A2)) r1
-                     (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 r2))));;
-
-let rec takeWhile p x1 = match p, x1 with p, [] -> []
-                    | p, x :: xs -> (if p x then x :: takeWhile p xs else []);;
-
-let rec dropWhile p x1 = match p, x1 with p, [] -> []
-                    | p, x :: xs -> (if p x then dropWhile p xs else x :: xs);;
+let rec sw_push
+  f g t e s =
+    (let (fr, (bk, b)) = s in
+      (fr, ((t, e) :: bk,
+             Some (match b with None -> g e | Some ba -> f ba (g e)))));;
 
 let rec sw_head fr = (match fr with [] -> None | (_, (_, a)) :: _ -> Some a);;
 
@@ -13737,6 +13724,12 @@ let rec sw_flip
         sw_flip f g bk ((t, (e, sw_comp f (g e) (sw_head fr))) :: fr);;
 
 let rec sw_tag b xs = mapa (fun (t, (e, a)) -> (t, (e, (a, b)))) xs;;
+
+let rec takeWhile p x1 = match p, x1 with p, [] -> []
+                    | p, x :: xs -> (if p x then x :: takeWhile p xs else []);;
+
+let rec dropWhile p x1 = match p, x1 with p, [] -> []
+                    | p, x :: xs -> (if p x then dropWhile p xs else x :: xs);;
 
 let rec sw_popx
   f g p s =
@@ -13753,6 +13746,19 @@ let rec sw_popx
         | _ :: _ -> (ys, (fra, (bk, b)))));;
 
 let rec sw_out f y = (let (_, (_, (a, b))) = y in sw_comp f a b);;
+
+let rec de_eunion x = ed_union (fst x) (snd x);;
+
+let rec ecomp (_A1, _A2)
+  x y = (let (a1, r1) = x in
+         let (a2, r2) = y in
+          (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 a2,
+            (if is_empty
+                  (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
+                  r2
+              then r1
+              else sup_seta ((ceq_list _A1), (ccompare_list _A2)) r1
+                     (inf_seta ((ceq_list _A1), (ccompare_list _A2)) a1 r2))));;
 
 let rec de_eraux_shift
   i nt aux =
@@ -13775,12 +13781,6 @@ let rec de_esum_of
       then (if args_pos args then (r, ed_bot) else (ed_bot, r))
       else (de_esemi msk (not (args_pos args)) r l,
              de_esemi msk (args_pos args) r l));;
-
-let rec sw_push
-  f g t e s =
-    (let (fr, (bk, b)) = s in
-      (fr, ((t, e) :: bk,
-             Some (match b with None -> g e | Some ba -> f ba (g e)))));;
 
 let rec de_eraux_update
   args msk l r nt aux =
@@ -14106,6 +14106,10 @@ let rec mebuf2S_add
     (mbuf_t_append xs xsa,
       (mbuf_t_append ys ysa, (mbuf_t_append ts tsa, skew)));;
 
+let rec sw_strip4 ys = mapa (fun (t, (e, (_, _))) -> (t, e)) ys;;
+
+let rec sw_pop f g p s = (let (ys, a) = sw_popx f g p s in (sw_strip4 ys, a));;
+
 let rec tcomp (_A1, _A2) x y = ecomp (_A1, _A2) y x;;
 
 let rec de_tw_push
@@ -14116,10 +14120,6 @@ let rec de_tw_push
                     (de_esum_of args msk l r) wa
              else wa))
       mv w;;
-
-let rec sw_strip4 ys = mapa (fun (t, (e, (_, _))) -> (t, e)) ys;;
-
-let rec sw_pop f g p s = (let (ys, a) = sw_popx f g p s in (sw_strip4 ys, a));;
 
 let rec de_tw_update
   args nt l r ax =
@@ -14145,12 +14145,12 @@ let rec de_tw_update
                 in
                (msk, (pa, de_tw_push args msk nt mv w1)))));;
 
-let rec eunion (_A1, _A2)
-  x = sup_seta ((ceq_list _A1), (ccompare_list _A2)) (fst x) (snd x);;
-
 let rec sw_query
   f s = (match s with ([], (_, b)) -> b
           | ((_, (_, a)) :: _, (_, b)) -> Some (sw_comp f a b));;
+
+let rec eunion (_A1, _A2)
+  x = sup_seta ((ceq_list _A1), (ccompare_list _A2)) (fst x) (snd x);;
 
 let rec de_tw_result
   ax = (let (_, (p, w)) = ax in
