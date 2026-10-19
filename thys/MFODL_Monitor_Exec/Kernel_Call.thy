@@ -1318,8 +1318,8 @@ proof -
           (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz pX..<pX] buf)"
   proof (cases rule: kmaux_wf_mformula_cases)
     case (Frz _ _ _ _ \<phi>1 _ _ _ _ \<psi>1 _ _ _ _ _ N)
-    then show ?thesis
-      by (intro that[of \<phi>1 \<psi>1 N]; simp; blast)
+    show ?thesis
+      using Frz by - (rule that[of \<phi>1 \<psi>1 N]; (assumption | blast))
   qed simp_all
   note sep_ok = sep_ok0[rule_format] and stock = stock0[rule_format]
   have sep: "lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
