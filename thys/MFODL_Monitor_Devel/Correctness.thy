@@ -3614,9 +3614,23 @@ next
         using E ex' bs' lv' option.distinct(1) unfolding RES_def by blast
       have subd: "\<forall>\<alpha> \<in> set bs'. \<alpha> \<subseteq> Ln"
         using subn bs' by (auto dest: in_set_dropD)
-      show ?thesis
-        using R st[unfolded stq cpS option.case prod.case] E tabLn tabLr' subd nOff
-        by (auto simp: Let_def SEPST_def ys_eq[symmetric] split: if_splits)
+      have sxc: "(sx' = FSStock 0 (2 * bo) 0 {} 0 0 0 [Ln] \<and> \<rho>S' = \<rho>S \<and> \<rho>E' = \<rho>E) \<or>
+          (\<exists>rg''. sx' = FSSep Ln nLn pX' (drop (length ys) buf') rg'' bo tk' Lr' \<and> \<rho>S' = \<rho>S2 \<and> \<rho>E' = \<rho>E2)"
+        using st[unfolded stq cpS option.case prod.case Let_def] by (auto split: if_split_asm)
+      have "SEPST (jfrzM + length ys) bs' lv' sx' \<rho>S' \<rho>E'"
+        using sxc
+      proof (elim disjE exE conjE)
+        assume "sx' = FSStock 0 (2 * bo) 0 {} 0 0 0 [Ln]"
+        then show ?thesis
+          using nOff tabLn by (simp add: SEPST_def)
+      next
+        fix rg''
+        assume "sx' = FSSep Ln nLn pX' (drop (length ys) buf') rg'' bo tk' Lr'" "\<rho>S' = \<rho>S2" "\<rho>E' = \<rho>E2"
+        then show ?thesis
+          using nOff tabLn tabLr' subd lv' E[THEN conjunct2, THEN conjunct2] by (simp add: SEPST_def)
+      qed
+      then show ?thesis
+        using R by blast
     qed
   qed
   \<comment> \<open>the step\<close>
