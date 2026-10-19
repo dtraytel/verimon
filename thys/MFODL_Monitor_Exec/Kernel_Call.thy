@@ -1316,7 +1316,7 @@ proof -
         kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False))) n R \<rho>E \<psi>1 \<and>
         list_all2 (\<lambda>k (yS, yE). frz_row \<sigma> V n R p \<phi>1 \<psi>1 (frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))
           (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz pX..<pX] buf)"
-    by (cases rule: kmaux_wf_mformula_cases) (simp_all; blast)
+    by (cases rule: kmaux_wf_mformula_cases) (auto; blast)
   note sep_ok = sep_ok0[rule_format] and stock = stock0[rule_format]
   have sep: "lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
@@ -1493,7 +1493,13 @@ proof (rule kgood_MFrzE)
     assume X: "X \<in> frz_tabs (Set.insert (frz_fill ng (\<alpha>s @ ?xsr)) (set (\<alpha>s @ ?xsr))) sx"
     have tabA: "length v = m \<and> (\<exists>i. Formula.sat \<sigma> V v i \<phi>1)"
       if "v \<in> Y" "Y \<in> Set.insert (frz_fill ng (\<alpha>s @ ?xsr)) (set (\<alpha>s @ ?xsr))" for v Y
-      using A that by auto
+    proof -
+      from A that(2) obtain io where "Y = {v. length v = m \<and>
+          (case io of None \<Rightarrow> False | Some i \<Rightarrow> Formula.sat \<sigma> V v i \<phi>1)}"
+        by blast
+      with that(1) show ?thesis
+        by (cases io) auto
+    qed
     have tabS: "length v = m \<and> (\<exists>i. Formula.sat \<sigma> V v i \<phi>1)"
       if "v \<in> (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lsh _ Lr \<Rightarrow> Lsh \<union> Lr | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)" for v
       using that stock sep by (auto simp: frz_tab_def split: frz_sep.splits)
