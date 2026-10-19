@@ -199,9 +199,16 @@ proof -
     then show ?thesis
       by (simp only:) (rule frz_tab_unions[OF that(2)], use assms(4) in blast)
   qed
+  have emp: "fo_emp (frz_kops m' cs) = {}"
+    by (simp add: frz_kops_def)
+  have abA: "frz_tab \<sigma> V m \<phi> L1"
+    if "frz_absorb (frz_kops m' cs) xs (frz_unions (frz_kops m' cs) rs {}, 0, 0) = (L1, n1, f1)" for L1 n1 f1
+    by (rule ab[OF that t0])
+  have abB: "frz_tab \<sigma> V m \<phi> L1" if "frz_absorb (frz_kops m' cs) xs (Lm, 0, 0) = (L1, n1, f1)" for L1 n1 f1
+    by (rule ab[OF that assms(2)])
   show ?thesis
-    using assms(1,2) t0
-    by (auto simp: frz_meas_def Let_def frz_kops_simps split: if_splits prod.split_asm dest: ab)
+    using assms(1,2)
+    by (auto simp: frz_meas_def Let_def emp split: if_splits prod.split_asm dest: abA abB)
 qed
 
 text \<open>The combination of the two copies' rows at a time point @{term i}: the first copy's tuples
