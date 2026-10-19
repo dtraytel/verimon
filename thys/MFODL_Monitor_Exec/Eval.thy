@@ -3510,7 +3510,8 @@ next
       using FSSep eS eE dS dE sS sE by (simp add: fdk_def fdd_def R_def)
   qed (simp_all add: fdk_def fdd_def)
   \<comment> \<open>the step: the two runs evaluate related states on the same tables\<close>
-  define Rs where "Rs st dst \<longleftrightarrow> size st = size \<rho> \<and> size dst = size \<rho>d" for st dst
+  define Rs where "Rs (st :: (mmasaux, muaux_dq, event_data mmtaux) mformula) (dst :: eformula) \<longleftrightarrow>
+    size st = size \<rho> \<and> size dst = size \<rho>d" for st dst
   let ?B = "frz_tabs ?A sx"
   let ?k = "min (jfrz + length ?zout) (pR + length rs) - (pR - length rb)"
   let ?tq1 = "if d = \<infinity> then [] else tq @ ts"
