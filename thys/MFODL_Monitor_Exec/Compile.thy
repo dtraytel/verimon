@@ -731,8 +731,14 @@ next
       (frz_sep_init (p, Formula.nfv \<phi>) \<psi> :: (event_data list set, event_data table) frz_sep) =
     frz_sep_init (p, Formula.nfv \<phi>) \<psi>"
     by (simp add: frz_sep_init_def)
-  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c sx
-    by (auto simp: frz_sep_init_def intro!: EsFrz[where rb = "[]", unfolded list.map(1)])
+  have nsep: "frz_sep_init (p, Formula.nfv \<phi>) \<psi> \<noteq> FSSep L nL pX buf rg bo tk Lr" for L nL pX buf rg bo tk Lr
+    by (simp add: frz_sep_init_def)
+  have ncase: "(case frz_sep_init (p, Formula.nfv \<phi>) \<psi> :: (event_data list set, event_data table) frz_sep of
+      FSSep _ _ _ _ _ _ _ _ \<Rightarrow> False | _ \<Rightarrow> True)"
+    by (simp add: frz_sep_init_def)
+  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c nsep ncase
+    by (auto intro!: EsFrz[where rb = "[]" and sx = "frz_sep_init (p, Formula.nfv \<phi>) \<psi>",
+      unfolded list.map(1) sx])
 next
   case (LetPast p \<phi> \<psi>)
   have c: "ecols (Formula.fv_list \<phi>) = [0..<Formula.nfv \<phi>]"
