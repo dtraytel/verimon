@@ -1293,16 +1293,19 @@ proof -
     using assms by (rule kgoodE)
   from wf obtain \<phi>1 \<psi>1 N where \<chi>: "\<chi> = Formula.Frz p \<phi>1 \<psi>1"
     and wf\<phi>: "kwf_mformula \<sigma> j0 P V m UNIV \<phi> \<phi>1"
-    and wf\<psi>: "\<And>i. kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>1)) n R \<psi> \<psi>1"
+    and wf\<psi>0: "\<forall>i. kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>1)) n R \<psi> \<psi>1"
     and st: "maux.wf_frz_state \<sigma> j0 P V p m \<phi>1 \<psi>1 jphi \<alpha>s"
     and jfrz: "jfrz = progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j0"
     and jpsi0: "jpsi0 = progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j0"
-    and wf\<rho>: "\<And>M. frz_sup \<sigma> V \<phi>1 M \<Longrightarrow> kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> w))
+    and wf\<rho>0: "\<forall>M. frz_sup \<sigma> V \<phi>1 M \<longrightarrow> kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> w))
       (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 N w M)) n R \<rho> \<psi>1"
     and win: "maux.wf_frz_win \<sigma> j0 P V n R p m \<phi>1 \<psi>1 jfrz w pR tq rb d"
-    and fv: "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> Formula.fv \<phi>1" and safe1: "safe_formula \<phi>1"
-    and live: "\<And>g. lv = Some g \<Longrightarrow> \<exists>wL NL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
-      kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz)) n R \<rho>L \<psi>1"
+    and fv0: "{0..<m} \<subseteq> Formula.fv \<phi>1" and fv1: "m = Formula.nfv \<phi>1"
+    and safe1: "safe_formula \<phi>1" and safe2: "safe_formula \<psi>1"
+    and po: "po \<longrightarrow> safe_letpast (p, m) \<psi>1 \<le> NonFutuRec"
+    and live0: "\<forall>g. lv = Some g \<longrightarrow> \<not> po \<and> (\<exists>wL NL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
+      jfrz = progress \<sigma> (P((p, m) \<mapsto> j0)) \<psi>1 j0 + g \<and>
+      kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz)) n R \<rho>L \<psi>1)"
     and kks: "kks = Formula.fv_list \<phi>1" and cS: "cS = Formula.fv_list \<psi>1"
     and sep_ok0: "sx \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1"
     and stock0: "\<forall>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
@@ -1316,11 +1319,12 @@ proof -
         kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False))) n R \<rho>E \<psi>1 \<and>
         list_all2 (\<lambda>k (yS, yE). frz_row \<sigma> V n R p \<phi>1 \<psi>1 (frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))
           (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz pX..<pX] buf)"
-  proof (cases rule: kmaux_wf_mformula_cases)
-    case (Frz _ _ _ _ \<phi>1 _ _ _ _ \<psi>1 _ _ _ _ _ N)
-    show ?thesis
-      using Frz by - (rule that[of \<phi>1 \<psi>1 N]; (assumption | blast))
-  qed simp_all
+    by (cases rule: kmaux_wf_mformula_cases) (simp_all only: mformula.inject mformula.distinct simp_thms)
+  note wf\<psi> = wf\<psi>0[rule_format] and wf\<rho> = wf\<rho>0[rule_format] and fv = fv1 fv0
+  have live: "\<exists>wL NL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
+      kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz)) n R \<rho>L \<psi>1"
+    if "lv = Some g" for g
+    using live0[rule_format, OF that] by blast
   note sep_ok = sep_ok0[rule_format] and stock = stock0[rule_format]
   have sep: "lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
