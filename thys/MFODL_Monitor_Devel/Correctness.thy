@@ -179,7 +179,7 @@ proof (induction xs arbitrary: L n f)
   have "card (\<alpha> - L) = 0 \<Longrightarrow> \<alpha> \<subseteq> L"
     using fin by auto
   then show ?case
-    using IH s by auto
+    using IH s by (auto; blast)
 qed (simp add: frz_absorb_def)
 
 text \<open>The combination of the two copies' rows at a time point @{term i}: the first copy's tuples
@@ -2317,10 +2317,10 @@ next
       jfrz0 = progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j + g \<and>
       wf_mformula \<sigma> j (P(?pn \<mapsto> j)) (V(?pn \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz0)) n R \<rho>L \<psi>1)" and
     cs: "cs = Formula.fv_list \<phi>1" and cS_eq: "cS = Formula.fv_list \<psi>1" and
-    sep_ok: "sx \<noteq> FSOff \<Longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1" and
-    stock_inv: "\<And>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<Longrightarrow>
+    sep_ok0: "sx \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1" and
+    stock_inv0: "\<forall>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
       frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr" and
-    sep_inv: "\<And>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<Longrightarrow>
+    sep_inv0: "\<forall>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       pX = progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j \<and> length buf = pX - min jfrz0 pX \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz0)) \<and>
@@ -2331,6 +2331,7 @@ next
           (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz0 pX..<pX] buf)"
     by (cases rule: wf_mformula.cases)
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
+  note sep_ok = sep_ok0[rule_format] and stock_inv = stock_inv0[rule_format] and sep_inv = sep_inv0[rule_format]
   from win have w_le: "w \<le> j" and d_eq: "d = past_reach \<psi>1"
     and pR_eq: "pR = progress \<sigma> (P(?pn \<mapsto> w)) \<psi>1 j"
     and win_old: "\<forall>k<w. enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> jfrz0)"
