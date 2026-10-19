@@ -1,6 +1,6 @@
 (*<*)
 theory Trigger_Swag
-  imports Swag Release_Window Trigger_Window
+  imports Sliding_Window_Agg Release_Window Trigger_Window
 begin
 (*>*)
 
@@ -16,7 +16,7 @@ text \<open>
   operand, and two stretches compose by @{const ecomp} with the later one first.  The read is the
   union of the two sets of the summary of the whole window.
 
-  The window is a two-list queue over this monoid (theory @{text Swag}), so every point is
+  The window is a two-list queue over this monoid (theory @{text Sliding_Window_Agg}), so every point is
   composed a bounded number of times.  When the interval does not contain zero, the newest points
   are not yet in the interval; they only contribute the tuples that satisfy the left operand,
   which under the side condition @{const tok} are the left tables themselves.  They are kept in a

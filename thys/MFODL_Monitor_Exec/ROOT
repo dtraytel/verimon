@@ -22,7 +22,7 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Agg_Cache
     Window_Dispatch
     Trigger_Window
-    Swag
+    Sliding_Window_Agg
     Release_Window
     Trigger_Swag
     Match_Window

@@ -1,6 +1,6 @@
 (*<*)
 theory Release_Window
-  imports Frame_Aux Swag
+  imports Frame_Aux Sliding_Window_Agg
 begin
 (*>*)
 
@@ -21,9 +21,9 @@ text \<open>
   first stretch takes its fate over the second.  An entry's pending and alive tuples are the
   pending and the pending-or-released tuples of the summary of the points from it to the last
   one.  So the window is a sliding window aggregation over this monoid, kept as the two-list
-  queue of theory @{text Swag}: an entry leaves the queue together with its front summary and the
-  back's, and is read off by composing the two.  Every point's summary is thus composed a bounded
-  number of times.
+  queue of theory @{text Sliding_Window_Agg}: an entry leaves the queue together with its front
+  summary and the back's, and is read off by composing the two.  Every point's summary is thus
+  composed a bounded number of times.
 
   An entry is read off when a point arrives whose timestamp is outside its interval.  That happens
   before the point is added, so that the entry's summary is the one of the queue, and the result

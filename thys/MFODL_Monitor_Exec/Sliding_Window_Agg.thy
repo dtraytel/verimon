@@ -1,5 +1,5 @@
 (*<*)
-theory Swag
+theory Sliding_Window_Agg
   imports Main
 begin
 (*>*)
@@ -13,7 +13,8 @@ text \<open>
   the composition from that element to the end of the front; the back holds the elements
   themselves, newest first, together with the composition of all of them.  Elements enter at the
   back and leave at the front, as a prefix of those whose timestamps satisfy a predicate; when
-  the front runs out, the back is turned into a new front.
+  the front runs out, the back is turned into a new front.  This is the two-stacks (lite)
+  algorithm of the sliding-window aggregation literature.
 \<close>
 
 type_synonym ('t, 'e, 'a) swag = "('t \<times> 'e \<times> 'a) list \<times> ('t \<times> 'e) list \<times> 'a option"
