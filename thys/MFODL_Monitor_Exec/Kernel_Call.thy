@@ -687,36 +687,6 @@ text \<open>The state of the replay base between the copies, read through the ke
   @{term A} are those of the frozen formula at some time point (or empty), which is what the copies
   and the window's moves feed the base.\<close>
 
-text \<open>The executable tables are read at the frozen predicate's variables through their own
-  columns: reading a tuple's restriction there is reading the tuple.\<close>
-
-lemma val_restrict:
-  assumes "eframe ks cs"
-  shows "val m cs (restrict cs ks x) = val m ks x"
-proof -
-  have "tup_get cs (restrict cs ks x) i = tup_get ks x i" for i
-  proof (cases "i \<in> set cs")
-    case True
-    then show ?thesis
-      by (simp add: tup_get_def restrict_def map_of_zip_map)
-  next
-    case False
-    then have "i \<notin> set ks"
-      using eframeD(3)[OF assms] by simp
-    then have "map_of (zip ks x) i = None"
-      by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
-    with False show ?thesis
-      by (simp add: tup_get_def restrict_def map_of_zip_map)
-  qed
-  then show ?thesis
-    by (simp add: val_def)
-qed
-
-lemma etabc_frz_cmb:
-  assumes "eframe ks cs"
-  shows "fo_cmb (frz_kops m cs) (etabc ks cs yS) (etabc ks cs yE) \<alpha> = etabc ks cs (fo_cmb (frz_kops m ks) yS yE \<alpha>)"
-  using val_restrict[OF assms] by (auto simp: frz_kops_def etabc_def)
-
 text \<open>The separable mode under the simulation.  The two runs replay the same tables, from related
   states; the copies' verdicts are mapped like all others.  Its tables, the frozen ones and their
   unions, are those of a set @{term B} closed under union, for which the replays are good calls.
@@ -742,7 +712,7 @@ lemma frz_absorb_rel: "frz_ops_rel g ops ops' \<Longrightarrow> frz_absorb ops' 
 lemma frz_emit_rel:
   "frz_ops_rel g ops ops' \<Longrightarrow>
     frz_emit (fo_cmb ops') \<alpha>s (map (map_prod g g) buf) = map g (frz_emit (fo_cmb ops) \<alpha>s buf)"
-  by (induction \<alpha>s arbitrary: buf) (auto simp: frz_emit_def frz_ops_rel_def neq_Nil_conv)
+  by (induction \<alpha>s buf rule: list_induct2') (auto simp: frz_emit_def frz_ops_rel_def)
 
 lemma frz_unions_in:
   assumes "\<And>X Y. X \<in> B \<Longrightarrow> Y \<in> B \<Longrightarrow> fo_un ops X Y \<in> B" "L \<in> B" "set xs \<subseteq> B"
@@ -791,7 +761,7 @@ proof -
   have g2: "sz \<rho>E = sz \<sigma>E \<longleftrightarrow> sz' \<rho>E' = sz' \<sigma>E'"
     by (rule sz[OF E'(2) RE])
   have z: "zip (map g rb @ map g uS) (map g rb @ map g uE) = map (map_prod g g) (zip (rb @ uS) (rb @ uE))"
-    by (simp add: zip_map_map flip: map_append)
+    by (simp add: zip_map_map map_prod_def flip: map_append)
   show ?thesis
     using S E' g1 g2
     by (auto simp: frz_copies_def s s' eS eE eS' eE' z drop_map)
@@ -832,8 +802,8 @@ proof -
   have l'': "frz_live_loop sz' ev' pm dbe' (id fl) d po j i (map id \<alpha>s) lr' s' = (ys0', bs0', lv0', s0')"
     using l' by simp
   have LR: "ys0' = map g ys0 \<and> bs0' = map id bs0 \<and> rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv0 lv0' \<and>
-      frz_st_rel R g s0 s0'"
-    by (rule frz_live_loop_rel_inv[where ga = id, OF _ _ A st K L l l''])
+      frz_st_rel R g s0 s0' \<and> K s0"
+    by (rule frz_live_loop_rel_inv[where ga = id and K = K and R = R and g = g, OF _ _ A st K L l l''])
       (use adv cp in \<open>simp_all\<close>)
   obtain Lsh1 nsh1 nf where ab: "frz_absorb ops xsr (Lsh, nsh, 0) = (Lsh1, nsh1, nf)"
     by (metis prod_cases3)
@@ -844,8 +814,11 @@ proof -
     using LR by simp_all
   have w0: "fst (snd s0') = fst (snd s0)"
     using st0 by (cases s0; cases s0') auto
-  have bs0A: "set bs0 \<subseteq> A"
-    using frz_live_loop_inv[where P = "\<lambda>_. True" and T = "\<lambda>_. True", OF _ _ _ l] A by (auto simp: list_all_iff)
+  have "set bs0 \<subseteq> set \<alpha>s"
+    by (rule frz_live_loop_inv[where P = "\<lambda>_. True" and T = "\<lambda>_. True", OF _ _ _ l, THEN conjunct2, THEN conjunct1])
+      (auto simp: frz_st_inv_def list_all_iff split: prod.splits)
+  then have bs0A: "set bs0 \<subseteq> A"
+    using A by blast
   have Lsh1B: "Lsh1 \<in> B"
     using frz_absorb_in[OF Bun c(2) xsr, of nsh 0] ab by simp
   let ?L = "frz_unions ops bs0 Lsh1"
@@ -855,15 +828,12 @@ proof -
       buf' = map (map_prod g g) buf)
     (frz_copies sz ev (fo_emp ops) pm dbe j (i + length ys0) ?L \<sigma>S \<sigma>E s0)
     (frz_copies sz' ev' (fo_emp ops) pm dbe' j (i + length ys0) ?L \<sigma>S' \<sigma>E' s0')"
-    by (rule frz_copies_rel_inv[where Rs = Rs, OF cpc sz st0 K0 LB EB RS RE])
-  have eq: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s = _"
-    unfolding c by (rule frz_stock_eq[OF l ab])
-  have eq': "frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr lr' c \<sigma>S' \<sigma>E' s' = _"
-    unfolding c by (rule frz_stock_eq[OF l' ab'])
+    by (rule frz_copies_rel_inv[where Rs = Rs and K = K and R = R and g = g and B = B, OF cpc sz st0 K0 LB EB RS RE])
+  note eq = frz_stock_eq[OF l ab] and eq' = frz_stock_eq[OF l' ab']
   note opsr = frz_ops_relD[OF ops] frz_unions_rel[OF ops]
   show ?thesis
     using r r' cpr K0 st0 lv0 RS RE RRs
-    unfolding eq eq' opsr ys0' bs0' w0 length_map Let_def
+    unfolding c eq eq' opsr ys0' bs0' w0 length_map Let_def
     by (simp only: split: if_split_asm option.split_asm prod.split_asm) (auto simp: option.rel_sel)
 qed
 
@@ -908,7 +878,7 @@ proof (cases sx)
     using l' by simp
   have LR: "ys0' = map g ys0 \<and> bs0' = map id bs0 \<and> rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv0 lv0' \<and>
       frz_st_rel R g s0 s0' \<and> K s0"
-    by (rule frz_live_loop_rel_inv[where ga = id, OF _ _ A st K L l l''])
+    by (rule frz_live_loop_rel_inv[where ga = id and K = K and R = R and g = g, OF _ _ A st K L l l''])
       (use adv cp in \<open>simp_all\<close>)
   show ?thesis
     using r r' LR RS RE FSOff by (simp add: frz_step_def l l')
@@ -921,7 +891,8 @@ next
       (ys', \<alpha>s1', lv', s1', sx1', \<rho>S', \<rho>E')"
     using r' FSStock by (simp add: frz_step_def)
   show ?thesis
-    by (rule frz_stock_rel_inv[OF adv cp cpc sz RRs ops Bun AB EB A xsr st K refl _ _ RS RE L r0 r0'])
+    by (rule frz_stock_rel_inv[where K = K and R = R and g = g and A = A and B = B and Rs = Rs,
+        OF adv cp cpc sz RRs ops Bun AB EB A xsr st K refl _ _ RS RE L r0 r0'])
       (use SB(1)[OF FSStock] in simp_all)
 next
   case (FSSep L nL pX buf rg bo tk Lr)
@@ -949,7 +920,7 @@ next
     (frz_copies sz ev (fo_emp ops) pm dbe j i Ln \<sigma>S \<sigma>E s2)
     (frz_copies sz' ev' (fo_emp ops) pm dbe' j i Ln \<sigma>S' \<sigma>E' s2')"
     if "Ln \<in> B" "frz_st_rel R g s2 s2'" "K s2" for Ln s2 s2'
-    by (rule frz_copies_rel_inv[where Rs = Rs, OF cpc sz that(2,3,1) EB RS RE])
+    by (rule frz_copies_rel_inv[where Rs = Rs and K = K and R = R and g = g and B = B, OF cpc sz that(2,3,1) EB RS RE])
   have fdr: "rel_option (\<lambda>(\<rho>S, \<rho>E, pX, buf) (\<rho>S', \<rho>E', pX', buf'). R \<rho>S \<rho>S' \<and> R \<rho>E \<rho>E' \<and> pX' = pX \<and>
       buf' = map (map_prod g g) buf)
     (case fd of Some ((uS, \<rho>S), (uE, \<rho>E)) \<Rightarrow> if sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E
@@ -974,10 +945,7 @@ next
     show ?thesis
       using R1 g1 g2 by (auto simp: fd fd' drop_map zip_map_map simp flip: map_append)
   qed simp
-  have eq: "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s = _"
-    unfolding FSSep by (rule frz_step_sep_eq[OF ab])
-  have eq': "frz_step sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr lr' fd' (map_frz_sep id g sx) \<sigma>S' \<sigma>E' s' = _"
-    unfolding FSSep frz_sep.map id_apply by (rule frz_step_sep_eq[OF ab'])
+  note eq = frz_step_sep_eq[OF ab] and eq' = frz_step_sep_eq[OF ab']
   note opsr = frz_ops_relD(1-4)[OF ops] frz_unions_rel[OF ops]
   define ep where "ep = (frz_epoch \<le> Suc tk)"
   define nP where "nP = (if ep then fo_cd ops (frz_unions ops \<alpha>s ?Lr1) else 0)"
@@ -1010,7 +978,7 @@ next
        in if k * max 1 nLn + frz_c0 < rg'
          then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) tk' Ln nLn Lr', \<sigma>S, \<sigma>E)
          else (ys, drop (length ys) \<alpha>s, None, s'', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S2, \<rho>E2)))"
-    unfolding eq Let_def
+    unfolding FSSep eq Let_def
     by (simp only: ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def sB_def cq_def)
   have stq': "frz_step sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr lr' fd' (map_frz_sep id g sx) \<sigma>S' \<sigma>E' s' = (case cq' of
       None \<Rightarrow> frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr None (0, bo, tk', Ln, nLn, Lr') \<sigma>S' \<sigma>E' sB'
@@ -1022,7 +990,7 @@ next
        in if k * max 1 nLn + frz_c0 < rg'
          then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) tk' Ln nLn Lr', \<sigma>S', \<sigma>E')
          else (ys, drop (length ys) \<alpha>s, None, s'', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S2, \<rho>E2)))"
-    unfolding eq' Let_def opsr
+    unfolding FSSep frz_sep.map id_apply eq' Let_def opsr
     by (simp only: ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def sB'_def cq'_def)
   have LnB: "Ln \<in> B"
     using LpB L1B by (simp add: Ln_def)
@@ -1053,7 +1021,8 @@ next
         (ys', \<alpha>s1', lv', s1', sx1', \<rho>S', \<rho>E')"
       using r' unfolding stq' None' by simp
     show ?thesis
-      by (rule frz_stock_rel_inv[OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl LnB Lr'B RS RE _ r0 r0']) simp
+      by (rule frz_stock_rel_inv[where K = K and R = R and g = g and A = A and B = B and Rs = Rs,
+          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl LnB Lr'B RS RE _ r0 r0']) simp
   next
     case (Some cc)
     then obtain \<rho>S2 \<rho>E2 pX2 buf2 where cqS: "cq = Some (\<rho>S2, \<rho>E2, pX2, buf2)"

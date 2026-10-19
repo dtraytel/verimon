@@ -1318,6 +1318,36 @@ proof -
   then show ?thesis using dz dn1 bfs dbf1 by simp
 qed
 
+text \<open>The executable tables are read at the frozen predicate's variables through their own
+  columns: reading a tuple's restriction there is reading the tuple.\<close>
+
+lemma val_restrict:
+  assumes "eframe ks cs"
+  shows "val m cs (restrict cs ks x) = val m ks x"
+proof -
+  have "tup_get cs (restrict cs ks x) i = tup_get ks x i" for i
+  proof (cases "i \<in> set cs")
+    case True
+    then show ?thesis
+      by (rule tup_get_restrict)
+  next
+    case False
+    then have "i \<notin> set ks"
+      using eframeD(3)[OF assms] by simp
+    then have "map_of (zip ks x) i = None" "map_of (zip cs (restrict cs ks x)) i = None"
+      using False by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
+    then show ?thesis
+      by (simp add: tup_get_def)
+  qed
+  then show ?thesis
+    by (simp add: val_def)
+qed
+
+lemma etabc_frz_cmb:
+  assumes "eframe ks cs"
+  shows "fo_cmb (frz_kops m cs) (etabc ks cs yS) (etabc ks cs yE) \<alpha> = etabc ks cs (fo_cmb (frz_kops m ks) yS yE \<alpha>)"
+  by (auto simp: frz_kops_def etabc_def val_restrict[OF assms])
+
 subsection \<open>The relation itself\<close>
 
 text \<open>
