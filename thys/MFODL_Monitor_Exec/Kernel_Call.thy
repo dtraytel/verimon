@@ -1030,7 +1030,7 @@ next
       using r' unfolding stq' None' by simp
     show ?thesis
       by (rule frz_stock_rel_inv[where K = K and R = R and g = g and A = A and B = B and Rs = Rs,
-          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl LnB Lr'B RS RE _ r0 r0']) simp
+          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl LnB Lr'B RS RE option.rel_inject(1) r0 r0'])
   next
     case (Some cc)
     then obtain \<rho>S2 \<rho>E2 pX2 buf2 where cqS: "cq = Some (\<rho>S2, \<rho>E2, pX2, buf2)"
@@ -1107,7 +1107,7 @@ lemma frz_kinvI:
   unfolding frz_kinv_def prod.case snd_conv
   by (rule exI[of _ S], rule exI[of _ E], rule exI[of _ E'], rule exI[of _ \<sigma>], rule exI[of _ P'],
       rule exI[of _ V], rule exI[of _ R], rule exI[of _ \<phi>1], rule exI[of _ \<psi>1])
-    (use assms in \<open>intro conjI exI[of _ N'] allI impI; assumption?\<close>)
+    (use assms in \<open>intro conjI exI[of _ N'] allI impI; (assumption | blast)\<close>)
 
 lemma frz_adv_le: "d \<noteq> \<infinity> \<longrightarrow> length tq = J - w \<Longrightarrow> frz_adv d w i J tq \<le> J - w"
   unfolding frz_adv_def by (auto intro: order_trans[OF length_takeWhile_le])
@@ -1304,16 +1304,27 @@ proof -
     and live: "\<And>g. lv = Some g \<Longrightarrow> \<exists>wL NL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
       kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz)) n R \<rho>L \<psi>1"
     and kks: "kks = Formula.fv_list \<phi>1" and cS: "cS = Formula.fv_list \<psi>1"
-    and sep_ok: "sx \<noteq> FSOff \<Longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1"
-    and stock: "\<And>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<Longrightarrow>
+    and sep_ok0: "sx \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1"
+    and stock0: "\<forall>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
       frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr"
-    and sep: "\<And>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<Longrightarrow>
+    and sep0: "\<forall>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
+      pX = progress \<sigma> (P((p, m) \<mapsto> j0)) \<psi>1 j0 \<and> length buf = pX - min jfrz pX \<and>
+      (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
+        (\<forall>k<wE. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
+        kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))) n R \<rho>S \<psi>1 \<and>
+        kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False))) n R \<rho>E \<psi>1 \<and>
+        list_all2 (\<lambda>k (yS, yE). frz_row \<sigma> V n R p \<phi>1 \<psi>1 (frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))
+          (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz pX..<pX] buf)"
+    by (cases rule: kmaux_wf_mformula_cases) (simp_all; blast)
+  note sep_ok = sep_ok0[rule_format] and stock = stock0[rule_format]
+  have sep: "lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
         (\<forall>k<wE. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
         kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))) n R \<rho>S \<psi>1 \<and>
         kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False))) n R \<rho>E \<psi>1)"
-    by (cases rule: kmaux_wf_mformula_cases) (simp_all, blast)
+    if "sx = FSSep L nL pX buf rg bo tk Lr" for L nL pX buf rg bo tk Lr
+    using sep0[rule_format, OF that] by blast
   from wty obtain E' where wty1: "S, E' \<turnstile> \<phi>1"
     and wty2: "S((p, m) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>1)), E \<turnstile> \<psi>1"
     unfolding \<chi> fv by (cases pred: wty_formula) simp_all
