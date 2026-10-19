@@ -822,13 +822,16 @@ proof -
   have Lsh1B: "Lsh1 \<in> B"
     using frz_absorb_in[OF Bun c(2) xsr, of nsh 0] ab by simp
   let ?L = "frz_unions ops bs0 Lsh1"
+  have bs0B: "set bs0 \<subseteq> B"
+    using bs0A AB by (rule order_trans)
   have LB: "?L \<in> B"
-    by (rule frz_unions_in[OF Bun Lsh1B]) (use bs0A AB in blast)
+    by (rule frz_unions_in[OF Bun Lsh1B bs0B])
   have cpr: "rel_option (\<lambda>(\<rho>S, \<rho>E, pX, buf) (\<rho>S', \<rho>E', pX', buf'). R \<rho>S \<rho>S' \<and> R \<rho>E \<rho>E' \<and> pX' = pX \<and>
       buf' = map (map_prod g g) buf)
     (frz_copies sz ev (fo_emp ops) pm dbe j (i + length ys0) ?L \<sigma>S \<sigma>E s0)
     (frz_copies sz' ev' (fo_emp ops) pm dbe' j (i + length ys0) ?L \<sigma>S' \<sigma>E' s0')"
-    by (rule frz_copies_rel_inv[where Rs = Rs and K = K and R = R and g = g and B = B, OF cpc sz st0 K0 LB EB RS RE])
+    by (rule frz_copies_rel_inv[where Rs = Rs and K = K and R = R and g = g and B = B and ev = ev and ev' = ev'
+        and pm = pm and dbe = dbe and dbe' = dbe' and j = j and sz = sz and sz' = sz', OF cpc sz st0 K0 LB EB RS RE])
   note eq = frz_stock_eq[OF l ab] and eq' = frz_stock_eq[OF l' ab']
   note opsr = frz_ops_relD[OF ops] frz_unions_rel[OF ops]
   show ?thesis
@@ -907,8 +910,10 @@ next
   let ?Lr1 = "frz_unions ops xsr Lr"
   have Lr1B: "?Lr1 \<in> B"
     by (rule frz_unions_in[OF Bun LrB xsr])
+  have \<alpha>sB: "set \<alpha>s \<subseteq> B"
+    using A AB by (rule order_trans)
   have LpB: "frz_unions ops \<alpha>s ?Lr1 \<in> B"
-    by (rule frz_unions_in[OF Bun Lr1B]) (use A AB in blast)
+    by (rule frz_unions_in[OF Bun Lr1B \<alpha>sB])
   \<comment> \<open>the replay base, moved or not\<close>
   have s2: "frz_st_rel R g (if b then frz_adv_st sz ev pm dbe fl d j i s else s)
       (if b then frz_adv_st sz' ev' pm dbe' fl d j i s' else s') \<and>
@@ -920,7 +925,8 @@ next
     (frz_copies sz ev (fo_emp ops) pm dbe j i Ln \<sigma>S \<sigma>E s2)
     (frz_copies sz' ev' (fo_emp ops) pm dbe' j i Ln \<sigma>S' \<sigma>E' s2')"
     if "Ln \<in> B" "frz_st_rel R g s2 s2'" "K s2" for Ln s2 s2'
-    by (rule frz_copies_rel_inv[where Rs = Rs and K = K and R = R and g = g and B = B, OF cpc sz that(2,3,1) EB RS RE])
+    by (rule frz_copies_rel_inv[where Rs = Rs and K = K and R = R and g = g and B = B and ev = ev and ev' = ev'
+        and pm = pm and dbe = dbe and dbe' = dbe' and j = j and sz = sz and sz' = sz', OF cpc sz that(2,3,1) EB RS RE])
   have fdr: "rel_option (\<lambda>(\<rho>S, \<rho>E, pX, buf) (\<rho>S', \<rho>E', pX', buf'). R \<rho>S \<rho>S' \<and> R \<rho>E \<rho>E' \<and> pX' = pX \<and>
       buf' = map (map_prod g g) buf)
     (case fd of Some ((uS, \<rho>S), (uE, \<rho>E)) \<Rightarrow> if sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E
@@ -936,14 +942,16 @@ next
   proof (cases fd)
     case (Some x)
     then obtain uS \<rho>S1 uE \<rho>E1 where fd: "fd = Some ((uS, \<rho>S1), (uE, \<rho>E1))"
-      by (metis prod_cases4)
+      by (metis prod.collapse)
     with FD obtain \<rho>S1' \<rho>E1' where fd': "fd' = Some ((map g uS, \<rho>S1'), (map g uE, \<rho>E1'))"
       and R1: "R \<rho>S1 \<rho>S1'" "R \<rho>E1 \<rho>E1'"
       by (cases fd') auto
     have g1: "sz \<rho>S1 = sz \<sigma>S \<longleftrightarrow> sz' \<rho>S1' = sz' \<sigma>S'" and g2: "sz \<rho>E1 = sz \<sigma>E \<longleftrightarrow> sz' \<rho>E1' = sz' \<sigma>E'"
       using sz[OF R1(1) RS] sz[OF R1(2) RE] .
+    have zz: "map (map_prod g g) buf @ zip (map g uS) (map g uE) = map (map_prod g g) (buf @ zip uS uE)"
+      by (simp add: zip_map_map map_prod_def)
     show ?thesis
-      using R1 g1 g2 by (auto simp: fd fd' drop_map zip_map_map simp flip: map_append)
+      using R1 g1 g2 unfolding fd fd' option.case prod.case length_map zz drop_map by auto
   qed simp
   note eq = frz_step_sep_eq[OF ab] and eq' = frz_step_sep_eq[OF ab']
   note opsr = frz_ops_relD(1-4)[OF ops] frz_unions_rel[OF ops]
