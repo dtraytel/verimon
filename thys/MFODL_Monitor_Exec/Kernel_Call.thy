@@ -725,6 +725,22 @@ lemma frz_absorb_in:
   using assms(2,3) unfolding frz_absorb_def
   by (induction xs arbitrary: L n f) (auto intro: assms(1) simp: Let_def)
 
+lemma frz_meas_rel: "frz_ops_rel g ops ops' \<Longrightarrow> frz_meas ops' gt rs xs m = frz_meas ops gt rs xs m"
+  by (simp add: frz_meas_def frz_ops_rel_def frz_unions_rel frz_absorb_rel)
+
+lemma frz_meas_in:
+  assumes "\<And>X Y. X \<in> B \<Longrightarrow> Y \<in> B \<Longrightarrow> fo_un ops X Y \<in> B" "fo_emp ops \<in> B" "Lm \<in> B" "set rs \<subseteq> B"
+    "set xs \<subseteq> B" "frz_meas ops gt rs xs (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+  shows "Lm' \<in> B"
+proof -
+  have u: "frz_unions ops rs (fo_emp ops) \<in> B"
+    by (rule frz_unions_in[OF assms(1,2,4)])
+  have a: "L1 \<in> B" if "frz_absorb ops xs (L0, 0, 0) = (L1, n1, f1)" "L0 \<in> B" for L0 L1 n1 f1
+    using frz_absorb_in[OF assms(1) that(2) assms(5), of 0 0] that(1) by simp
+  show ?thesis
+    using assms(2,3,6) u by (auto simp: frz_meas_def Let_def split: if_splits prod.split_asm dest: a)
+qed
+
 lemma frz_copies_rel_inv:
   assumes cpc: "\<And>\<rho> w pR tq rb \<rho>' X. R \<rho> \<rho>' \<Longrightarrow> K (\<rho>, w, pR, tq, rb) \<Longrightarrow> X \<in> B \<Longrightarrow>
       fst (ev' [] (Mapping.update pm (replicate (j - w) X) dbe') \<rho>') =
@@ -786,7 +802,7 @@ lemma frz_stock_rel_inv:
     and ops: "frz_ops_rel g ops ops'"
     and Bun: "\<And>X Y. X \<in> B \<Longrightarrow> Y \<in> B \<Longrightarrow> fo_un ops X Y \<in> B" and AB: "A \<subseteq> B" and EB: "fo_emp ops \<in> B"
     and A: "set \<alpha>s \<subseteq> A" and xsr: "set xsr \<subseteq> B" and st: "frz_st_rel R g s s'" and K: "K s"
-    and c: "c = (rg, bo, tk, Lsh, nsh, Lr)" "Lsh \<in> B" "Lr \<in> B"
+    and c: "c = (rg, bo, cy, Lm, nm, en, ep, rs)" "Lm \<in> B" "set rs \<subseteq> B"
     and RS: "Rs \<sigma>S \<sigma>S'" and RE: "Rs \<sigma>E \<sigma>E'"
     and L: "rel_option (\<lambda>(k, us, \<sigma>) (k', us', \<sigma>'). k' = k \<and> us' = map g us \<and> R \<sigma> \<sigma>') lr lr'"
     and r: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s = (ys, \<alpha>s1, lv, s1, sx1, \<rho>S, \<rho>E)"
@@ -805,10 +821,6 @@ proof -
       frz_st_rel R g s0 s0' \<and> K s0"
     by (rule frz_live_loop_rel_inv[where ga = id and K = K and R = R and g = g, OF _ _ A st K L l l''])
       (use adv cp in \<open>simp_all\<close>)
-  obtain Lsh1 nsh1 nf where ab: "frz_absorb ops xsr (Lsh, nsh, 0) = (Lsh1, nsh1, nf)"
-    by (metis prod_cases3)
-  have ab': "frz_absorb ops' xsr (Lsh, nsh, 0) = (Lsh1, nsh1, nf)"
-    using ab frz_absorb_rel[OF ops] by simp
   have K0: "K s0" and st0: "frz_st_rel R g s0 s0'" and ys0': "ys0' = map g ys0" and bs0': "bs0' = bs0"
     and lv0: "rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lv0 lv0'"
     using LR by simp_all
@@ -819,13 +831,22 @@ proof -
       (auto simp: frz_st_inv_def list_all_iff split: prod.splits)
   then have bs0A: "set bs0 \<subseteq> A"
     using A by blast
-  have Lsh1B: "Lsh1 \<in> B"
-    using frz_absorb_in[OF Bun c(2) xsr, of nsh 0] ab by simp
-  let ?L = "frz_unions ops bs0 Lsh1"
+  obtain cy' Lm' nm' en' ep' where ab: "frz_meas ops (frz_lambda < frz_cut po (fst (snd s0)) i j) rs xsr
+      (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+    by (metis prod_cases5)
+  have ab': "frz_meas ops' (frz_lambda < frz_cut po (fst (snd s0')) i j) rs xsr
+      (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+    using ab frz_meas_rel[OF ops] w0 by simp
+  let ?rs' = "take frz_keep (xsr @ rs)"
+  have rsB: "set ?rs' \<subseteq> B"
+    using xsr c(3) by (auto dest: in_set_takeD)
+  have RB: "frz_unions ops ?rs' (fo_emp ops) \<in> B"
+    by (rule frz_unions_in[OF Bun EB rsB])
+  let ?L = "frz_unions ops bs0 (frz_unions ops ?rs' (fo_emp ops))"
   have bs0B: "set bs0 \<subseteq> B"
     using bs0A AB by (rule order_trans)
   have LB: "?L \<in> B"
-    by (rule frz_unions_in[OF Bun Lsh1B bs0B])
+    by (rule frz_unions_in[OF Bun RB bs0B])
   have cpr: "rel_option (\<lambda>(\<rho>S, \<rho>E, pX, buf) (\<rho>S', \<rho>E', pX', buf'). R \<rho>S \<rho>S' \<and> R \<rho>E \<rho>E' \<and> pX' = pX \<and>
       buf' = map (map_prod g g) buf)
     (frz_copies sz ev (fo_emp ops) pm dbe j (i + length ys0) ?L \<sigma>S \<sigma>E s0)
@@ -859,7 +880,7 @@ lemma frz_step_rel_inv:
     and ops: "frz_ops_rel g ops ops'"
     and Bun: "\<And>X Y. X \<in> B \<Longrightarrow> Y \<in> B \<Longrightarrow> fo_un ops X Y \<in> B" and AB: "A \<subseteq> B" and EB: "fo_emp ops \<in> B"
     and A: "set \<alpha>s \<subseteq> A" and xsr: "set xsr \<subseteq> B" and st: "frz_st_rel R g s s'" and K: "K s"
-    and SB: "\<And>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<Longrightarrow> Lsh \<in> B \<and> Lr \<in> B"
+    and SB: "\<And>rg bo cy Lm nm en ep rs. sx = FSStock rg bo cy Lm nm en ep rs \<Longrightarrow> Lm \<in> B \<and> set rs \<subseteq> B"
       "\<And>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<Longrightarrow> L \<in> B \<and> Lr \<in> B"
     and RS: "Rs \<sigma>S \<sigma>S'" and RE: "Rs \<sigma>E \<sigma>E'"
     and L: "rel_option (\<lambda>(k, us, \<sigma>) (k', us', \<sigma>'). k' = k \<and> us' = map g us \<and> R \<sigma> \<sigma>') lr lr'"
@@ -886,11 +907,11 @@ proof (cases sx)
   show ?thesis
     using r r' LR RS RE FSOff by (simp add: frz_step_def l l')
 next
-  case (FSStock rg bo tk Lsh nsh Lr)
-  have r0: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr (rg, bo, tk, Lsh, nsh, Lr) \<sigma>S \<sigma>E s =
+  case (FSStock rg bo cy Lm nm en ep rs)
+  have r0: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr (rg, bo, cy, Lm, nm, en, ep, rs) \<sigma>S \<sigma>E s =
       (ys, \<alpha>s1, lv, s1, sx1, \<rho>S, \<rho>E)"
     using r FSStock by (simp add: frz_step_def)
-  have r0': "frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr lr' (rg, bo, tk, Lsh, nsh, Lr) \<sigma>S' \<sigma>E' s' =
+  have r0': "frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr lr' (rg, bo, cy, Lm, nm, en, ep, rs) \<sigma>S' \<sigma>E' s' =
       (ys', \<alpha>s1', lv', s1', sx1', \<rho>S', \<rho>E')"
     using r' FSStock by (simp add: frz_step_def)
   show ?thesis
@@ -977,26 +998,28 @@ next
         else None
       | None \<Rightarrow> None))"
   have stq: "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s = (case cq of
-      None \<Rightarrow> frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, tk', Ln, nLn, Lr') \<sigma>S \<sigma>E sB
+      None \<Rightarrow> frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S \<sigma>E sB
     | Some (\<rho>S2, \<rho>E2, pX', buf') \<Rightarrow>
       (let ys = frz_emit (fo_cmb ops) \<alpha>s buf';
            s'' = frz_adv_st sz ev pm dbe fl d j (i + length ys) sB;
            k = j - fst (snd s'');
-           rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) - k * sum_list (map (fo_cd ops) xsr)
+           rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) -
+             frz_cut po (fst (snd s'')) i j * sum_list (map (fo_cd ops) xsr)
        in if k * max 1 nLn + frz_c0 < rg'
-         then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) tk' Ln nLn Lr', \<sigma>S, \<sigma>E)
+         then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) 0 (fo_emp ops) 0 0 0 [Ln], \<sigma>S, \<sigma>E)
          else (ys, drop (length ys) \<alpha>s, None, s'', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S2, \<rho>E2)))"
     unfolding FSSep eq Let_def
     by (simp only: ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def sB_def cq_def)
   have stq': "frz_step sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr lr' fd' (map_frz_sep id g sx) \<sigma>S' \<sigma>E' s' = (case cq' of
-      None \<Rightarrow> frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr None (0, bo, tk', Ln, nLn, Lr') \<sigma>S' \<sigma>E' sB'
+      None \<Rightarrow> frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S' \<sigma>E' sB'
     | Some (\<rho>S2, \<rho>E2, pX', buf') \<Rightarrow>
       (let ys = frz_emit (fo_cmb ops') \<alpha>s buf';
            s'' = frz_adv_st sz' ev' pm dbe' fl d j (i + length ys) sB';
            k = j - fst (snd s'');
-           rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) - k * sum_list (map (fo_cd ops) xsr)
+           rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) -
+             frz_cut po (fst (snd s'')) i j * sum_list (map (fo_cd ops) xsr)
        in if k * max 1 nLn + frz_c0 < rg'
-         then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) tk' Ln nLn Lr', \<sigma>S', \<sigma>E')
+         then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) 0 (fo_emp ops) 0 0 0 [Ln], \<sigma>S', \<sigma>E')
          else (ys, drop (length ys) \<alpha>s, None, s'', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S2, \<rho>E2)))"
     unfolding FSSep frz_sep.map id_apply eq' Let_def opsr
     by (simp only: ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def sB'_def cq'_def)
@@ -1022,15 +1045,15 @@ next
     case None
     then have None': "cq' = None"
       using cqr by (cases cq') auto
-    have r0: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, tk', Ln, nLn, Lr') \<sigma>S \<sigma>E sB =
+    have r0: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S \<sigma>E sB =
         (ys, \<alpha>s1, lv, s1, sx1, \<rho>S, \<rho>E)"
       using r unfolding stq None by simp
-    have r0': "frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr None (0, bo, tk', Ln, nLn, Lr') \<sigma>S' \<sigma>E' sB' =
+    have r0': "frz_stock sz' ev' ops' pm dbe' fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S' \<sigma>E' sB' =
         (ys', \<alpha>s1', lv', s1', sx1', \<rho>S', \<rho>E')"
       using r' unfolding stq' None' by simp
     show ?thesis
       by (rule frz_stock_rel_inv[where K = K and R = R and g = g and A = A and B = B and Rs = Rs,
-          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl LnB Lr'B RS RE option.rel_inject(1) r0 r0'])
+          OF adv cp cpc sz RRs ops Bun AB EB A xsr sBr KB refl EB _ RS RE option.rel_inject(1) r0 r0']) (use LnB in simp)
   next
     case (Some cc)
     then obtain \<rho>S2 \<rho>E2 pX2 buf2 where cqS: "cq = Some (\<rho>S2, \<rho>E2, pX2, buf2)"
@@ -1062,7 +1085,7 @@ text \<open>The tables of the separable evaluation: subsets of the union of the 
 
 definition frz_tabs :: "event_data table set \<Rightarrow> (event_data list set, 't) frz_sep \<Rightarrow> event_data table set" where
   "frz_tabs A sx = {X. X \<subseteq> \<Union> A \<union>
-    (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lsh _ Lr \<Rightarrow> Lsh \<union> Lr | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)}"
+    (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lm _ _ _ rs \<Rightarrow> Lm \<union> \<Union> (set rs) | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)}"
 
 definition frz_kinv :: "nat \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow> Formula.name \<times> nat \<Rightarrow> enat \<Rightarrow> database \<Rightarrow>
     event_data table set \<Rightarrow> event_data table set \<Rightarrow>
@@ -1277,8 +1300,8 @@ lemma kgood_MFrzE:
       kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz)) n R \<rho>L \<psi>1"
     "cS = Formula.fv_list \<psi>1"
     "sx \<noteq> FSOff \<Longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1"
-    "\<And>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<Longrightarrow>
-      frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr"
+    "\<And>rg bo cy Lm nm en ep rs. sx = FSStock rg bo cy Lm nm en ep rs \<Longrightarrow>
+      frz_tab \<sigma> V m \<phi>1 Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X)"
     "\<And>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<Longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
@@ -1308,8 +1331,8 @@ proof -
       kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz)) n R \<rho>L \<psi>1)"
     and kks: "kks = Formula.fv_list \<phi>1" and cS: "cS = Formula.fv_list \<psi>1"
     and sep_ok0: "sx \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1"
-    and stock0: "\<forall>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
-      frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr"
+    and stock0: "\<forall>rg bo cy Lm nm en ep rs. sx = FSStock rg bo cy Lm nm en ep rs \<longrightarrow>
+      frz_tab \<sigma> V m \<phi>1 Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X)"
     and sep0: "\<forall>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       pX = progress \<sigma> (P((p, m) \<mapsto> j0)) \<psi>1 j0 \<and> length buf = pX - min jfrz pX \<and>
@@ -1442,8 +1465,8 @@ proof (rule kgood_MFrzE)
     and wf\<rho>: "\<And>M. frz_sup \<sigma> V \<phi>1 M \<Longrightarrow> kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> w))
       (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 N w M)) n R \<rho> \<psi>1"
     and win: "maux.wf_frz_win \<sigma> j0 P V n R p m \<phi>1 \<psi>1 jfrz w pR tq rb d"
-    and stock: "\<And>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<Longrightarrow>
-      frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr"
+    and stock: "\<And>rg bo cy Lm nm en ep rs. sx = FSStock rg bo cy Lm nm en ep rs \<Longrightarrow>
+      frz_tab \<sigma> V m \<phi>1 Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X)"
     and sep: "\<And>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<Longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
@@ -1509,11 +1532,11 @@ proof (rule kgood_MFrzE)
         by (cases io) auto
     qed
     have tabS: "length v = m \<and> (\<exists>i. Formula.sat \<sigma> V v i \<phi>1)"
-      if "v \<in> (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lsh _ Lr \<Rightarrow> Lsh \<union> Lr | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)" for v
+      if "v \<in> (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lm _ _ _ rs \<Rightarrow> Lm \<union> \<Union> (set rs) | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)" for v
       using that stock sep by (auto simp: frz_tab_def split: frz_sep.splits)
     have finA: "finite (\<Union> (Set.insert (frz_fill ng (\<alpha>s @ ?xsr)) (set (\<alpha>s @ ?xsr))))"
       using A by auto
-    have finS: "finite (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lsh _ Lr \<Rightarrow> Lsh \<union> Lr | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)"
+    have finS: "finite (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lm _ _ _ rs \<Rightarrow> Lm \<union> \<Union> (set rs) | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)"
       using stock sep by (auto simp: frz_tab_def split: frz_sep.splits)
     have "finite X"
       using X finA finS by (auto simp: frz_tabs_def intro: finite_subset)

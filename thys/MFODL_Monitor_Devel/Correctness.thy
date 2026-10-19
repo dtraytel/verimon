@@ -182,6 +182,28 @@ proof (induction xs arbitrary: L n f)
     using IH s by (auto; blast)
 qed (simp add: frz_absorb_def)
 
+lemma frz_meas_tab:
+  assumes "frz_meas (frz_kops m' cs) g rs xs (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+    and "frz_tab \<sigma> V m \<phi> Lm" "\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi> X" "\<forall>X \<in> set xs. frz_tab \<sigma> V m \<phi> X"
+  shows "frz_tab \<sigma> V m \<phi> Lm'"
+proof -
+  have fin: "\<forall>\<alpha> \<in> set xs. finite \<alpha>"
+    using assms(4) by (simp add: frz_tab_def)
+  have t0: "frz_tab \<sigma> V m \<phi> (frz_unions (frz_kops m' cs) rs {})"
+    by (rule frz_tab_unions[OF frz_tab_empty]) (use assms(3) in blast)
+  have ab: "frz_tab \<sigma> V m \<phi> L1"
+    if "frz_absorb (frz_kops m' cs) xs (L0, 0, 0) = (L1, n1, f1)" "frz_tab \<sigma> V m \<phi> L0" for L0 L1 n1 f1
+  proof -
+    have "L1 = frz_unions (frz_kops m' cs) xs L0"
+      using frz_absorb_kops[OF that(1) fin] by (simp add: frz_unions_kops)
+    then show ?thesis
+      by (simp only:) (rule frz_tab_unions[OF that(2)], use assms(4) in blast)
+  qed
+  show ?thesis
+    using assms(1,2) t0
+    by (auto simp: frz_meas_def Let_def frz_kops_simps split: if_splits prod.split_asm dest: ab)
+qed
+
 text \<open>The combination of the two copies' rows at a time point @{term i}: the first copy's tuples
   whose frozen tuple is in the frozen table of @{term i}, the second copy's others.  The first
   copy's frozen predicate holds the frozen table's tuples (and maybe others), the second's none,
@@ -324,8 +346,8 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
       wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>' NL wL jfrz)) n R \<rho>L \<psi>'))
     \<Longrightarrow> cs = Formula.fv_list \<phi>' \<Longrightarrow> cS = Formula.fv_list \<psi>'
     \<Longrightarrow> (sx \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>' \<and> Formula.contains_pred (p, m) \<psi>')
-    \<Longrightarrow> (\<forall>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
-      frz_tab \<sigma> V m \<phi>' Lsh \<and> frz_tab \<sigma> V m \<phi>' Lr)
+    \<Longrightarrow> (\<forall>rg bo cy Lm nm en ep rs. sx = FSStock rg bo cy Lm nm en ep rs \<longrightarrow>
+      frz_tab \<sigma> V m \<phi>' Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>' X))
     \<Longrightarrow> (\<forall>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>' L \<and> frz_tab \<sigma> V m \<phi>' Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       pX = progress \<sigma> (P((p, m) \<mapsto> j)) \<psi>' j \<and> length buf = pX - min jfrz pX \<and>
@@ -2318,8 +2340,8 @@ next
       wf_mformula \<sigma> j (P(?pn \<mapsto> j)) (V(?pn \<mapsto> frz_cv \<sigma> V \<phi>1 NL wL jfrz0)) n R \<rho>L \<psi>1)" and
     cs: "cs = Formula.fv_list \<phi>1" and cS_eq: "cS = Formula.fv_list \<psi>1" and
     sep_ok0: "sx \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1" and
-    stock_inv0: "\<forall>rg bo tk Lsh nsh Lr. sx = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
-      frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr" and
+    stock_inv0: "\<forall>rg bo cy Lm nm en ep rs. sx = FSStock rg bo cy Lm nm en ep rs \<longrightarrow>
+      frz_tab \<sigma> V m \<phi>1 Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X)" and
     sep_inv0: "\<forall>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
       lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       pX = progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j \<and> length buf = pX - min jfrz0 pX \<and>
@@ -3400,7 +3422,8 @@ next
     for ys bs' lv' s'
   define SEPST where "SEPST i bs' (lv' :: (nat \<times> ('msaux, 'muaux, 'mtaux) mformula) option) sx'
       (\<rho>S' :: ('msaux, 'muaux, 'mtaux) mformula) (\<rho>E' :: ('msaux, 'muaux, 'mtaux) mformula) \<longleftrightarrow> (sx' \<noteq> FSOff \<longrightarrow> sx \<noteq> FSOff) \<and>
-      (\<forall>rg bo tk Lsh nsh Lr. sx' = FSStock rg bo tk Lsh nsh Lr \<longrightarrow> frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr) \<and>
+      (\<forall>rg bo cy Lm nm en ep rs. sx' = FSStock rg bo cy Lm nm en ep rs \<longrightarrow>
+        frz_tab \<sigma> V m \<phi>1 Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X)) \<and>
       (\<forall>L nL pX buf rg bo tk Lr. sx' = FSSep L nL pX buf rg bo tk Lr \<longrightarrow> lv' = None \<and>
         frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set bs'. \<alpha> \<subseteq> L) \<and> SEPC i L \<rho>S' \<rho>E' pX buf)"
     for i bs' lv' sx' \<rho>S' \<rho>E'
@@ -3410,52 +3433,47 @@ next
   \<comment> \<open>the replay mode, and its decision\<close>
   have stock: "RES ys bs' lv' s' \<and> SEPST (jfrzM + length ys) bs' lv' sx' \<rho>S' \<rho>E'"
     if st: "frz_stock size (meval (j + \<delta>) n) (frz_kops m cS) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 xsr lr0
-        (rg, bo, tk, Lsh, nsh, Lr) \<sigma>S \<sigma>E s0 = (ys, bs', lv', s', sx', \<rho>S', \<rho>E')"
-      and tabs: "frz_tab \<sigma> V m \<phi>1 Lsh" "frz_tab \<sigma> V m \<phi>1 Lr" and nOff: "sx \<noteq> FSOff"
+        (rg, bo, cy, Lm, nm, en, ep, rs) \<sigma>S \<sigma>E s0 = (ys, bs', lv', s', sx', \<rho>S', \<rho>E')"
+      and tabs: "frz_tab \<sigma> V m \<phi>1 Lm" "\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X" and nOff: "sx \<noteq> FSOff"
       and lp: "\<And>ys bs' lv' s'. frz_live_loop size (meval (j + \<delta>) n) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 lr0 s0 =
         (ys, bs', lv', s') \<Longrightarrow> RES ys bs' lv' s'"
-    for lr0 rg bo tk Lsh nsh Lr \<sigma>S \<sigma>E s0 ys bs' lv' s' sx' \<rho>S' \<rho>E'
+    for lr0 rg bo cy Lm nm en ep rs \<sigma>S \<sigma>E s0 ys bs' lv' s' sx' \<rho>S' \<rho>E'
   proof -
     obtain ys0 bs0 lv0 s0' where l: "frz_live_loop size (meval (j + \<delta>) n) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 lr0 s0 =
         (ys0, bs0, lv0, s0')"
       by (metis prod_cases4)
     have R: "RES ys0 bs0 lv0 s0'"
       by (rule lp[OF l])
-    obtain Lsh1 nsh1 nf where ab: "frz_absorb (frz_kops m cS) xsr (Lsh, nsh, 0) = (Lsh1, nsh1, nf)"
-      by (metis prod_cases3)
-    have Lsh1: "Lsh1 = Lsh \<union> \<Union> (set xsr)"
-      using frz_absorb_kops[OF ab fin_xsr] by simp
-    have tabLsh1: "frz_tab \<sigma> V m \<phi>1 Lsh1"
-      unfolding Lsh1 frz_unions_kops[where m=m and cs=cS, symmetric] by (rule tab_unions[OF tabs(1)]) simp
+    obtain cy' Lm' nm' en' ep' where ab: "frz_meas (frz_kops m cS) (frz_lambda < frz_cut po (fst (snd s0')) jfrzM (j + \<delta>))
+        rs xsr (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+      by (metis prod_cases5)
+    have tabLm': "frz_tab \<sigma> V m \<phi>1 Lm'"
+      by (rule frz_meas_tab[OF ab tabs]) (use tab_xsr in blast)
+    let ?rs' = "take frz_keep (xsr @ rs)"
+    have tabrs': "\<forall>X \<in> set ?rs'. frz_tab \<sigma> V m \<phi>1 X"
+      using tabs(2) tab_xsr by (auto dest: in_set_takeD)
     have bs0: "set bs0 \<subseteq> set \<alpha>s1"
       using R by (auto simp: RES_def dest: in_set_dropD)
-    have tabLr1: "frz_tab \<sigma> V m \<phi>1 (frz_unions (frz_kops m cS) xsr Lr)"
-      by (rule tab_unions[OF tabs(2)]) simp
-    have tabLsh2: "frz_tab \<sigma> V m \<phi>1 (frz_unions (frz_kops m cS) bs0 (frz_unions (frz_kops m cS) xsr Lr))"
-      by (rule tab_unions[OF tabLr1]) (use bs0 in blast)
     have i_le: "jfrzM + length ys0 \<le> jpsij'"
       using R jfrzM_jpsij' by (auto simp: RES_def)
-    let ?L = "frz_unions (frz_kops m cS) bs0 Lsh1"
+    let ?L = "frz_unions (frz_kops m cS) bs0 (frz_unions (frz_kops m cS) ?rs' {})"
+    have tabR: "frz_tab \<sigma> V m \<phi>1 (frz_unions (frz_kops m cS) ?rs' {})"
+      by (rule frz_tab_unions[OF frz_tab_empty]) (use tabrs' in blast)
     have tabL: "frz_tab \<sigma> V m \<phi>1 ?L"
-      by (rule tab_unions[OF tabLsh1]) (use bs0 in blast)
+      by (rule tab_unions[OF tabR]) (use bs0 in blast)
     have subL: "\<forall>\<alpha> \<in> set bs0. \<alpha> \<subseteq> ?L"
       by (auto simp: frz_unions_kops)
     have ex0: "EXA (jfrzM + length ys0) s0'"
       using R unfolding RES_def by blast
     have RN: "RES ys0 bs0 None s0'"
       using R option.distinct(1) unfolding RES_def by blast
-    have tabLr': "frz_tab \<sigma> V m \<phi>1 (if frz_epoch \<le> Suc tk then {} else frz_unions (frz_kops m cS) xsr Lr)"
-      using tabLr1 by simp
-    have tabLsh2': "frz_tab \<sigma> V m \<phi>1 (if frz_epoch \<le> Suc tk
-        then frz_unions (frz_kops m cS) bs0 (frz_unions (frz_kops m cS) xsr Lr) else Lsh1)"
-      using tabLsh2 tabLsh1 by simp
     note st' = st[unfolded frz_stock_eq[OF l ab] Let_def frz_kops_simps]
     show ?thesis
     proof (cases "frz_copies size (meval (j + \<delta>) n) (fo_emp (frz_kops m cS)) ?pn ?dbe (j + \<delta>)
         (jfrzM + length ys0) ?L \<sigma>S \<sigma>E s0'")
       case None
       then show ?thesis
-        using st' R tabLsh2' tabLr' nOff
+        using st' R tabLm' tabrs' nOff
         by (auto simp: SEPST_def frz_kops_simps split: if_splits)
     next
       case (Some c)
@@ -3465,7 +3483,7 @@ next
       have sc: "SEPC (jfrzM + length ys0) ?L \<rho>S2 \<rho>E2 pX2 buf2"
         by (rule copies[OF cpe[unfolded frz_kops_simps] ex0 tabL i_le])
       show ?thesis
-        using st' R RN tabLsh2' tabLr' nOff sc subL tabL cpe[unfolded frz_kops_simps]
+        using st' R RN tabLm' tabrs' nOff sc subL tabL cpe[unfolded frz_kops_simps]
         by (auto simp: SEPST_def split: if_splits)
     qed
   qed
@@ -3530,14 +3548,15 @@ next
     have stq: "frz_step size (meval (j + \<delta>) n) (frz_kops m cS) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 xsr lr fd sx
         \<rho>S \<rho>E s1 = (case cp of
           None \<Rightarrow> frz_stock size (meval (j + \<delta>) n) (frz_kops m cS) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 xsr None
-            (0, bo, tk', Ln, nLn, Lr') \<rho>S \<rho>E s2
+            (0, bo, 0, {}, 0, 0, 0, [Ln]) \<rho>S \<rho>E s2
         | Some (\<rho>S2, \<rho>E2, pX', buf') \<Rightarrow>
           (let ys = frz_emit (fo_cmb (frz_kops m cS)) \<alpha>s1 buf';
                s' = ?adv (jfrzM + length ys) s2;
                k = j + \<delta> - fst (snd s');
-               rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) - k * sum_list (map card xsr)
+               rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) -
+                 frz_cut po (fst (snd s')) jfrzM (j + \<delta>) * sum_list (map card xsr)
            in if k * max 1 nLn + frz_c0 < rg'
-             then (ys, drop (length ys) \<alpha>s1, None, s', FSStock 0 (2 * bo) tk' Ln nLn Lr', \<rho>S, \<rho>E)
+             then (ys, drop (length ys) \<alpha>s1, None, s', FSStock 0 (2 * bo) 0 {} 0 0 0 [Ln], \<rho>S, \<rho>E)
              else (ys, drop (length ys) \<alpha>s1, None, s', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S2, \<rho>E2)))"
       unfolding frz_step_def sx frz_sep.case ab prod.case Let_def
       by (simp only: ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def s2_def cp_def frz_kops_simps)
@@ -3549,7 +3568,7 @@ next
         using loop[OF that[unfolded frz_live_loop_def option.case] inv2 jfrzM_jpsij' queue1]
         unfolding RES_def by blast
       show ?thesis
-        by (rule stock[OF st[unfolded stq None option.case] tabLn tabLr' nOff lpN])
+        by (rule stock[OF st[unfolded stq None option.case] frz_tab_empty _ nOff lpN]) (use tabLn in simp)
     next
       case (Some c)
       then obtain \<rho>S2 \<rho>E2 pX' buf' where cpS: "cp = Some (\<rho>S2, \<rho>E2, pX', buf')"
@@ -3608,7 +3627,7 @@ next
     then show ?thesis
       using st FSOff l by (simp add: frz_step_def SEPST_def)
   next
-    case (FSStock rg bo tk Lsh nsh Lr)
+    case (FSStock rg bo cy Lm nm en ep rs)
     have lpS: "RES ys bs' lv' s'" if "frz_live_loop size (meval (j + \<delta>) n) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 lr s1 =
         (ys, bs', lv', s')" for ys bs' lv' s'
       using live_loop[OF that] unfolding RES_def by blast
@@ -3728,8 +3747,8 @@ next
         using wf\<rho>2 by blast
       show "sx2 \<noteq> FSOff \<longrightarrow> key_sep (p, m) \<psi>1 \<and> Formula.contains_pred (p, m) \<psi>1"
         using sepst sep_ok by (auto simp: SEPST_def)
-      show "\<forall>rg bo tk Lsh nsh Lr. sx2 = FSStock rg bo tk Lsh nsh Lr \<longrightarrow>
-        frz_tab \<sigma> V m \<phi>1 Lsh \<and> frz_tab \<sigma> V m \<phi>1 Lr"
+      show "\<forall>rg bo cy Lm nm en ep rs. sx2 = FSStock rg bo cy Lm nm en ep rs \<longrightarrow>
+        frz_tab \<sigma> V m \<phi>1 Lm \<and> (\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi>1 X)"
         using sepst by (simp add: SEPST_def)
       show "\<forall>L nL pX buf rg bo tk Lr. sx2 = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
         frz_keep_lv ?lvp \<rho>L = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s2. \<alpha> \<subseteq> L) \<and>

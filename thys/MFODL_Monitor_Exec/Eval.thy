@@ -3590,7 +3590,7 @@ next
       by (auto simp: frz_tabs_def)
     show "frz_kinv n ks j (p, m) d ?dbe ?A ?B ?s"
       by (rule kgood_MFrz_kinv[OF kg e1 e4])
-    show "Lsh \<in> ?B \<and> Lr \<in> ?B" if "sx = FSStock rg bo tk Lsh nsh Lr" for rg bo tk Lsh nsh Lr
+    show "Lm \<in> ?B \<and> set rs \<subseteq> ?B" if "sx = FSStock rg bo cy Lm nm en ep rs" for rg bo cy Lm nm en ep rs
       using that by (auto simp: frz_tabs_def)
     show "L \<in> ?B \<and> Lr \<in> ?B" if "sx = FSSep L nL pX buf rg bo tk Lr" for L nL pX buf rg bo tk Lr
       using that by (auto simp: frz_tabs_def)
