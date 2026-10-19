@@ -1,6 +1,6 @@
 (*<*)
 theory Eval
-  imports Window_Dispatch Trigger_Window Release_Window Kernel_Call
+  imports Window_Dispatch Trigger_Window Release_Window Trigger_Swag Kernel_Call
 begin
 (*>*)
 
@@ -68,10 +68,10 @@ datatype eformula =
   | EFrz Formula.name nat eformula eformula nat nat nat "event_data table list"
       eformula nat nat "ts list" "event_data table list" enat bool bool "nat option" eformula
   | ELetPast Formula.name nat eformula eformula nat "event_data table option"
-  | ETrigger args "nat option list" eformula eformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
+  | ETrigger args "nat option list" eformula eformula uebuf2 "ts mbuf_t" "event_data twaux"
   | ERelease args "bool list" eformula eformula uebuf2 "ts mbuf_t" ts "event_data eraux"
   | EAndTrigger ejoin_plan eformula "event_data table mbuf_t \<times> event_data table option mbuf_t"
-      args eformula eformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
+      args eformula eformula uebuf2 "ts mbuf_t" "event_data twaux"
   | EMatchP nat \<I> mregex "mregex list" "nat option list list" "eformula list"
       uebufn "ts mbuf_t" "event_data mr\<delta>aux"
   | EMatchF nat \<I> mregex "mregex list" "nat option list list" "eformula list"
@@ -198,17 +198,17 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
 | "eeval j ts db (ETrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = eeval j ts db \<phi>; (ys, \<psi>') = eeval j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-            let ax = gupdate_mmtaux dags t r1 r2 ax
-            in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+            let ax = tw_update dags t r1 r2 ax
+            in (zs @ [tw_result ax], ax)) ([], daux)
             (mebuf2_add xs ys dbuf) (nts @@ ts)
       in (zs, ETrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
 | "eeval j ts db (EAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> ebuf2 nts daux) =
      (let (as, \<alpha>') = eeval j ts db \<alpha>; (xs, \<phi>') = eeval j ts db \<phi>;
           (ys, \<psi>') = eeval j ts db \<psi>;
           ((ws, daux'), dbuf2', nts') = mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-            let ax = gupdate_mmtaux dags t r1 r2 ax
-            in (ws @ [if gmmtaux_empty ax then None
-                      else Some (gresult_mmtaux dags ax)], ax)) ([], daux)
+            let ax = tw_update dags t r1 r2 ax
+            in (ws @ [if tw_empty ax then None
+                      else Some (tw_result ax)], ax)) ([], daux)
             (mebuf2_add xs ys ebuf2) (nts @@ ts);
           (zs, dbuf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
             | Some z \<Rightarrow> gbin_join pl r1 True z) (mebuf2_add as ws dbuf1)
@@ -826,12 +826,12 @@ text \<open>
 \<close>
 
 definition etrigger_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
-    event_data mmtaux \<Rightarrow> event_data gmmtaux \<Rightarrow> event_data mbuf2 \<Rightarrow>
+    event_data mmtaux \<Rightarrow> event_data twaux \<Rightarrow> event_data mbuf2 \<Rightarrow>
     event_data mbuf2 \<Rightarrow> ts list \<Rightarrow> bool" where
   "etrigger_rel kR cR kL cL args tw aux daux buf dbuf nts \<longleftrightarrow>
      (\<exists>cur auxlist. valid_mmtaux args cur aux auxlist \<and>
         (\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r) \<and>
-        etaux kL cL kR cR args cur daux auxlist \<and> cur \<le> tw \<and>
+        etw kL cL kR cR args cur daux auxlist \<and> cur \<le> tw \<and>
         list_all (ftable kL) (fst buf) \<and>
         list_all (ftable kR) (snd buf) \<and>
         sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw) \<and>
@@ -840,7 +840,7 @@ definition etrigger_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightar
 lemma etrigger_relI:
   "valid_mmtaux args cur aux auxlist \<Longrightarrow>
    (\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r) \<Longrightarrow>
-   etaux kL cL kR cR args cur daux auxlist \<Longrightarrow> cur \<le> tw \<Longrightarrow>
+   etw kL cL kR cR args cur daux auxlist \<Longrightarrow> cur \<le> tw \<Longrightarrow>
    list_all (ftable kL) xs \<Longrightarrow> list_all (ftable kR) ys \<Longrightarrow>
    sorted nts \<Longrightarrow> \<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw \<Longrightarrow>
    etrigger_rel kR cR kL cL args tw aux daux (xs, ys)
@@ -852,7 +852,7 @@ lemma etrigger_relE:
   assumes "etrigger_rel kR cR kL cL args tw aux daux buf dbuf nts"
   obtains cur auxlist where "valid_mmtaux args cur aux auxlist"
     and "\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
-    and "etaux kL cL kR cR args cur daux auxlist" and "cur \<le> tw"
+    and "etw kL cL kR cR args cur daux auxlist" and "cur \<le> tw"
     and "list_all (ftable kL) (fst buf)"
     and "list_all (ftable kR) (snd buf)"
     and "sorted nts" and "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
@@ -861,8 +861,8 @@ lemma etrigger_relE:
 
 text \<open>One firing of the trigger structure: the buffer traversal that steps it once per pending
   timestamp and collects what it answers.  The two runs stay in step by
-  @{thm [source] mbuf2T_take_rel}, and each individual step is @{thm [source] etaux_update}
-  followed by @{thm [source] etaux_result}.\<close>
+  @{thm [source] mbuf2T_take_rel}, and each individual step is @{thm [source] etw_update}
+  followed by @{thm [source] etw_result}.\<close>
 
 lemma etrigger_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -876,8 +876,8 @@ lemma etrigger_step_rel:
         in (zs @ [z], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
       = ((zs, aux1), buf1, nts1)"
     and de: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
-        let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-        in (zs @ [gresult_mmtaux (eargs cR cL args) ax], ax)) ([], daux)
+        let ax = tw_update (eargs cR cL args) t r1 r2 ax
+        in (zs @ [tw_result ax], ax)) ([], daux)
         (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) (nts @ tss)
       = ((dzs, daux1), dbuf1, dnts1)"
   shows "dzs = map (etabc kR cR) zs \<and> dnts1 = nts1 \<and>
@@ -885,7 +885,7 @@ lemma etrigger_step_rel:
 proof -
   obtain cur auxlist where vw: "valid_mmtaux args cur aux auxlist"
     and wf: "\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
-    and vd: "etaux kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
+    and vd: "etw kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
     and lu: "list_all (ftable kL) (fst buf)"
     and lv: "list_all (ftable kR) (snd buf)"
     and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
@@ -899,13 +899,13 @@ proof -
     let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
     in (zs @ [z], ax))"
   define gd where "gd = (\<lambda>r1 r2 t (zs :: event_data table list, ax).
-    let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-    in (zs @ [gresult_mmtaux (eargs cR cL args) ax], ax))"
+    let ax = tw_update (eargs cR cL args) t r1 r2 ax
+    in (zs @ [tw_result ax], ax))"
   define R where "R = (\<lambda>v (pr :: event_data table list \<times> event_data mmtaux)
-      (dpr :: event_data table list \<times> event_data gmmtaux).
+      (dpr :: event_data table list \<times> event_data twaux).
     (\<exists>al. valid_mmtaux args v (snd pr) al \<and>
        (\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r) \<and>
-       etaux kL cL kR cR args v (snd dpr) al) \<and>
+       etw kL cL kR cR args v (snd dpr) al) \<and>
      fst dpr = map (etabc kR cR) (fst pr))"
   have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
   have mad: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf
@@ -917,13 +917,13 @@ proof -
       R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
   proof -
     fix a c v w and z :: "event_data table list \<times> event_data mmtaux"
-      and z' :: "event_data table list \<times> event_data gmmtaux"
+      and z' :: "event_data table list \<times> event_data twaux"
     assume au: "a \<in> set us" and cv: "c \<in> set vs" and q: "R w z z'" and wv: "w \<le> v"
     have t1: "ftable kL a" using au lus by (simp add: list_all_iff)
     have t2: "ftable kR c" using cv lvs by (simp add: list_all_iff)
     obtain al where vwz: "valid_mmtaux args w (snd z) al"
       and wfz: "\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r"
-      and vdz: "etaux kL cL kR cR args w (snd z') al"
+      and vdz: "etw kL cL kR cR args w (snd z') al"
       using q unfolding R_def by blast
     have fz: "fst z' = map (etabc kR cR) (fst z)" using q unfolding R_def by blast
     define al' where "al' = filter (\<lambda>(t, _). memR (args_ivl args) (v - t)) al @ [(v, a, c)]"
@@ -932,20 +932,20 @@ proof -
       by (rule valid_update_mmtaux[OF wv _ _ vwz]) (use t1 t2 aL aR in simp_all)
     have wf': "\<forall>(t, l, r) \<in> set al'. ftable kL l \<and> ftable kR r"
       using wfz t1 t2 unfolding al'_def by auto
-    have vd': "etaux kL cL kR cR args v
-        (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
-      unfolding al'_def by (rule etaux_update[OF vdz wv fR fL sub]) (use t1 t2 in simp_all)
-    have ne: "\<not> gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+    have vd': "etw kL cL kR cR args v
+        (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
+      unfolding al'_def by (rule etw_update[OF vdz wv]) (use t1 t2 in simp_all)
+    have ne: "\<not> tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
         (etabc kR cR c) (snd z'))"
-      by (rule gupdate_mmtaux_not_empty[OF m0'])
+      by (rule tw_update_not_empty[OF m0'])
     have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
         = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
-    have dres: "gresult_mmtaux (eargs cR cL args)
-          (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
+    have dres: "tw_result
+          (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
         = etabc kR cR (snd (trigger_results args v al'))"
-      by (rule etaux_result[OF vd' ne fR fL sub aL aR])
-    have dres': "gresult_mmtaux (eargs cR cL args)
-          (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
+      by (rule etw_result[OF vd' ne fR fL sub aL aR])
+    have dres': "tw_result
+          (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
         = etabc kR cR (snd (result_mmtaux args (update_mmtaux args v a c (snd z))))"
       unfolding res by (rule dres)
     have gz: "g a c v z
@@ -953,9 +953,9 @@ proof -
            update_mmtaux args v a c (snd z))"
       by (cases z) (simp add: g_def Let_def case_prod_beta)
     have gdz: "gd (etabc kL cL a) (etabc kR cR c) v z'
-        = (fst z' @ [gresult_mmtaux (eargs cR cL args)
-             (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))],
-           gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
+        = (fst z' @ [tw_result
+             (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))],
+           tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
       by (cases z') (simp add: gd_def Let_def case_prod_beta)
     show "R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
       unfolding R_def gz gdz fst_conv snd_conv
@@ -989,7 +989,7 @@ proof -
   have lb2: "list_all (ftable kR) b2" using sb2 lvs by (auto simp: list_all_iff)
   obtain al1 where v1: "valid_mmtaux args u aux1 al1"
     and w1: "\<forall>(t, l, r) \<in> set al1. ftable kL l \<and> ftable kR r"
-    and d1: "etaux kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
+    and d1: "etw kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
   have dz: "dzs = map (etabc kR cR) zs" using ru unfolding R_def by simp
   have bnd1: "\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> enext tw tss" using un sub1 bound by auto
   have "etrigger_rel kR cR kL cL args (enext tw tss) aux1 daux1 (b1, b2)
@@ -1155,9 +1155,9 @@ lemma eandtrigger_step_rel:
         in (zs @ [(fv_z, z)], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
       = ((zs, aux1), buf1, nts1)"
     and de: "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
-        let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-        in (ws @ [if gmmtaux_empty ax then None
-                  else Some (gresult_mmtaux (eargs cR cL args) ax)], ax)) ([], daux)
+        let ax = tw_update (eargs cR cL args) t r1 r2 ax
+        in (ws @ [if tw_empty ax then None
+                  else Some (tw_result ax)], ax)) ([], daux)
         (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) (nts @ tss)
       = ((dzs, daux1), dbuf1, dnts1)"
   shows "list_all2 (etres kR cR) zs dzs \<and> dnts1 = nts1 \<and>
@@ -1165,7 +1165,7 @@ lemma eandtrigger_step_rel:
 proof -
   obtain cur auxlist where vw: "valid_mmtaux args cur aux auxlist"
     and wf: "\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
-    and vd: "etaux kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
+    and vd: "etw kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
     and lu: "list_all (ftable kL) (fst buf)"
     and lv: "list_all (ftable kR) (snd buf)"
     and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
@@ -1178,14 +1178,14 @@ proof -
     let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
     in (zs @ [(fv_z, z)], ax))"
   define gd where "gd = (\<lambda>r1 r2 t (ws :: event_data table option list, ax).
-    let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-    in (ws @ [if gmmtaux_empty ax then None
-              else Some (gresult_mmtaux (eargs cR cL args) ax)], ax))"
+    let ax = tw_update (eargs cR cL args) t r1 r2 ax
+    in (ws @ [if tw_empty ax then None
+              else Some (tw_result ax)], ax))"
   define R where "R = (\<lambda>v (pr :: (cols \<times> event_data table) list \<times> event_data mmtaux)
-      (dpr :: event_data table option list \<times> event_data gmmtaux).
+      (dpr :: event_data table option list \<times> event_data twaux).
     (\<exists>al. valid_mmtaux args v (snd pr) al \<and>
        (\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r) \<and>
-       etaux kL cL kR cR args v (snd dpr) al) \<and>
+       etw kL cL kR cR args v (snd dpr) al) \<and>
      list_all2 (etres kR cR) (fst pr) (fst dpr))"
   have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
   have mad: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf
@@ -1197,13 +1197,13 @@ proof -
       R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
   proof -
     fix a c v w and z :: "(cols \<times> event_data table) list \<times> event_data mmtaux"
-      and z' :: "event_data table option list \<times> event_data gmmtaux"
+      and z' :: "event_data table option list \<times> event_data twaux"
     assume au: "a \<in> set us" and cv: "c \<in> set vs" and q: "R w z z'" and wv: "w \<le> v"
     have t1: "ftable kL a" using au lus by (simp add: list_all_iff)
     have t2: "ftable kR c" using cv lvs by (simp add: list_all_iff)
     obtain al where vwz: "valid_mmtaux args w (snd z) al"
       and wfz: "\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r"
-      and vdz: "etaux kL cL kR cR args w (snd z') al"
+      and vdz: "etw kL cL kR cR args w (snd z') al"
       using q unfolding R_def by blast
     have fz: "list_all2 (etres kR cR) (fst z) (fst z')" using q unfolding R_def by blast
     define al' where "al' = filter (\<lambda>(t, _). memR (args_ivl args) (v - t)) al @ [(v, a, c)]"
@@ -1212,27 +1212,27 @@ proof -
       by (rule valid_update_mmtaux[OF wv _ _ vwz]) (use t1 t2 aL aR in simp_all)
     have wf': "\<forall>(t, l, r) \<in> set al'. ftable kL l \<and> ftable kR r"
       using wfz t1 t2 unfolding al'_def by auto
-    have vd': "etaux kL cL kR cR args v
-        (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
-      unfolding al'_def by (rule etaux_update[OF vdz wv fR fL sub]) (use t1 t2 in simp_all)
+    have vd': "etw kL cL kR cR args v
+        (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
+      unfolding al'_def by (rule etw_update[OF vdz wv]) (use t1 t2 in simp_all)
     have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
         = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
     have dr: "etres kR cR (result_mmtaux args (update_mmtaux args v a c (snd z)))
-        (if gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+        (if tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
              (etabc kR cR c) (snd z')) then None
-         else Some (gresult_mmtaux (eargs cR cL args)
-           (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
+         else Some (tw_result
+           (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
              (snd z'))))"
-    proof (cases "gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+    proof (cases "tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
         (etabc kR cR c) (snd z'))")
       case True
       then show ?thesis
-        unfolding res using etaux_result_empty[OF vd' True]
+        unfolding res using etw_result_empty[OF vd' True]
         by (simp add: etres_def)
     next
       case False
       have nz: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (v - t)) al')"
-        using etaux_window[OF vd'] False by (simp add: split_def)
+        using etw_window[OF vd'] False by (simp add: split_def)
       have lst: "fst (last al') = v" unfolding al'_def by simp
       have ft: "ftable (fst (trigger_results args v al')) (snd (trigger_results args v al'))"
         by (rule conjunct1[OF ftable_trigger_results_weak[OF wf' _ lst aL aR
@@ -1240,22 +1240,22 @@ proof -
           (simp add: al'_def)
       have fv: "fst (trigger_results args v al') = kR" using nz aR by simp
       have tr: "ftable kR (snd (trigger_results args v al'))" using ft unfolding fv .
-      have dres: "gresult_mmtaux (eargs cR cL args)
-            (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
+      have dres: "tw_result
+            (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
           = etabc kR cR (snd (trigger_results args v al'))"
-        by (rule etaux_result[OF vd' False fR fL sub aL aR])
+        by (rule etw_result[OF vd' False fR fL sub aL aR])
       show ?thesis unfolding res using False fv tr dres by (simp add: etres_def)
     qed
     have gz: "g a c v z = (fst z @ [result_mmtaux args (update_mmtaux args v a c (snd z))],
            update_mmtaux args v a c (snd z))"
       by (cases z) (simp add: g_def Let_def case_prod_beta)
     have gdz: "gd (etabc kL cL a) (etabc kR cR c) v z'
-        = (fst z' @ [if gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+        = (fst z' @ [if tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
                (etabc kR cR c) (snd z')) then None
-             else Some (gresult_mmtaux (eargs cR cL args)
-               (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
+             else Some (tw_result
+               (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
                  (snd z')))],
-           gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
+           tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
       by (cases z') (simp add: gd_def Let_def case_prod_beta)
     show "R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
       unfolding R_def gz gdz fst_conv snd_conv
@@ -1289,7 +1289,7 @@ proof -
   have lb2: "list_all (ftable kR) b2" using sb2 lvs by (auto simp: list_all_iff)
   obtain al1 where v1: "valid_mmtaux args u aux1 al1"
     and w1: "\<forall>(t, l, r) \<in> set al1. ftable kL l \<and> ftable kR r"
-    and d1: "etaux kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
+    and d1: "etw kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
   have dz: "list_all2 (etres kR cR) zs dzs" using ru unfolding R_def by simp
   have bnd1: "\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> enext tw tss" using un sub1 bound by auto
   have "etrigger_rel kR cR kL cL args (enext tw tss) aux1 daux1 (b1, b2)
@@ -3606,20 +3606,20 @@ next
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
   obtain dzs daux2 ebuf2 dnts2 where d3: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+      let ax = tw_update dags t r1 r2 ax
+      in (zs @ [tw_result ax], ax)) ([], daux)
       (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) (nts @ ts)
       = ((dzs, daux2), ebuf2, dnts2)"
     by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+      let ax = tw_update dags t r1 r2 ax
+      in (zs @ [tw_result ax], ax)) ([], daux)
       (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) (nts @ ts)") auto
   have step: "dzs = map (etabc kR cR) zs \<and> dnts2 = nts2 \<and>
       etrigger_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 ebuf2 nts2"
     by (rule etrigger_step_rel[OF wf fL sub aL aR m0 rel ta tb sts mts e3 d3[unfolded dag]])
   obtain ub un where eu: "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+      let ax = tw_update dags t r1 r2 ax
+      in (zs @ [tw_result ax], ax)) ([], daux)
       (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) (dnts @@ ts)
       = ((dzs, daux2), ub, un)" and ub: "rbuf2 ub = ebuf2" and un: "Rep_mbuf_t un = dnts2"
     by (rule mebuf2T_take_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
@@ -3750,21 +3750,21 @@ next
   have tb: "list_all (ftable kR) ys1"
     by (rule kgood_tables[OF kg2 e2])
   obtain dws daux2 dbf2' dnts2 where d3: "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      let ax = tw_update dags t r1 r2 ax
+      in (ws @ [if tw_empty ax then None else Some (tw_result ax)], ax))
       ([], daux) (mbuf2_add (map (etabc kL cL) xs1) (map (etabc kR cR) ys1) (rbuf2 dbf2)) (nts @ ts)
       = ((dws, daux2), dbf2', dnts2)"
     by (cases "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      let ax = tw_update dags t r1 r2 ax
+      in (ws @ [if tw_empty ax then None else Some (tw_result ax)], ax))
       ([], daux) (mbuf2_add (map (etabc kL cL) xs1) (map (etabc kR cR) ys1) (rbuf2 dbf2))
       (nts @ ts)") auto
   have step: "list_all2 (etres kR cR) ws dws \<and> dnts2 = nts2 \<and>
       etrigger_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2' dbf2' nts2"
     by (rule eandtrigger_step_rel[OF fR fL subLR aL aR ok rel ta tb sts mts e3 d3[unfolded dag]])
   obtain ub2 un where eu: "mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      let ax = tw_update dags t r1 r2 ax
+      in (ws @ [if tw_empty ax then None else Some (tw_result ax)], ax))
       ([], daux) (mebuf2_add (map (etabc kL cL) xs1) (map (etabc kR cR) ys1) dbf2) (dnts @@ ts)
       = ((dws, daux2), ub2, un)" and ub2: "rbuf2 ub2 = dbf2'" and un: "Rep_mbuf_t un = dnts2"
     by (rule mebuf2T_take_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])

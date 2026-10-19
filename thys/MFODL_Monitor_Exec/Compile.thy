@@ -176,7 +176,7 @@ function (sequential) eof ::
          buf = ([], []) \<and> nts = []
       then ETrigger (eargs cs cL args) (emb_plan cs cL)
              (eof n kL cL \<phi>) (eof n kR cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (ginit_mmtaux (eargs cs cL args) (emsk cs cL))
+             (tw_init (eargs cs cL args) (emsk cs cL))
       else EFail)"
 | "eof n ks cs (MRelease args \<phi> \<psi> buf nts t aux) =
      (let kL = args_L args; kR = args_R args; cL = ecols kL in
@@ -191,7 +191,7 @@ function (sequential) eof ::
          tok cR cL args \<and> buf1 = ([], []) \<and> buf2 = ([], []) \<and> nts = []
       then EAndTrigger (mk_djoin cs cR) (eof n ks cs \<alpha>) (mbuf_t_empty, mbuf_t_empty) (eargs cR cL args)
              (eof n kL cL \<phi>) (eof n kR cR \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (ginit_mmtaux (eargs cR cL args) (emsk cR cL))
+             (tw_init (eargs cR cL args) (emsk cR cL))
       else EFail)"
 | "eof n ks cs (MMatchP I k dss mr mrs L buf nts aux) =
      (let css = map ecols dss in
@@ -377,17 +377,17 @@ lemma etrigger_rel_init:
     and fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
     and ok: "tok cR cL args"
   shows "etrigger_rel kR cR kL cL args tw (init_mmtaux args)
-     (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) ([], []) ([], []) []"
+     (tw_init (eargs cR cL args) (emsk cR cL)) ([], []) ([], []) []"
 proof -
   have i: "args_ivl args = I" and p: "args_pos args = pos" unfolding a by (simp_all add: init_args_def)
   have e: "cL = cR \<Longrightarrow> set kL = set kR" using eframeD(3)[OF fR] eframeD(3)[OF fL] by auto
   have v: "valid_mmtaux args 0 (init_mmtaux args) []"
     using valid_init_mmtaux[of I kL kR pos n agg] ok sub e eframeD(1)[OF fL] eframeD(1)[OF fR]
     unfolding a by (auto simp: tok_def init_args_def Let_def split: if_splits)
-  have d: "etaux kL cL kR cR args 0 (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) []"
-    by (rule etaux_init[OF fR fL sub ok])
+  have d: "etw kL cL kR cR args 0 (tw_init (eargs cR cL args) (emsk cR cL)) []"
+    by (rule etw_init[OF ok])
   have "etrigger_rel kR cR kL cL args tw (init_mmtaux args)
-      (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) ([], [])
+      (tw_init (eargs cR cL args) (emsk cR cL)) ([], [])
       (map (etabc kL cL) [], map (etabc kR cR) []) []"
     by (rule etrigger_relI[OF v _ d]) simp_all
   then show ?thesis by (simp only: list.map)
@@ -471,7 +471,7 @@ proof -
     unfolding a by (simp_all add: init_args_def)
   have ok: "tok (ecols kR) (ecols kL) args" by (rule tok_mem0) (simp add: ag m0)
   have rl: "etrigger_rel kR (ecols kR) kL (ecols kL) args tw (init_mmtaux args)
-      (ginit_mmtaux (eargs (ecols kR) (ecols kL) args) (emsk (ecols kR) (ecols kL)))
+      (tw_init (eargs (ecols kR) (ecols kL) args) (emsk (ecols kR) (ecols kL)))
       ([], []) ([], []) []"
     by (rule etrigger_rel_init[OF a eframe_dcols[OF dR] eframe_dcols[OF dL] sub ok])
   show ?thesis
@@ -843,7 +843,7 @@ next
     have s3: "eofc n tw \<psi>'" by (rule And_Trigger.IH(3)[OF bR z3])
     have rl: "etrigger_rel (Formula.fv_list \<psi>') (ecols (Formula.fv_list \<psi>'))
         (Formula.fv_list \<phi>') (ecols (Formula.fv_list \<phi>')) ?args tw (init_mmtaux ?args)
-        (ginit_mmtaux (eargs (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>')) ?args)
+        (tw_init (eargs (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>')) ?args)
           (emsk (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>'))))
         ([], []) ([], []) []"
       by (rule etrigger_rel_init[OF refl eframe_fv_list eframe_fv_list _ ok]) (simp add: sub)
