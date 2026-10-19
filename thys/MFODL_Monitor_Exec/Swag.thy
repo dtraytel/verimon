@@ -44,17 +44,30 @@ fun sw_flip :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('e \<Right
 definition sw_strip :: "('t \<times> 'e \<times> 'a) list \<Rightarrow> ('t \<times> 'e) list" where
   "sw_strip fr = map (\<lambda>(t, e, _). (t, e)) fr"
 
-definition sw_pop :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('e \<Rightarrow> 'a) \<Rightarrow> ('t \<Rightarrow> bool) \<Rightarrow> ('t, 'e, 'a) swag \<Rightarrow>
-    ('t \<times> 'e) list \<times> ('t, 'e, 'a) swag" where
-  "sw_pop f g P s = (case s of (fr, bk, B) \<Rightarrow>
-     (let ys = sw_strip (takeWhile (\<lambda>(t, _). P t) fr); fr' = dropWhile (\<lambda>(t, _). P t) fr in
+text \<open>An element leaving the queue is returned with its front summary and the summary of the back
+  at the time it leaves; composed, they are the summary of the queue from it to the end.\<close>
+
+definition sw_tag :: "'a option \<Rightarrow> ('t \<times> 'e \<times> 'a) list \<Rightarrow> ('t \<times> 'e \<times> 'a \<times> 'a option) list" where
+  "sw_tag B xs = map (\<lambda>(t, e, a). (t, e, a, B)) xs"
+
+definition sw_strip4 :: "('t \<times> 'e \<times> 'a \<times> 'a option) list \<Rightarrow> ('t \<times> 'e) list" where
+  "sw_strip4 ys = map (\<lambda>(t, e, _, _). (t, e)) ys"
+
+definition sw_popx :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('e \<Rightarrow> 'a) \<Rightarrow> ('t \<Rightarrow> bool) \<Rightarrow> ('t, 'e, 'a) swag \<Rightarrow>
+    ('t \<times> 'e \<times> 'a \<times> 'a option) list \<times> ('t, 'e, 'a) swag" where
+  "sw_popx f g P s = (case s of (fr, bk, B) \<Rightarrow>
+     (let ys = sw_tag B (takeWhile (\<lambda>(t, _). P t) fr); fr' = dropWhile (\<lambda>(t, _). P t) fr in
       case fr' of
         [] \<Rightarrow> (case bk of
             [] \<Rightarrow> (ys, ([], [], None))
           | _ \<Rightarrow> (let fl = sw_flip f g bk [] in
-              (ys @ sw_strip (takeWhile (\<lambda>(t, _). P t) fl),
+              (ys @ sw_tag None (takeWhile (\<lambda>(t, _). P t) fl),
                (dropWhile (\<lambda>(t, _). P t) fl, [], None))))
       | _ \<Rightarrow> (ys, (fr', bk, B))))"
+
+definition sw_pop :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('e \<Rightarrow> 'a) \<Rightarrow> ('t \<Rightarrow> bool) \<Rightarrow> ('t, 'e, 'a) swag \<Rightarrow>
+    ('t \<times> 'e) list \<times> ('t, 'e, 'a) swag" where
+  "sw_pop f g P s = (case sw_popx f g P s of (ys, s') \<Rightarrow> (sw_strip4 ys, s'))"
 
 definition sw_query :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('t, 'e, 'a) swag \<Rightarrow> 'a option" where
   "sw_query f s = (case s of (fr, bk, B) \<Rightarrow>
@@ -141,7 +154,7 @@ lemma sw_sfx_head: "sw_sfx f g fr \<Longrightarrow> sw_head fr = sw_fold f (map 
   by (cases fr) (auto simp: sw_head_def sw_sfx_Cons)
 
 lemma sw_sfx_drop: "sw_sfx f g fr \<Longrightarrow> sw_sfx f g (drop k fr)"
-  unfolding sw_sfx_def by (auto simp: drop_sw_strip add.commute[of k] drop_drop)
+  unfolding sw_sfx_def by (auto simp: drop_sw_strip add.commute[of k])
 
 lemma sw_sfx_dropWhile: "sw_sfx f g fr \<Longrightarrow> sw_sfx f g (dropWhile P fr)"
   using sw_sfx_drop[of f g fr "length (takeWhile P fr)"]
@@ -195,20 +208,57 @@ lemma takeWhile_map_fst: "takeWhile (\<lambda>x. P (fst x)) (sw_strip fr) = sw_s
 lemma dropWhile_map_fst: "dropWhile (\<lambda>x. P (fst x)) (sw_strip fr) = sw_strip (dropWhile (\<lambda>(t, _). P t) fr)"
   by (induct fr) auto
 
-lemma sw_pop:
-  assumes r: "sw_rel f g s W" and p: "sw_pop f g P s = (ys, s')"
-  shows "ys = takeWhile (\<lambda>x. P (fst x)) W \<and> sw_rel f g s' (dropWhile (\<lambda>x. P (fst x)) W)"
+lemma sw_strip4_simps[simp]:
+  "sw_strip4 (sw_tag B xs) = sw_strip xs" "sw_strip4 (ys @ zs) = sw_strip4 ys @ sw_strip4 zs"
+  by (simp_all add: sw_strip4_def sw_tag_def sw_strip_def split_beta)
+
+lemma length_sw_tag[simp]: "length (sw_tag B xs) = length xs"
+  by (simp add: sw_tag_def)
+
+definition sw_out :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> 't \<times> 'e \<times> 'a \<times> 'a option \<Rightarrow> 'a" where
+  "sw_out f y = (case y of (_, _, a, B) \<Rightarrow> sw_comp f a B)"
+
+lemma sw_sfx_fold:
+  assumes a: "sw_assoc f" and sf: "sw_sfx f g fr" and k: "k < length fr"
+  shows "sw_fold f (map (g \<circ> snd) (drop k (sw_strip fr) @ X)) =
+    Some (sw_comp f (snd (snd (fr ! k))) (sw_fold f (map (g \<circ> snd) X)))"
+proof -
+  have "sw_fold f (map (g \<circ> snd) (drop k (sw_strip fr))) = Some (snd (snd (fr ! k)))"
+    using sf k unfolding sw_sfx_def by simp
+  then show ?thesis unfolding map_append sw_fold_append[OF a] by (simp add: sw_comb_def)
+qed
+
+lemma sw_out_tag:
+  assumes a: "sw_assoc f" and sf: "sw_sfx f g fr" and k: "k < length (takeWhile Q fr)"
+  shows "Some (sw_out f (sw_tag (sw_fold f (map (g \<circ> snd) X)) (takeWhile Q fr) ! k)) =
+    sw_fold f (map (g \<circ> snd) (drop k (sw_strip fr @ X)))"
+proof -
+  have kf: "k < length fr" using k length_takeWhile_le[of Q fr] by linarith
+  have t: "sw_tag (sw_fold f (map (g \<circ> snd) X)) (takeWhile Q fr) ! k =
+      (fst (fr ! k), fst (snd (fr ! k)), snd (snd (fr ! k)), sw_fold f (map (g \<circ> snd) X))"
+    using k by (simp add: sw_tag_def takeWhile_nth split_beta)
+  have d: "drop k (sw_strip fr @ X) = drop k (sw_strip fr) @ X" using kf by simp
+  show ?thesis by (simp only: t d sw_sfx_fold[OF a sf kf] sw_out_def prod.case)
+qed
+
+lemma sw_popx:
+  assumes r: "sw_rel f g s W" and p: "sw_popx f g P s = (ys, s')"
+  shows "sw_strip4 ys = takeWhile (\<lambda>x. P (fst x)) W \<and> sw_rel f g s' (dropWhile (\<lambda>x. P (fst x)) W) \<and>
+    (sw_assoc f \<longrightarrow> (\<forall>k < length ys. Some (sw_out f (ys ! k)) = sw_fold f (map (g \<circ> snd) (drop k W))))"
 proof -
   obtain fr bk B where s: "s = (fr, bk, B)" by (cases s)
   have W: "W = sw_strip fr @ rev bk" and sf: "sw_sfx f g fr"
     and B: "B = sw_fold f (map (g \<circ> snd) (rev bk))" using r by (auto simp: s sw_rel_def)
   let ?P = "\<lambda>(t, _ :: 'b \<times> 'a). P t" and ?Q = "\<lambda>x. P (fst x)"
+  have front: "Some (sw_out f (sw_tag B (takeWhile ?P fr) ! k)) = sw_fold f (map (g \<circ> snd) (drop k W))"
+    if a: "sw_assoc f" and k: "k < length (takeWhile ?P fr)" for k
+    unfolding B W by (rule sw_out_tag[OF a sf k])
   show ?thesis
   proof (cases "dropWhile ?P fr")
     case Nil
     have allP: "\<forall>x \<in> set (sw_strip fr). ?Q x"
-      using Nil by (auto simp: sw_strip_def dropWhile_eq_Nil_conv)
-    have tw: "takeWhile ?P fr = fr" using Nil by (simp add: takeWhile_eq_all_conv dropWhile_eq_Nil_conv)
+      using Nil by (auto simp: sw_strip_def)
+    have tw: "takeWhile ?P fr = fr" using Nil by simp
     have tW: "takeWhile ?Q W = sw_strip fr @ takeWhile ?Q (rev bk)"
       unfolding W by (rule takeWhile_append2) (use allP in blast)
     have dW: "dropWhile ?Q W = dropWhile ?Q (rev bk)"
@@ -216,20 +266,36 @@ proof -
     show ?thesis
     proof (cases bk)
       case Nil
-      have p': "ys = sw_strip fr" "s' = ([], [], None)"
-        using p unfolding s sw_pop_def Let_def
-        by (simp_all add: Nil tw \<open>dropWhile ?P fr = []\<close>)
-      show ?thesis unfolding p' tW dW using Nil by (simp add: sw_rel_def)
+      have p': "ys = sw_tag B (takeWhile ?P fr)" "s' = ([], [], None)"
+        using p unfolding s sw_popx_def Let_def
+        by (simp_all add: Nil \<open>dropWhile ?P fr = []\<close>)
+      show ?thesis unfolding p'(2) tW dW using Nil front by (simp add: p'(1) tw sw_rel_def)
     next
       case (Cons b bk')
       define fl where "fl = sw_flip f g bk []"
       have fl: "sw_sfx f g fl" "sw_strip fl = rev bk" using sw_flip[of f g "[]" bk] by (simp_all add: fl_def)
-      have p': "ys = sw_strip fr @ sw_strip (takeWhile ?P fl)" "s' = (dropWhile ?P fl, [], None)"
-        using p unfolding s sw_pop_def Let_def fl_def[symmetric]
-        by (simp_all add: \<open>dropWhile ?P fr = []\<close> tw Cons fl_def)
-      show ?thesis unfolding p' tW dW sw_rel_def
-        using sw_sfx_dropWhile[OF fl(1)] fl(2)
-        by (simp add: takeWhile_map_fst[symmetric] dropWhile_map_fst[symmetric])
+      have p': "ys = sw_tag B (takeWhile ?P fr) @ sw_tag None (takeWhile ?P fl)"
+        "s' = (dropWhile ?P fl, [], None)"
+        using p unfolding s sw_popx_def Let_def fl_def[symmetric]
+        by (simp_all add: \<open>dropWhile ?P fr = []\<close> Cons fl_def)
+      have agg: "Some (sw_out f (ys ! k)) = sw_fold f (map (g \<circ> snd) (drop k W))"
+        if a: "sw_assoc f" and k: "k < length ys" for k
+      proof (cases "k < length (takeWhile ?P fr)")
+        case True
+        then show ?thesis using front[OF a True] by (simp add: p'(1) nth_append)
+      next
+        case False
+        define k' where "k' = k - length fr"
+        have k': "k' < length (takeWhile ?P fl)" "k = length fr + k'"
+          using k False by (simp_all add: p'(1) tw k'_def)
+        have "Some (sw_out f (sw_tag (sw_fold f (map (g \<circ> snd) [])) (takeWhile ?P fl) ! k')) =
+            sw_fold f (map (g \<circ> snd) (drop k' (sw_strip fl @ [])))"
+          using sw_out_tag[OF a fl(1) k'(1), of "[]"] by simp
+        then show ?thesis using k' by (simp add: p'(1) nth_append tw W fl(2))
+      qed
+      show ?thesis unfolding p'(2) tW dW sw_rel_def
+        using sw_sfx_dropWhile[OF fl(1)] fl(2) agg
+        by (simp add: p'(1) tw takeWhile_map_fst[symmetric] dropWhile_map_fst[symmetric])
     qed
   next
     case (Cons x fr')
@@ -241,13 +307,21 @@ proof -
       unfolding W by (rule takeWhile_append1[where P = ?Q, OF y'])
     have dW: "dropWhile ?Q W = dropWhile ?Q (sw_strip fr) @ rev bk"
       unfolding W by (rule dropWhile_append1[where P = ?Q, OF y'])
-    have p': "ys = sw_strip (takeWhile ?P fr)" "s' = (dropWhile ?P fr, bk, B)"
-      using p unfolding s sw_pop_def Let_def by (simp_all add: Cons)
-    show ?thesis unfolding p' tW dW sw_rel_def
-      using sw_sfx_dropWhile[OF sf] B by (simp add: takeWhile_map_fst dropWhile_map_fst)
+    have p': "ys = sw_tag B (takeWhile ?P fr)" "s' = (dropWhile ?P fr, bk, B)"
+      using p unfolding s sw_popx_def Let_def by (simp_all add: Cons)
+    show ?thesis unfolding p'(2) tW dW sw_rel_def
+      using sw_sfx_dropWhile[OF sf] B front by (simp add: p'(1) takeWhile_map_fst dropWhile_map_fst)
   qed
 qed
 
+lemma sw_pop:
+  assumes r: "sw_rel f g s W" and p: "sw_pop f g P s = (ys, s')"
+  shows "ys = takeWhile (\<lambda>x. P (fst x)) W \<and> sw_rel f g s' (dropWhile (\<lambda>x. P (fst x)) W)"
+proof -
+  obtain zs where z: "sw_popx f g P s = (zs, s')" and ys: "ys = sw_strip4 zs"
+    using p by (cases "sw_popx f g P s") (simp add: sw_pop_def)
+  show ?thesis using sw_popx[OF r z] ys by simp
+qed
 (*<*)
 end
 (*>*)
