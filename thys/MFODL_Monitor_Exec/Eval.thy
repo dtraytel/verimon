@@ -1334,10 +1334,12 @@ proof -
     case False
     then have "i \<notin> set ks"
       using eframeD(3)[OF assms] by simp
-    then have "map_of (zip ks x) i = None" "map_of (zip cs (restrict cs ks x)) i = None"
+    then have "map_of (zip ks x) i = None"
+      by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
+    moreover have "map_of (zip cs (restrict cs ks x)) i = None"
       using False by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
-    then show ?thesis
-      by (simp add: tup_get_def)
+    ultimately show ?thesis
+      by (simp only: tup_get_def)
   qed
   then show ?thesis
     by (simp add: val_def)
