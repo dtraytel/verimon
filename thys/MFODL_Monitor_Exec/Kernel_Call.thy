@@ -1316,7 +1316,7 @@ proof -
         kwf_mformula \<sigma> j0 (P((p, m) \<mapsto> j0)) (V((p, m) \<mapsto> frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False))) n R \<rho>E \<psi>1 \<and>
         list_all2 (\<lambda>k (yS, yE). frz_row \<sigma> V n R p \<phi>1 \<psi>1 (frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))
           (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz pX..<pX] buf)"
-    by (cases rule: kmaux_wf_mformula_cases) (auto; blast)
+    by (cases rule: kmaux_wf_mformula_cases) (auto, blast+)
   note sep_ok = sep_ok0[rule_format] and stock = stock0[rule_format]
   have sep: "lv = None \<and> frz_tab \<sigma> V m \<phi>1 L \<and> frz_tab \<sigma> V m \<phi>1 Lr \<and> (\<forall>\<alpha> \<in> set \<alpha>s. \<alpha> \<subseteq> L) \<and>
       (\<exists>wS NS wE NE. (\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz)) \<and>
