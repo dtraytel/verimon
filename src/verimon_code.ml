@@ -2449,7 +2449,8 @@ type mrg = MLft | MRgt | MBth;;
 type ejoin_plan = EJEq | EJEmp | EJSub of bool list | EJSup of bool list |
   EJGen of mrg list * bool list * bool list;;
 
-type ('a, 'b) frz_sep = FSOff | FSStock of nat * nat * nat * 'a * nat * 'a |
+type ('a, 'b) frz_sep = FSOff |
+  FSStock of nat * nat * nat * 'a * nat * nat * nat * 'a list |
   FSSep of 'a * nat * nat * ('b * 'b) list * nat * nat * nat * 'a;;
 
 type mregex = MSkip of nat | MTestPos of nat | MTestNeg of nat |
@@ -14369,45 +14370,75 @@ let rec frz_absorb
 
 let frz_epoch : nat = Nat (Z.of_int 64);;
 
+let frz_cycle : nat = Nat (Z.of_int 256);;
+
+let rec frz_meas
+  ops g rs xsr m =
+    (let (cy, (lm, (nm, (en, ep)))) = m in
+      (if g then (let c = modulo_nat cy frz_cycle in
+                   (if less_nat c frz_epoch
+                     then (let (lm1, (_, nf)) =
+                             frz_absorb ops xsr
+                               ((if equal_nata c zero_nata
+                                  then frz_unions ops rs (fo_emp ops) else lm),
+                                 (zero_nata, zero_nata))
+                             in
+                           let nm1 =
+                             plus_nata nm
+                               (if less_nat zero_nata nf then one_nata
+                                 else zero_nata)
+                             in
+                            (if equal_nata (suc c) frz_epoch
+                              then (suc cy,
+                                     (fo_emp ops,
+                                       (zero_nata, (fo_cd ops lm1, nm1))))
+                              else (suc cy, (lm1, (nm1, (en, ep))))))
+                     else (suc cy, (lm, (nm, (en, ep))))))
+        else m));;
+
+let frz_keep : nat = Nat (Z.of_int 128);;
+
 let frz_c0 : nat = Nat (Z.of_int 1000);;
 
 let rec frz_stock (_B1, _B2)
   sz ev ops pm dbe fl d po j i alpha_s xsr lr c sigma_S sigma_E s =
-    (let (rg, (bo, (tk, (lsh, (nsh, lra))))) = c in
+    (let (rg, (bo, (cy, (lm, (nm, (en, (ep, rs))))))) = c in
      let (ys, (alpha_sa, (lv, sa))) =
        frz_live_loop (_B1, _B2) sz ev pm dbe fl d po j i alpha_s lr s in
-     let (lsh1, (nsh1, nf)) = frz_absorb ops xsr (lsh, (nsh, zero_nata)) in
+     let (cya, (lma, (nma, (ena, epa)))) =
+       frz_meas ops (less_nat frz_lambda (frz_cut po (fst (snd sa)) i j)) rs xsr
+         (cy, (lm, (nm, (en, ep))))
+       in
      let k = minus_nata j (fst (snd sa)) in
+     let ct = frz_cut po (fst (snd sa)) i j in
+     let rsa = take frz_keep (xsr @ rs) in
      let rga =
        minus_nata
-         (plus_nata rg (times_nata k (nat_sum_list (mapa (fo_cd ops) xsr))))
-         (plus_nata (times_nata frz_lambda nsh1)
-           (if less_nat zero_nata nf then times_nata k nsh1 else zero_nata))
+         (plus_nata rg (times_nata ct (nat_sum_list (mapa (fo_cd ops) xsr))))
+         (plus_nata (times_nata frz_lambda ena)
+           (divide_nat (times_nata (times_nata ct ena) epa) frz_epoch))
        in
-     let lr1 = frz_unions ops xsr lra in
-     let ep = less_eq_nat frz_epoch (suc tk) in
-     let tka = (if ep then zero_nata else suc tk) in
-     let lrb = (if ep then fo_emp ops else lr1) in
-     let lsh2 = (if ep then frz_unions ops alpha_sa lr1 else lsh1) in
-     let nsh2 = (if ep then fo_cd ops lsh2 else nsh1) in
-      (if less_nat (times_nata bo (plus_nata (times_nata k nsh1) frz_c0)) rga
-        then (let l = frz_unions ops alpha_sa lsh1 in
+      (if less_eq_nat frz_epoch cya &&
+            less_nat (times_nata bo (plus_nata (times_nata k ena) frz_c0)) rga
+        then (let l = frz_unions ops alpha_sa (frz_unions ops rsa (fo_emp ops))
+                in
                (match
                  frz_copies (_B1, _B2) sz ev (fo_emp ops) pm dbe j
                    (plus_nata i (size_lista ys)) l sigma_S sigma_E sa
                  with None ->
                    (ys, (alpha_sa,
                           (lv, (sa, (FSStock
-                                       (zero_nata, bo, tka, lsh2, nsh2, lrb),
+                                       (zero_nata, bo, cya, lma, nma, ena, epa,
+ rsa),
                                       (sigma_S, sigma_E))))))
                  | Some (rho_S, (rho_E, (pX, buf))) ->
                    (ys, (alpha_sa,
                           (None,
                             (sa, (FSSep (l, fo_cd ops l, pX, buf, zero_nata, bo,
-  tka, lrb),
+  zero_nata, fo_emp ops),
                                    (rho_S, rho_E))))))))
         else (ys, (alpha_sa,
-                    (lv, (sa, (FSStock (rga, bo, tka, lsh2, nsh2, lrb),
+                    (lv, (sa, (FSStock (rga, bo, cya, lma, nma, ena, epa, rsa),
                                 (sigma_S, sigma_E))))))));;
 
 let rec frz_emit
@@ -14420,9 +14451,9 @@ let rec frz_step (_B1, _B2)
         (let (ys, (alpha_sa, (lv, sa))) =
            frz_live_loop (_B1, _B2) sz ev pm dbe fl d po j i alpha_s lr s in
           (ys, (alpha_sa, (lv, (sa, (FSOff, (sigma_S, sigma_E)))))))
-      | FSStock (rg, bo, tk, lsh, nsh, lra) ->
+      | FSStock (rg, bo, cy, lm, nm, en, ep, rs) ->
         frz_stock (_B1, _B2) sz ev ops pm dbe fl d po j i alpha_s xsr lr
-          (rg, (bo, (tk, (lsh, (nsh, lra))))) sigma_S sigma_E s
+          (rg, (bo, (cy, (lm, (nm, (en, (ep, rs))))))) sigma_S sigma_E s
       | FSSep (l, nL, pX, buf, rg, bo, tk, lra) ->
         (let (l1, (nL1, nf)) = frz_absorb ops xsr (l, (nL, zero_nata)) in
          let lr1 = frz_unions ops xsr lra in
@@ -14461,7 +14492,11 @@ let rec frz_step (_B1, _B2)
                          else None)))
             with None ->
               frz_stock (_B1, _B2) sz ev ops pm dbe fl d po j i alpha_s xsr None
-                (zero_nata, (bo, (tka, (ln, (nLn, lrb))))) sigma_S sigma_E s2
+                (zero_nata,
+                  (bo, (zero_nata,
+                         (fo_emp ops,
+                           (zero_nata, (zero_nata, (zero_nata, [ln])))))))
+                sigma_S sigma_E s2
             | Some (rho_S, (rho_E, (pXa, bufa))) ->
               (let ys = frz_emit (fo_cmb ops) alpha_s bufa in
                let sa =
@@ -14474,7 +14509,8 @@ let rec frz_step (_B1, _B2)
                    (plus_nata rg
                      (plus_nata (times_nata frz_lambda nLn)
                        (if rb then times_nata k nLn else zero_nata)))
-                   (times_nata k (nat_sum_list (mapa (fo_cd ops) xsr)))
+                   (times_nata (frz_cut po (fst (snd sa)) i j)
+                     (nat_sum_list (mapa (fo_cd ops) xsr)))
                  in
                 (if less_nat
                       (plus_nata (times_nata k (ed_max_nat one_nata nLn))
@@ -14483,7 +14519,8 @@ let rec frz_step (_B1, _B2)
                   then (ys, (drop (size_lista ys) alpha_s,
                               (None,
                                 (sa, (FSStock
-(zero_nata, times_nata (Nat (Z.of_int 2)) bo, tka, ln, nLn, lrb),
+(zero_nata, times_nata (Nat (Z.of_int 2)) bo, zero_nata, fo_emp ops, zero_nata,
+  zero_nata, zero_nata, [ln]),
                                        (sigma_S, sigma_E))))))
                   else (ys, (drop (size_lista ys) alpha_s,
                               (None,
@@ -14657,7 +14694,7 @@ let rec eeval
      rho_L)
                                else None)),
                           (match sx with FSOff -> None
-                            | FSStock (_, _, _, _, _, _) -> None
+                            | FSStock (_, _, _, _, _, _, _, _) -> None
                             | FSSep (l, _, _, _, _, _, _, _) ->
                               Some (eeval j ts
                                       (updateb
@@ -15782,7 +15819,7 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
                    (null rb &&
                      (equal_lista equal_nat cS ks &&
                        (match sx with FSOff -> true
-                         | FSStock (_, _, _, _, _, _) -> true
+                         | FSStock (_, _, _, _, _, _, _, _) -> true
                          | FSSep (_, _, _, _, _, _, _, _) -> false))))
              then EFrz (p, m, eof m kks (upt zero_nata m) phi, eof n ks cs psi,
                          jfrz, jpsi0, jphi, [], eof n ks cs rho, w, pR, tq, [],
@@ -58489,7 +58526,7 @@ let rec frz_sep_init (_B1, _B2, _B3)
     (if key_sep pn psi && contains_pred pn psi
       then FSStock
              (zero_nata, one_nata, zero_nata, bot_set (_B1, _B2, _B3),
-               zero_nata, bot_set (_B1, _B2, _B3))
+               zero_nata, zero_nata, zero_nata, [])
       else FSOff);;
 
 let rec mtrm_of_trm = function Var x -> MVar x
