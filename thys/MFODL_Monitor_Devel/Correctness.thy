@@ -2330,7 +2330,7 @@ next
         list_all2 (\<lambda>k (yS, yE). frz_row \<sigma> V n R p \<phi>1 \<psi>1 (frz_ext \<sigma> V \<phi>1 NS wS (\<lambda>v k. v \<in> L))
           (frz_ext \<sigma> V \<phi>1 NE wE (\<lambda>_ _. False)) k yS yE) [min jfrz0 pX..<pX] buf)"
     by (cases rule: wf_mformula.cases)
-      (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
+      ((auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E); blast)
   note sep_ok = sep_ok0[rule_format] and stock_inv = stock_inv0[rule_format] and sep_inv = sep_inv0[rule_format]
   from win have w_le: "w \<le> j" and d_eq: "d = past_reach \<psi>1"
     and pR_eq: "pR = progress \<sigma> (P(?pn \<mapsto> w)) \<psi>1 j"
@@ -3157,7 +3157,7 @@ next
       and rb'_rows: "list_all2 (\<lambda>k X. i \<le> k \<longrightarrow> good k X) [pR' - length rb'..<pR'] rb'"
       and wf\<rho>: "\<And>M. frz_sup \<sigma> V \<phi>1 M \<Longrightarrow> wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> w'))
         (V(?pn \<mapsto> frz_ext \<sigma> V \<phi>1 N' w' M)) n R \<rho>' \<psi>1"
-      unfolding EXA_def INV_def s by auto
+      unfolding EXA_def INV_def s prod.case by blast
     let ?c = "j + \<delta> - w'"
     have wc: "w' + ?c = j + \<delta>"
       using w'_le by simp
@@ -3275,7 +3275,7 @@ next
       have \<alpha>: "bs ! t = {v. length v = Formula.nfv \<phi>1 \<and> \<langle>\<sigma>, V, v, i + t\<rangle> \<Turnstile> \<phi>1}"
         using qtable_frz_alpha[OF qa fv(2)] fv(1) by simp
       have \<alpha>L: "bs ! t \<subseteq> L"
-        using sub tb(1) by (auto simp: in_set_conv_nth)
+        using sub tb(1) nth_mem by blast
       have row: "frz_row \<sigma> V n R p \<phi>1 \<psi>1 (QS NS wS L) (QE NE wE) (i + t) yS yE"
         using list_all2_nthD[OF rows, of t] tb(2) bt len_buf' min_i pX'_eq by simp
       have winSk: "\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> (i + t))"
@@ -3312,7 +3312,7 @@ next
         [min (i + length ys) pX'..<pX'] (drop (length ys) buf')"
       using list_all2_dropI[OF rows, of "length ys"] min_i mi by simp
     have sc': "SEPC (i + length ys) L \<rho>S' \<rho>E' pX' (drop (length ys) buf')"
-      by (rule SEPCI[OF pX'_eq _ winS' winE' wfS wfE rows']) (use len_buf' len_ys pX'_eq in simp)
+      by (rule SEPCI[OF pX'_eq _ winS' winE' wfS wfE rows']) (use len_buf' len_ys pX'_eq ij in auto)
 
 
     show ?thesis
@@ -3378,7 +3378,7 @@ next
     have b0: "pX - length buf = min jfrz0 pX"
       using len_buf by simp
     have mle: "min jfrz0 pX \<le> min jfrzM jpsij'"
-      using pX_eq jpsij_le by (simp add: jfrzM_def)
+      using pX_eq jpsij_le by (auto simp: jfrzM_def min_le_iff_disj)
     have drop_rows: "list_all2 (\<lambda>k (yS, yE). frz_row \<sigma> V n R p \<phi>1 \<psi>1 (QS NS wS L) (QE NE wE) k yS yE)
       [min jfrzM jpsij'..<jpsij'] (drop (min jfrzM (pX + length uS) - (pX - length buf)) (buf @ zip uS uE))"
       using list_all2_dropI[OF all_rows, of "min jfrzM jpsij' - min jfrz0 pX"] mle
@@ -3441,14 +3441,22 @@ next
     have subL: "\<forall>\<alpha> \<in> set bs0. \<alpha> \<subseteq> ?L"
       by (auto simp: frz_unions_kops)
     have ex0: "EXA (jfrzM + length ys0) s0'"
-      using R by (simp add: RES_def)
+      using R unfolding RES_def by blast
+    have RN: "RES ys0 bs0 None s0'"
+      using R option.distinct(1) unfolding RES_def by blast
+    have tabLr': "frz_tab \<sigma> V m \<phi>1 (if frz_epoch \<le> Suc tk then {} else frz_unions (frz_kops m cS) xsr Lr)"
+      using tabLr1 by simp
+    have tabLsh2': "frz_tab \<sigma> V m \<phi>1 (if frz_epoch \<le> Suc tk
+        then frz_unions (frz_kops m cS) bs0 (frz_unions (frz_kops m cS) xsr Lr) else Lsh1)"
+      using tabLsh2 tabLsh1 by simp
+    note st' = st[unfolded frz_stock_eq[OF l ab] Let_def frz_kops_simps]
     show ?thesis
     proof (cases "frz_copies size (meval (j + \<delta>) n) (fo_emp (frz_kops m cS)) ?pn ?dbe (j + \<delta>)
         (jfrzM + length ys0) ?L \<sigma>S \<sigma>E s0'")
       case None
       then show ?thesis
-        using st R tabLsh1 tabLsh2 tabLr1 nOff
-        by (auto simp: frz_stock_def l ab Let_def SEPST_def frz_kops_def split: if_splits)
+        using st' R tabLsh2' tabLr' nOff
+        by (auto simp: SEPST_def frz_kops_simps split: if_splits)
     next
       case (Some c)
       then obtain \<rho>S2 \<rho>E2 pX2 buf2 where cpe: "frz_copies size (meval (j + \<delta>) n) (fo_emp (frz_kops m cS)) ?pn ?dbe
@@ -3457,8 +3465,8 @@ next
       have sc: "SEPC (jfrzM + length ys0) ?L \<rho>S2 \<rho>E2 pX2 buf2"
         by (rule copies[OF cpe[unfolded frz_kops_simps] ex0 tabL i_le])
       show ?thesis
-        using st R tabLsh1 tabLsh2 tabLr1 nOff sc subL tabL
-        by (auto simp: frz_stock_def l ab cpe Let_def SEPST_def frz_kops_def split: if_splits)
+        using st' R RN tabLsh2' tabLr' nOff sc subL tabL cpe[unfolded frz_kops_simps]
+        by (auto simp: SEPST_def split: if_splits)
     qed
   qed
   \<comment> \<open>the separable mode\<close>
@@ -3577,7 +3585,7 @@ next
       have ex': "EXA (jfrzM + length ys) s'"
         unfolding s' by (rule adv[OF inv2]) (use E jfrzM_jpsij' jpsij'_le in auto)
       have R: "RES ys bs' lv' s'"
-        using E ex' bs' lv' by (simp add: RES_def)
+        using E ex' bs' lv' option.distinct(1) unfolding RES_def by blast
       have subd: "\<forall>\<alpha> \<in> set bs'. \<alpha> \<subseteq> Ln"
         using subn bs' by (auto dest: in_set_dropD)
       show ?thesis
