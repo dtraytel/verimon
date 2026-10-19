@@ -1,6 +1,6 @@
 (*<*)
 theory Eval
-  imports Window_Dispatch Trigger_Window Release_Window Trigger_Swag Kernel_Call
+  imports Window_Dispatch Release_Window Trigger_Window Kernel_Call
 begin
 (*>*)
 
