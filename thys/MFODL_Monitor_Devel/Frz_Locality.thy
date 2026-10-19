@@ -427,4 +427,341 @@ next
 qed auto
 
 
+section \<open>A frozen predicate read only at the formula's own first variables\<close>
+
+text \<open>
+  A predicate @{term pn} of arity @{term m} is \<^emph>\<open>separable\<close> in a formula if it occurs there
+  only applied to the formula's first @{term m} variables, in that order, under no quantifier and
+  in no definition of a bound predicate.  The formula's satisfaction at a valuation then reads the
+  predicate only at one tuple, the valuation's first @{term m} values: two interpretations of the
+  predicate that agree on that tuple at all time points give the same satisfaction.  The monitor
+  uses this for @{const Formula.Frz}: the body can be evaluated once with any table of the frozen
+  predicate that contains the frozen one, and the verdicts restricted to the frozen tuples.
+\<close>
+
+fun key_sep :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> bool" where
+  "key_sep pn (Formula.Pred e ts) = ((e, length ts) = pn \<longrightarrow> ts = map Formula.Var [0..<length ts])"
+| "key_sep pn (Formula.Let e \<phi> \<psi>) =
+     (\<not> Formula.contains_pred pn \<phi> \<and> ((e, Formula.nfv \<phi>) = pn \<or> key_sep pn \<psi>))"
+| "key_sep pn (Formula.Frz e \<phi> \<psi>) =
+     (\<not> Formula.contains_pred pn \<phi> \<and> ((e, Formula.nfv \<phi>) = pn \<or> key_sep pn \<psi>))"
+| "key_sep pn (Formula.LetPast e \<phi> \<psi>) =
+     ((e, Formula.nfv \<phi>) = pn \<or> (\<not> Formula.contains_pred pn \<phi> \<and> key_sep pn \<psi>))"
+| "key_sep pn (Formula.Neg \<phi>) = key_sep pn \<phi>"
+| "key_sep pn (Formula.Or \<phi> \<psi>) = (key_sep pn \<phi> \<and> key_sep pn \<psi>)"
+| "key_sep pn (Formula.And \<phi> \<psi>) = (key_sep pn \<phi> \<and> key_sep pn \<psi>)"
+| "key_sep pn (Formula.Ands l) = (\<forall>\<phi> \<in> set l. key_sep pn \<phi>)"
+| "key_sep pn (Formula.Exists t \<phi>) = (\<not> Formula.contains_pred pn \<phi>)"
+| "key_sep pn (Formula.Agg y \<omega> tys f \<phi>) = (\<not> Formula.contains_pred pn \<phi>)"
+| "key_sep pn (Formula.Prev I \<phi>) = key_sep pn \<phi>"
+| "key_sep pn (Formula.Next I \<phi>) = key_sep pn \<phi>"
+| "key_sep pn (Formula.Since \<phi> I \<psi>) = (key_sep pn \<phi> \<and> key_sep pn \<psi>)"
+| "key_sep pn (Formula.Until \<phi> I \<psi>) = (key_sep pn \<phi> \<and> key_sep pn \<psi>)"
+| "key_sep pn (Formula.Trigger \<phi> I \<psi>) = (key_sep pn \<phi> \<and> key_sep pn \<psi>)"
+| "key_sep pn (Formula.Release \<phi> I \<psi>) = (key_sep pn \<phi> \<and> key_sep pn \<psi>)"
+| "key_sep pn (Formula.MatchP I r) = (\<forall>\<phi> \<in> Regex.atms r. key_sep pn \<phi>)"
+| "key_sep pn (Formula.MatchF I r) = (\<forall>\<phi> \<in> Regex.atms r. key_sep pn \<phi>)"
+| "key_sep pn _ = True"
+
+text \<open>The tuple of a valuation at which a separable predicate of arity @{term m} is read.\<close>
+
+abbreviation sep_key :: "nat \<Rightarrow> Formula.env \<Rightarrow> event_data list" where
+  "sep_key m v \<equiv> map ((!) v) [0..<m]"
+
+lemma sat_not_contains_upd:
+  assumes "\<not> Formula.contains_pred q \<phi>"
+  shows "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> (V(q \<mapsto> c)) v i \<phi>"
+proof (cases "V q")
+  case None
+  then show ?thesis
+    using assms by simp
+next
+  case (Some x)
+  then have "V = V(q \<mapsto> c, q \<mapsto> x)"
+    by (auto simp: fun_eq_iff)
+  then have "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> (V(q \<mapsto> c, q \<mapsto> x)) v i \<phi>"
+    by simp
+  also have "\<dots> = Formula.sat \<sigma> (V(q \<mapsto> c)) v i \<phi>"
+    using assms by (rule not_contains_pred_sat)
+  finally show ?thesis .
+qed
+
+lemma sat_not_contains_agree:
+  assumes "\<not> Formula.contains_pred q \<phi>" "\<And>q'. q' \<noteq> q \<Longrightarrow> V q' = V' q'"
+  shows "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> V' v i \<phi>"
+proof -
+  have "V(q \<mapsto> undefined) = V'(q \<mapsto> undefined)"
+    using assms(2) by (auto simp: fun_eq_iff)
+  then show ?thesis
+    using sat_not_contains_upd[OF assms(1), of \<sigma> V v i undefined]
+      sat_not_contains_upd[OF assms(1), of \<sigma> V' v i undefined] by simp
+qed
+
+lemma sat_key_sep_gen:
+  assumes "key_sep (p, m) \<psi>" "V (p, m) = Some X" "V' (p, m) = Some X'"
+    "\<And>q. q \<noteq> (p, m) \<Longrightarrow> V q = V' q" "\<And>k. X (sep_key m v) k = X' (sep_key m v) k"
+  shows "Formula.sat \<sigma> V v i \<psi> = Formula.sat \<sigma> V' v i \<psi>"
+  using assms
+proof (induction \<psi> arbitrary: V V' X X' i)
+  case (Pred e ts)
+  show ?case
+  proof (cases "(e, length ts) = (p, m)")
+    case True
+    then have "ts = map Formula.Var [0..<m]"
+      using Pred by simp
+    then show ?thesis
+      using True Pred.prems by (simp add: comp_def)
+  next
+    case False
+    then show ?thesis
+      using Pred.prems(4)[OF False] by simp
+  qed
+next
+  case (Let e \<phi> \<psi>)
+  let ?en = "(e, Formula.nfv \<phi>)"
+  have \<phi>: "Formula.sat \<sigma> V w j \<phi> = Formula.sat \<sigma> V' w j \<phi>" for w j
+    using Let.prems(1,4) by (intro sat_not_contains_agree[of "(p, m)"]) auto
+  show ?case
+  proof (cases "?en = (p, m)")
+    case True
+    have "V(?en \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>) = V'(?en \<mapsto> \<lambda>w j. Formula.sat \<sigma> V' w j \<phi>)"
+      using Let.prems(4) True by (auto simp: fun_eq_iff \<phi>)
+    then show ?thesis
+      by simp
+  next
+    case False
+    then have "key_sep (p, m) \<psi>"
+      using Let.prems(1) by auto
+    have eqF: "(\<lambda>w j. Formula.sat \<sigma> V w j \<phi>) = (\<lambda>w j. Formula.sat \<sigma> V' w j \<phi>)"
+      using \<phi> by auto
+    show ?thesis
+      unfolding Formula.sat.simps eqF
+      by (rule Let.IH(2)[OF \<open>key_sep (p, m) \<psi>\<close>, where X=X and X'=X']) (use Let.prems(2-5) False in auto)
+  qed
+next
+  case (Frz e \<phi> \<psi>)
+  let ?en = "(e, Formula.nfv \<phi>)"
+  have \<phi>: "Formula.sat \<sigma> V w j \<phi> = Formula.sat \<sigma> V' w j \<phi>" for w j
+    using Frz.prems(1,4) by (intro sat_not_contains_agree[of "(p, m)"]) auto
+  show ?case
+  proof (cases "?en = (p, m)")
+    case True
+    have "V(?en \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>) = V'(?en \<mapsto> \<lambda>w j. Formula.sat \<sigma> V' w i \<phi>)"
+      using Frz.prems(4) True by (auto simp: fun_eq_iff \<phi>)
+    then show ?thesis
+      by simp
+  next
+    case False
+    then have "key_sep (p, m) \<psi>"
+      using Frz.prems(1) by auto
+    have eqF: "(\<lambda>w j. Formula.sat \<sigma> V w i \<phi>) = (\<lambda>w j. Formula.sat \<sigma> V' w i \<phi>)"
+      using \<phi> by auto
+    show ?thesis
+      unfolding Formula.sat.simps eqF
+      by (rule Frz.IH(2)[OF \<open>key_sep (p, m) \<psi>\<close>, where X=X and X'=X']) (use Frz.prems(2-5) False in auto)
+  qed
+next
+  case (LetPast e \<phi> \<psi>)
+  let ?en = "(e, Formula.nfv \<phi>)"
+  show ?case
+  proof (cases "?en = (p, m)")
+    case True
+    have "V(?en \<mapsto> Z) = V'(?en \<mapsto> Z)" for Z
+      using LetPast.prems(4) True by (auto simp: fun_eq_iff)
+    then show ?thesis
+      by (simp add: Let_def)
+  next
+    case False
+    then have \<psi>: "key_sep (p, m) \<psi>" and n\<phi>: "\<not> Formula.contains_pred (p, m) \<phi>"
+      using LetPast.prems(1) by auto
+    have \<phi>: "Formula.sat \<sigma> (V(?en \<mapsto> Z)) w j \<phi> = Formula.sat \<sigma> (V'(?en \<mapsto> Z)) w j \<phi>" for Z w j
+      using n\<phi> LetPast.prems(4) by (intro sat_not_contains_agree[of "(p, m)"]) auto
+    define F where "F = letpast_sat (\<lambda>Z u k. Formula.sat \<sigma> (V(?en \<mapsto> Z)) u k \<phi>)"
+    have F': "letpast_sat (\<lambda>Z u k. Formula.sat \<sigma> (V'(?en \<mapsto> Z)) u k \<phi>) = F"
+      unfolding F_def \<phi> ..
+    show ?thesis
+      unfolding Formula.sat.simps Let_def F' F_def[symmetric]
+      by (rule LetPast.IH(2)[OF \<psi>, where X=X and X'=X']) (use LetPast.prems(2-5) False in auto)
+  qed
+next
+  case (Exists t \<phi>)
+  then show ?case
+    using sat_not_contains_agree[of "(p, m)" \<phi> V V'] by simp
+next
+  case (Agg y \<omega> tys f \<phi>)
+  then show ?case
+    using sat_not_contains_agree[of "(p, m)" \<phi> V V'] by simp
+next
+  case (MatchP I r)
+  have "Regex.match (Formula.sat \<sigma> V v) r = Regex.match (Formula.sat \<sigma> V' v) r"
+  proof (rule match_cong[OF refl])
+    fix k z
+    assume "z \<in> Regex.atms r"
+    then show "Formula.sat \<sigma> V v k z = Formula.sat \<sigma> V' v k z"
+      using MatchP.prems by (intro MatchP.IH[where X=X and X'=X']) auto
+  qed
+  then show ?case
+    by simp
+next
+  case (MatchF I r)
+  have "Regex.match (Formula.sat \<sigma> V v) r = Regex.match (Formula.sat \<sigma> V' v) r"
+  proof (rule match_cong[OF refl])
+    fix k z
+    assume "z \<in> Regex.atms r"
+    then show "Formula.sat \<sigma> V v k z = Formula.sat \<sigma> V' v k z"
+      using MatchF.prems by (intro MatchF.IH[where X=X and X'=X']) auto
+  qed
+  then show ?case
+    by simp
+next
+  case (Ands l)
+  have "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> V' v i \<phi>" if "\<phi> \<in> set l" for \<phi>
+    by (rule Ands.IH[OF that, where X=X and X'=X']) (use Ands.prems that in simp_all)
+  then show ?case
+    by simp
+next
+  case (Since \<phi> I \<psi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Since.IH(1)[where X=X and X'=X']) (use Since.prems in simp_all)
+  moreover have "Formula.sat \<sigma> V v k \<psi> = Formula.sat \<sigma> V' v k \<psi>" for k
+    by (rule Since.IH(2)[where X=X and X'=X']) (use Since.prems in simp_all)
+  ultimately show ?case
+    by simp
+next
+  case (Until \<phi> I \<psi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Until.IH(1)[where X=X and X'=X']) (use Until.prems in simp_all)
+  moreover have "Formula.sat \<sigma> V v k \<psi> = Formula.sat \<sigma> V' v k \<psi>" for k
+    by (rule Until.IH(2)[where X=X and X'=X']) (use Until.prems in simp_all)
+  ultimately show ?case
+    by simp
+next
+  case (Trigger \<phi> I \<psi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Trigger.IH(1)[where X=X and X'=X']) (use Trigger.prems in simp_all)
+  moreover have "Formula.sat \<sigma> V v k \<psi> = Formula.sat \<sigma> V' v k \<psi>" for k
+    by (rule Trigger.IH(2)[where X=X and X'=X']) (use Trigger.prems in simp_all)
+  ultimately show ?case
+    by simp
+next
+  case (Release \<phi> I \<psi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Release.IH(1)[where X=X and X'=X']) (use Release.prems in simp_all)
+  moreover have "Formula.sat \<sigma> V v k \<psi> = Formula.sat \<sigma> V' v k \<psi>" for k
+    by (rule Release.IH(2)[where X=X and X'=X']) (use Release.prems in simp_all)
+  ultimately show ?case
+    by simp
+next
+  case (Or \<phi> \<psi>)
+  have "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> V' v i \<phi>"
+    by (rule Or.IH(1)[where X=X and X'=X']) (use Or.prems in simp_all)
+  moreover have "Formula.sat \<sigma> V v i \<psi> = Formula.sat \<sigma> V' v i \<psi>"
+    by (rule Or.IH(2)[where X=X and X'=X']) (use Or.prems in simp_all)
+  ultimately show ?case
+    by simp
+next
+  case (And \<phi> \<psi>)
+  have "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> V' v i \<phi>"
+    by (rule And.IH(1)[where X=X and X'=X']) (use And.prems in simp_all)
+  moreover have "Formula.sat \<sigma> V v i \<psi> = Formula.sat \<sigma> V' v i \<psi>"
+    by (rule And.IH(2)[where X=X and X'=X']) (use And.prems in simp_all)
+  ultimately show ?case
+    by simp
+next
+  case (Neg \<phi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Neg.IH[where X=X and X'=X']) (use Neg.prems in simp_all)
+  then show ?case
+    by (simp split: nat.splits)
+next
+  case (Prev I \<phi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Prev.IH[where X=X and X'=X']) (use Prev.prems in simp_all)
+  then show ?case
+    by (simp split: nat.splits)
+next
+  case (Next I \<phi>)
+  have "Formula.sat \<sigma> V v k \<phi> = Formula.sat \<sigma> V' v k \<phi>" for k
+    by (rule Next.IH[where X=X and X'=X']) (use Next.prems in simp_all)
+  then show ?case
+    by (simp split: nat.splits)
+qed simp_all
+
+lemma sat_key_sep:
+  assumes "key_sep (p, m) \<psi>" "\<And>k. X (sep_key m v) k = X' (sep_key m v) k"
+  shows "Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<psi> = Formula.sat \<sigma> (V((p, m) \<mapsto> X')) v i \<psi>"
+  by (rule sat_key_sep_gen[where X=X and X'=X', OF assms(1)]) (use assms(2) in auto)
+
+text \<open>The verdict of a freeze at a valuation is that of its body with any interpretation of the
+  frozen predicate that agrees with the frozen value on the valuation's tuple, from a time point
+  beyond the body's past reach on.\<close>
+
+lemma sat_Frz_sep:
+  assumes sep: "key_sep (p, Formula.nfv \<phi>) \<psi>"
+    and agree: "\<And>k. w \<le> k \<Longrightarrow> Q (sep_key (Formula.nfv \<phi>) v) k = Formula.sat \<sigma> V (sep_key (Formula.nfv \<phi>) v) i \<phi>"
+    and win: "\<forall>k<w. enat (\<tau> \<sigma> k) + past_reach \<psi> < enat (\<tau> \<sigma> i)"
+  shows "Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> Q)) v i \<psi> = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
+proof -
+  let ?pn = "(p, Formula.nfv \<phi>)"
+  define Q' where "Q' = (\<lambda>u k. if k < w then Q u k else Formula.sat \<sigma> V u i \<phi>)"
+  have "Formula.sat \<sigma> (V(?pn \<mapsto> Q)) v i \<psi> = Formula.sat \<sigma> (V(?pn \<mapsto> Q')) v i \<psi>"
+    by (rule sat_key_sep[OF sep]) (auto simp: Q'_def agree)
+  also have "\<dots> = Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>u k. Formula.sat \<sigma> V u i \<phi>)) v i \<psi>"
+  proof (rule sat_agree_from[OF order_refl])
+    show "agree_from \<sigma> (past_reach \<psi>) i (V(?pn \<mapsto> Q')) (V(?pn \<mapsto> \<lambda>u k. Formula.sat \<sigma> V u i \<phi>))"
+    proof (rule agree_from_upd)
+      show "agree_from \<sigma> (past_reach \<psi>) i V V"
+        by (auto simp: agree_from_def option.rel_refl)
+    next
+      fix u k
+      assume "enat (\<tau> \<sigma> i) \<le> enat (\<tau> \<sigma> k) + past_reach \<psi>"
+      then have "w \<le> k"
+        using win by (meson leD leI)
+      then show "Q' u k = Formula.sat \<sigma> V u i \<phi>"
+        by (simp add: Q'_def)
+    qed
+  qed
+  finally show ?thesis
+    by simp
+qed
+
+text \<open>A separable predicate that occurs is applied to the formula's free variables.\<close>
+
+lemma key_sep_fv:
+  "key_sep (p, m) \<psi> \<Longrightarrow> Formula.contains_pred (p, m) \<psi> \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<psi>"
+proof (induction \<psi>)
+  case (Pred e ts)
+  then have ts: "ts = map Formula.Var [0..<m]"
+    by auto
+  show ?case
+  proof
+    fix x
+    assume "x \<in> {0..<m}"
+    then have "Formula.Var x \<in> set ts"
+      using ts by auto
+    then show "x \<in> Formula.fv (Formula.Pred e ts)"
+      by force
+  qed
+next
+  case (Let e \<phi> \<psi>)
+  then show ?case
+    by (auto split: if_splits)
+next
+  case (Frz e \<phi> \<psi>)
+  then show ?case
+    by (auto split: if_splits)
+next
+  case (LetPast e \<phi> \<psi>)
+  then show ?case
+    by (auto simp: Let_def split: if_splits)
+next
+  case (MatchP I r)
+  then show ?case
+    by (auto simp: Regex.fv_regex_alt)
+next
+  case (MatchF I r)
+  then show ?case
+    by (auto simp: Regex.fv_regex_alt)
+qed auto
+
 end

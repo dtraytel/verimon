@@ -163,10 +163,12 @@ function (sequential) eof ::
       else EFail)"
 | "eof n ks cs (MLet p m kks \<phi> \<psi>) =
      (if ecols kks = [0..<m] then ELet p m (eof m kks [0..<m] \<phi>) (eof n ks cs \<psi>) else EFail)"
-| "eof n ks cs (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
-     (if ecols kks = [0..<m] \<and> \<alpha>s = [] \<and> rb = []
+| "eof n ks cs (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
+     (if ecols kks = [0..<m] \<and> \<alpha>s = [] \<and> rb = [] \<and> cS = ks \<and>
+         (case sx of FSSep _ _ _ _ _ _ _ _ \<Rightarrow> False | _ \<Rightarrow> True)
       then EFrz p m (eof m kks [0..<m] \<phi>) (eof n ks cs \<psi>) jfrz jpsi0 jphi []
-        (eof n ks cs \<rho>) w pR tq [] d po ng lv (eof n ks cs \<rho>L) else EFail)"
+        (eof n ks cs \<rho>) w pR tq [] d po ng lv (eof n ks cs \<rho>L) sx cs (eof n ks cs \<rho>S) (eof n ks cs \<rho>E)
+      else EFail)"
 | "eof n ks cs (MLetPast p m kks \<phi> \<psi> i buf) =
      (if ecols kks = [0..<m] \<and> buf = None
       then ELetPast p m (eof m kks [0..<m] \<phi>) (eof n ks cs \<psi>) i None else EFail)"
@@ -725,8 +727,12 @@ next
     using Frz.prems(2) unfolding c by (simp_all split: if_splits)
   have s1: "eofc (Formula.nfv \<phi>) tw \<phi>" by (rule Frz.IH(1)[OF fvi_less_nfv z1])
   have s2: "eofc n tw \<psi>" using Frz.prems(1) z2 by (intro Frz.IH(2)) simp_all
-  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c
-    by (auto intro!: EsFrz[where rb = "[]", unfolded list.map(1)])
+  have sx: "map_frz_sep id (etabc (Formula.fv_list \<psi>) (ecols (Formula.fv_list \<psi>)))
+      (frz_sep_init (p, Formula.nfv \<phi>) \<psi> :: (event_data list set, event_data table) frz_sep) =
+    frz_sep_init (p, Formula.nfv \<phi>) \<psi>"
+    by (simp add: frz_sep_init_def)
+  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c sx
+    by (auto simp: frz_sep_init_def intro!: EsFrz[where rb = "[]", unfolded list.map(1)])
 next
   case (LetPast p \<phi> \<psi>)
   have c: "ecols (Formula.fv_list \<phi>) = [0..<Formula.nfv \<phi>]"
