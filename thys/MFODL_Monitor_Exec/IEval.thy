@@ -229,7 +229,7 @@ function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> t
       in (map itab zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
   by pat_completeness (simp_all only: prod.inject geformula.inject geformula.distinct simp_thms)
 termination
-  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: less_Suc_eq_le intro: size_list_estimation')
+  by (relation "measure (\<lambda>(_, _, _, _, \<phi>). size \<phi>)") (auto simp: less_Suc_eq_le intro: size_list_estimation')
 
 subsection \<open>Forgetting the indices\<close>
 
@@ -366,7 +366,8 @@ next
     by (metis prod_cases3)
   have t: "uedsx_eval_since dags [] (mebuf2S_add (map iset xs1) (map iset ys1) ts buf) (riu aux)
       = (map iset zs, buf', riu aux')"
-    using iuedsx_eval_since_abs[OF 3] by simp
+    using iuedsx_eval_since_abs[of dags "[]" "mebuf2S_add (map iset xs1) (map iset ys1) ts buf"
+      "iudsx_ensure rq aux"] 3 by simp
   show ?case
     using 14(3) 14(1)[OF 1] 14(2)[OF refl 1[symmetric] 2] t by (auto simp: 1 2 3)
 next
