@@ -209,7 +209,34 @@ proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
   qed
 qed
 
-lemmas eabs_simps[simp] = geformula.map[of ib2 id id, folded eabs_def, unfolded id_apply]
+lemma eabs_simps[simp]:
+  "eabs EFail = EFail"
+  "eabs (ERel rel) = ERel rel"
+  "eabs (EPredS e ar) = EPredS e ar"
+  "eabs (EPredM e ar tms cs) = EPredM e ar tms cs"
+  "eabs (EAndRel \<phi> conf) = EAndRel (eabs \<phi>) conf"
+  "eabs (ENeg \<phi>) = ENeg (eabs \<phi>)"
+  "eabs (EExists \<phi> b) = EExists (eabs \<phi>) b"
+  "eabs (EAgg g0 \<omega> f k pos \<phi>) = EAgg g0 \<omega> f k pos (eabs \<phi>)"
+  "eabs (EOr \<phi> \<psi> buf) = EOr (eabs \<phi>) (eabs \<psi>) (ib2 buf)"
+  "eabs (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eabs \<phi>) pos (eabs \<psi>) (ib2 buf)"
+  "eabs (EPrev I \<phi> first pbuf nts) = EPrev I (eabs \<phi>) first pbuf nts"
+  "eabs (ENext I \<phi> first nts) = ENext I (eabs \<phi>) first nts"
+  "eabs (EAnds ps ns Ld dbuf) = EAnds ps ns (map eabs Ld) dbuf"
+  "eabs (ESince dags \<phi> \<psi> sbuf aux) = ESince dags (eabs \<phi>) (eabs \<psi>) sbuf aux"
+  "eabs (EUntil dags msk \<phi> \<psi> ubuf nts t uaux) = EUntil dags msk (eabs \<phi>) (eabs \<psi>) ubuf nts t uaux"
+  "eabs (EAndAssign p t \<phi>) = EAndAssign p t (eabs \<phi>)"
+  "eabs (ETP mt i) = ETP mt i"
+  "eabs (ETS mt) = ETS mt"
+  "eabs (ELet p m \<phi> \<psi>) = ELet p m (eabs \<phi>) (eabs \<psi>)"
+  "eabs (ETrigger dags pls \<phi> \<psi> tbuf nts taux) = ETrigger dags pls (eabs \<phi>) (eabs \<psi>) tbuf nts taux"
+  "eabs (ERelease dags msk \<phi> \<psi> rbuf nts t raux) = ERelease dags msk (eabs \<phi>) (eabs \<psi>) rbuf nts t raux"
+  "eabs (EAndTrigger pl \<alpha> abuf dags \<phi> \<psi> tbuf nts taux) =
+     EAndTrigger pl (eabs \<alpha>) abuf dags (eabs \<phi>) (eabs \<psi>) tbuf nts taux"
+  "eabs (EMatchP m I mr mrs pls Ld nbuf nts maux) = EMatchP m I mr mrs pls (map eabs Ld) nbuf nts maux"
+  "eabs (EMatchF m I mr mrs pls Ld nbuf nts t faux) =
+     EMatchF m I mr mrs pls (map eabs Ld) nbuf nts t faux"
+  by (simp_all add: eabs_def)
 
 lemma map_eabs[simp]: "map eabs (map snd R) = map (eabs \<circ> snd) R"
   by simp
@@ -220,7 +247,8 @@ proof (induction j ts db \<phi> arbitrary: xs \<phi>' rule: ieval.induct)
   case (9 j ts db \<phi> \<psi> buf)
   obtain xs1 \<phi>1 where 1: "ieval j ts db \<phi> = (xs1, \<phi>1)" by fastforce
   obtain ys1 \<psi>1 where 2: "ieval j ts db \<psi> = (ys1, \<psi>1)" by fastforce
-  obtain zs buf' where 3: "mebuf2_take iunion (mebuf2_add xs1 ys1 buf) = (zs, buf')" by fastforce
+  obtain zs buf' where 3: "mebuf2_take iunion (mebuf2_add xs1 ys1 buf) = (zs, buf')"
+    by (cases "mebuf2_take iunion (mebuf2_add xs1 ys1 buf)") auto
   have t: "mebuf2_take (\<union>) (ib2 (mebuf2_add xs1 ys1 buf)) = (map iset zs, ib2 buf')"
     by (rule mebuf2_take_ib2[OF 3]) simp
   show ?case
@@ -230,7 +258,7 @@ next
   obtain xs1 \<phi>1 where 1: "ieval j ts db \<phi> = (xs1, \<phi>1)" by fastforce
   obtain ys1 \<psi>1 where 2: "ieval j ts db \<psi> = (ys1, \<psi>1)" by fastforce
   obtain zs buf' where 3: "mebuf2_take (\<lambda>r1 r2. itab (ijoin pl r1 pos r2)) (mebuf2_add xs1 ys1 buf) = (zs, buf')"
-    by fastforce
+    by (cases "mebuf2_take (\<lambda>r1 r2. itab (ijoin pl r1 pos r2)) (mebuf2_add xs1 ys1 buf)") auto
   have t: "mebuf2_take (\<lambda>r1 r2. gbin_join pl r1 pos r2) (ib2 (mebuf2_add xs1 ys1 buf)) = (map iset zs, ib2 buf')"
     by (rule mebuf2_take_ib2[OF 3]) (simp add: ijoin_eq)
   show ?case
