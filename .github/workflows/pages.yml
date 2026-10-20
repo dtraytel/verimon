@@ -26,9 +26,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The repository's own package is not installed (only the web version is built), so it is
+      # not pinned either: pinning clones the repository with its submodule thys/grammar.
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "4.14"
+          opam-pin: false
 
       - name: Install the dependencies of the web version
         run: opam install -y dune zarith js_of_ocaml js_of_ocaml-lwt js_of_ocaml-ppx zarith_stubs_js
