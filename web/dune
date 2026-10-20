@@ -1,0 +1,19 @@
+; The web version: the generated monitor compiled to JavaScript with js_of_ocaml.  It is built
+; only if js_of_ocaml, js_of_ocaml-lwt, js_of_ocaml-ppx and zarith_stubs_js are installed
+; (dune build web/verimon_js.zip, see README.md).
+(executable
+  (name main_js)
+  (optional)
+  (libraries verimon_code zarith zarith_stubs_js lwt js_of_ocaml js_of_ocaml-lwt)
+  (modes js)
+  (preprocess (pps js_of_ocaml-ppx))
+  (modules main_js)
+  (link_deps (glob_files examples/*))
+  (js_of_ocaml (flags :standard --file examples)))
+
+(rule (copy main_js.bc.js verimon.js))
+
+(rule
+  (target verimon_js.zip)
+  (deps index.html verimon.js verimon.css check.png tel.png)
+  (action (run zip %{target} %{deps})))
