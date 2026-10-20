@@ -126,7 +126,7 @@ proof (rule mapping_eqI)
     have "{y \<in> T. eproj msk y = k} - {x} = {y \<in> T - {x}. eproj msk y = k}"
       and "(k \<in> eproj msk ` (T - {x})) = ({y \<in> T - {x}. eproj msk y = k} \<noteq> {})"
       by auto
-    then show ?thesis using True by (simp add: lookup_eidx lookup_eidx_del1 b)
+    then show ?thesis using True by (simp add: lookup_eidx lookup_eidx_del1 b[unfolded True])
   next
     case False
     have "(k \<in> eproj msk ` (T - {x})) = (k \<in> eproj msk ` T)"
