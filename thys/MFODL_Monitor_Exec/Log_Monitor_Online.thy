@@ -42,7 +42,7 @@ lemma emstep_indices:
   assumes "emstep tdb ds = (vs, ds')"
   shows "emstate_i ds \<le> emstate_i ds'" and "(k, t, X) \<in> set vs \<Longrightarrow> emstate_i ds \<le> k \<and> k < emstate_i ds'"
 proof -
-  obtain xs m where d: "ieval [] (emstate_j ds + 1) [snd tdb] (fst tdb) (emstate_m ds) = (xs, m)"
+  obtain xs m where d: "ieval [] (emstate_j ds + 1) [snd tdb] (demb (fst tdb)) (emstate_m ds) = (xs, m)"
     by fastforce
   obtain i' tq vs' where a: "eannotate (emstate_i ds) (emstate_t ds @@ [snd tdb]) (map iset xs) [] = (i', tq, vs')"
     by (metis prod.exhaust)

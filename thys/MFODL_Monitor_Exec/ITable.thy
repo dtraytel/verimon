@@ -116,7 +116,25 @@ lemma eidx_insert: "eidx msk (Set.insert x T) = eidx_add1 msk x (eidx msk T)"
   by (rule mapping_eqI) (auto simp: lookup_eidx lookup_eidx_add1 ebucket_def image_iff)
 
 lemma eidx_remove: "eidx msk (T - {x}) = eidx_del1 msk x (eidx msk T)"
-  by (rule mapping_eqI) (auto simp: lookup_eidx lookup_eidx_del1 ebucket_def image_iff; fastforce)
+proof (rule mapping_eqI)
+  fix k
+  have b: "ebucket (eidx msk T) k = {y \<in> T. eproj msk y = k}"
+    by (auto simp: ebucket_def lookup_eidx)
+  show "Mapping.lookup (eidx msk (T - {x})) k = Mapping.lookup (eidx_del1 msk x (eidx msk T)) k"
+  proof (cases "k = eproj msk x")
+    case True
+    have "{y \<in> T. eproj msk y = k} - {x} = {y \<in> T - {x}. eproj msk y = k}"
+      and "(k \<in> eproj msk ` (T - {x})) = ({y \<in> T - {x}. eproj msk y = k} \<noteq> {})"
+      by auto
+    then show ?thesis using True by (simp add: lookup_eidx lookup_eidx_del1 b)
+  next
+    case False
+    have "(k \<in> eproj msk ` (T - {x})) = (k \<in> eproj msk ` T)"
+      and "{y \<in> T - {x}. eproj msk y = k} = {y \<in> T. eproj msk y = k}"
+      using False by auto
+    then show ?thesis using False by (simp add: lookup_eidx lookup_eidx_del1)
+  qed
+qed
 
 definition iins :: "'b list \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
   "iins x A = Abs_itab (Set.insert x (iset A), Mapping.map_values (\<lambda>msk m. eidx_add1 msk x m) (iidxs A))"

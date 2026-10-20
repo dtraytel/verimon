@@ -230,10 +230,10 @@ fun iuedsx_eval_since :: "args \<Rightarrow> event_data itab list \<Rightarrow> 
       (case mbuf_t_cases xs of (Some x, xs') \<Rightarrow>
         (case mbuf_t_cases ts of (Some t, ts') \<Rightarrow>
           (if skew \<or> memL (args_ivl args) 0
-           then (rev rs, (x ## xs', mbuf_t_empty, t ## ts', skew), aux)
+           then (rev rs, ((mbuf_t_Cons x xs'), mbuf_t_empty, (mbuf_t_Cons t ts'), skew), aux)
            else (let aux' = iudsx_join args x (iudsx_add_new_ts args t aux)
              in (rev (iudsx_result args aux' # rs), (xs', mbuf_t_empty, ts', True), aux')))
-        | (None, ts') \<Rightarrow> (rev rs, (x ## xs', mbuf_t_empty, mbuf_t_empty, skew), aux))
+        | (None, ts') \<Rightarrow> (rev rs, ((mbuf_t_Cons x xs'), mbuf_t_empty, mbuf_t_empty, skew), aux))
       | (None, xs') \<Rightarrow> (rev rs, (mbuf_t_empty, mbuf_t_empty, ts, skew), aux))
     | (Some y, ys') \<Rightarrow>
       if skew then iuedsx_eval_since args rs (xs, ys', ts, False) (iudsx_add_new_table args y aux)
@@ -242,25 +242,65 @@ fun iuedsx_eval_since :: "args \<Rightarrow> event_data itab list \<Rightarrow> 
         (case mbuf_t_cases ts of (Some t1, ts1) \<Rightarrow>
           (let aux1 = iudsx_add_new_table args y (iudsx_join args x1 (iudsx_add_new_ts args t1 aux))
            in iuedsx_eval_since args (iudsx_result args aux1 # rs) (xs1, ys', ts1, False) aux1)
-        | (None, ts1) \<Rightarrow> (rev rs, (x1 ## xs1, y ## ys', ts1, skew), aux))
-      | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
+        | (None, ts1) \<Rightarrow> (rev rs, ((mbuf_t_Cons x1 xs1), (mbuf_t_Cons y ys'), ts1, skew), aux))
+      | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, (mbuf_t_Cons y ys'), ts, skew), aux)))"
 
 declare iuedsx_eval_since.simps[simp del]
 
 lemma iuedsx_eval_since_abs:
-  "iuedsx_eval_since args rs buf aux = (zs, buf', aux') \<Longrightarrow>
-     uedsx_eval_since args (map iset rs) buf (riu aux) = (map iset zs, buf', riu aux')"
-proof (induct args rs buf aux arbitrary: zs buf' aux' rule: iuedsx_eval_since.induct)
+  "uedsx_eval_since args (map iset rs) buf (riu aux) =
+     (case iuedsx_eval_since args rs buf aux of (zs, b, a) \<Rightarrow> (map iset zs, b, riu a))"
+proof (induct args rs buf aux rule: iuedsx_eval_since.induct)
   case (1 args rs xs ys ts skew aux)
   obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
   obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
+  note simps = uedsx_eval_since.simps[of args _ xs ys ts skew]
+    iuedsx_eval_since.simps[of args _ xs ys ts skew]
   show ?case
-    using 1(1)[OF y] 1(2)[OF y] 1(3) x y t
-    by (cases y; cases x; cases t; subst uedsx_eval_since.simps; subst (asm) iuedsx_eval_since.simps)
-      (auto simp: rev_map Let_def simp del: uedsx_eval_since.simps)
+  proof (cases y)
+    case None
+    then show ?thesis
+      unfolding simps using x y t by (cases x; cases t) (simp_all add: rev_map Let_def)
+  next
+    case Y: (Some y1)
+    show ?thesis
+    proof (cases skew)
+      case True
+      have IH: "uedsx_eval_since args (map iset rs) (xs, ys', ts, False)
+          (udsx_add_new_table args y1 (riu aux)) =
+        (case iuedsx_eval_since args rs (xs, ys', ts, False) (iudsx_add_new_table args y1 aux) of
+          (zs, b, a) \<Rightarrow> (map iset zs, b, riu a))"
+        using 1(1)[OF y[symmetric] Y True] by simp
+      show ?thesis
+        unfolding simps using y Y True IH by simp
+    next
+      case False
+      show ?thesis
+      proof (cases x)
+        case None
+        then show ?thesis unfolding simps using x y Y False by (simp add: rev_map)
+      next
+        case X: (Some x1)
+        show ?thesis
+        proof (cases t)
+          case None
+          then show ?thesis unfolding simps using x y t Y X False by (simp add: rev_map)
+        next
+          case T: (Some t1)
+          let ?a = "iudsx_add_new_table args y1 (iudsx_join args x1 (iudsx_add_new_ts args t1 aux))"
+          have IH: "uedsx_eval_since args (map iset (iudsx_result args ?a # rs)) (xs', ys', ts', False)
+              (riu ?a) =
+            (case iuedsx_eval_since args (iudsx_result args ?a # rs) (xs', ys', ts', False) ?a of
+              (zs, b, a) \<Rightarrow> (map iset zs, b, riu a))"
+            by (rule 1(2)[OF y[symmetric] Y False x[symmetric] X t[symmetric] T refl])
+          show ?thesis
+            unfolding simps using x y t Y X T False IH by (simp add: Let_def)
+        qed
+      qed
+    qed
+  qed
 qed
-
 (*<*)
 end
 (*>*)

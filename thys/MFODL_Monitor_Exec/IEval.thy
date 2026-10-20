@@ -69,17 +69,66 @@ fun jreq_r :: "ejoin_plan \<Rightarrow> bool \<Rightarrow> bool list list" where
 | "jreq_r (EJSup msk) True = [msk]"
 | "jreq_r _ _ = []"
 
-function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> ieformula \<Rightarrow> itable list \<times> ieformula" where
+text \<open>
+  The database the evaluator reads holds indexed tables, so a predicate hands on the indices of
+  the table it reads.  A predicate bound by a let reads the table of the let's definition: the
+  let asks its definition for the indices that its body's joins ask of the predicate.  Which
+  ones these are depends only on the formula.
+\<close>
+
+type_synonym idatabase = "(Formula.name \<times> nat, itable list) mapping"
+
+definition dabs :: "idatabase \<Rightarrow> database" where
+  "dabs db = Mapping.map_values (\<lambda>_. map iset) db"
+
+definition demb :: "database \<Rightarrow> idatabase" where
+  "demb db = Mapping.map_values (\<lambda>_. map itab) db"
+
+lemma lookup_dabs: "Mapping.lookup (dabs db) k = map_option (map iset) (Mapping.lookup db k)"
+  by (simp add: dabs_def Mapping.lookup_map_values)
+
+lemma dabs_update[simp]: "dabs (Mapping.update k xs db) = Mapping.update k (map iset xs) (dabs db)"
+  by (rule mapping_eqI) (simp add: lookup_dabs Mapping.lookup_update')
+
+lemma dabs_demb[simp]: "dabs (demb db) = db"
+  by (rule mapping_eqI) (simp add: lookup_dabs demb_def Mapping.lookup_map_values option.map_comp
+      comp_def option.map_ident)
+
+fun is_pred :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs) geformula \<Rightarrow> bool" where
+  "is_pred pm (EPredS e ar) = ((e, ar) = pm)"
+| "is_pred pm _ = False"
+
+function (sequential) preq :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs) geformula \<Rightarrow> bool list list" where
+  "preq pm (EAnd pl \<phi> pos \<psi> buf) =
+     (if is_pred pm \<phi> then jreq_l pl pos else preq pm \<phi>) @
+     (if is_pred pm \<psi> then jreq_r pl pos else preq pm \<psi>)"
+| "preq pm (EAndRel \<phi> conf) = preq pm \<phi>"
+| "preq pm (ENeg \<phi>) = preq pm \<phi>"
+| "preq pm (EExists \<phi> drop0) = preq pm \<phi>"
+| "preq pm (EAgg g0 \<omega> f k pos \<phi>) = preq pm \<phi>"
+| "preq pm (EAndAssign p t \<phi>) = preq pm \<phi>"
+| "preq pm (EPrev I \<phi> first buf nts) = preq pm \<phi>"
+| "preq pm (ENext I \<phi> first nts) = preq pm \<phi>"
+| "preq pm (EOr \<phi> \<psi> buf) = preq pm \<phi> @ preq pm \<psi>"
+| "preq pm (ESince dags \<phi> \<psi> buf aux) = preq pm \<phi> @ preq pm \<psi>"
+| "preq pm (EUntil dags msk \<phi> \<psi> buf nts t aux) = preq pm \<phi> @ preq pm \<psi>"
+| "preq pm (ELet p m \<phi> \<psi>) = preq pm \<phi> @ (if (p, m) = pm then [] else preq pm \<psi>)"
+| "preq pm _ = []"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(_, \<phi>). size \<phi>)") auto
+
+function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> idatabase \<Rightarrow> ieformula \<Rightarrow> itable list \<times> ieformula" where
   "ieval rq j ts db EFail = ([], EFail)"
 | "ieval rq j ts db (ERel rel) = (replicate (length ts) (itab rel), ERel rel)"
 | "ieval rq j ts db (EPredS e ar) =
-     (map itab (case Mapping.lookup db (e, ar) of
-         None \<Rightarrow> replicate (length ts) {}
-       | Some xs \<Rightarrow> xs), EPredS e ar)"
+     (case Mapping.lookup db (e, ar) of
+         None \<Rightarrow> replicate (length ts) (itab {})
+       | Some xs \<Rightarrow> xs, EPredS e ar)"
 | "ieval rq j ts db (EPredM e ar tms cs) =
      (map itab (case Mapping.lookup db (e, ar) of
          None \<Rightarrow> replicate (length ts) {}
-       | Some xs \<Rightarrow> map (umatch_table tms cs) xs), EPredM e ar tms cs)"
+       | Some xs \<Rightarrow> map (umatch_table tms cs \<circ> iset) xs), EPredM e ar tms cs)"
 | "ieval rq j ts db (EAndRel \<phi> conf) =
      (let (xs, \<phi>') = ieval [] j ts db \<phi>
       in (map (\<lambda>x. itab (Set.filter (ueval_constraint conf) (iset x))) xs, EAndRel \<phi>' conf))"
@@ -132,14 +181,14 @@ function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> t
      (map (\<lambda>x. itab (umtrm mt (EInt (integer_of_nat x)))) [i..<j], ETP mt j)"
 | "ieval rq j ts db (ETS mt) = (map (\<lambda>x. itab (umtrm mt (EInt (integer_of_nat x)))) ts, ETS mt)"
 | "ieval rq j ts db (ELet p m \<phi> \<psi>) =
-     (let (xs, \<phi>') = ieval [] j ts db \<phi>;
-          (ys, \<psi>') = ieval [] j ts (Mapping.update (p, m) (map iset xs) db) \<psi>
+     (let (xs, \<phi>') = ieval (preq (p, m) \<psi>) j ts db \<phi>;
+          (ys, \<psi>') = ieval [] j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, ELet p m \<phi>' \<psi>'))"
 | "ieval rq j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
      map_prod (map itab) eemb
-       (eeval j ts db (eabs (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)))"
+       (eeval j ts (dabs db) (eabs (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)))"
 | "ieval rq j ts db (ELetPast p m \<phi> \<psi> i buf) =
-     map_prod (map itab) eemb (eeval j ts db (eabs (ELetPast p m \<phi> \<psi> i buf)))"
+     map_prod (map itab) eemb (eeval j ts (dabs db) (eabs (ELetPast p m \<phi> \<psi> i buf)))"
 | "ieval rq j ts db (ETrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = ieval [] j ts db \<phi>; (ys, \<psi>') = ieval [] j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
@@ -272,14 +321,14 @@ lemma map_iset_itab[simp]: "map (iset \<circ> itab) X = X" "map (\<lambda>x. ise
 
 lemma map_eeval_eabs:
   assumes "\<And>x xs \<phi>'. x \<in> set Ld \<Longrightarrow> ieval [] j ts db x = (xs, \<phi>') \<Longrightarrow>
-    eeval j ts db (eabs x) = (map iset xs, eabs \<phi>')"
-  shows "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
+    eeval j ts (dabs db) (eabs x) = (map iset xs, eabs \<phi>')"
+  shows "map (\<lambda>x. eeval j ts (dabs db) (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
 proof (rule map_cong[OF refl])
   fix x
   assume x: "x \<in> set Ld"
   obtain xs \<phi>' where "ieval [] j ts db x = (xs, \<phi>')"
     by (cases "ieval [] j ts db x")
-  then show "eeval j ts db (eabs x) = map_prod (map iset) eabs (ieval [] j ts db x)"
+  then show "eeval j ts (dabs db) (eabs x) = map_prod (map iset) eabs (ieval [] j ts db x)"
     using assms[OF x] by simp
 qed
 
@@ -287,7 +336,7 @@ lemma ieval_fallback: "map_prod (map itab) eemb E = (xs, \<phi>') \<Longrightarr
   by (cases E) (auto simp: comp_def)
 
 theorem ieval_eeval:
-  "ieval rq j ts db \<phi> = (xs, \<phi>') \<Longrightarrow> eeval j ts db (eabs \<phi>) = (map iset xs, eabs \<phi>')"
+  "ieval rq j ts db \<phi> = (xs, \<phi>') \<Longrightarrow> eeval j ts (dabs db) (eabs \<phi>) = (map iset xs, eabs \<phi>')"
 proof (induction rq j ts db \<phi> arbitrary: xs \<phi>' rule: ieval.induct)
   case (9 rq j ts db \<phi> \<psi> buf)
   obtain xs1 \<phi>1 where 1: "ieval [] j ts db \<phi> = (xs1, \<phi>1)" by fastforce
@@ -322,7 +371,7 @@ next
     using 14(3) 14(1)[OF 1] 14(2)[OF refl 1[symmetric] 2] t by (auto simp: 1 2 3)
 next
   case (13 rq j ts db ps ns Ld dbuf)
-  have R: "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
+  have R: "map (\<lambda>x. eeval j ts (dabs db) (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
     by (rule map_eeval_eabs) (rule 13(1))
   show ?case
     using 13(2) by (auto simp add: Let_def comp_def R case_prod_beta simp del: mebufn_take.simps)
@@ -334,17 +383,17 @@ next
   then show ?case by (intro ieval_fallback) (simp only: ieval.simps)
 next
   case (24 rq j ts db m I mr mrs pls Ld dbuf nts daux)
-  have R: "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
+  have R: "map (\<lambda>x. eeval j ts (dabs db) (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
     by (rule map_eeval_eabs) (rule 24(1))
   show ?case
     using 24(2) by (auto simp add: Let_def comp_def R case_prod_beta simp del: mebufnt_take.simps)
 next
   case (25 rq j ts db m I mr mrs pls Ld dbuf nts t daux)
-  have R: "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
+  have R: "map (\<lambda>x. eeval j ts (dabs db) (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval [] j ts db x)) Ld"
     by (rule map_eeval_eabs) (rule 25(1))
   show ?case
     using 25(2) by (auto simp add: Let_def comp_def R case_prod_beta simp del: mebufnt_take.simps)
-qed (auto simp: Let_def split: prod.splits
+qed (auto simp: Let_def lookup_dabs split: prod.splits option.splits
   simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps mebufn_take.simps
     mebufnt_take.simps meprev_next.simps mebuf2S_add.simps)
 end
