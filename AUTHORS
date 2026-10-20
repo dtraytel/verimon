@@ -1,10 +1,17 @@
-Main developper:
-  Eugen Zalinescu (eugen.zalinescu@gmail.com)
+VeriMon's formalization, code and tests were written by
 
-Contributor:
-  Matus Harvan (matus.harvan@inf.ethz.ch)
+  Thibault Dardinier
+  Nico Hauser
+  Lukas Heimes
+  Jonathan Julián Huerta y Munive
+  Nicolas Kaletsch
+  Srđan Krstić
+  Emanuele Marsicano
+  Martin Raszyk
+  Joshua Schneider
+  Dawit Legesse Tirore
+  Dmitriy Traytel
+  Sheila Zingg
+  Aiireyx
 
-Coordinators:
-  Felix Klaedtke (felix.klaedtke@inf.ethz.ch)
-  David Basin (david.basin@inf.ethz.ch)
-  Debmalya Biswas (debmalya.biswas@nokia.com)
+Maintainer: Dmitriy Traytel <traytel@di.ku.dk>

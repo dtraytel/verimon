@@ -210,7 +210,8 @@ Repository layout
 
 ```
 README.md                 this file
-LICENSE, LGPLv2.1         the license
+LICENSE, LGPLv2.1         the license (LGPL 2.1 with a linking exception)
+AUTHORS                   the authors
 dune-project, dune        the Dune project (package verimon)
 src/verimon.ml            the driver: files, log, output
 src/verimon_io.ml         reading the log in chunks, positions of errors, run-time settings
