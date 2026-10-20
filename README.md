@@ -50,6 +50,10 @@ VeriMon is faster when compiled with flambda: create the switch with the
 `opam switch create verimon --packages=ocaml-variants.5.5.1+options,ocaml-option-flambda`,
 and build with `dune build --release`, whose profile passes `-O3`.
 
+A web version, the same monitor compiled to JavaScript with js_of_ocaml, is built with
+`dune build --profile=release web/verimon_js.zip` (see `web/README.md`); it is deployed at
+<https://traytel.bitbucket.io/verimon/>.
+
 
 Usage
 -----
@@ -213,6 +217,7 @@ src/verimon_io.ml         reading the log in chunks, positions of errors, run-ti
 src/verimon_code.ml       the code generated from thys/VeriMon_CLI
 src/verimon_runtime.ml    the functions the generated code leaves to OCaml
 tests/                    the tests (cram tests, run with dune test)
+web/                      the web version (js_of_ocaml) with its examples
 thys/                     the Isabelle/HOL formalization
 evaluation/perf/          the performance suite
 ```
