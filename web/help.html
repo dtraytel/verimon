@@ -149,8 +149,12 @@
       everything to their right. When in doubt, add parentheses.</p>
 
     <h3>Semantics</h3>
-    <p>A log denotes a trace <i class="m">σ</i>: a sequence of time points <i class="m">i</i> = 0, 1, 2, …, each with a
-      timestamp <i class="m">τ</i><sub><i class="m">i</i></sub> and the finite set <i class="m">D</i><sub><i class="m">i</i></sub> of its events, where <i class="m">τ</i><sub><i class="m">i</i></sub> ≤ <i class="m">τ</i><sub><i class="m">i</i>+1</sub>. A
+    <p>A log is a finite prefix of a trace <i class="m">σ</i>: an infinite sequence of time points <i class="m">i</i> = 0, 1, 2, …,
+      each with a timestamp <i class="m">τ</i><sub><i class="m">i</i></sub> and the finite set <i class="m">D</i><sub><i class="m">i</i></sub> of its events. The timestamps
+      are monotone, <i class="m">τ</i><sub><i class="m">i</i></sub> ≤ <i class="m">τ</i><sub><i class="m">i</i>+1</sub>, and progressing: for every <i class="m">t</i> there is a time
+      point <i class="m">i</i> with <i class="m">t</i> &lt; <i class="m">τ</i><sub><i class="m">i</i></sub>. So only finitely many time points share a timestamp, and
+      a formula whose future operators have bounded intervals is decided at each time point by
+      finitely many later ones. A
       valuation <i class="m">v</i> assigns values to variables; <i class="m">v</i>(<i class="m">t</i>) is the value of the term <i class="m">t</i> and
       <i class="m">v</i>[<i class="m">x</i> ↦ <i class="m">d</i>] is <i class="m">v</i> with <i class="m">x</i> set to <i class="m">d</i>. An interval <i class="m">I</i> is a set of distances, and
       <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">φ</i> states that the formula <i class="m">φ</i> holds at time point <i class="m">i</i> under <i class="m">v</i> (after
