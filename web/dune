@@ -23,5 +23,6 @@
 
 (rule
   (target verimon_js.zip)
-  (deps index.html help.html verimon.js verimon.css check.png tel.png)
+  (deps index.html help.html verimon.js verimon.css check.png tel.png verimon-logo.svg
+    favicon-32.png apple-touch-icon.png og-image.png)
   (action (run zip %{target} %{deps})))

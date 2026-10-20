@@ -74,3 +74,16 @@ b, strong {
 .non-floater { overflow:hidden; }
 table { width:100%; padding:0; border:0; }
 h1 { white-space: nowrap; }
+
+/* The logo in the headings, with its letters as high as capitals of the heading's font
+   (verimon-logo.svg is 257 units high, the capitals are 212 units, a capital of the font about
+   0.716em) and its baseline, 6.82 units above its bottom, on the text's baseline. */
+img.logo {
+    height: 0.868em;
+    vertical-align: -0.023em;
+}
+
+h1 .version {
+    color: #403a61;
+    font-weight: 700;
+}

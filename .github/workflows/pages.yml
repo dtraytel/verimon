@@ -40,7 +40,7 @@ jobs:
         run: |
           opam exec -- dune build --profile=release web/verimon.js
           mkdir _site
-          cp web/index.html web/help.html web/verimon.css web/check.png web/tel.png _build/default/web/verimon.js _site/
+          cp web/index.html web/help.html web/verimon.css web/check.png web/tel.png web/verimon-logo.svg web/favicon-32.png web/apple-touch-icon.png web/og-image.png _build/default/web/verimon.js _site/
 
       - uses: actions/configure-pages@v5
 

@@ -21,7 +21,7 @@ Without them, `dune` skips the web version.
 Run `dune build --profile=release web/verimon_js.zip` from the project root.
 
 This builds a ZIP archive `_build/default/web/verimon_js.zip` which contains all files needed to
-run the web version (`index.html`, `help.html`, `verimon.js`, `verimon.css` and two images; the examples are
+run the web version (`index.html`, `help.html`, `verimon.js`, `verimon.css`, the logo, the icons and three images; the examples are
 embedded in `verimon.js`). The archive's contents can be deployed to a web server, for example.
 
 ## Deployment
@@ -30,3 +30,11 @@ The workflow `.github/workflows/pages.yml` builds the web version and deploys it
 (<https://dtraytel.github.io/verimon/>) on every push to `main` that changes `web/`, `src/` or
 `dune-project`, and on demand from the Actions tab. It needs Pages to be enabled with
 "GitHub Actions" as its source (Settings → Pages).
+
+## Logo
+
+`verimon-logo.svg` is the VeriMon logo (with the Isabelle/HOL cubes as the dot of the i),
+converted from its PDF with its background removed and its view box cropped to the drawing;
+its letters' baseline is 6.82 units above its bottom, which `verimon.css` uses to align it with
+the text of the headings. `favicon-32.png` and `apple-touch-icon.png` show the i with the cubes,
+`og-image.png` is the preview image for links to the page.

@@ -126,7 +126,9 @@ let onload _ =
 
   let title = Html.createH1 d in
   title##.innerHTML :=
-    Js.string "VeriMon 2.0 <font size=3>Monitoring Metric First-Order Dynamic Properties</font>";
+    Js.string ("<img class=\"logo\" src=\"verimon-logo.svg\" alt=\"VeriMon\"> "
+               ^ "<span class=\"version\">2.0</span> "
+               ^ "<font size=3>Monitoring Metric First-Order Dynamic Properties</font>");
 
   let ex = Html.createDiv d in
   let ed_name = "*edited*" in
