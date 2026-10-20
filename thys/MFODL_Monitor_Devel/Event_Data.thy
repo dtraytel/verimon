@@ -99,8 +99,9 @@ lemma "b \<noteq> 0 \<Longrightarrow> div_to_zero a b * b + mod_to_zero a b = a"
 
 text \<open>Hash codes (of the Isabelle Collections Framework) for the values of events: those of the
   monitor only sample the tuples whose sizes the separable evaluation of @{text FRZ} estimates.
-  A string is hashed by its bytes, a floating-point number by its integer part (NaN and the
-  infinities by 0).
+  A string is hashed by its bytes (its code equation, which reads the bytes of OCaml's string,
+  is in @{text MFODL_Monitor_Exec.Log_Monitor}), a floating-point number by its integer part (NaN
+  and the infinities by 0).
 
   The code equations below compute the hash codes of integers and lists with the constants of
   their definitions bound once, as top-level values: a numeral of type @{typ uint32}, or a large
@@ -145,7 +146,7 @@ instantiation string8 :: hashable
 begin
 
 definition hashcode_string8 :: "string8 \<Rightarrow> hashcode" where
-  "hashcode_string8 s = hashcode (String.asciis_of_literal (literal_string8 s))"
+  "hashcode_string8 s = hashcode (Rep_string8 s)"
 
 definition def_hashmap_size_string8 :: "string8 itself \<Rightarrow> nat" where
   "def_hashmap_size_string8 _ = 10"
@@ -186,6 +187,7 @@ definition def_hashmap_size_event_data :: "event_data itself \<Rightarrow> nat" 
 instance by intro_classes (simp add: def_hashmap_size_event_data_def)
 
 end
+
 instantiation event_data :: "{ord, plus, minus, uminus, times, divide, modulo}"
 begin
 
