@@ -73,3 +73,4 @@ b, strong {
 .floater { float:left; }
 .non-floater { overflow:hidden; }
 table { width:100%; padding:0; border:0; }
+h1 { white-space: nowrap; }
