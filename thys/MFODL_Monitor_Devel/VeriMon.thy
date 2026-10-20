@@ -203,11 +203,11 @@ end
 
 lemma normalize_fvi:
   "Formula.fvi b (normalize \<phi>) = Formula.fvi b \<phi>"
-  unfolding normalize_def by (auto simp: elim_double_negation_fvi push_negation_fvi simplify_terms_fvi)
+  unfolding normalize_def by (auto simp: assoc_and_fvi elim_double_negation_fvi push_negation_fvi simplify_terms_fvi)
 
 lemma normalize_nfv:
   "Formula.nfv (normalize \<phi>) = Formula.nfv \<phi>"
-  unfolding normalize_def by (auto simp: elim_double_negation_nfv push_negation_nfv simplify_terms_nfv)
+  unfolding normalize_def by (auto simp: assoc_and_nfv elim_double_negation_nfv push_negation_nfv simplify_terms_nfv)
 
 lemma rrewrite_fvi:
   "Formula.fvi b (rrewrite \<phi>) = Formula.fvi b \<phi>"
@@ -288,35 +288,35 @@ qed  (auto intro!: wty_formula.intros wty_trm_st)
 
 lemma wty_push_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_negation \<phi>"
 proof (induction \<phi> arbitrary: S E rule: push_negation.induct)
-  case (3 p \<phi> \<psi>)
+  case (4 p \<phi> \<psi>)
   then show ?case
     by (auto simp: push_negation_nfv intro!: wty_formula.Let)
 next
-  case (4 p \<phi> \<psi>)
+  case (5 p \<phi> \<psi>)
   then show ?case
     by (auto simp: push_negation_nfv intro!: wty_formula.Frz)
 next
-  case (5 p \<phi> \<psi>)
+  case (6 p \<phi> \<psi>)
   then show ?case
     by (auto simp: push_negation_nfv intro!: wty_formula.LetPast)
 next
-  case ("6_2" v va vb)
+  case ("7_2" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.Let wty_formula.Neg)
 next
-  case ("6_3" v va vb)
+  case ("7_3" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.Frz wty_formula.Neg)
 next
-  case ("6_4" v va vb)
+  case ("7_4" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.Neg wty_formula.LetPast)
 next
-  case (16 I r)
+  case (17 I r)
   then show ?case 
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 next
-  case (17 I r)
+  case (18 I r)
   then show ?case
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 qed (auto intro!: wty_formula.intros)
@@ -356,8 +356,43 @@ next
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 qed (auto intro!: wty_formula.intros)
 
+lemma wty_and_app: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> and_app \<phi> \<psi>"
+proof (induction \<psi> arbitrary: \<phi> rule: conjuncts.induct)
+  case (1 \<psi>1 \<psi>2)
+  then show ?case
+    by (auto simp: and_app_And dest: wty_formula_AndD)
+qed (simp_all add: and_app_def wty_formula.And)
+
+lemma wty_assoc_and: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> assoc_and \<phi>"
+proof (induction \<phi> arbitrary: S E rule: assoc_and.induct)
+  case (1 \<phi> \<psi>)
+  then show ?case
+    by (auto intro!: wty_and_app dest: wty_formula_AndD)
+next
+  case (2 p \<phi> \<psi>)
+  then show ?case
+    by (auto simp: assoc_and_nfv intro!: wty_formula.Let)
+next
+  case (3 p \<phi> \<psi>)
+  then show ?case
+    by (auto simp: assoc_and_nfv intro!: wty_formula.Frz)
+next
+  case (4 p \<phi> \<psi>)
+  then show ?case
+    by (auto simp: assoc_and_nfv intro!: wty_formula.LetPast)
+next
+  case (14 I r)
+  then show ?case
+    by (fastforce simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+next
+  case (15 I r)
+  then show ?case
+    by (fastforce simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+qed (auto intro!: wty_formula.intros)
+
 lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> normalize \<phi>"
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
+    wty_assoc_and
   by auto
 
 
@@ -918,8 +953,25 @@ lemma future_bounded_elim_double_negation: "Safety.future_bounded (elim_double_n
   by (induction \<phi> rule: elim_double_negation.induct)
     (auto simp: elim_double_negation_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
 
+lemma safe_letpast_and_app[simp]:
+  "safe_letpast p (and_app \<phi> \<psi>) = safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>"
+  using and_app_cong[where P = "safe_letpast p" and f = "(\<squnion>)"] by (simp add: sup_assoc)
+
+lemma safe_letpast_assoc_and[simp]: "safe_letpast (p, n) (assoc_and \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induction \<phi> arbitrary: p n rule: assoc_and.induct)
+    (auto simp: assoc_and_nfv image_image regex.set_map)
+
+lemma future_bounded_and_app[simp]:
+  "Safety.future_bounded (and_app \<phi> \<psi>) = (Safety.future_bounded \<phi> \<and> Safety.future_bounded \<psi>)"
+  using and_app_cong[where P = "Safety.future_bounded" and f = "(\<and>)"] by simp
+
+lemma future_bounded_assoc_and: "Safety.future_bounded (assoc_and \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  by (induction \<phi> rule: assoc_and.induct)
+    (auto simp: assoc_and_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
+
 lemma future_bounded_normalize: "Safety.future_bounded (normalize \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
-  unfolding normalize_def using future_bounded_simplify_terms future_bounded_push_negation future_bounded_elim_double_negation by auto
+  unfolding normalize_def using future_bounded_simplify_terms future_bounded_push_negation future_bounded_elim_double_negation
+    future_bounded_assoc_and by auto
 
 
 (* Proofs that if a rewritten formula is future-bounded, then so is the original formula *)
@@ -969,6 +1021,14 @@ lemma progress_push_negation[simp]: "progress \<sigma> P (push_negation \<phi>) 
 lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_negation \<phi>) j = progress \<sigma> P \<phi> j"
   by (induction \<phi> arbitrary: P j rule: elim_double_negation.induct)
     (auto simp: elim_double_negation_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
+
+lemma progress_and_app[simp]:
+  "progress \<sigma> P (and_app \<phi> \<psi>) j = min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)"
+  using and_app_cong[where P = "\<lambda>\<phi>. progress \<sigma> P \<phi> j" and f = min] by (simp add: min.assoc)
+
+lemma progress_assoc_and[simp]: "progress \<sigma> P (assoc_and \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induction \<phi> arbitrary: P j rule: assoc_and.induct)
+    (auto simp: assoc_and_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
 lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
