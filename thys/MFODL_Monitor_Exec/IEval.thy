@@ -328,8 +328,18 @@ proof (induction g z buf arbitrary: z' buf' rule: imebufn_take.induct)
     qed
     have t: "map (snd \<circ> mbuf_t_cases) (ibn buf) = ibn (map (snd \<circ> mbuf_t_cases) buf)"
       by (auto simp: ibn_def mbuf_t_cases_map split: prod.splits)
-    show ?thesis using 1(1)[OF False] 1(2,3) False e h t
-      by (subst mebufn_take.simps) (simp add: imebufn_take.simps[of g z buf] del: mebufn_take.simps)
+    have u: "imebufn_take g (g (map (the \<circ> fst \<circ> mbuf_t_cases) buf) z) (map (snd \<circ> mbuf_t_cases) buf)
+        = (z', buf')"
+      using 1(2) False by (simp add: imebufn_take.simps[of g z buf])
+    have g: "g (map (the \<circ> fst \<circ> mbuf_t_cases) buf) z = f (map iset (map (the \<circ> fst \<circ> mbuf_t_cases) buf)) z"
+      using 1(3) by blast
+    have IH: "mebufn_take f (f (map iset (map (the \<circ> fst \<circ> mbuf_t_cases) buf)) z)
+        (ibn (map (snd \<circ> mbuf_t_cases) buf)) = (z', ibn buf')"
+      using 1(1)[OF False u 1(3)] unfolding g .
+    have ne2: "\<not> (ibn buf = [] \<or> (\<exists>x \<in> set (ibn buf). mbuf_t_is_empty x))"
+      using False e by blast
+    show ?thesis
+      by (subst mebufn_take.simps) (simp only: if_not_P[OF ne2] h t IH)
   qed
 qed
 
@@ -500,8 +510,10 @@ next
   have e: "eeval j ts (dabs db) (eabs (EAnds ps ns Ld dbuf)) =
       (Rep_mbuf_t zs, EAnds ps ns (map (eabs \<circ> snd) ?R) (ibn dbuf'))"
     using t by (simp add: Let_def R comp_def case_prod_beta del: mebufn_take.simps mebufn_add.simps)
+  from 13(2) i have xs: "xs = map itab (Rep_mbuf_t zs)" and \<phi>': "\<phi>' = EAnds ps ns (map snd ?R) dbuf'"
+    by simp_all
   show ?case
-    using 13(2) e by (simp add: i comp_def)
+    unfolding e xs \<phi>' by (simp add: comp_def)
 next
   case 20
   then show ?case by (intro ieval_fallback) (simp only: ieval.simps)
