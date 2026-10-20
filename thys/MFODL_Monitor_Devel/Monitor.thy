@@ -2740,10 +2740,13 @@ qed
 
 text \<open>The operations of the separable evaluation on the kernel's tables: a verdict's tuple, over
   the body's columns @{term cs}, is read at the frozen predicate's variables.  The sample of a
-  table are its tuples whose hash code is divisible by 8 (@{const frz_sample}).\<close>
+  table are its tuples whose hash code is divisible by 8 (@{const frz_sample}): whose last three
+  bits, @{const frz_smask}, are 0.\<close>
+
+definition frz_smask :: hashcode where "frz_smask = 7"
 
 definition frz_sampled :: "event_data list \<Rightarrow> bool" where
-  "frz_sampled x \<longleftrightarrow> hashcode x mod 8 = 0"
+  "frz_sampled x \<longleftrightarrow> Bit_Operations.and (hashcode x) frz_smask = 0"
 
 definition frz_kops :: "nat \<Rightarrow> nat list \<Rightarrow> (event_data list set, event_data table) frz_ops" where
   "frz_kops m cs = FrzOps (\<lambda>yS yE \<alpha>. {x \<in> yS. val m cs x \<in> \<alpha>} \<union> {x \<in> yE. val m cs x \<notin> \<alpha>})
