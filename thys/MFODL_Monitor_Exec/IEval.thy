@@ -55,8 +55,14 @@ subsection \<open>The evaluator\<close>
 function (sequential) ieval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> ieformula \<Rightarrow> itable list \<times> ieformula" where
   "ieval j ts db EFail = ([], EFail)"
 | "ieval j ts db (ERel rel) = (replicate (length ts) (itab rel), ERel rel)"
-| "ieval j ts db (EPredS e ar) = apfst (map itab) (eeval j ts db (EPredS e ar))"
-| "ieval j ts db (EPredM e ar tms cs) = apfst (map itab) (eeval j ts db (EPredM e ar tms cs))"
+| "ieval j ts db (EPredS e ar) =
+     (map itab (case Mapping.lookup db (e, ar) of
+         None \<Rightarrow> replicate (length ts) {}
+       | Some xs \<Rightarrow> xs), EPredS e ar)"
+| "ieval j ts db (EPredM e ar tms cs) =
+     (map itab (case Mapping.lookup db (e, ar) of
+         None \<Rightarrow> replicate (length ts) {}
+       | Some xs \<Rightarrow> map (umatch_table tms cs) xs), EPredM e ar tms cs)"
 | "ieval j ts db (EAndRel \<phi> conf) =
      (let (xs, \<phi>') = ieval j ts db \<phi>
       in (map (\<lambda>x. itab (Set.filter (ueval_constraint conf) (iset x))) xs, EAndRel \<phi>' conf))"
@@ -104,8 +110,9 @@ function (sequential) ieval :: "nat \<Rightarrow> ts list \<Rightarrow> database
       in (map itab zs, EUntil dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
 | "ieval j ts db (EAndAssign p t \<phi>) =
      (let (xs, \<phi>') = ieval j ts db \<phi> in (map (\<lambda>r. itab (uassign p t (iset r))) xs, EAndAssign p t \<phi>'))"
-| "ieval j ts db (ETP mt i) = apfst (map itab) (eeval j ts db (ETP mt i))"
-| "ieval j ts db (ETS mt) = apfst (map itab) (eeval j ts db (ETS mt))"
+| "ieval j ts db (ETP mt i) =
+     (map (\<lambda>x. itab (umtrm mt (EInt (integer_of_nat x)))) [i..<j], ETP mt j)"
+| "ieval j ts db (ETS mt) = (map (\<lambda>x. itab (umtrm mt (EInt (integer_of_nat x)))) ts, ETS mt)"
 | "ieval j ts db (ELet p m \<phi> \<psi>) =
      (let (xs, \<phi>') = ieval j ts db \<phi>;
           (ys, \<psi>') = ieval j ts (Mapping.update (p, m) (map iset xs) db) \<psi>
