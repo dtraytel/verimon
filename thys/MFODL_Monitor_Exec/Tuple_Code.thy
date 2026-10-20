@@ -344,7 +344,9 @@ val exec_elem_consts =
    "eidx_add1", "eidx_add", "eidx_del1", "eidx_del", "ebucket", "fold_filter_set",
    "einit_msaux", "ejoin_msaux", "eadd_new_ts_msaux'", "eadd_new_ts_msaux",
    "eadd_new_table_msaux", "eadd_new_table_lz", "egc_msaux", "egc_join_msaux", "egc_join_lz",
-   "eshift_end", "eidx_upd", "eidx"]
+   "eshift_end", "eidx_upd", "eidx",
+   "itab", "iset", "iidxs", "iindex", "iensure1", "iensure", "iupd", "iins", "idel", "iunion",
+   "iprobe", "iprobe_l", "ijoin0", "ijoin"]
 fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
 \<close>
 
