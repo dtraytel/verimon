@@ -162,6 +162,67 @@ function (sequential) ieval :: "nat \<Rightarrow> ts list \<Rightarrow> database
       in (map itab zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
   by pat_completeness (simp_all only: prod.inject geformula.inject geformula.distinct simp_thms)
 termination
-  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: size_list_estimation')
+  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: less_Suc_eq_le intro: size_list_estimation')
+
+subsection \<open>Forgetting the indices\<close>
+
+lemma mbuf_t_map_code[code]: "mbuf_t_map f (MBuf2_t q) = mbuf_t_empty @@ map f (linearize q)"
+  by transfer simp
+
+lemma mbuf_t_map_append[simp]: "mbuf_t_map f (b @@ xs) = mbuf_t_map f b @@ map f xs"
+  by transfer simp
+
+lemma mbuf_t_map_Cons[simp]: "mbuf_t_map f (x ## b) = f x ## mbuf_t_map f b"
+  by transfer simp
+
+lemma mbuf_t_map_empty[simp]: "mbuf_t_map f mbuf_t_empty = mbuf_t_empty"
+  by transfer simp
+
+lemma mbuf_t_cases_map: "mbuf_t_cases (mbuf_t_map f b) = map_prod (map_option f) (mbuf_t_map f) (mbuf_t_cases b)"
+  by transfer (auto split: list.splits)
+
+lemma ib2_add[simp]: "ib2 (mebuf2_add xs ys b) = mebuf2_add (map iset xs) (map iset ys) (ib2 b)"
+  by (cases b) (simp add: ib2_def)
+
+lemma mebuf2_take_ib2:
+  assumes "mebuf2_take g b = (zs, b')" "\<And>x y. iset (g x y) = f (iset x) (iset y)"
+  shows "mebuf2_take f (ib2 b) = (map iset zs, ib2 b')"
+  using assms(1)
+proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
+  case (1 g xs ys)
+  show ?case
+  proof (cases "mbuf_t_cases xs")
+    case (Pair xo xs')
+    show ?thesis
+    proof (cases xo)
+      case None
+      then show ?thesis using 1(2) Pair by (auto simp: ib2_def mbuf_t_cases_map)
+    next
+      case (Some x)
+      show ?thesis
+      proof (cases "mbuf_t_cases ys")
+        case (Pair yo ys')
+        then show ?thesis
+          using 1 \<open>mbuf_t_cases xs = (xo, xs')\<close> Some assms(2)
+          by (cases yo) (auto simp: ib2_def mbuf_t_cases_map split: prod.splits)
+      qed
+    qed
+  qed
+qed
+
+lemma eabs_simps[simp]:
+  "eabs (EOr \<phi> \<psi> buf) = EOr (eabs \<phi>) (eabs \<psi>) (ib2 buf)"
+  "eabs (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eabs \<phi>) pos (eabs \<psi>) (ib2 buf)"
+  by (simp_all add: eabs_def)
+
+theorem ieval_eeval:
+  "ieval j ts db \<phi> = (xs, \<phi>') \<Longrightarrow> eeval j ts db (eabs \<phi>) = (map iset xs, eabs \<phi>')"
+proof (induction j ts db \<phi> arbitrary: xs \<phi>' rule: ieval.induct)
+  case (9 j ts db \<phi> \<psi> buf)
+  show ?case sorry
+next
+  case (10 j ts db pl \<phi> pos \<psi> buf)
+  show ?case sorry
+qed (auto simp: eabs_def geformula.map_comp comp_def Let_def split: prod.splits)
 
 end
