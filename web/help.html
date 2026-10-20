@@ -18,14 +18,17 @@
       h2 { font-size: 1.25em; margin-top: 1.6em; }
       h3 { font-size: 1.05em; margin-top: 1.4em; }
       pre, code { font-family: monospace; font-size: 14px; }
+      p code, li code { white-space: nowrap; }
       pre { border: 2px solid #e6e9e9; padding: 4px 6px; overflow-x: auto; line-height: normal; }
       table.ops { width: 100%; padding: 0; border: 0; }
       table.ops th, table.ops td { text-align: left; vertical-align: top; padding: 0.15em 0.8em 0.15em 0; }
       table.ops th { color: #545454; font-weight: 600; }
       table.ops td:first-child { white-space: nowrap; }
-      .nt { font-style: italic; }
-      /* Greek letters for formulas: in the text font also inside code, so that they look alike */
-      .mv { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 16px; font-style: italic; }
+      .nt { font-style: italic; color: #0b5d8f; }
+      /* Meta-variables (formulas, intervals, variables), also inside code: in a math font, whose
+         phi (U+03C6) is the loopy varphi of TeX; text fonts such as Helvetica draw a straight phi */
+      .mv { font-family: math, "STIX Two Math", "Cambria Math", "Latin Modern Math", "STIX Two Text",
+              "Times New Roman", Times, serif; font-size: 17px; font-style: italic; }
       .back { margin: 0; }
       @media (max-width: 600px) { body { padding: 1em 16px 3em; } }
     </style>
@@ -132,26 +135,26 @@
       everything to their right. When in doubt, add parentheses.</p>
 
     <h3>Meaning</h3>
-    <p>For a formula <span class="mv">φ</span> with subformulas <span class="mv">α</span> and <span class="mv">β</span>, an interval <i>I</i> and a
-      regular expression <i>r</i>:</p>
+    <p>For a formula <span class="mv">φ</span> with subformulas <span class="mv">α</span> and <span class="mv">β</span>, an interval <span class="mv">I</span> and a
+      regular expression <span class="mv">r</span>:</p>
     <table class="ops">
-      <tr><th><span class="mv">φ</span></th><th><span class="mv">φ</span> holds at time point <i>i</i> if</th></tr>
-      <tr><td><code>PREV <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <i>i</i>&minus;1, and the distance of their timestamps is in <i>I</i></td></tr>
-      <tr><td><code>NEXT <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <i>i</i>+1, within distance <i>I</i></td></tr>
-      <tr><td><code>ONCE <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some earlier or the same time point within distance <i>I</i></td></tr>
-      <tr><td><code>EVENTUALLY <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some later or the same time point within distance <i>I</i></td></tr>
-      <tr><td><code>PAST_ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all earlier and the same time points within distance <i>I</i></td></tr>
-      <tr><td><code>ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all later and the same time points within distance <i>I</i></td></tr>
-      <tr><td><code><span class="mv">α</span> SINCE <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <i>j</i> &le; <i>i</i> within distance <i>I</i>, and <span class="mv">α</span> at all time points after <i>j</i> up to <i>i</i></td></tr>
-      <tr><td><code><span class="mv">α</span> UNTIL <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <i>j</i> &ge; <i>i</i> within distance <i>I</i>, and <span class="mv">α</span> at all time points from <i>i</i> before <i>j</i></td></tr>
-      <tr><td><code><span class="mv">α</span> TRIGGER <span class="mv">I</span> <span class="mv">β</span></code></td><td>at every earlier or the same time point <i>j</i> within distance <i>I</i>, <span class="mv">β</span> holds or <span class="mv">α</span> held at some time point after <i>j</i> (the dual of <code>SINCE</code>)</td></tr>
+      <tr><th><span class="mv">φ</span></th><th><span class="mv">φ</span> holds at time point <span class="mv">i</span> if</th></tr>
+      <tr><td><code>PREV <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <span class="mv">i</span>&minus;1, and the distance of their timestamps is in <span class="mv">I</span></td></tr>
+      <tr><td><code>NEXT <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <span class="mv">i</span>+1, within distance <span class="mv">I</span></td></tr>
+      <tr><td><code>ONCE <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some earlier or the same time point within distance <span class="mv">I</span></td></tr>
+      <tr><td><code>EVENTUALLY <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some later or the same time point within distance <span class="mv">I</span></td></tr>
+      <tr><td><code>PAST_ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all earlier and the same time points within distance <span class="mv">I</span></td></tr>
+      <tr><td><code>ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all later and the same time points within distance <span class="mv">I</span></td></tr>
+      <tr><td><code><span class="mv">α</span> SINCE <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <span class="mv">j</span> &le; <span class="mv">i</span> within distance <span class="mv">I</span>, and <span class="mv">α</span> at all time points after <span class="mv">j</span> up to <span class="mv">i</span></td></tr>
+      <tr><td><code><span class="mv">α</span> UNTIL <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <span class="mv">j</span> &ge; <span class="mv">i</span> within distance <span class="mv">I</span>, and <span class="mv">α</span> at all time points from <span class="mv">i</span> before <span class="mv">j</span></td></tr>
+      <tr><td><code><span class="mv">α</span> TRIGGER <span class="mv">I</span> <span class="mv">β</span></code></td><td>at every earlier or the same time point <span class="mv">j</span> within distance <span class="mv">I</span>, <span class="mv">β</span> holds or <span class="mv">α</span> held at some time point after <span class="mv">j</span> (the dual of <code>SINCE</code>)</td></tr>
       <tr><td><code><span class="mv">α</span> RELEASE <span class="mv">I</span> <span class="mv">β</span></code></td><td>the future dual of <code>TRIGGER</code></td></tr>
-      <tr><td><code>MATCHP <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points ending at <i>i</i> and starting within distance <i>I</i> matches <i>r</i></td></tr>
-      <tr><td><code>MATCHF <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points starting at <i>i</i> and ending within distance <i>I</i> matches <i>r</i></td></tr>
-      <tr><td><code><span class="mv">y</span> &lt;- SUM <span class="mv">x</span>; <span class="mv">g</span> <span class="mv">α</span></code></td><td><i>y</i> is the sum of <i>x</i> over the satisfactions of <span class="mv">α</span>, grouped by the values of <i>g</i></td></tr>
+      <tr><td><code>MATCHP <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points ending at <span class="mv">i</span> and starting within distance <span class="mv">I</span> matches <span class="mv">r</span></td></tr>
+      <tr><td><code>MATCHF <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points starting at <span class="mv">i</span> and ending within distance <span class="mv">I</span> matches <span class="mv">r</span></td></tr>
+      <tr><td><code><span class="mv">y</span> &lt;- SUM <span class="mv">x</span>; <span class="mv">g</span> <span class="mv">α</span></code></td><td><span class="mv">y</span> is the sum of <span class="mv">x</span> over the satisfactions of <span class="mv">α</span>, grouped by the values of <span class="mv">g</span></td></tr>
       <tr><td><code>LET p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for <span class="mv">α</span></td></tr>
       <tr><td><code>LETPAST p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td>as <code>LET</code>, but <span class="mv">α</span> may refer to <code>p</code> at earlier time points (recursion through <code>PREV</code>, <code>ONCE</code>, ...)</td></tr>
-      <tr><td><code>FRZ p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for the satisfactions of <span class="mv">α</span> at <i>i</i>, at every time point <span class="mv">β</span> refers to</td></tr>
+      <tr><td><code>FRZ p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for the satisfactions of <span class="mv">α</span> at <span class="mv">i</span>, at every time point <span class="mv">β</span> refers to</td></tr>
     </table>
     <p>The distance is the difference of the timestamps; an interval without bound is
       <code>[0,*)</code>. In a regular expression, <code><span class="mv">α</span>?</code> tests <span class="mv">α</span> without moving and
@@ -193,10 +196,13 @@ reading(sensor:string, value:float)</code></pre>
 @10 publish(152)(163)            # two events of publish
 @10 approve("Bob", 163);         # same timestamp, next time point
 @25</code></pre>
-    <p>Timestamps must not decrease. Strings may be written without quotes if they consist of
-      letters, digits and <code>_[]/:-.!</code>. A <code>;</code> may end a time point, and
-      <code>#</code> starts a comment. Time units in formulas (<code>7d</code>) assume that
-      timestamps are seconds.</p>
+    <p>Timestamps must not decrease. A string needs no quotes if it consists only of letters,
+      digits and the characters <code>_</code> <code>[</code> <code>]</code> <code>/</code>
+      <code>:</code> <code>-</code> <code>.</code> <code>!</code>, as in
+      <code>a_[b]/c:d-e.f!</code>; any other string is written in double quotes, as in
+      <code>"Bob Smith"</code>. A time point may end with a semicolon (<code>;</code>), and
+      <code>#</code> starts a comment that runs to the end of the line. Time units in formulas
+      (<code>7d</code>) assume that timestamps are seconds.</p>
 
     <h2 id="verdicts">Verdicts</h2>
 <pre><code>@1307955600 (time point 0): (160)
