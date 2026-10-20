@@ -59664,9 +59664,9 @@ let rec simplify_terms
     | TS t -> TS (st t);;
 
 let rec push_negation
-  = function
-    Neg (And (phi, psi)) ->
-      Or (push_negation (Neg phi), push_negation (Neg psi))
+  = function Neg (Neg phi) -> push_negation phi
+    | Neg (And (phi, psi)) ->
+        Or (push_negation (Neg phi), push_negation (Neg psi))
     | Neg (Or (phi, psi)) ->
         And (push_negation (Neg phi), push_negation (Neg psi))
     | Let (p, phi, psi) -> Let (p, push_negation phi, push_negation psi)
@@ -59679,7 +59679,6 @@ let rec push_negation
     | Neg (Eq (v, va)) -> Neg (push_negation (Eq (v, va)))
     | Neg (Less (v, va)) -> Neg (push_negation (Less (v, va)))
     | Neg (LessEq (v, va)) -> Neg (push_negation (LessEq (v, va)))
-    | Neg (Neg v) -> Neg (push_negation (Neg v))
     | Neg (Ands v) -> Neg (push_negation (Ands v))
     | Neg (Exists (v, va)) -> Neg (push_negation (Exists (v, va)))
     | Neg (Agg (v, va, vb, vc, vd)) ->
@@ -59714,8 +59713,60 @@ let rec push_negation
     | TP v -> TP v
     | TS v -> TS v;;
 
+let rec conjuncts = function And (phi, psi) -> conjuncts phi @ conjuncts psi
+                    | Pred (v, va) -> [Pred (v, va)]
+                    | Let (v, va, vb) -> [Let (v, va, vb)]
+                    | Frz (v, va, vb) -> [Frz (v, va, vb)]
+                    | LetPast (v, va, vb) -> [LetPast (v, va, vb)]
+                    | Eq (v, va) -> [Eq (v, va)]
+                    | Less (v, va) -> [Less (v, va)]
+                    | LessEq (v, va) -> [LessEq (v, va)]
+                    | Neg v -> [Neg v]
+                    | Or (v, va) -> [Or (v, va)]
+                    | Ands v -> [Ands v]
+                    | Exists (v, va) -> [Exists (v, va)]
+                    | Agg (v, va, vb, vc, vd) -> [Agg (v, va, vb, vc, vd)]
+                    | Prev (v, va) -> [Prev (v, va)]
+                    | Next (v, va) -> [Next (v, va)]
+                    | Since (v, va, vb) -> [Since (v, va, vb)]
+                    | Until (v, va, vb) -> [Until (v, va, vb)]
+                    | Trigger (v, va, vb) -> [Trigger (v, va, vb)]
+                    | Release (v, va, vb) -> [Release (v, va, vb)]
+                    | MatchF (v, va) -> [MatchF (v, va)]
+                    | MatchP (v, va) -> [MatchP (v, va)]
+                    | TP v -> [TP v]
+                    | TS v -> [TS v];;
+
+let rec and_app phi psi = foldl (fun a b -> And (a, b)) phi (conjuncts psi);;
+
+let rec assoc_and
+  = function And (phi, psi) -> and_app (assoc_and phi) (assoc_and psi)
+    | Let (p, phi, psi) -> Let (p, assoc_and phi, assoc_and psi)
+    | Frz (p, phi, psi) -> Frz (p, assoc_and phi, assoc_and psi)
+    | LetPast (p, phi, psi) -> LetPast (p, assoc_and phi, assoc_and psi)
+    | Neg phi -> Neg (assoc_and phi)
+    | Or (phi, psi) -> Or (assoc_and phi, assoc_and psi)
+    | Ands l -> Ands (mapa assoc_and l)
+    | Exists (t, phi) -> Exists (t, assoc_and phi)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, assoc_and phi)
+    | Prev (i, phi) -> Prev (i, assoc_and phi)
+    | Next (i, phi) -> Next (i, assoc_and phi)
+    | Since (phi, i, psi) -> Since (assoc_and phi, i, assoc_and psi)
+    | Until (phi, i, psi) -> Until (assoc_and phi, i, assoc_and psi)
+    | MatchP (i, r) -> MatchP (i, map_regex assoc_and r)
+    | MatchF (i, r) -> MatchF (i, map_regex assoc_and r)
+    | Pred (v, va) -> Pred (v, va)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | Release (v, va, vb) -> Release (v, va, vb)
+    | TP v -> TP v
+    | TS v -> TS v;;
+
 let rec normalize
-  x = comp (comp elim_double_negation push_negation) simplify_terms x;;
+  x = comp (comp (comp assoc_and elim_double_negation) push_negation)
+        simplify_terms x;;
 
 let rec neg_dual
   phi = (match phi with Pred (_, _) -> Neg phi | Let (_, _, _) -> Neg phi
