@@ -1,15 +1,12 @@
 *.o
 _build
 _build_*/
-_coverage
-*.coverage
 *.install
 
 *~
 \#*\#
 
 /thys/*/*.ocaml
-/thys/MFODL_Parser/Parser/Code/*.ocaml
 .DS_Store
 __pycache__/
 .vscode

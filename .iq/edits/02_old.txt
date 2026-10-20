@@ -1,3 +1,0 @@
-  | MTS mtrm
-
-record ('msaux, 'muaux, 'mtaux) mstate =

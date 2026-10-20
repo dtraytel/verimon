@@ -1,1 +1,0 @@
-type_synonym 'a mbuf2 = "'a table list × 'a table list"

@@ -1,6 +1,0 @@
-type_synonym 'a mbuf2S = "'a table list × 'a table list × ts list × bool"
-
-type_synonym 'a mres_mbuf2 = "'a mres × 'a mres"
-type_synonym 'a mres_mbufn = "'a mres list"
-type_synonym 'a mres_mbuf2S = "'a mres × 'a mres × ts list × bool"
-type_synonym 'a mres_mbuft2 = "'a mres × (nat set × 'a table) list"
