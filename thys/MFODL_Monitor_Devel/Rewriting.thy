@@ -1909,8 +1909,12 @@ qed (auto simp:eval_st Rewriting.match_map_regex simplify_terms_fvi split:nat.sp
 
 subsection \<open> Push negation \<close>
 
+text \<open>A double negation is removed before a negation is pushed into a conjunction or a
+  disjunction: @{text "\<not>\<not>(\<alpha> \<and> \<beta>)"} becomes @{text "\<alpha> \<and> \<beta>"}, not @{text "\<not>(\<not>\<alpha> \<or> \<not>\<beta>)"}.\<close>
+
 fun push_negation where
-  "push_negation (Formula.Neg (Formula.And \<phi> \<psi>)) = Formula.Or (push_negation (Formula.Neg \<phi>)) (push_negation (Formula.Neg \<psi>))"
+  "push_negation (Formula.Neg (Formula.Neg \<phi>)) = push_negation \<phi>"
+| "push_negation (Formula.Neg (Formula.And \<phi> \<psi>)) = Formula.Or (push_negation (Formula.Neg \<phi>)) (push_negation (Formula.Neg \<psi>))"
 | "push_negation (Formula.Neg (Formula.Or \<phi> \<psi>)) = Formula.And (push_negation (Formula.Neg \<phi>)) (push_negation (Formula.Neg \<psi>))"
 | "push_negation (Formula.Let p \<phi> \<psi>) = Formula.Let p (push_negation \<phi>) (push_negation \<psi>)"
 | "push_negation (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (push_negation \<phi>) (push_negation \<psi>)"
@@ -1940,14 +1944,14 @@ lemma push_negation_nfv:
 lemma push_negation_sat:
   "Formula.sat \<sigma> V v i (push_negation f) = Formula.sat \<sigma> V v i f"
 proof(induction f arbitrary: V v i rule:push_negation.induct)
-  case (3 p \<phi> \<psi>)
-  then show ?case unfolding push_negation.simps Formula.sat.simps 3 push_negation_nfv by auto
-next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding push_negation.simps Formula.sat.simps 4 push_negation_nfv by auto
 next
   case (5 p \<phi> \<psi>)
   then show ?case unfolding push_negation.simps Formula.sat.simps 5 push_negation_nfv by auto
+next
+  case (6 p \<phi> \<psi>)
+  then show ?case unfolding push_negation.simps Formula.sat.simps 6 push_negation_nfv by auto
 qed (auto simp: Rewriting.match_map_regex push_negation_fvi split:nat.splits)
 
 fun elim_double_negation where
@@ -1990,13 +1994,90 @@ next
   then show ?case unfolding elim_double_negation.simps Formula.sat.simps 4 elim_double_negation_nfv by auto
 qed (auto simp: Rewriting.match_map_regex elim_double_negation_fvi split:nat.splits)
 
+subsection \<open> Conjunctions nested to the left \<close>
+
+text \<open>A conjunction is monitorable if its left operand is and its right operand is monitorable,
+  or a negation, a constraint or an assignment over the left operand's variables. So
+  @{text "\<alpha> \<and> (\<not>\<beta> \<and> \<not>\<gamma>)"}, as obtained by pushing a negation into a disjunction, is not
+  monitorable, while @{text "(\<alpha> \<and> \<not>\<beta>) \<and> \<not>\<gamma>"} is. The conjunctions are therefore nested to the
+  left: each conjunct follows those that may bind its variables.\<close>
+
+fun conjuncts :: "'t Formula.formula \<Rightarrow> 't Formula.formula list" where
+  "conjuncts (Formula.And \<phi> \<psi>) = conjuncts \<phi> @ conjuncts \<psi>"
+| "conjuncts \<phi> = [\<phi>]"
+
+definition and_app :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula" where
+  "and_app \<phi> \<psi> = foldl Formula.And \<phi> (conjuncts \<psi>)"
+
+lemma and_app_And: "and_app \<phi> (Formula.And \<psi>1 \<psi>2) = and_app (and_app \<phi> \<psi>1) \<psi>2"
+  by (simp add: and_app_def)
+
+text \<open>A property of conjunctions that is an associative operation on the properties of the
+  conjuncts holds for @{const and_app} as for @{const Formula.And}.\<close>
+
+lemma and_app_cong:
+  assumes "\<And>a b. P (Formula.And a b) = f (P a) (P b)" "\<And>x y z. f (f x y) z = f x (f y z)"
+  shows "P (and_app \<phi> \<psi>) = P (Formula.And \<phi> \<psi>)"
+  unfolding and_app_def
+proof (induction \<psi> arbitrary: \<phi> rule: conjuncts.induct)
+  case (1 \<psi>1 \<psi>2)
+  then show ?case
+    by (simp add: assms)
+qed (simp_all add: assms)
+
+lemma and_app_fvi[simp]: "Formula.fvi b (and_app \<phi> \<psi>) = Formula.fvi b \<phi> \<union> Formula.fvi b \<psi>"
+  using and_app_cong[where P = "Formula.fvi b" and f = "(\<union>)"] by (simp add: sup_assoc)
+
+lemma and_app_sat[simp]:
+  "Formula.sat \<sigma> V v i (and_app \<phi> \<psi>) = (Formula.sat \<sigma> V v i \<phi> \<and> Formula.sat \<sigma> V v i \<psi>)"
+  using and_app_cong[where P = "Formula.sat \<sigma> V v i" and f = "(\<and>)"] by simp
+
+fun assoc_and where
+  "assoc_and (Formula.And \<phi> \<psi>) = and_app (assoc_and \<phi>) (assoc_and \<psi>)"
+| "assoc_and (Formula.Let p \<phi> \<psi>) = Formula.Let p (assoc_and \<phi>) (assoc_and \<psi>)"
+| "assoc_and (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (assoc_and \<phi>) (assoc_and \<psi>)"
+| "assoc_and (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (assoc_and \<phi>) (assoc_and \<psi>)"
+| "assoc_and (Formula.Neg \<phi>) = Formula.Neg (assoc_and \<phi>)"
+| "assoc_and (Formula.Or \<phi> \<psi>) = Formula.Or (assoc_and \<phi>) (assoc_and \<psi>)"
+| "assoc_and (Formula.Ands l) = Formula.Ands (map assoc_and l)"
+| "assoc_and (Formula.Exists t \<phi>) = Formula.Exists t (assoc_and \<phi>)"
+| "assoc_and (Formula.Agg y \<omega> tys f \<phi>) = Formula.Agg y \<omega> tys f (assoc_and \<phi>)"
+| "assoc_and (Formula.Prev I \<phi>) = Formula.Prev I (assoc_and \<phi>)"
+| "assoc_and (Formula.Next I \<phi>) = Formula.Next I (assoc_and \<phi>)"
+| "assoc_and (Formula.Since \<phi> I \<psi>) = Formula.Since (assoc_and \<phi>) I (assoc_and \<psi>)"
+| "assoc_and (Formula.Until \<phi> I \<psi>) = Formula.Until (assoc_and \<phi>) I (assoc_and \<psi>)"
+| "assoc_and (Formula.MatchP I r) = Formula.MatchP I (regex.map_regex assoc_and r)"
+| "assoc_and (Formula.MatchF I r) = Formula.MatchF I (regex.map_regex assoc_and r)"
+| "assoc_and \<phi> = \<phi>"
+
+lemma assoc_and_fvi:
+  "Formula.fvi b (assoc_and \<phi>) = Formula.fvi b \<phi>"
+  by(induction \<phi> arbitrary: b rule:assoc_and.induct) (auto simp: fv_regex_alt regex.set_map)
+
+lemma assoc_and_nfv:
+  "Formula.nfv (assoc_and \<phi>) = Formula.nfv \<phi>" 
+  unfolding Formula.nfv_def assoc_and_fvi by auto
+
+lemma assoc_and_sat:
+  "Formula.sat \<sigma> V v i (assoc_and f) = Formula.sat \<sigma> V v i f"
+proof(induction f arbitrary: V v i rule:assoc_and.induct)
+  case (2 p \<phi> \<psi>)
+  then show ?case unfolding assoc_and.simps Formula.sat.simps 2 assoc_and_nfv by auto
+next
+  case (3 p \<phi> \<psi>)
+  then show ?case unfolding assoc_and.simps Formula.sat.simps 3 assoc_and_nfv by auto
+next
+  case (4 p \<phi> \<psi>)
+  then show ?case unfolding assoc_and.simps Formula.sat.simps 4 assoc_and_nfv by auto
+qed (auto simp: Rewriting.match_map_regex assoc_and_fvi split:nat.splits)
+
 definition normalize where
-  "normalize = elim_double_negation \<circ> push_negation \<circ> simplify_terms"
+  "normalize = assoc_and \<circ> elim_double_negation \<circ> push_negation \<circ> simplify_terms"
 
 lemma normalize_sat:
   "Formula.sat \<sigma> V v i (normalize f) = Formula.sat \<sigma> V v i f"
   unfolding normalize_def comp_apply 
-  using simplify_terms_sat push_negation_sat elim_double_negation_sat 
+  using simplify_terms_sat push_negation_sat elim_double_negation_sat assoc_and_sat
   by auto
 
 
