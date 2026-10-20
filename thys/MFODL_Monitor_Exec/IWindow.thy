@@ -114,9 +114,18 @@ lemma isw_move_abs:
      sw_move args nt pend win (icnt_abs cc) = (pend', win', icnt_abs cc')"
 proof (induct args nt pend win cc arbitrary: pend' win' cc' rule: isw_move.induct)
   case (1 args nt pend win cc)
+  obtain eo pq where h: "safe_hd pend = (eo, pq)" by (cases "safe_hd pend")
   show ?case
-    using 1 by (subst sw_move.simps, subst (asm) isw_move.simps)
-      (auto simp: icnt_abs_add split: prod.splits option.splits if_splits)
+  proof (cases eo)
+    case None
+    then show ?thesis using 1(3) by (simp add: sw_move.simps[of args nt pend] isw_move.simps[of args nt pend] h)
+  next
+    case (Some e)
+    then show ?thesis
+      using 1(1)[OF h[symmetric] Some] 1(2)[OF h[symmetric] Some] 1(3)
+      by (simp add: sw_move.simps[of args nt pend] isw_move.simps[of args nt pend] h icnt_abs_add
+          split: if_splits)
+  qed
 qed
 
 lemma isw_expire_abs:
