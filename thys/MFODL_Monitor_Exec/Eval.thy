@@ -45,39 +45,44 @@ text \<open>
   makes the executable evaluator exportable on its own.
 \<close>
 
-datatype eformula =
+datatype 't geformula =
     EFail
   | ERel "event_data table"
   | EPredS Formula.name nat
   | EPredM Formula.name nat "Formula.trm list" cols
-  | EAndRel eformula "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
-  | ENeg eformula
-  | EExists eformula bool
-  | EAgg bool "ty Formula.agg_op" Formula.trm nat nat eformula
-  | EOr eformula eformula uebuf2
-  | EAnd ejoin_plan eformula bool eformula uebuf2
-  | EPrev \<I> eformula bool "event_data table mbuf_t" "ts mbuf_t"
-  | ENext \<I> eformula bool "ts mbuf_t"
-  | EAnds "ejoin_plan list" "ejoin_plan list" "eformula list" uebufn
-  | ESince args eformula eformula uebuf2S udsaux_x
-  | EUntil args "bool list" eformula eformula uebuf2 "ts mbuf_t" ts uduaux_x
-  | EAndAssign nat Formula.trm eformula
+  | EAndRel "'t geformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
+  | ENeg "'t geformula"
+  | EExists "'t geformula" bool
+  | EAgg bool "ty Formula.agg_op" Formula.trm nat nat "'t geformula"
+  | EOr "'t geformula" "'t geformula" "'t mbuf_t \<times> 't mbuf_t"
+  | EAnd ejoin_plan "'t geformula" bool "'t geformula" "'t mbuf_t \<times> 't mbuf_t"
+  | EPrev \<I> "'t geformula" bool "event_data table mbuf_t" "ts mbuf_t"
+  | ENext \<I> "'t geformula" bool "ts mbuf_t"
+  | EAnds "ejoin_plan list" "ejoin_plan list" "'t geformula list" "'t mbuf_t list"
+  | ESince args "'t geformula" "'t geformula" uebuf2S udsaux_x
+  | EUntil args "bool list" "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" ts uduaux_x
+  | EAndAssign nat Formula.trm "'t geformula"
   | ETP mtrm nat
   | ETS mtrm
-  | ELet Formula.name nat eformula eformula
-  | EFrz Formula.name nat eformula eformula nat nat nat "event_data table list"
-      eformula nat nat "ts list" "event_data table list" enat bool bool "nat option" eformula
-      "(event_data list set, event_data table) frz_sep" "nat list" eformula eformula
-  | ELetPast Formula.name nat eformula eformula nat "event_data table option"
-  | ETrigger args "nat option list" eformula eformula uebuf2 "ts mbuf_t" "event_data twaux"
-  | ERelease args "bool list" eformula eformula uebuf2 "ts mbuf_t" ts "event_data eraux"
-  | EAndTrigger ejoin_plan eformula "event_data table mbuf_t \<times> event_data table option mbuf_t"
-      args eformula eformula uebuf2 "ts mbuf_t" "event_data twaux"
-  | EMatchP nat \<I> mregex "mregex list" "nat option list list" "eformula list"
+  | ELet Formula.name nat "'t geformula" "'t geformula"
+  | EFrz Formula.name nat "'t geformula" "'t geformula" nat nat nat "event_data table list"
+      "'t geformula" nat nat "ts list" "event_data table list" enat bool bool "nat option" "'t geformula"
+      "(event_data list set, event_data table) frz_sep" "nat list" "'t geformula" "'t geformula"
+  | ELetPast Formula.name nat "'t geformula" "'t geformula" nat "event_data table option"
+  | ETrigger args "nat option list" "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" "event_data twaux"
+  | ERelease args "bool list" "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" ts "event_data eraux"
+  | EAndTrigger ejoin_plan "'t geformula" "'t mbuf_t \<times> event_data table option mbuf_t"
+      args "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" "event_data twaux"
+  | EMatchP nat \<I> mregex "mregex list" "nat option list list" "'t geformula list"
       uebufn "ts mbuf_t" "event_data mr\<delta>aux"
-  | EMatchF nat \<I> mregex "mregex list" "nat option list list" "eformula list"
+  | EMatchF nat \<I> mregex "mregex list" "nat option list list" "'t geformula list"
       uebufn "ts mbuf_t" ts "event_data ml\<delta>aux"
 
+text \<open>The executable formula of the plain tables; the indexed tables of
+  @{theory MFODL_Monitor_Exec.ITable} instantiate the type of the tables that the buffers of the
+  joins and unions hold.\<close>
+
+type_synonym eformula = "event_data table geformula"
 text \<open>The compiler is total on the kernel's formulas, so it answers @{const EFail} at a node it
   does not cover rather than failing.  Its caller checks that the compiled formula has none: this
   counts them.\<close>
@@ -239,7 +244,7 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             (mebuf2_add xs ys buf) t (nts @@ ts);
           (zs, aux'') = eraux_eval (args_ivl dags) nt aux'
       in (zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
-  by pat_completeness (simp_all only: prod.inject eformula.inject eformula.distinct simp_thms)
+  by pat_completeness (simp_all only: prod.inject geformula.inject geformula.distinct simp_thms)
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
   not a subterm of the node, so the recursion is not structural and termination goes by the
@@ -327,7 +332,7 @@ next
   \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas,
     since evaluation keeps the node's constructor and its non-formula arguments do not count\<close>
 qed (auto simp only: prod.inject eeval.psimps Let_def snd_conv fst_conv
-    eformula.size list.map map_map o_apply size_list_map size_frz_keep_st cong: size_list_cong
+    geformula.size list.map map_map o_apply size_list_map size_frz_keep_st cong: size_list_cong
     split: prod.splits)
 
 lemma total_eeval: "All eeval_dom"
