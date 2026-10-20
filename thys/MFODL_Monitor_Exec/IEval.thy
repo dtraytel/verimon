@@ -113,6 +113,8 @@ termination
   using size_list_snd_mbuf_t_cases
   by (relation "measure (\<lambda>(_, _, buf). size_list size buf)") (auto simp: comp_def Suc_le_eq size_list_length_diff1)
 
+declare imebufn_take.simps[simp del]
+
 text \<open>
   The database the evaluator reads holds indexed tables, so a predicate hands on the indices of
   the table it reads.  A predicate bound by a let reads the table of the let's definition: the
@@ -312,7 +314,7 @@ proof (induction g z buf arbitrary: z' buf' rule: imebufn_take.induct)
   proof (cases "buf = [] \<or> (\<exists>x \<in> set buf. mbuf_t_is_empty x)")
     case True
     then show ?thesis using 1(2) e
-      by (subst mebufn_take.simps) (simp del: mebufn_take.simps)
+      by (subst mebufn_take.simps) (simp add: imebufn_take.simps[of g z buf] del: mebufn_take.simps)
   next
     case False
     have h: "map (the \<circ> fst \<circ> mbuf_t_cases) (ibn buf) = map iset (map (the \<circ> fst \<circ> mbuf_t_cases) buf)"
@@ -327,7 +329,7 @@ proof (induction g z buf arbitrary: z' buf' rule: imebufn_take.induct)
     have t: "map (snd \<circ> mbuf_t_cases) (ibn buf) = ibn (map (snd \<circ> mbuf_t_cases) buf)"
       by (auto simp: ibn_def mbuf_t_cases_map split: prod.splits)
     show ?thesis using 1(1)[OF False] 1(2,3) False e h t
-      by (subst mebufn_take.simps) (simp del: mebufn_take.simps)
+      by (subst mebufn_take.simps) (simp add: imebufn_take.simps[of g z buf] del: mebufn_take.simps)
   qed
 qed
 
