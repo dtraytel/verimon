@@ -52,7 +52,7 @@ and build with `dune build --release`, whose profile passes `-O3`.
 
 A web version, the same monitor compiled to JavaScript with js_of_ocaml, is built with
 `dune build --profile=release web/verimon_js.zip` (see `web/README.md`); it is deployed at
-<https://traytel.bitbucket.io/verimon/>.
+<https://dtraytel.github.io/verimon/>.
 
 
 Usage
