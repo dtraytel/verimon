@@ -20,7 +20,6 @@ characters long, so that the formula box shows them in full.
 | GDPR: consent to use data | `gdpr` | [MonitoringFace](https://github.com/MonitoringFace-Benchmark/MonitoringFace) (`Local_GDPR_MonPoly`, policy `consent.mfotl` with free variables, the first 110 entries of its log) |
 
 WhyMon's formulas are written in MonPoly's syntax here. Policies that are implications are
-negated to report violations (publish/approve). The Nokia and GDPR formulas instead state the
-violations directly. WhyMon's data race policy quantifies over locks in a way that VeriMon cannot
+negated to report violations (publish/approve, Nokia, GDPR). WhyMon's data race policy quantifies over locks in a way that VeriMon cannot
 monitor, so `locks` checks a simpler lock discipline: no thread reads or writes while it holds no
 lock.
