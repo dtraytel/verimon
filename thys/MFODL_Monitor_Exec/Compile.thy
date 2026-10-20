@@ -1392,7 +1392,7 @@ definition eof_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow> emstate" where
   "eof_state n ks cs st =
      \<lparr> emstate_i = mstate_i st, emstate_j = mstate_j st,
-       emstate_m = eof n ks cs (mstate_m st),
+       emstate_m = eemb (eof n ks cs (mstate_m st)),
        emstate_n = n, emstate_cs = cs, emstate_t = mbuf_t_empty @@ mstate_t st \<rparr>"
 
 lemma emsim_state_eof_state:
@@ -1404,8 +1404,8 @@ context verimon_spec
 begin
 
 theorem emonitor_mverdicts_dof:
-  assumes zf: "efail_nodes (emstate_m (eof_state (Formula.nfv \<phi>) (Formula.fv_list \<phi>)
-      (ecols (Formula.fv_list \<phi>)) (minit_safe \<phi>))) = 0"
+  assumes zf: "efail_nodes (eabs (emstate_m (eof_state (Formula.nfv \<phi>) (Formula.fv_list \<phi>)
+      (ecols (Formula.fv_list \<phi>)) (minit_safe \<phi>)))) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))

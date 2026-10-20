@@ -1030,7 +1030,7 @@ definition vinit :: "bool \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> ls
   "vinit mw rw filt S pf \<phi> = (if \<not> wf_formula \<phi> then Inl VI_WF else
      (case eminit_verimon mw rw (lsig_tsig S) \<phi> of
        Inl e \<Rightarrow> Inl (VI_PREPARE e)
-     | Inr ust \<Rightarrow> (let n = efail_nodes (emstate_m ust) in
+     | Inr ust \<Rightarrow> (let n = efail_nodes (eabs (emstate_m ust)) in
          if n = 0 then Inr (VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf, (einit, ust, 0))
          else Inl (VI_FRAGMENT n))))"
 
@@ -1375,7 +1375,7 @@ definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times>
 lemma vinit_Inr:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
   obtains ust where "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" "z = (einit, ust, 0)"
-    "wf_formula \<phi>" "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "efail_nodes (emstate_m ust) = 0"
+    "wf_formula \<phi>" "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "efail_nodes (eabs (emstate_m ust)) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"

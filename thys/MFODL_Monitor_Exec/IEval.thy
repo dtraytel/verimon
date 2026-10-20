@@ -172,7 +172,7 @@ lemma mbuf_t_map_code[code]: "mbuf_t_map f (MBuf2_t q) = mbuf_t_empty @@ map f (
 lemma mbuf_t_map_append[simp]: "mbuf_t_map f (b @@ xs) = mbuf_t_map f b @@ map f xs"
   by transfer simp
 
-lemma mbuf_t_map_Cons[simp]: "mbuf_t_map f (x ## b) = f x ## mbuf_t_map f b"
+lemma mbuf_t_map_Cons[simp]: "mbuf_t_map f (mbuf_t_Cons x b) = mbuf_t_Cons (f x) (mbuf_t_map f b)"
   by transfer simp
 
 lemma mbuf_t_map_empty[simp]: "mbuf_t_map f mbuf_t_empty = mbuf_t_empty"
@@ -212,34 +212,59 @@ qed
 lemma eabs_simps[simp]:
   "eabs EFail = EFail"
   "eabs (ERel rel) = ERel rel"
-  "eabs (EPredS e ar) = EPredS e ar"
-  "eabs (EPredM e ar tms cs) = EPredM e ar tms cs"
+  "eabs (EPredS e1 a1) = EPredS e1 a1"
+  "eabs (EPredM e2 a2 tms cs) = EPredM e2 a2 tms cs"
   "eabs (EAndRel \<phi> conf) = EAndRel (eabs \<phi>) conf"
   "eabs (ENeg \<phi>) = ENeg (eabs \<phi>)"
   "eabs (EExists \<phi> b) = EExists (eabs \<phi>) b"
-  "eabs (EAgg g0 \<omega> f k pos \<phi>) = EAgg g0 \<omega> f k pos (eabs \<phi>)"
+  "eabs (EAgg g0 \<omega> f k n \<phi>) = EAgg g0 \<omega> f k n (eabs \<phi>)"
   "eabs (EOr \<phi> \<psi> buf) = EOr (eabs \<phi>) (eabs \<psi>) (ib2 buf)"
   "eabs (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eabs \<phi>) pos (eabs \<psi>) (ib2 buf)"
-  "eabs (EPrev I \<phi> first pbuf nts) = EPrev I (eabs \<phi>) first pbuf nts"
-  "eabs (ENext I \<phi> first nts) = ENext I (eabs \<phi>) first nts"
+  "eabs (EPrev I1 \<phi> fst1 pbuf nts1) = EPrev I1 (eabs \<phi>) fst1 pbuf nts1"
+  "eabs (ENext I2 \<phi> fst2 nts2) = ENext I2 (eabs \<phi>) fst2 nts2"
   "eabs (EAnds ps ns Ld dbuf) = EAnds ps ns (map eabs Ld) dbuf"
-  "eabs (ESince dags \<phi> \<psi> sbuf aux) = ESince dags (eabs \<phi>) (eabs \<psi>) sbuf aux"
-  "eabs (EUntil dags msk \<phi> \<psi> ubuf nts t uaux) = EUntil dags msk (eabs \<phi>) (eabs \<psi>) ubuf nts t uaux"
-  "eabs (EAndAssign p t \<phi>) = EAndAssign p t (eabs \<phi>)"
-  "eabs (ETP mt i) = ETP mt i"
-  "eabs (ETS mt) = ETS mt"
-  "eabs (ELet p m \<phi> \<psi>) = ELet p m (eabs \<phi>) (eabs \<psi>)"
-  "eabs (ETrigger dags pls \<phi> \<psi> tbuf nts taux) = ETrigger dags pls (eabs \<phi>) (eabs \<psi>) tbuf nts taux"
-  "eabs (ERelease dags msk \<phi> \<psi> rbuf nts t raux) = ERelease dags msk (eabs \<phi>) (eabs \<psi>) rbuf nts t raux"
-  "eabs (EAndTrigger pl \<alpha> abuf dags \<phi> \<psi> tbuf nts taux) =
-     EAndTrigger pl (eabs \<alpha>) abuf dags (eabs \<phi>) (eabs \<psi>) tbuf nts taux"
-  "eabs (EMatchP m I mr mrs pls Ld nbuf nts maux) = EMatchP m I mr mrs pls (map eabs Ld) nbuf nts maux"
-  "eabs (EMatchF m I mr mrs pls Ld nbuf nts t faux) =
-     EMatchF m I mr mrs pls (map eabs Ld) nbuf nts t faux"
+  "eabs (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eabs \<phi>) (eabs \<psi>) sbuf aux1"  "eabs (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) =
+     EUntil dags2 msk2 (eabs \<phi>) (eabs \<psi>) ubuf nts3 t3 aux3"
+  "eabs (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eabs \<phi>)"
+  "eabs (ETP mt5 i5) = ETP mt5 i5"
+  "eabs (ETS mt6) = ETS mt6"
+  "eabs (ELet p7 m7 \<phi> \<psi>) = ELet p7 m7 (eabs \<phi>) (eabs \<psi>)"
+  "eabs (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4) =
+     EFrz p13 m13 (eabs \<phi>) (eabs \<psi>) a13 b13 c13 d13 (eabs \<chi>1) e13 f13 g13 h13 i13 j13 k13 l13
+       (eabs \<chi>2) n13 o13 (eabs \<chi>3) (eabs \<chi>4)"
+  "eabs (ELetPast p14 m14 \<phi> \<psi> i14 buf14) = ELetPast p14 m14 (eabs \<phi>) (eabs \<psi>) i14 buf14"
+  "eabs (ETrigger dags8 pls8 \<phi> \<psi> tbuf8 nts8 aux8) =
+     ETrigger dags8 pls8 (eabs \<phi>) (eabs \<psi>) tbuf8 nts8 aux8"
+  "eabs (ERelease dags9 msk9 \<phi> \<psi> rbuf nts9 t9 aux9) =
+     ERelease dags9 msk9 (eabs \<phi>) (eabs \<psi>) rbuf nts9 t9 aux9"
+  "eabs (EAndTrigger pl10 \<alpha> abuf dags10 \<phi> \<psi> tbuf10 nts10 aux10) =
+     EAndTrigger pl10 (eabs \<alpha>) abuf dags10 (eabs \<phi>) (eabs \<psi>) tbuf10 nts10 aux10"
+  "eabs (EMatchP m11 I11 mr11 mrs11 pls11 Ld11 nbuf11 nts11 aux11) =
+     EMatchP m11 I11 mr11 mrs11 pls11 (map eabs Ld11) nbuf11 nts11 aux11"
+  "eabs (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) =
+     EMatchF m12 I12 mr12 mrs12 pls12 (map eabs Ld12) nbuf12 nts12 t12 aux12"
   by (simp_all add: eabs_def)
-
 lemma map_eabs[simp]: "map eabs (map snd R) = map (eabs \<circ> snd) R"
   by simp
+
+lemma map_iset_itab[simp]: "map (iset \<circ> itab) X = X" "map (\<lambda>x. iset (itab x)) X = X"
+  by (simp_all add: map_idI)
+
+lemma map_eeval_eabs:
+  assumes "\<And>x xs \<phi>'. x \<in> set Ld \<Longrightarrow> ieval j ts db x = (xs, \<phi>') \<Longrightarrow>
+    eeval j ts db (eabs x) = (map iset xs, eabs \<phi>')"
+  shows "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval j ts db x)) Ld"
+proof (rule map_cong[OF refl])
+  fix x
+  assume x: "x \<in> set Ld"
+  obtain xs \<phi>' where "ieval j ts db x = (xs, \<phi>')"
+    by (cases "ieval j ts db x")
+  then show "eeval j ts db (eabs x) = map_prod (map iset) eabs (ieval j ts db x)"
+    using assms[OF x] by simp
+qed
+
+lemma ieval_fallback: "map_prod (map itab) eemb E = (xs, \<phi>') \<Longrightarrow> E = (map iset xs, eabs \<phi>')"
+  by (cases E) (auto simp: comp_def)
 
 theorem ieval_eeval:
   "ieval j ts db \<phi> = (xs, \<phi>') \<Longrightarrow> eeval j ts db (eabs \<phi>) = (map iset xs, eabs \<phi>')"
@@ -252,7 +277,7 @@ proof (induction j ts db \<phi> arbitrary: xs \<phi>' rule: ieval.induct)
   have t: "mebuf2_take (\<union>) (ib2 (mebuf2_add xs1 ys1 buf)) = (map iset zs, ib2 buf')"
     by (rule mebuf2_take_ib2[OF 3]) simp
   show ?case
-    using 9(3) 9(1)[OF 1] 9(2)[OF refl 1[symmetric] 2] t by (simp add: 1 2 3)
+    using 9(3) 9(1)[OF 1] 9(2)[OF refl 1[symmetric] 2] t by (auto simp: 1 2 3)
 next
   case (10 j ts db pl \<phi> pos \<psi> buf)
   obtain xs1 \<phi>1 where 1: "ieval j ts db \<phi> = (xs1, \<phi>1)" by fastforce
@@ -262,7 +287,32 @@ next
   have t: "mebuf2_take (\<lambda>r1 r2. gbin_join pl r1 pos r2) (ib2 (mebuf2_add xs1 ys1 buf)) = (map iset zs, ib2 buf')"
     by (rule mebuf2_take_ib2[OF 3]) (simp add: ijoin_eq)
   show ?case
-    using 10(3) 10(1)[OF 1] 10(2)[OF refl 1[symmetric] 2] t by (simp add: 1 2 3)
-qed (auto simp: Let_def split: prod.splits)
-
+    using 10(3) 10(1)[OF 1] 10(2)[OF refl 1[symmetric] 2] t by (auto simp: 1 2 3)
+next
+  case (13 j ts db ps ns Ld dbuf)
+  have R: "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval j ts db x)) Ld"
+    by (rule map_eeval_eabs) (rule 13(1))
+  show ?case
+    using 13(2) by (auto simp add: Let_def comp_def R case_prod_beta simp del: mebufn_take.simps)
+next
+  case 20
+  then show ?case by (intro ieval_fallback) (simp only: ieval.simps)
+next
+  case 21
+  then show ?case by (intro ieval_fallback) (simp only: ieval.simps)
+next
+  case (24 j ts db m I mr mrs pls Ld dbuf nts daux)
+  have R: "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval j ts db x)) Ld"
+    by (rule map_eeval_eabs) (rule 24(1))
+  show ?case
+    using 24(2) by (auto simp add: Let_def comp_def R case_prod_beta simp del: mebufnt_take.simps)
+next
+  case (25 j ts db m I mr mrs pls Ld dbuf nts t daux)
+  have R: "map (\<lambda>x. eeval j ts db (eabs x)) Ld = map (\<lambda>x. map_prod (map iset) eabs (ieval j ts db x)) Ld"
+    by (rule map_eeval_eabs) (rule 25(1))
+  show ?case
+    using 25(2) by (auto simp add: Let_def comp_def R case_prod_beta simp del: mebufnt_take.simps)
+qed (auto simp: Let_def split: prod.splits
+  simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps mebufn_take.simps
+    mebufnt_take.simps meprev_next.simps mebuf2S_add.simps)
 end

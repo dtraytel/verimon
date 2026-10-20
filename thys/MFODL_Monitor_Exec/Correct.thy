@@ -1,6 +1,6 @@
 (*<*)
 theory Correct
-  imports Eval
+  imports IEval
 begin
 (*>*)
 
@@ -20,14 +20,17 @@ subsection \<open>The executable state machine\<close>
 
 text \<open>
   The executable monitor's online interface mirrors the kernel's -- the record \<open>mstate\<close> and the
-  function \<open>mstep\<close> -- field for field, with @{const eeval} in place of @{const meval}.  The state
-  additionally records the ascending column list its verdicts are narrowed to.
+  function \<open>mstep\<close> -- field for field, with @{const ieval} in place of @{const meval}.  The state
+  additionally records the ascending column list its verdicts are narrowed to, and its formula
+  is the indexed one: the state relation forgets the indices (@{const eabs}) and relates the
+  result to the kernel's formula by @{const esim}, and @{thm [source] ieval_eeval} carries a step
+  of @{const ieval} over to one of @{const eeval}.
 \<close>
 
 record emstate =
   emstate_i :: nat
   emstate_j :: nat
-  emstate_m :: eformula
+  emstate_m :: ieformula
   emstate_n :: nat
   emstate_cs :: cols
   emstate_t :: "ts mbuf_t"
@@ -80,9 +83,9 @@ qed simp
 definition emstep :: "database \<times> ts \<Rightarrow> emstate \<Rightarrow>
     (nat \<times> ts \<times> event_data table) list \<times> emstate" where
   "emstep tdb st =
-    (case eeval (emstate_j st + 1) [snd tdb] (fst tdb) (emstate_m st) of
+    (case ieval (emstate_j st + 1) [snd tdb] (fst tdb) (emstate_m st) of
       (xs, m) \<Rightarrow>
-      (case eannotate (emstate_i st) (emstate_t st @@ [snd tdb]) xs [] of
+      (case eannotate (emstate_i st) (emstate_t st @@ [snd tdb]) (map iset xs) [] of
         (i', tq, vs) \<Rightarrow> (vs,
         \<lparr> emstate_i = i',
           emstate_j = emstate_j st + 1,
@@ -117,7 +120,7 @@ definition emsim_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarro
   "emsim_state n ks cs tw st dst \<longleftrightarrow>
      emstate_i dst = mstate_i st \<and> emstate_j dst = mstate_j st \<and>
      Rep_mbuf_t (emstate_t dst) = mstate_t st \<and> mstate_n st = n \<and> emstate_n dst = n \<and>
-     emstate_cs dst = cs \<and> esim n ks cs tw (emstate_m dst) (mstate_m st)"
+     emstate_cs dst = cs \<and> esim n ks cs tw (eabs (emstate_m dst)) (mstate_m st)"
 
 lemma enumerate_zip_map:
   "List.enumerate i (zip us (map f xs))
@@ -137,14 +140,18 @@ proof -
   have i: "emstate_i dst = mstate_i st" and j: "emstate_j dst = mstate_j st"
     and t: "Rep_mbuf_t (emstate_t dst) = mstate_t st" and mn: "mstate_n st = n"
     and dn: "emstate_n dst = n"
-    and dcs: "emstate_cs dst = cs" and sim: "esim n ks cs tw (emstate_m dst) (mstate_m st)"
+    and dcs: "emstate_cs dst = cs" and sim: "esim n ks cs tw (eabs (emstate_m dst)) (mstate_m st)"
     using r unfolding emsim_state_def by auto
   obtain xs m where e: "meval (mstate_j st + 1) n [snd tdb] (fst tdb) (mstate_m st) = (xs, m)"
     by (cases "meval (mstate_j st + 1) n [snd tdb] (fst tdb) (mstate_m st)")
-  obtain dm where d: "eeval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)
+  obtain dm where d: "eeval (mstate_j st + 1) [snd tdb] (fst tdb) (eabs (emstate_m dst))
       = (map (etabc ks cs) xs, dm)"
     and sim': "esim n ks cs (enext tw [snd tdb]) dm m"
     using esim_deval[OF sim _ e] le kg by auto
+  obtain ixs im where ie: "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst) = (ixs, im)"
+    by (cases "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)")
+  have ixs: "map iset ixs = map (etabc ks cs) xs" and dm: "dm = eabs im"
+    using ieval_eeval[OF ie] d by simp_all
   have tb: "list_all (ftable ks) xs"
     by (rule kgood_tables[OF kg e])
   have dnx: "enext tw [snd tdb] = snd tdb" by (simp add: enext_def)
@@ -162,12 +169,12 @@ proof -
       (zip (mstate_t st @ [snd tdb]) (map (etabc ks cs) xs))"
     using eannotate_eq[OF A] by (simp_all add: mbuf_t_append.rep_eq t)
   have D: "emstep tdb dst = (vs,
-      \<lparr> emstate_i = i', emstate_j = mstate_j st + 1, emstate_m = dm,
+      \<lparr> emstate_i = i', emstate_j = mstate_j st + 1, emstate_m = im,
         emstate_n = n, emstate_cs = cs, emstate_t = tq \<rparr>)"
-    using d A unfolding emstep_def i j dn dcs by simp
+    using ie ixs A unfolding emstep_def i j dn dcs dm by simp
   show ?thesis
     unfolding E D fst_conv snd_conv ie ve
-    using sim'[unfolded dnx] tb te
+    using sim'[unfolded dnx dm] tb te
     by (auto simp: emsim_state_def enumerate_zip_map List.in_set_enumerate_eq list_all_iff
         set_zip)
 qed

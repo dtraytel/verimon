@@ -528,8 +528,8 @@ context verimon_spec
 begin
 
 theorem emonitor_mverdicts_push:
-  assumes zf: "efail_nodes (emstate_m (eof_state (Formula.nfv \<phi>) (Formula.fv_list (eprep \<phi>))
-      (ecols (Formula.fv_list (eprep \<phi>))) (minit_safe (eprep \<phi>)))) = 0"
+  assumes zf: "efail_nodes (eabs (emstate_m (eof_state (Formula.nfv \<phi>) (Formula.fv_list (eprep \<phi>))
+      (ecols (Formula.fv_list (eprep \<phi>))) (minit_safe (eprep \<phi>))))) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))

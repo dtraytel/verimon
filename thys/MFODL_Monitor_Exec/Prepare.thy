@@ -98,7 +98,7 @@ text \<open>The verdicts of the executable monitor started from the state @{cons
 
 theorem eminit_verimon_mverdicts:
   assumes init: "eminit_verimon mw rw sig \<phi> = Inr ust"
-    and zf: "efail_nodes (emstate_m ust) = 0"
+    and zf: "efail_nodes (eabs (emstate_m ust)) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix (map_sig (convert_tysym o check_subst) sig) \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))
@@ -111,8 +111,8 @@ proof -
   have R: "ust = eof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
       (ecols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>)"
     unfolding ust by (rule eminit_push_eq)
-  have zf': "efail_nodes (emstate_m (eof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
-      (ecols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>))) = 0"
+  have zf': "efail_nodes (eabs (emstate_m (eof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
+      (ecols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>)))) = 0"
     using zf by (simp only: R)
   have A: "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, etabw (Formula.fv_list ?\<psi>) (ecols (Formula.fv_list ?\<psi>)) X))

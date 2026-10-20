@@ -27,10 +27,11 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Match_Window
     Kernel_Call
     Eval
-    Correct
-    Compile
     Idx_Code
     ITable
+    IEval
+    Correct
+    Compile
     Frz_Rewrite
     Share_Rewrite
     Push_Rewrite

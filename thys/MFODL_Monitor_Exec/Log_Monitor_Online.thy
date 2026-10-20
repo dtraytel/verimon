@@ -42,9 +42,9 @@ lemma emstep_indices:
   assumes "emstep tdb ds = (vs, ds')"
   shows "emstate_i ds \<le> emstate_i ds'" and "(k, t, X) \<in> set vs \<Longrightarrow> emstate_i ds \<le> k \<and> k < emstate_i ds'"
 proof -
-  obtain xs m where d: "eeval (emstate_j ds + 1) [snd tdb] (fst tdb) (emstate_m ds) = (xs, m)"
+  obtain xs m where d: "ieval (emstate_j ds + 1) [snd tdb] (fst tdb) (emstate_m ds) = (xs, m)"
     by fastforce
-  obtain i' tq vs' where a: "eannotate (emstate_i ds) (emstate_t ds @@ [snd tdb]) xs [] = (i', tq, vs')"
+  obtain i' tq vs' where a: "eannotate (emstate_i ds) (emstate_t ds @@ [snd tdb]) (map iset xs) [] = (i', tq, vs')"
     by (metis prod.exhaust)
   have "fst (emstep tdb ds) = vs'" "emstate_i (snd (emstep tdb ds)) = i'"
     using d a by (simp_all add: emstep_def)
@@ -276,7 +276,7 @@ definition stream_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \
 lemma vinit_Inr_state:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, (e, ust, n))"
   shows "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and "e = einit" and "n = 0"
-    and "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and "efail_nodes (emstate_m ust) = 0"
+    and "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and "efail_nodes (eabs (emstate_m ust)) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma emsteps_state_Rep: "emsteps_state \<pi> ds = emsteps0_state (Rep_prefix \<pi>) ds"
