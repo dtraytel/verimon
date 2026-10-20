@@ -27,25 +27,31 @@ typedef 'b itab = "{TI :: 'b list set \<times> (bool list, 'b eindex) mapping. i
   morphisms Rep_itab Abs_itab
   by (rule exI[of _ "({}, Mapping.empty)"]) (simp add: iinv_def)
 
-setup_lifting type_definition_itab
-
 lemma Abs_itab_Rep_itab_code[code abstype]: "Abs_itab (Rep_itab A) = A"
   by (fact Rep_itab_inverse)
 
-lift_definition iset :: "'b itab \<Rightarrow> 'b list set" is fst .
+definition iset :: "'b itab \<Rightarrow> 'b list set" where
+  "iset A = fst (Rep_itab A)"
 
-lift_definition iidxs :: "'b itab \<Rightarrow> (bool list, 'b eindex) mapping" is snd .
+definition iidxs :: "'b itab \<Rightarrow> (bool list, 'b eindex) mapping" where
+  "iidxs A = snd (Rep_itab A)"
 
 lemma iidxs_eidx: "Mapping.lookup (iidxs A) msk = Some m \<Longrightarrow> m = eidx msk (iset A)"
-  by transfer (auto simp: iinv_def)
+  using Rep_itab[of A] by (auto simp: iinv_def iset_def iidxs_def)
+
+lemma Rep_itab_inverse': "iinv TI \<Longrightarrow> Rep_itab (Abs_itab TI) = TI"
+  by (simp add: Abs_itab_inverse)
 
 subsection \<open>A table without indices, and adding indices\<close>
 
-lift_definition itab :: "'b list set \<Rightarrow> 'b itab" is "\<lambda>T. (T, Mapping.empty)"
-  by (simp add: iinv_def)
+definition itab :: "'b list set \<Rightarrow> 'b itab" where
+  "itab T = Abs_itab (T, Mapping.empty)"
+
+lemma Rep_itab_itab[code abstract]: "Rep_itab (itab T) = (T, Mapping.empty)"
+  by (simp add: itab_def Rep_itab_inverse' iinv_def)
 
 lemma iset_itab[simp]: "iset (itab T) = T"
-  by transfer simp
+  by (simp add: iset_def Rep_itab_itab)
 
 definition iindex :: "bool list \<Rightarrow> 'b itab \<Rightarrow> 'b eindex" where
   "iindex msk A = (case Mapping.lookup (iidxs A) msk of Some m \<Rightarrow> m | None \<Rightarrow> eidx msk (iset A))"
@@ -65,16 +71,20 @@ lemma lookup_fold_iensure1:
   by (induct msks arbitrary: I)
     (auto simp: iensure1_def Mapping.lookup_update' split: option.splits)
 
-lift_definition iensure :: "bool list list \<Rightarrow> 'b itab \<Rightarrow> 'b itab" is
-  "\<lambda>msks TI. (fst TI, fold (iensure1 (fst TI)) msks (snd TI))"
-  by (auto simp: iinv_def lookup_fold_iensure1 split: if_splits)
+definition iensure :: "bool list list \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "iensure msks A = Abs_itab (iset A, fold (iensure1 (iset A)) msks (iidxs A))"
+
+lemma Rep_itab_iensure[code abstract]:
+  "Rep_itab (iensure msks A) = (iset A, fold (iensure1 (iset A)) msks (iidxs A))"
+  unfolding iensure_def
+  by (rule Rep_itab_inverse') (auto simp: iinv_def lookup_fold_iensure1 dest: iidxs_eidx)
 
 lemma iset_iensure[simp]: "iset (iensure msks A) = iset A"
-  by transfer simp
+  by (simp add: iset_def Rep_itab_iensure)
 
 lemma iensure_has:
   "msk \<in> set msks \<Longrightarrow> Mapping.lookup (iidxs (iensure msks A)) msk \<noteq> None"
-  by transfer (simp add: lookup_fold_iensure1)
+  by (simp add: iidxs_def Rep_itab_iensure lookup_fold_iensure1)
 
 subsection \<open>Updating a table and its indices\<close>
 
@@ -82,28 +92,39 @@ text \<open>Adding the tuples @{term X} and then removing the tuples @{term D}: 
   by the two tables, which the code equations of @{theory MFODL_Monitor_Exec.Idx_Code} turn into
   a visit of the buckets of the moving tuples only.\<close>
 
-lift_definition iupd :: "'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" is
-  "\<lambda>X D TI. ((fst TI \<union> X) - D,
-     Mapping.map_values (\<lambda>msk m. eidx_minus (eidx_union m (eidx msk X)) (eidx msk D)) (snd TI))"
-  by (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq eidx_minus_eq)
+definition iupd :: "'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "iupd X D A = Abs_itab ((iset A \<union> X) - D,
+     Mapping.map_values (\<lambda>msk m. eidx_minus (eidx_union m (eidx msk X)) (eidx msk D)) (iidxs A))"
+
+lemma Rep_itab_iupd[code abstract]: "Rep_itab (iupd X D A) = ((iset A \<union> X) - D,
+     Mapping.map_values (\<lambda>msk m. eidx_minus (eidx_union m (eidx msk X)) (eidx msk D)) (iidxs A))"
+  unfolding iupd_def
+  by (rule Rep_itab_inverse')
+    (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq eidx_minus_eq dest: iidxs_eidx)
 
 lemma iset_iupd[simp]: "iset (iupd X D A) = (iset A \<union> X) - D"
-  by transfer simp
+  by (simp add: iset_def Rep_itab_iupd)
 
 lemma iidxs_iupd_None: "Mapping.lookup (iidxs (iupd X D A)) msk = None \<longleftrightarrow>
     Mapping.lookup (iidxs A) msk = None"
-  by transfer (simp add: Mapping.lookup_map_values)
+  by (simp add: iidxs_def Rep_itab_iupd Mapping.lookup_map_values)
 
 subsection \<open>Union\<close>
 
 text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>
 
-lift_definition iunion :: "'b itab \<Rightarrow> 'b itab \<Rightarrow> 'b itab" is
-  "\<lambda>TI B. (fst TI \<union> iset B, Mapping.map_values (\<lambda>msk m. eidx_union m (iindex msk B)) (snd TI))"
-  by (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq)
+definition iunion :: "'b itab \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "iunion A B = Abs_itab (iset A \<union> iset B,
+     Mapping.map_values (\<lambda>msk m. eidx_union m (iindex msk B)) (iidxs A))"
+
+lemma Rep_itab_iunion[code abstract]: "Rep_itab (iunion A B) = (iset A \<union> iset B,
+     Mapping.map_values (\<lambda>msk m. eidx_union m (iindex msk B)) (iidxs A))"
+  unfolding iunion_def
+  by (rule Rep_itab_inverse')
+    (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq dest: iidxs_eidx)
 
 lemma iset_iunion[simp]: "iset (iunion A B) = iset A \<union> iset B"
-  by transfer simp
+  by (simp add: iset_def Rep_itab_iunion)
 
 subsection \<open>Joins that use the operands' indices\<close>
 
@@ -129,12 +150,12 @@ lemma ebucket_eidx: "ebucket (eidx msk T) k = {y \<in> T. eproj msk y = k}"
 lemma iprobe_eq:
   "set (csl A) = A \<Longrightarrow>
    iprobe p lk (eidx rk B) A = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
-  by (auto simp: iprobe_def fold_union_image ebucket_eidx)
+  by (auto simp: iprobe_def fold_union_image ebucket_eidx) metis
 
 lemma iprobe_l_eq:
   "set (csl B) = B \<Longrightarrow>
    iprobe_l p rk (eidx lk A) B = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
-  by (auto simp: iprobe_l_def fold_union_image ebucket_eidx)
+  by (simp add: iprobe_l_def fold_union_image ebucket_eidx) blast
 
 text \<open>
   The join of two indexed tables by a plan: an operand that carries an index at the mask the plan
@@ -164,7 +185,27 @@ theorem ijoin0_eq:
   fixes A B :: "event_data itab"
   assumes "finite (iset A)" "finite (iset B)"
   shows "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
-  sorry
+proof (cases pl)
+  case (EJSub msk)
+  then show ?thesis
+    by (cases pos; cases "Mapping.lookup (iidxs A) msk")
+      (auto simp: esemi_idx_dsemi dest!: iidxs_eidx)
+next
+  case (EJSup msk)
+  then show ?thesis
+    by (cases pos; cases "Mapping.lookup (iidxs B) msk")
+      (auto simp: esemi_idx_dsemi esemi_def dest!: iidxs_eidx)
+next
+  case (EJGen p lk rk)
+  have cA: "set (csl (iset A)) = iset A" and cB: "set (csl (iset B)) = iset B"
+    using assms by (simp_all add: set_csl_ed)
+  show ?thesis
+    using EJGen
+    apply (cases pos; cases "Mapping.lookup (iidxs B) rk"; cases "Mapping.lookup (iidxs A) lk")
+            apply (auto simp: iprobe_eq[OF cA] iprobe_l_eq[OF cB] ggen_join_eq[OF cA cB] dest!: iidxs_eidx)
+    apply blast+
+    done
+qed simp_all
 
 definition ijoin :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \<Rightarrow> 'b itab \<Rightarrow> 'b list set" where
   "ijoin pl A pos B = (if Set.is_empty (iset A) then {}

@@ -30,6 +30,7 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Correct
     Compile
     Idx_Code
+    ITable
     Frz_Rewrite
     Share_Rewrite
     Push_Rewrite
