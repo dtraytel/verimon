@@ -1,125 +1,10 @@
 (*<*)
 theory Trigger_Window
-  imports Until_Gen
+  imports Until_Gen Sliding_Window_Agg Release_Window
 begin
 (*>*)
 
-section \<open>The kernel's trigger structure at the ascending frame\<close>
-
-subsection \<open>The trigger structure over short tuples\<close>
-
-text \<open>
-  The kernel's trigger structure of @{theory MFODL_Monitor_Devel.Optimized_Trigger} keeps its
-  tuples over the node's kernel columns.  Its queues, its two mappings and the shift it performs
-  on them only ever test membership and look keys up, so they carry over unchanged to the
-  ascending columns.  Two things do not.
-
-  The first is the semi-join that decides which of the right operand's tuples the left one
-  admits.  The kernel restricts to the left operand's columns; over the ascending columns the
-  projection is @{const eproj} through a mask.  Where the left operand has the node's columns
-  the projection is the identity, where it has none the whole table is taken or dropped on one
-  test of the empty tuple, and otherwise each tuple is projected.
-
-  The second is the result at an empty window, which is every valuation of the node's columns.
-  A table of tuples cannot say that, so the result is split in two: @{term gresult_mmtaux}
-  returns the union of the three sets, which is the kernel's answer on a non-empty window, and
-  @{term gmmtaux_empty} says whether the window is empty, so that a node which can face an empty
-  one recognises the case rather than reading a wrong table.  The standalone trigger cannot face
-  it -- its interval contains zero, so the update always appends to the window -- and reads the
-  result directly; the conjunction with a trigger can, and treats the empty window as the
-  identity on its other operand.
-\<close>
-
-type_synonym 'b gmmtaux = "
-  ts \<times> nat \<times> nat \<times> nat \<times>
-  bool list \<times>
-  (ts \<times> 'b list set \<times> 'b list set) queue \<times>
-  (ts \<times> 'b list set) queue \<times>
-  (('b list, ts) mapping) \<times>
-  'b list set \<times>
-  (('b list, nat) mapping) \<times>
-  'b list set \<times>
-  'b list set"
-
-definition gsemi_join :: "bool list \<Rightarrow> bool \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
-  "gsemi_join msk pos r l =
-     (if \<forall>i \<in> set msk. i then (if pos then r \<inter> l else r - l)
-      else if \<forall>i \<in> set msk. \<not> i then (if pos = ([] \<in> l) then r else {})
-      else esemi msk pos r l)"
-
-definition ginit_mmtaux :: "args \<Rightarrow> bool list \<Rightarrow> 'b gmmtaux" where
-  "ginit_mmtaux args msk = (0, 0, 0, 0, msk, empty_queue, empty_queue,
-     Mapping.empty, {}, Mapping.empty, {}, {})"
-
-definition gupdate_mmtaux' :: "args \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool list \<Rightarrow>
-    (ts \<times> 'b list set \<times> 'b list set) queue \<Rightarrow> (ts \<times> 'b list set) queue \<Rightarrow>
-    (('b list, ts) mapping) \<Rightarrow> 'b list set \<Rightarrow> (('b list, nat) mapping) \<Rightarrow> 'b list set \<Rightarrow>
-    'b list set \<Rightarrow>
-    (nat \<times> nat \<times> (ts \<times> 'b list set \<times> 'b list set) queue \<times> (ts \<times> 'b list set) queue \<times>
-     (('b list, ts) mapping) \<times> 'b list set \<times> (('b list, nat) mapping) \<times> 'b list set \<times>
-     'b list set)" where
-  "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tuple_in_once
-     tuple_in_once_keys tuple_since_hist hist_sat since_sat = (
-    let (_, data_prev', move, tuple_in_once', tuple_in_once_keys') = shift_end'
-      (flip_int_less_lower (args_ivl args)) nt fst
-      (empty_queue :: (ts \<times> 'b list set \<times> 'b list set) queue,
-       data_prev, tuple_in_once, tuple_in_once_keys);
-    move_len = length move;
-    idx_mid' = idx_mid + move_len;
-    (data_in', drop) = takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in;
-    move' = filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) move;
-    drop_prev_len = move_len - length move';
-    idx_oldest' = idx_oldest + length drop + drop_prev_len;
-    data_in'' = fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) move' data_in';
-    (tuple_since_hist', hist_sat', idx_move, since_sat') =
-      fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
-        let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
-            hist_sat = hist_sat \<inter> r;
-            since_sat = since_sat \<inter> r
-        in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
-            hist_sat, idx_move + 1,
-            since_sat \<union> gsemi_join msk (args_pos args) r l))
-      move (tuple_since_hist, hist_sat, idx_mid, since_sat);
-    tuple_since_hist'' = (if idx_mid' = idx_oldest' then Mapping.empty else tuple_since_hist');
-    since_sat'' = (if idx_mid' = idx_oldest' then {} else since_sat');
-    hist_sat'' = (case fst (safe_hd data_in'') of None \<Rightarrow> {}
-      | Some db \<Rightarrow> hist_sat' \<union> {tuple \<in> snd db.
-          case Mapping.lookup tuple_since_hist'' tuple of
-            Some idx \<Rightarrow> idx \<le> idx_oldest' | None \<Rightarrow> False})
-    in
-    (idx_mid', idx_oldest', data_prev', data_in'', tuple_in_once', tuple_in_once_keys',
-     tuple_since_hist'', hist_sat'', since_sat''))"
-
-definition gupdate_mmtaux :: "args \<Rightarrow> ts \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b gmmtaux \<Rightarrow>
-    'b gmmtaux" where
-  "gupdate_mmtaux args nt l r = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
-      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
-    (let (idx_mid', idx_oldest', data_prev', data_in', tuple_in_once', tuple_in_once_keys',
-          tuple_since_hist', hist_sat', since_sat') =
-       gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tuple_in_once
-         tuple_in_once_keys tuple_since_hist hist_sat since_sat
-     in (if mem (args_ivl args) 0
-       then (let tuple_since_hist'' = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist' in
-         (nt, idx_next + 1, idx_mid' + 1, idx_oldest', msk, data_prev',
-          append_queue (nt, r) data_in', tuple_in_once', tuple_in_once_keys',
-          upd_set tuple_since_hist'' (\<lambda>_. idx_mid') (r - Mapping.keys tuple_since_hist''),
-          (if Queue.is_empty data_in' then r else hist_sat' \<inter> r),
-          (since_sat' \<inter> r) \<union> gsemi_join msk (args_pos args) r l))
-       else
-         (nt, idx_next + 1, idx_mid', idx_oldest', msk,
-          append_queue (nt, l, r) data_prev', data_in',
-          upd_set tuple_in_once' (\<lambda>_. nt) l, tuple_in_once_keys' \<union> l,
-          tuple_since_hist', hist_sat', since_sat'))))"
-
-definition gresult_mmtaux :: "args \<Rightarrow> 'b gmmtaux \<Rightarrow> 'b list set" where
-  "gresult_mmtaux args = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
-      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
-    tuple_in_once_keys \<union> hist_sat \<union> since_sat)"
-
-definition gmmtaux_empty :: "'b gmmtaux \<Rightarrow> bool" where
-  "gmmtaux_empty = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
-      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
-    Queue.is_empty data_in)"
+section \<open>The trigger structure\<close>
 
 text \<open>A table is used throughout with the two properties every theorem about the executable
   representation needs of it: it is well formed over its columns, and it is finite.\<close>
@@ -127,239 +12,19 @@ text \<open>A table is used throughout with the two properties every theorem abo
 abbreviation (input) ftable :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool" where
   "ftable A X \<equiv> table A X \<and> finite X"
 
-text \<open>
-  The trigger node of the executable evaluator keeps its window over the right operand's ascending
-  columns and the left operand's tuples over the left operand's ascending columns.  The kernel's
-  structure does the same over arbitrary column lists, so at the arguments @{const eargs} the
-  two hold the same objects.  They differ only in the mask the executable structure stores, which
-  replaces the kernel's projection of a right tuple to the left operand's columns by
-  @{const eproj}.  @{term tmm} drops the mask, and the update and the read commute with it.
-\<close>
-
-subsection \<open>The kernel's state of a executable state\<close>
-
-fun tmm :: "'a gmmtaux \<Rightarrow> 'a mmtaux" where
-  "tmm (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tuple_in_once,
-      tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) =
-    (cur, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once,
-     tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat)"
-
-fun tmsk :: "'a gmmtaux \<Rightarrow> bool list" where
-  "tmsk (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tuple_in_once,
-      tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) = msk"
-
-subsection \<open>The semi-join\<close>
-
-text \<open>Through the mask the semi-join is the kernel's on every right table over the right
-  operand's columns.\<close>
-
-lemma gsemi_join_eq:
-  assumes dm: "emsk_args args msk" and r: "table (args_R args) r"
-  shows "gsemi_join msk pos r l = proj_tuple_in_join_optim pos r (args_R args) l (args_L args)"
-proof -
-  have len: "\<And>as. as \<in> r \<Longrightarrow> length as = length (args_R args)"
-    using r by (auto simp: table_def wf_tuple_def)
-  show ?thesis
-  proof (cases "args_L args = args_R args")
-    case True
-    then have a: "\<forall>i \<in> set msk. i" using emsk_args_full[OF dm] by simp
-    show ?thesis
-      unfolding gsemi_join_def proj_tuple_in_join_optim.simps if_P[OF a] if_P[OF True] ..
-  next
-    case False
-    then have nt: "\<not> (\<forall>i \<in> set msk. i)" using emsk_args_full[OF dm] by simp
-    show ?thesis
-    proof (cases "args_L args = []")
-      case True
-      then have a: "\<forall>i \<in> set msk. \<not> i" using emsk_args_empty[OF dm] by simp
-      show ?thesis
-        unfolding gsemi_join_def proj_tuple_in_join_optim.simps if_not_P[OF nt] if_P[OF a]
-          if_not_P[OF False] if_P[OF True] ..
-    next
-      case L: False
-      then have nf: "\<not> (\<forall>i \<in> set msk. \<not> i)" using emsk_args_empty[OF dm] by simp
-      show ?thesis
-        unfolding gsemi_join_def proj_tuple_in_join_optim.simps if_not_P[OF nt] if_not_P[OF nf]
-          if_not_P[OF False] if_not_P[OF L]
-        by (auto simp: esemi_def proj_tuple_in_join_def emsk_args_dproj[OF dm len])
-    qed
-  qed
-qed
-
-subsection \<open>The update\<close>
-
-text \<open>The two updates differ in one argument of one fold: the semi-join applied to the tables
-  that leave the front of the window.  @{term tupd} is either update with that semi-join as a
-  parameter, and its fold @{term tfold} is named so that the two can be compared on the tables
-  the fold actually visits.\<close>
-
-definition tfold :: "('b list set \<Rightarrow> 'b list set \<Rightarrow> 'b list set) \<Rightarrow>
-    (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> ('b list, nat) mapping \<times> 'b list set \<times> nat \<times> 'b list set \<Rightarrow>
-    ('b list, nat) mapping \<times> 'b list set \<times> nat \<times> 'b list set" where
-  "tfold semi move init = fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
-        let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
-            hist_sat = hist_sat \<inter> r;
-            since_sat = since_sat \<inter> r
-        in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
-            hist_sat, idx_move + 1,
-            since_sat \<union> semi r l))
-      move init"
-
-definition tupd :: "('b list set \<Rightarrow> 'b list set \<Rightarrow> 'b list set) \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
-    (ts \<times> 'b list set \<times> 'b list set) queue \<Rightarrow> (ts \<times> 'b list set) queue \<Rightarrow>
-    (('b list, ts) mapping) \<Rightarrow> 'b list set \<Rightarrow> (('b list, nat) mapping) \<Rightarrow> 'b list set \<Rightarrow>
-    'b list set \<Rightarrow>
-    (nat \<times> nat \<times> (ts \<times> 'b list set \<times> 'b list set) queue \<times> (ts \<times> 'b list set) queue \<times>
-     (('b list, ts) mapping) \<times> 'b list set \<times> (('b list, nat) mapping) \<times> 'b list set \<times>
-     'b list set)" where
-  "tupd semi args nt idx_mid idx_oldest data_prev data_in tuple_in_once
-     tuple_in_once_keys tuple_since_hist hist_sat since_sat = (
-    let (_, data_prev', move, tuple_in_once', tuple_in_once_keys') = shift_end'
-      (flip_int_less_lower (args_ivl args)) nt fst
-      (empty_queue :: (ts \<times> 'b list set \<times> 'b list set) queue,
-       data_prev, tuple_in_once, tuple_in_once_keys);
-    move_len = length move;
-    idx_mid' = idx_mid + move_len;
-    (data_in', drop) = takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in;
-    move' = filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) move;
-    drop_prev_len = move_len - length move';
-    idx_oldest' = idx_oldest + length drop + drop_prev_len;
-    data_in'' = fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) move' data_in';
-    (tuple_since_hist', hist_sat', idx_move, since_sat') =
-      tfold semi move (tuple_since_hist, hist_sat, idx_mid, since_sat);
-    tuple_since_hist'' = (if idx_mid' = idx_oldest' then Mapping.empty else tuple_since_hist');
-    since_sat'' = (if idx_mid' = idx_oldest' then {} else since_sat');
-    hist_sat'' = (case fst (safe_hd data_in'') of None \<Rightarrow> {}
-      | Some db \<Rightarrow> hist_sat' \<union> {tuple \<in> snd db.
-          case Mapping.lookup tuple_since_hist'' tuple of
-            Some idx \<Rightarrow> idx \<le> idx_oldest' | None \<Rightarrow> False})
-    in
-    (idx_mid', idx_oldest', data_prev', data_in'', tuple_in_once', tuple_in_once_keys',
-     tuple_since_hist'', hist_sat'', since_sat''))"
-
-lemma gupdate_mmtaux'_tupd:
-  "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
-    = tupd (gsemi_join msk (args_pos args)) args nt idx_mid idx_oldest data_prev data_in tio keys
-        tsh hs ss"
-  unfolding gupdate_mmtaux'_def tupd_def tfold_def ..
-
-lemma update_nmtaux'_tupd:
-  "update_nmtaux' args nt idx_mid idx_oldest data_prev data_in tio keys tsh hs ss
-    = tupd (\<lambda>r l. proj_tuple_in_join_optim (args_pos args) r (args_R args) l (args_L args))
-        args nt idx_mid idx_oldest data_prev data_in tio keys tsh hs ss"
-  unfolding update_nmtaux'_def tupd_def tfold_def ..
-
-lemma tfold_cong:
-  "(\<And>t l r. (t, l, r) \<in> set move \<Longrightarrow> semi1 r l = semi2 r l) \<Longrightarrow>
-    tfold semi1 move init = tfold semi2 move init"
-  unfolding tfold_def by (rule fold_cong) auto
-
-lemma shift_end'_move:
-  assumes "shift_end' I nt f (q0, dp, ti, tk) = (a, b, mv, c, d)"
-  shows "set mv \<subseteq> set (linearize dp)"
-proof -
-  obtain x y where td: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) dp = (x, y)"
-    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) dp")
-  have "mv = y" using assms
-    by (auto simp: Let_def td simp del: takedropWhile_queue.simps dropWhile_queue.simps
-        split: prod.splits)
-  moreover have "y = takeWhile (\<lambda>(t, _). \<not> memR I (nt - t)) (linearize dp)"
-    using takedropWhile_queue_snd[of "\<lambda>(t, _). \<not> memR I (nt - t)" dp] td by simp
-  ultimately show ?thesis by (auto dest: set_takeWhileD)
-qed
-
-lemma tupd_cong:
-  fixes data_prev :: "(ts \<times> 'a list set \<times> 'a list set) queue"
-  assumes s: "\<And>t l r. (t, l, r) \<in> set (linearize data_prev) \<Longrightarrow> semi1 r l = semi2 r l"
-  shows "tupd semi1 args nt idx_mid idx_oldest data_prev data_in tio keys tsh hs ss
-    = tupd semi2 args nt idx_mid idx_oldest data_prev data_in tio keys tsh hs ss"
-proof -
-  obtain a b mv c d where se: "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
-      (empty_queue :: (ts \<times> 'a list set \<times> 'a list set) queue, data_prev, tio, keys) = (a, b, mv, c, d)"
-    by (metis prod_cases5)
-  have tf: "tfold semi1 mv init = tfold semi2 mv init" for init
-    using shift_end'_move[OF se] s by (intro tfold_cong) auto
-  show ?thesis unfolding tupd_def Let_def se prod.case tf ..
-qed
-
-lemma gupdate_mmtaux'_eq:
-  assumes dm: "emsk_args args msk"
-    and wf: "\<forall>(t, l, r) \<in> set (linearize data_prev). table (args_R args) r"
-  shows "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
-    = update_nmtaux' args nt idx_mid idx_oldest data_prev data_in tio keys tsh hs ss"
-  unfolding gupdate_mmtaux'_tupd update_nmtaux'_tupd
-  by (rule tupd_cong) (use wf gsemi_join_eq[OF dm] in fastforce)
-
 lemma emsk_args_distinct_R: "emsk_args args msk \<Longrightarrow> distinct (args_R args)"
   by (simp add: emsk_args_def strict_sorted_iff)
 
-lemma gsemi_join_eq':
-  assumes dm: "emsk_args args msk" and r: "table (args_R args) r"
-  shows "gsemi_join msk pos r l = {as \<in> r. proj_tuple_in_join pos (args_L args) (args_R args) as l}"
-  unfolding gsemi_join_eq[OF dm r] by (rule proj_tuple_in_join_optim_equiv[OF r emsk_args_distinct_R[OF dm]])
 
-lemma gupdate_mmtaux_tmm:
-  assumes dm: "emsk_args args msk" and m: "tmsk ax = msk"
-    and wf: "\<forall>(t, l, r) \<in> set (linearize (mmtaux_data_prev (tmm ax))). table (args_R args) r"
-    and r: "table (args_R args) r"
-  shows "tmm (gupdate_mmtaux args nt l r ax) = update_nmtaux args nt l r (tmm ax)"
-    and "tmsk (gupdate_mmtaux args nt l r ax) = msk"
-proof -
-  obtain cur idx_next idx_mid idx_oldest msk' data_prev data_in tio keys tsh hs ss
-    where ax: "ax = (cur, idx_next, idx_mid, idx_oldest, msk', data_prev, data_in, tio, keys,
-      tsh, hs, ss)"
-    by (cases ax rule: tmm.cases)
-  have m': "msk' = msk" using m unfolding ax by simp
-  have dp: "\<forall>(t, l, r) \<in> set (linearize data_prev). table (args_R args) r"
-    using wf unfolding ax by simp
-  have u: "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
-      = update_nmtaux' args nt idx_mid idx_oldest data_prev data_in tio keys tsh hs ss"
-    by (rule gupdate_mmtaux'_eq[OF dm dp])
-  note g = gsemi_join_eq'[OF dm r, of "args_pos args" l]
-  show "tmm (gupdate_mmtaux args nt l r ax) = update_nmtaux args nt l r (tmm ax)"
-    unfolding ax m' by (simp add: gupdate_mmtaux_def update_nmtaux_def u g Let_def
-        split: prod.splits)
-  show "tmsk (gupdate_mmtaux args nt l r ax) = msk"
-    unfolding ax m' by (simp add: gupdate_mmtaux_def Let_def split: prod.splits)
-qed
-
-subsection \<open>Initialisation and the read\<close>
-
-lemma tmm_ginit: "tmm (ginit_mmtaux args msk) = init_mmtaux args"
-  by (simp add: ginit_mmtaux_def init_mmtaux_def)
-
-lemma tmsk_ginit: "tmsk (ginit_mmtaux args msk) = msk"
-  by (simp add: ginit_mmtaux_def)
-
-lemma gresult_mmtaux_tmm:
-  assumes ne: "\<not> gmmtaux_empty ax"
-  shows "gresult_mmtaux args ax = snd (result_nmtaux args (tmm ax))"
-  using ne by (cases ax rule: tmm.cases) (simp add: gmmtaux_empty_def gresult_mmtaux_def)
-
-text \<open>With the interval containing zero the window is never empty after a step: the update
-  appends the right operand's table to it.\<close>
-
-lemma gupdate_mmtaux_not_empty:
-  assumes m0: "mem (args_ivl args) 0"
-  shows "\<not> gmmtaux_empty (gupdate_mmtaux args nt l r ax)"
-proof -
-  obtain cur idx_next idx_mid idx_oldest msk' data_prev data_in tio keys tsh hs ss
-    where ax: "ax = (cur, idx_next, idx_mid, idx_oldest, msk', data_prev, data_in, tio, keys,
-      tsh, hs, ss)"
-    by (cases ax rule: tmm.cases)
-  show ?thesis using m0 unfolding ax
-    by (simp add: gmmtaux_empty_def gupdate_mmtaux_def Let_def Queue.is_empty_alt
-        append_queue_rep split: prod.splits)
-qed
-
-subsection \<open>The auxiliary list a executable trigger structure stands for\<close>
+subsection \<open>The interval side condition\<close>
 
 text \<open>
-  The evaluator's trigger node is related to the kernel's abstract auxiliary list through the
-  kernel's own validity of the state without the mask.  Both the standalone trigger and the fused
-  And-Trigger use this relation; the side condition @{term tok} is the kernel's on the operand
-  frames, which the standalone node meets by its interval and the fused one by its two operand
-  frames agreeing.
+  The executable trigger structure below answers for the kernel's auxiliary list under the side
+  condition @{term tok} on the operand frames: the standalone trigger meets it by its interval
+  containing zero, the fused And-Trigger by its two operand frames agreeing and its left operand
+  being positive.  Without zero in the interval the time points that are not yet in it contribute
+  their left tables to the read, which is a table only when the left operand has the node's
+  columns.
 \<close>
 
 definition tok :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool" where
@@ -367,151 +32,6 @@ definition tok :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool
 
 lemma tok_mem0: "mem (args_ivl args) 0 \<Longrightarrow> tok cR cL args"
   by (simp add: tok_def)
-
-lemma trigger_args_eargs: "tok cR cL args \<Longrightarrow> trigger_args (eargs cR cL args) = eargs cR cL args"
-  by (auto simp: tok_def trigger_args_def eargs_def init_args_def)
-
-lemma trigger_lhs_eargs: "tok cR cL args \<Longrightarrow> trigger_lhs (eargs cR cL args) l = l"
-  by (auto simp: tok_def trigger_lhs_def)
-
-lemma map_trigger_lhs_eargs:
-  "tok cR cL args \<Longrightarrow> map (\<lambda>(t, l, r). (t, trigger_lhs (eargs cR cL args) l, r)) xs = xs"
-  by (induct xs) (auto simp: trigger_lhs_eargs)
-
-definition etaux :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data gmmtaux \<Rightarrow>
-    event_data mtaux \<Rightarrow> bool" where
-  "etaux kL cL kR cR args cur daux auxlist \<longleftrightarrow>
-     (\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r) \<and> tok cR cL args \<and>
-     tmsk daux = emsk cR cL \<and>
-     valid_mmtaux (eargs cR cL args) cur (tmm daux) (eauxlist3 kL cL kR cR auxlist)"
-
-lemma etaux_valid_nmtaux:
-  assumes v: "etaux kL cL kR cR args cur daux auxlist"
-  shows "valid_nmtaux (eargs cR cL args) cur (tmm daux) (eauxlist3 kL cL kR cR auxlist)"
-proof -
-  have ok: "tok cR cL args" using v by (simp add: etaux_def)
-  show ?thesis
-    using v unfolding etaux_def valid_mmtaux_def trigger_args_eargs[OF ok]
-      map_trigger_lhs_eargs[OF ok] by blast
-qed
-
-lemma valid_nmtaux_data_prev:
-  assumes "valid_nmtaux args cur aux auxlist"
-  shows "\<forall>(t, l, r) \<in> set (linearize (mmtaux_data_prev aux)). table (args_R args) r"
-proof -
-  obtain mt idx_next idx_mid idx_oldest data_prev data_in tio keys tsh hs ss
-    where ax: "aux = (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tio, keys, tsh, hs, ss)"
-    by (metis prod.collapse)
-  have "\<forall>as \<in> \<Union>(relR ` (set (linearize data_prev))). wf_tuple (args_R args) as"
-    using assms unfolding ax valid_nmtaux_def prod.case by (elim conjE) assumption
-  then show ?thesis unfolding ax by (fastforce simp: relR_def table_def)
-qed
-
-lemma etaux_init:
-  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
-    and ok: "tok cR cL args"
-  shows "etaux kL cL kR cR args 0 (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) []"
-proof -
-  have sub': "set cL \<subseteq> set cR" by (rule eframe_sub[OF fR fL sub])
-  have "valid_mmtaux (init_args (args_ivl args) (length cR) cL cR (args_pos args) None) 0
-      (init_mmtaux (init_args (args_ivl args) (length cR) cL cR (args_pos args) None)) []"
-    using valid_init_mmtaux[of "args_ivl args" cL cR "args_pos args" "length cR" None]
-      sub' ok eframeD(4)[OF fL] eframeD(4)[OF fR] by (auto simp: tok_def Let_def)
-  then show ?thesis using ok
-    by (simp add: etaux_def eargs_def eauxlist3_def tmm_ginit tmsk_ginit)
-qed
-
-lemma etaux_update:
-  assumes v: "etaux kL cL kR cR args cur daux auxlist" and nt: "cur \<le> nt"
-    and fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
-    and tl: "table kL l" and tr: "table kR r"
-  shows "etaux kL cL kR cR args nt
-      (gupdate_mmtaux (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) daux)
-      (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist @ [(nt, l, r)])"
-proof -
-  have w: "\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r"
-    and ok: "tok cR cL args" and m: "tmsk daux = emsk cR cL"
-    and d: "valid_mmtaux (eargs cR cL args) cur (tmm daux) (eauxlist3 kL cL kR cR auxlist)"
-    using v by (auto simp: etaux_def)
-  have dm: "emsk_args (eargs cR cL args) (emsk cR cL)"
-    unfolding emsk_def
-    by (rule emsk_args_dargs[OF eframeD(2)[OF fR] eframeD(2)[OF fL] eframe_sub[OF fR fL sub]])
-  have tl': "table (args_L (eargs cR cL args)) (etabc kL cL l)" by (simp add: table_etabc)
-  have tr': "table (args_R (eargs cR cL args)) (etabc kR cR r)" by (simp add: table_etabc)
-  have wf: "\<forall>(t, l, r) \<in> set (linearize (mmtaux_data_prev (tmm daux))).
-      table (args_R (eargs cR cL args)) r"
-    by (rule valid_nmtaux_data_prev[OF etaux_valid_nmtaux[OF v]])
-  have u: "update_mmtaux (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) (tmm daux)
-      = tmm (gupdate_mmtaux (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) daux)"
-    unfolding update_mmtaux_def trigger_args_eargs[OF ok] trigger_lhs_eargs[OF ok]
-    by (rule gupdate_mmtaux_tmm(1)[OF dm m wf tr', symmetric])
-  have m': "tmsk (gupdate_mmtaux (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) daux)
-      = emsk cR cL"
-    by (rule gupdate_mmtaux_tmm(2)[OF dm m wf tr'])
-  have "valid_mmtaux (eargs cR cL args) nt
-      (update_mmtaux (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) (tmm daux))
-      (filter (\<lambda>(t, _). memR (args_ivl (eargs cR cL args)) (nt - t))
-         (eauxlist3 kL cL kR cR auxlist) @ [(nt, etabc kL cL l, etabc kR cR r)])"
-    by (rule valid_update_mmtaux[OF nt tl' tr' d])
-  then show ?thesis
-    using w tl tr ok m'
-      eauxlist3_filter_append[where P = "\<lambda>t. memR (args_ivl args) (nt - t)" and kL = kL
-        and cL = cL and kR = kR and cR = cR and auxlist = auxlist and nt = nt and l = l and r = r]
-    by (auto simp: etaux_def u)
-qed
-
-lemma etaux_window:
-  assumes v: "etaux kL cL kR cR args cur daux auxlist"
-  shows "gmmtaux_empty daux \<longleftrightarrow> filter (\<lambda>(t, _). mem (args_ivl args) (cur - t)) auxlist = []"
-proof -
-  obtain cur' idx_next idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
-    where ax: "daux = (cur', idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tio, keys,
-      tsh, hs, ss)"
-    by (cases daux rule: tmm.cases)
-  have mp0: "cur = cur' \<and> map (\<lambda>(t, l, r). (t, r))
-      (auxlist_data_in (eargs cR cL args) cur' (eauxlist3 kL cL kR cR auxlist))
-    = linearize data_in"
-    using etaux_valid_nmtaux[OF v] unfolding ax tmm.simps valid_nmtaux_def prod.case
-    by (elim conjE) (intro conjI; assumption)
-  then have mp: "map (\<lambda>(t, l, r). (t, r))
-      (auxlist_data_in (eargs cR cL args) cur (eauxlist3 kL cL kR cR auxlist))
-    = linearize data_in" by simp
-  have adi: "auxlist_data_in (eargs cR cL args) cur (eauxlist3 kL cL kR cR auxlist)
-      = eauxlist3 kL cL kR cR (filter (\<lambda>(t, _). mem (args_ivl args) (cur - t)) auxlist)"
-    by (simp add: auxlist_data_in_def eauxlist3_def filter_map split_def comp_def)
-  show ?thesis using mp unfolding adi ax
-    by (auto simp: gmmtaux_empty_def Queue.is_empty_alt eauxlist3_def)
-qed
-
-lemma etaux_result:
-  assumes v: "etaux kL cL kR cR args cur daux auxlist" and ne: "\<not> gmmtaux_empty daux"
-    and fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
-    and aL: "args_L args = kL" and aR: "args_R args = kR"
-  shows "gresult_mmtaux (eargs cR cL args) daux = etabc kR cR (snd (trigger_results args cur auxlist))"
-proof -
-  have w: "\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r" and ok: "tok cR cL args"
-    and d: "valid_mmtaux (eargs cR cL args) cur (tmm daux) (eauxlist3 kL cL kR cR auxlist)"
-    using v by (auto simp: etaux_def)
-  have fl: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
-    using etaux_window[OF v] ne by (auto simp: split_def)
-  have f1: "fst (trigger_results args cur auxlist) = kR" using fl aR by simp
-  have f2: "fst (trigger_results (eargs cR cL args) cur (eauxlist3 kL cL kR cR auxlist)) = cR"
-    using fl length_filter_eauxlist3[of "\<lambda>t. mem (args_ivl args) (cur - t)" kL cL kR cR auxlist]
-    by simp
-  have "gresult_mmtaux (eargs cR cL args) daux = snd (result_nmtaux (eargs cR cL args) (tmm daux))"
-    by (rule gresult_mmtaux_tmm[OF ne])
-  also have "result_nmtaux (eargs cR cL args) (tmm daux)
-      = trigger_results (eargs cR cL args) cur (eauxlist3 kL cL kR cR auxlist)"
-    using valid_result_mmtaux[OF d] by (simp add: result_mmtaux_def trigger_args_eargs[OF ok])
-  also have "snd \<dots> = etabc kR cR (snd (trigger_results args cur auxlist))"
-    using etabc_trigger_results(2)[OF fR fL sub aL aR w, of cur] unfolding f1 f2 .
-  finally show ?thesis .
-qed
-
-lemma etaux_result_empty:
-  assumes v: "etaux kL cL kR cR args cur daux auxlist" and e: "gmmtaux_empty daux"
-  shows "trigger_results args cur auxlist = ([], unit_table)"
-  using etaux_window[OF v] e by (simp add: split_def)
 
 subsection \<open>The read is a finite table\<close>
 
@@ -627,6 +147,559 @@ next
     show ?thesis using tb fin fl aR by simp
   qed
 qed
+
+subsection \<open>The structure as a sliding window\<close>
+
+text \<open>
+  A tuple satisfies the trigger at the current time-point if at every time-point in the interval
+  the right operand held, or the left operand held at some later time-point.  Over a stretch of
+  time-points the tuples that pass every in-interval point of it fall into those that can still
+  fail on an earlier point (no point of the stretch satisfies the left operand) and those that
+  cannot (some point does).  These are the release's summaries read backwards in time: a stretch
+  is summarised by the two sets, a single point by the right operand's tuples split by the left
+  operand, and two stretches compose by @{const ecomp} with the later one first.  The read is the
+  union of the two sets of the summary of the whole window.
+
+  The window is a two-list queue over this monoid (theory @{text Sliding_Window_Agg}), so every
+  point is composed a bounded number of times.  When the interval does not contain zero, the
+  newest points are not yet in the interval; they only contribute the tuples that satisfy the left
+  operand, which under the side condition @{const tok} are the left tables themselves.  They are
+  kept in a second two-list queue over union, from which they move to the first queue once they
+  enter the interval.  The pending points' union is added to the read.
+\<close>
+
+definition tcomp :: "'b esum \<Rightarrow> 'b esum \<Rightarrow> 'b esum" where
+  "tcomp x y = ecomp y x"
+
+type_synonym 'b twaux = "bool list \<times> (ts, 'b list set \<times> 'b list set, 'b list set) swag \<times>
+  (ts, 'b esum, 'b esum) swag"
+
+definition tw_init :: "args \<Rightarrow> bool list \<Rightarrow> 'b twaux" where
+  "tw_init args msk = (msk, sw_empty, sw_empty)"
+
+definition tw_push :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow>
+    (ts, 'b esum, 'b esum) swag \<Rightarrow> (ts, 'b esum, 'b esum) swag" where
+  "tw_push args msk nt mv W = fold (\<lambda>(t, l, r) W. if memR (args_ivl args) (nt - t)
+     then sw_push tcomp id t (esum_of args msk l r) W else W) mv W"
+
+definition tw_update :: "args \<Rightarrow> ts \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b twaux \<Rightarrow> 'b twaux" where
+  "tw_update args nt l r ax = (case ax of (msk, P, W) \<Rightarrow>
+     let W1 = snd (sw_pop tcomp id (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) W) in
+     if mem (args_ivl args) 0 then (msk, P, sw_push tcomp id nt (esum_of args msk l r) W1)
+     else (case sw_pop (\<union>) fst (\<lambda>t. memL (args_ivl args) (nt - t)) (sw_push (\<union>) fst nt (l, r) P) of
+       (mv, P') \<Rightarrow> (msk, P', tw_push args msk nt mv W1)))"
+
+definition tw_result :: "'b twaux \<Rightarrow> 'b list set" where
+  "tw_result ax = (case ax of (msk, P, W) \<Rightarrow>
+     (case sw_query tcomp W of None \<Rightarrow> {} | Some s \<Rightarrow> eunion s) \<union>
+     (case sw_query (\<union>) P of None \<Rightarrow> {} | Some u \<Rightarrow> u))"
+
+definition tw_empty :: "'b twaux \<Rightarrow> bool" where
+  "tw_empty ax = sw_null (snd (snd ax))"
+
+subsection \<open>The summaries\<close>
+
+lemma sw_assoc_tcomp: "sw_assoc tcomp"
+  by (simp add: sw_assoc_def tcomp_def ecomp_assoc)
+
+lemma sw_assoc_Un: "sw_assoc (\<union>)"
+  by (simp add: sw_assoc_def Un_assoc)
+
+lemma sw_fold_Un: "sw_fold (\<union>) xs = (if xs = [] then None else Some (\<Union> (set xs)))"
+  by (induct xs) (auto simp: sw_comp_def split: option.splits if_splits)
+
+definition tphi :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list \<Rightarrow> bool" where
+  "tphi args msk l x \<longleftrightarrow> (eproj msk x \<in> l) = args_pos args"
+
+fun tT :: "args \<Rightarrow> bool list \<Rightarrow> ('b list set \<times> 'b list set) list \<Rightarrow> 'b list \<Rightarrow> bool" where
+  "tT args msk [] x = True"
+| "tT args msk ((l, r) # es) x =
+     ((x \<in> r \<or> (\<exists>e \<in> set es. tphi args msk (fst e) x)) \<and> tT args msk es x)"
+
+lemma tfold:
+  "es \<noteq> [] \<Longrightarrow> sw_fold tcomp (map (\<lambda>(l, r). esum_of args msk l r) es) =
+     Some ({x. tT args msk es x \<and> \<not> (\<exists>e \<in> set es. tphi args msk (fst e) x)},
+           {x. tT args msk es x \<and> (\<exists>e \<in> set es. tphi args msk (fst e) x)})"
+proof (induct es)
+  case (Cons e es)
+  obtain l r where e: "e = (l, r)" by (cases e)
+  show ?case
+  proof (cases "es = []")
+    case True
+    then show ?thesis
+      by (auto simp: e sw_comp_def esum_of_eq esemi_def tphi_def)
+  next
+    case False
+    then show ?thesis using Cons(1)
+      by (auto simp: e sw_comp_def tcomp_def ecomp_alt esum_of_eq esemi_def tphi_def)
+  qed
+qed simp
+
+lemma tT_last: "es \<noteq> [] \<Longrightarrow> tT args msk es x \<Longrightarrow> x \<in> snd (last es)"
+proof (induct es)
+  case (Cons e es) then show ?case by (cases e; cases "es = []") auto
+qed simp
+
+lemma tT_nth: "tT args msk es x \<longleftrightarrow> (\<forall>i < length es. x \<in> snd (es ! i) \<or>
+     (\<exists>j < length es. i < j \<and> tphi args msk (fst (es ! j)) x))"
+proof (induct es)
+  case (Cons e es)
+  obtain l r where ep: "e = (l, r)" by (cases e)
+  have b: "(\<exists>e \<in> set es. tphi args msk (fst e) x) \<longleftrightarrow> (\<exists>j < length es. tphi args msk (fst (es ! j)) x)"
+  proof
+    assume "\<exists>e \<in> set es. tphi args msk (fst e) x"
+    then obtain e' where e': "e' \<in> set es" "tphi args msk (fst e') x" by blast
+    then obtain j where "j < length es" "es ! j = e'" by (auto simp: in_set_conv_nth)
+    then show "\<exists>j < length es. tphi args msk (fst (es ! j)) x" using e'(2) by auto
+  next
+    assume "\<exists>j < length es. tphi args msk (fst (es ! j)) x"
+    then show "\<exists>e \<in> set es. tphi args msk (fst e) x" using nth_mem by blast
+  qed
+  show ?case unfolding ep length_Cons All_less_Suc2 Ex_less_Suc2 nth_Cons_0 nth_Cons_Suc tT.simps
+      Cons b by simp
+qed simp
+
+subsection \<open>The list a structure stands for\<close>
+
+definition tent :: "args \<Rightarrow> bool list \<Rightarrow> ts \<times> 'b list set \<times> 'b list set \<Rightarrow> ts \<times> 'b esum" where
+  "tent args msk x = (fst x, esum_of args msk (fst (snd x)) (snd (snd x)))"
+
+definition trel :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> 'b twaux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow>
+    bool" where
+  "trel args msk cur ax D \<longleftrightarrow> fst ax = msk \<and> List.sorted (map fst D) \<and>
+     (\<forall>x \<in> set D. fst x \<le> cur \<and> memR (args_ivl args) (cur - fst x)) \<and>
+     sw_rel (\<union>) fst (fst (snd ax)) (filter (\<lambda>x. \<not> memL (args_ivl args) (cur - fst x)) D) \<and>
+     sw_rel tcomp id (snd (snd ax))
+       (map (tent args msk) (filter (\<lambda>x. memL (args_ivl args) (cur - fst x)) D))"
+
+lemma sorted_takeWhile_filter:
+  assumes s: "List.sorted (map fst xs)" and m: "\<And>t t'. t \<le> t' \<Longrightarrow> Q t' \<Longrightarrow> Q t"
+  shows "takeWhile (\<lambda>x. Q (fst x)) xs = filter (\<lambda>x. Q (fst x)) xs \<and>
+    dropWhile (\<lambda>x. Q (fst x)) xs = filter (\<lambda>x. \<not> Q (fst x)) xs"
+  using s
+proof (induct xs)
+  case (Cons x xs)
+  have s': "List.sorted (map fst xs)" and le: "\<forall>y \<in> set xs. fst x \<le> fst y" using Cons(2) by auto
+  show ?case
+  proof (cases "Q (fst x)")
+    case True then show ?thesis using Cons(1)[OF s'] by simp
+  next
+    case False
+    have "\<forall>y \<in> set xs. \<not> Q (fst y)" using False le m by blast
+    then show ?thesis using False by (simp add: filter_id_conv)
+  qed
+qed simp
+
+lemma memL_ts_anti: "t \<le> t' \<Longrightarrow> memL I (c - t') \<Longrightarrow> memL I (c - t)"
+  by (erule memL_mono) simp
+
+lemma not_memR_ts_anti: "t \<le> t' \<Longrightarrow> \<not> memR I (c - t') \<Longrightarrow> \<not> memR I (c - t)"
+  by (meson diff_le_mono2 memR_antimono)
+
+lemma trel_split:
+  assumes s: "List.sorted (map fst D)"
+  shows "D = filter (\<lambda>x. memL I (c - fst x)) D @ filter (\<lambda>x. \<not> memL I (c - fst x)) D"
+  using sorted_takeWhile_filter[OF s, of "\<lambda>t. memL I (c - t)"] memL_ts_anti
+  by (metis takeWhile_dropWhile_id)
+
+lemma trel_init: "trel args msk 0 (tw_init args msk) []"
+  by (simp add: trel_def tw_init_def sw_rel_empty)
+
+lemma tw_push:
+  "sw_rel tcomp id W X \<Longrightarrow> sw_rel tcomp id (tw_push args msk nt mv W)
+     (X @ map (tent args msk) (filter (\<lambda>x. memR (args_ivl args) (nt - fst x)) mv))"
+proof (induct mv arbitrary: W X)
+  case (Cons y mv)
+  obtain t l r where y: "y = (t, l, r)" by (cases y)
+  show ?case
+  proof (cases "memR (args_ivl args) (nt - t)")
+    case True
+    have "sw_rel tcomp id (sw_push tcomp id t (esum_of args msk l r) W) (X @ [tent args msk y])"
+      unfolding y tent_def fst_conv snd_conv by (rule sw_rel_push[OF sw_assoc_tcomp Cons(2)])
+    from Cons(1)[OF this] show ?thesis using True by (simp add: tw_push_def y)
+  next
+    case False
+    then show ?thesis using Cons by (simp add: tw_push_def y)
+  qed
+qed (simp add: tw_push_def)
+
+lemma trel_update:
+  fixes D :: "(ts \<times> 'b list set \<times> 'b list set) list"
+  assumes r: "trel args msk cur ax D" and nt: "cur \<le> nt"
+  shows "trel args msk nt (tw_update args nt l r ax)
+    (filter (\<lambda>x. memR (args_ivl args) (nt - fst x)) D @ [(nt, l, r)])"
+proof -
+  let ?I = "args_ivl args"
+  define Lc where "Lc = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. memL ?I (cur - fst x))"
+  define Ln where "Ln = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. memL ?I (nt - fst x))"
+  define Rn where "Rn = (\<lambda>x :: ts \<times> 'b list set \<times> 'b list set. memR ?I (nt - fst x))"
+  obtain P W where ax: "ax = (msk, P, W)" using r by (cases ax) (auto simp: trel_def)
+  have s: "List.sorted (map fst D)" and le: "\<forall>x \<in> set D. fst x \<le> cur"
+    and rc: "\<forall>x \<in> set D. memR ?I (cur - fst x)"
+    and rP: "sw_rel (\<union>) fst P (filter (\<lambda>x. \<not> Lc x) D)"
+    and rW: "sw_rel tcomp id W (map (tent args msk) (filter Lc D))"
+    using r by (auto simp: trel_def ax Lc_def)
+  define Wl where "Wl = filter Lc D"
+  define Pl where "Pl = filter (\<lambda>x. \<not> Lc x) D"
+  have D: "D = Wl @ Pl" unfolding Wl_def Pl_def Lc_def by (rule trel_split[OF s])
+  have sW: "List.sorted (map fst Wl)" and sP: "List.sorted (map fst Pl)"
+    using s by (simp_all add: Wl_def Pl_def sorted_filter)
+  have LcLn: "Lc x \<Longrightarrow> Ln x" for x unfolding Lc_def Ln_def
+    by (erule memL_mono) (use nt in simp)
+  \<comment> \<open>the in-interval points that leave\<close>
+  obtain ys W1 where p1: "sw_pop tcomp id (\<lambda>t. \<not> memR ?I (nt - t)) W = (ys, W1)" by (meson surj_pair)
+  have "sw_rel tcomp id W1 (dropWhile (\<lambda>x. \<not> memR ?I (nt - fst x)) (map (tent args msk) Wl))"
+    using sw_pop[OF rW[folded Wl_def] p1] by simp
+  also have "dropWhile (\<lambda>x. \<not> memR ?I (nt - fst x)) (map (tent args msk) Wl)
+      = map (tent args msk) (dropWhile (\<lambda>x. \<not> memR ?I (nt - fst x)) Wl)"
+    by (simp add: dropWhile_map comp_def tent_def)
+  also have "dropWhile (\<lambda>x. \<not> memR ?I (nt - fst x)) Wl = filter Rn Wl"
+    using sorted_takeWhile_filter[OF sW, of "\<lambda>t. \<not> memR ?I (nt - t)"] not_memR_ts_anti
+    by (simp add: Rn_def)
+  finally have rW1: "sw_rel tcomp id W1 (map (tent args msk) (filter Rn Wl))" .
+  have D': "filter (\<lambda>x. memR ?I (nt - fst x)) D @ [(nt, l, r)] = filter Rn D @ [(nt, l, r)]"
+    by (simp add: Rn_def)
+  have s': "List.sorted (map fst (filter Rn D @ [(nt, l, r)]))"
+    using s le nt by (auto simp: sorted_append sorted_filter[where f = fst, unfolded comp_def])
+  have b': "\<forall>x \<in> set (filter Rn D @ [(nt, l, r)]). fst x \<le> nt \<and> memR ?I (nt - fst x)"
+    using le nt by (auto simp: Rn_def)
+  show ?thesis
+  proof (cases "mem ?I 0")
+    case True
+    then have L0: "memL ?I 0" by simp
+    have allL: "memL ?I x" for x by (rule memL_mono[OF L0]) simp
+    have Pl: "Pl = []" by (simp add: Pl_def Lc_def allL)
+    have Wl: "Wl = D" by (simp add: Wl_def Lc_def allL)
+    have u: "tw_update args nt l r ax = (msk, P, sw_push tcomp id nt (esum_of args msk l r) W1)"
+      using True p1 by (simp add: tw_update_def ax Let_def)
+    have "sw_rel tcomp id (sw_push tcomp id nt (esum_of args msk l r) W1)
+        (map (tent args msk) (filter Rn D @ [(nt, l, r)]))"
+      using sw_rel_push[OF sw_assoc_tcomp rW1, of nt "esum_of args msk l r"]
+      by (simp add: Wl tent_def)
+    then show ?thesis using rP Pl s' b' unfolding u D'
+      by (simp add: trel_def allL Pl_def)
+  next
+    case False
+    then have nL0: "\<not> memL ?I 0" by simp
+    have nLn: "\<not> Ln (nt, l, r)" using nL0 by (simp add: Ln_def)
+    have Rn_new: "Rn (nt, l, r)" by (simp add: Rn_def)
+    have rP': "sw_rel (\<union>) fst (sw_push (\<union>) fst nt (l, r) P) (Pl @ [(nt, l, r)])"
+      using sw_rel_push[OF sw_assoc_Un rP[folded Pl_def]] by simp
+    obtain mv P' where p2: "sw_pop (\<union>) fst (\<lambda>t. memL ?I (nt - t)) (sw_push (\<union>) fst nt (l, r) P)
+        = (mv, P')" by (meson surj_pair)
+    have sPn: "List.sorted (map fst (Pl @ [(nt, l, r)]))"
+      using sP le nt by (auto simp: sorted_append Pl_def)
+    have tf: "takeWhile (\<lambda>x. memL ?I (nt - fst x)) (Pl @ [(nt, l, r)]) = filter Ln (Pl @ [(nt, l, r)])
+        \<and> dropWhile (\<lambda>x. memL ?I (nt - fst x)) (Pl @ [(nt, l, r)]) = filter (\<lambda>x. \<not> Ln x) (Pl @ [(nt, l, r)])"
+      using sorted_takeWhile_filter[OF sPn, of "\<lambda>t. memL ?I (nt - t)"] memL_ts_anti
+      by (simp add: Ln_def)
+    have mv: "mv = filter Ln Pl" and rP2: "sw_rel (\<union>) fst P' (filter (\<lambda>x. \<not> Ln x) Pl @ [(nt, l, r)])"
+      using sw_pop[OF rP' p2] tf nLn by simp_all
+    have u: "tw_update args nt l r ax = (msk, P', tw_push args msk nt mv W1)"
+      using False p1 p2 by (simp add: tw_update_def ax Let_def)
+    have rW2: "sw_rel tcomp id (tw_push args msk nt mv W1)
+        (map (tent args msk) (filter Rn Wl @ filter Rn (filter Ln Pl)))"
+      using tw_push[OF rW1, of args msk nt mv] by (simp add: mv Rn_def)
+    have e1: "filter (\<lambda>x. \<not> Ln x) Pl = filter (\<lambda>x. \<not> Ln x) (filter Rn D)"
+    proof -
+      have "filter (\<lambda>x. \<not> Ln x) Pl = filter (\<lambda>x. \<not> Ln x) D"
+        unfolding Pl_def filter_filter by (rule filter_cong) (auto dest: LcLn)
+      also have "\<dots> = filter (\<lambda>x. \<not> Ln x) (filter Rn D)"
+        unfolding filter_filter by (rule filter_cong)
+          (auto simp: Ln_def Rn_def intro: not_memL_imp_memR[of args, simplified])
+      finally show ?thesis .
+    qed
+    have e2: "filter Ln (filter Rn D) = filter Rn Wl @ filter Rn (filter Ln Pl)"
+    proof -
+      have "filter Ln (filter Rn D) = filter (\<lambda>x. Rn x \<and> Ln x) Wl @ filter (\<lambda>x. Rn x \<and> Ln x) Pl"
+        by (subst D) (simp add: filter_filter conj_commute)
+      moreover have "filter (\<lambda>x. Rn x \<and> Ln x) Wl = filter Rn Wl"
+        by (rule filter_cong) (auto simp: Wl_def dest: LcLn)
+      ultimately show ?thesis by (simp add: filter_filter conj_commute)
+    qed
+    have fn: "filter (\<lambda>x. \<not> memL ?I (nt - fst x)) (filter Rn D @ [(nt, l, r)])
+        = filter (\<lambda>x. \<not> Ln x) Pl @ [(nt, l, r)]"
+      using e1 nLn by (simp add: Ln_def)
+    have fm: "filter (\<lambda>x. memL ?I (nt - fst x)) (filter Rn D @ [(nt, l, r)])
+        = filter Rn Wl @ filter Rn (filter Ln Pl)"
+      using e2 nLn by (simp add: Ln_def)
+    show ?thesis unfolding u D' trel_def using s' b' rP2 rW2 fn fm by simp
+  qed
+qed
+
+lemma trel_empty:
+  assumes r: "trel args msk cur ax D"
+  shows "tw_empty ax \<longleftrightarrow> filter (\<lambda>x. mem (args_ivl args) (cur - fst x)) D = []"
+proof -
+  have rc: "\<forall>x \<in> set D. memR (args_ivl args) (cur - fst x)"
+    and rW: "sw_rel tcomp id (snd (snd ax))
+       (map (tent args msk) (filter (\<lambda>x. memL (args_ivl args) (cur - fst x)) D))"
+    using r by (auto simp: trel_def)
+  show ?thesis unfolding tw_empty_def sw_null[OF rW] using rc
+    by (auto simp: filter_empty_conv)
+qed
+
+lemma trel_result:
+  assumes r: "trel args msk cur ax D" and ne: "\<not> tw_empty ax"
+    and dm: "emsk_args args msk"
+    and wf: "\<forall>x \<in> set D. table (args_L args) (fst (snd x)) \<and> table (args_R args) (snd (snd x))"
+    and ok: "mem (args_ivl args) 0 \<or> (args_L args = args_R args \<and> args_pos args)"
+  shows "tw_result ax = snd (trigger_results args cur D)"
+proof -
+  let ?I = "args_ivl args" and ?L = "args_L args" and ?R = "args_R args"
+  define Lc where "Lc = (\<lambda>x :: ts \<times> event_data list set \<times> event_data list set. memL ?I (cur - fst x))"
+  obtain P W where ax: "ax = (msk, P, W)" using r by (cases ax) (auto simp: trel_def)
+  have s: "List.sorted (map fst D)" and rc: "\<forall>x \<in> set D. memR ?I (cur - fst x)"
+    and rP: "sw_rel (\<union>) fst P (filter (\<lambda>x. \<not> Lc x) D)"
+    and rW: "sw_rel tcomp id W (map (tent args msk) (filter Lc D))"
+    using r by (auto simp: trel_def ax Lc_def)
+  define Wl where "Wl = filter Lc D"
+  define Pl where "Pl = filter (\<lambda>x. \<not> Lc x) D"
+  have D: "D = Wl @ Pl" unfolding Wl_def Pl_def Lc_def by (rule trel_split[OF s])
+  have Wne: "Wl \<noteq> []"
+    using ne trel_empty[OF r] rc by (auto simp: Wl_def Lc_def filter_empty_conv)
+  define es where "es = map snd Wl"
+  have esne: "es \<noteq> []" using Wne by (simp add: es_def)
+  have qW: "sw_query tcomp W = sw_fold tcomp (map (\<lambda>(l, r). esum_of args msk l r) es)"
+    unfolding sw_query[OF sw_assoc_tcomp rW] Wl_def[symmetric] es_def
+    by (simp add: tent_def comp_def case_prod_beta)
+  have qP: "sw_query (\<union>) P = (if Pl = [] then None else Some (\<Union>x \<in> set Pl. fst (snd x)))"
+    unfolding sw_query[OF sw_assoc_Un rP] Pl_def[symmetric] sw_fold_Un by (simp add: image_image)
+  have res: "tw_result ax = {x. tT args msk es x} \<union> (\<Union>x \<in> set Pl. fst (snd x))"
+    unfolding tw_result_def ax prod.case qW qP tfold[OF esne]
+    by (auto simp: eunion_def)
+  \<comment> \<open>the points of the window are the ones at the front\<close>
+  have memi: "mem ?I (cur - fst (D ! i)) \<longleftrightarrow> i < length Wl" if "i < length D" for i
+  proof -
+    have "D ! i \<in> set D" using that by simp
+    then have rr: "memR ?I (cur - fst (D ! i))" using rc by blast
+    show ?thesis
+    proof (cases "i < length Wl")
+      case True
+      then have "D ! i = Wl ! i" by (simp add: D nth_append)
+      then have "Lc (D ! i)" using True nth_mem[OF True] by (simp add: Wl_def)
+      then show ?thesis using rr True by (simp add: Lc_def)
+    next
+      case False
+      then have "D ! i = Pl ! (i - length Wl)" "i - length Wl < length Pl"
+        using that by (simp_all add: D nth_append)
+      then have "\<not> Lc (D ! i)" using nth_mem[of "i - length Wl" Pl] by (auto simp: Pl_def)
+      then show ?thesis using False by (simp add: Lc_def)
+    qed
+  qed
+  have wfx: "length x = length ?R \<Longrightarrow> eproj msk x = restrict ?L ?R x" for x
+    by (rule emsk_args_dproj[OF dm])
+  have cond: "(\<forall>i < length D. mem ?I (cur - fst (D ! i)) \<longrightarrow>
+         (x \<in> snd (snd (D ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length D \<and> join_cond (args_pos args) (fst (snd (D ! j))) (restrict ?L ?R x))))
+      \<longleftrightarrow> tT args msk es x \<or> (\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x)"
+    if wx: "wf_tuple ?R x" for x
+  proof -
+    have lx: "length x = length ?R" using wx by (simp add: wf_tuple_def)
+    have jc: "join_cond (args_pos args) l (restrict ?L ?R x) \<longleftrightarrow> tphi args msk l x" for l
+      by (simp add: join_cond_eq tphi_def wfx[OF lx])
+    have DW: "D ! k = Wl ! k" if "k < length Wl" for k using that by (simp add: D nth_append)
+    show ?thesis unfolding jc tT_nth
+    proof (intro iffI)
+      assume H: "\<forall>i < length D. mem ?I (cur - fst (D ! i)) \<longrightarrow>
+          x \<in> snd (snd (D ! i)) \<or> (\<exists>j. i < j \<and> j < length D \<and> tphi args msk (fst (snd (D ! j))) x)"
+      show "(\<forall>i<length es. x \<in> snd (es ! i) \<or> (\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x)) \<or>
+          (\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x)"
+      proof (cases "\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x")
+        case True then show ?thesis by blast
+      next
+        case nP: False
+        have "\<forall>i<length es. x \<in> snd (es ! i) \<or> (\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x)"
+        proof (intro allI impI)
+          fix i assume i: "i < length es"
+          then have iW: "i < length Wl" by (simp add: es_def)
+          then have iD: "i < length D" by (simp add: D)
+          have Hi: "x \<in> snd (snd (D ! i)) \<or> (\<exists>j. i < j \<and> j < length D \<and> tphi args msk (fst (snd (D ! j))) x)"
+            using H iD memi[OF iD] iW by blast
+          show "x \<in> snd (es ! i) \<or> (\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x)"
+          proof (cases "x \<in> snd (snd (D ! i))")
+            case True then show ?thesis using DW[OF iW] iW by (simp add: es_def)
+          next
+            case False
+            then obtain j where j: "i < j" "j < length D" "tphi args msk (fst (snd (D ! j))) x"
+              using Hi by blast
+            show ?thesis
+            proof (cases "j < length Wl")
+              case True
+              then show ?thesis using j DW[OF True] by (intro disjI2 exI[where x = j]) (simp add: es_def)
+            next
+              case False
+              then have "D ! j = Pl ! (j - length Wl)" "j - length Wl < length Pl"
+                using j by (simp_all add: D nth_append)
+              then show ?thesis using nP j(3) nth_mem[of "j - length Wl" Pl] by auto
+            qed
+          qed
+        qed
+        then show ?thesis by blast
+      qed
+    next
+      assume "(\<forall>i<length es. x \<in> snd (es ! i) \<or> (\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x)) \<or>
+          (\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x)"
+      then show "\<forall>i < length D. mem ?I (cur - fst (D ! i)) \<longrightarrow>
+          x \<in> snd (snd (D ! i)) \<or> (\<exists>j. i < j \<and> j < length D \<and> tphi args msk (fst (snd (D ! j))) x)"
+      proof
+        assume T: "\<forall>i<length es. x \<in> snd (es ! i) \<or> (\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x)"
+        show ?thesis
+        proof (intro allI impI)
+          fix i assume iD: "i < length D" and m: "mem ?I (cur - fst (D ! i))"
+          have iW: "i < length Wl" using memi[OF iD] m by simp
+          have "x \<in> snd (es ! i) \<or> (\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x)"
+            using T iW by (simp add: es_def)
+          then show "x \<in> snd (snd (D ! i)) \<or> (\<exists>j. i < j \<and> j < length D \<and> tphi args msk (fst (snd (D ! j))) x)"
+          proof
+            assume "x \<in> snd (es ! i)" then show ?thesis using DW[OF iW] iW by (simp add: es_def)
+          next
+            assume "\<exists>j<length es. i < j \<and> tphi args msk (fst (es ! j)) x"
+            then obtain j where j: "j < length Wl" "i < j" "tphi args msk (fst (snd (Wl ! j))) x"
+              by (auto simp: es_def)
+            then show ?thesis using DW[OF j(1)] by (intro disjI2 exI[where x = j]) (simp add: D)
+          qed
+        qed
+      next
+        assume "\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x"
+        then obtain e where e: "e \<in> set Pl" "tphi args msk (fst (snd e)) x" by blast
+        obtain k where k: "k < length Pl" "Pl ! k = e" using e(1) by (auto simp: in_set_conv_nth)
+        have De: "D ! (length Wl + k) = e" "length Wl + k < length D" using k by (simp_all add: D)
+        show ?thesis
+        proof (intro allI impI)
+          fix i assume iD: "i < length D" and m: "mem ?I (cur - fst (D ! i))"
+          have iW: "i < length Wl" using memi[OF iD] m by simp
+          show "x \<in> snd (snd (D ! i)) \<or> (\<exists>j. i < j \<and> j < length D \<and> tphi args msk (fst (snd (D ! j))) x)"
+            using iW e(2) De by (intro disjI2 exI[where x = "length Wl + k"]) simp
+        qed
+      qed
+    qed
+  qed
+  have fl: "0 < length (filter (\<lambda>(t, _, _). mem ?I (cur - t)) D)"
+  proof -
+    have "hd Wl \<in> set D" "Lc (hd Wl)" using Wne hd_in_set[OF Wne] by (auto simp: Wl_def)
+    then have h: "hd Wl \<in> set D" "mem ?I (cur - fst (hd Wl))" using rc by (auto simp: Lc_def)
+    then have "hd Wl \<in> set (filter (\<lambda>(t, _, _). mem ?I (cur - t)) D)" by (simp add: split_def)
+    then show ?thesis by (rule length_pos_if_in_set)
+  qed
+  have tr: "snd (trigger_results args cur D) = {x. wf_tuple ?R x \<and>
+      (tT args msk es x \<or> (\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x))}"
+    unfolding trigger_results_eq if_P[OF fl] snd_conv
+    by (intro Collect_cong conj_cong refl) (rule cond)
+  \<comment> \<open>the window's part is within its last right table, the pending part within the left ones\<close>
+  have lastW: "snd (last es) = snd (snd (last Wl))" using Wne by (simp add: es_def last_map)
+  have lW: "last Wl \<in> set D" using Wne by (simp add: D)
+  have tW: "tT args msk es x \<Longrightarrow> wf_tuple ?R x" for x
+    using tT_last[OF esne, of args msk x] wf lW lastW by (auto simp: table_def)
+  have pend: "{x. wf_tuple ?R x \<and> (\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x)}
+      = (\<Union>x \<in> set Pl. fst (snd x))"
+  proof (cases "Pl = []")
+    case True then show ?thesis by simp
+  next
+    case False
+    then obtain y where y: "y \<in> set Pl" by (cases Pl) auto
+    then have "\<not> memL ?I (cur - fst y)" by (simp add: Pl_def Lc_def)
+    then have "\<not> memL ?I 0" by (meson memL_mono zero_le)
+    then have LR: "?L = ?R" and pos: "args_pos args" using ok by auto
+    have dR: "distinct ?R" by (rule emsk_args_distinct_R[OF dm])
+    have tp: "tphi args msk l x \<longleftrightarrow> x \<in> l" if "wf_tuple ?R x" for l x
+      using that pos LR restrict_idle[OF dR that] wfx[of x]
+      by (simp add: tphi_def wf_tuple_def)
+    have tl: "\<forall>e \<in> set Pl. table ?R (fst (snd e))" using wf LR by (auto simp: D)
+    show ?thesis using tp tl by (auto simp: table_def; force)
+  qed
+  show ?thesis unfolding res tr using tW pend by blast
+qed
+
+subsection \<open>The trigger node's structure\<close>
+
+definition etw :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data twaux \<Rightarrow>
+    event_data mtaux \<Rightarrow> bool" where
+  "etw kL cL kR cR args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r) \<and> tok cR cL args \<and>
+     trel (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+
+lemma etw_init: "etw kL cL kR cR args 0 (tw_init (eargs cR cL args) (emsk cR cL)) []"
+  if "tok cR cL args"
+  using that by (simp add: etw_def eauxlist3_def trel_init)
+
+lemma etw_update:
+  assumes v: "etw kL cL kR cR args cur daux auxlist" and nt: "cur \<le> nt"
+    and tl: "table kL l" and tr: "table kR r"
+  shows "etw kL cL kR cR args nt
+      (tw_update (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) daux)
+      (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist @ [(nt, l, r)])"
+proof -
+  have w: "\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r" and ok: "tok cR cL args"
+    and d: "trel (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+    using v by (auto simp: etw_def)
+  have "trel (eargs cR cL args) (emsk cR cL) nt
+      (tw_update (eargs cR cL args) nt (etabc kL cL l) (etabc kR cR r) daux)
+      (filter (\<lambda>x. memR (args_ivl args) (nt - fst x)) (eauxlist3 kL cL kR cR auxlist)
+       @ [(nt, etabc kL cL l, etabc kR cR r)])"
+    using trel_update[OF d nt] by simp
+  moreover have "eauxlist3 kL cL kR cR (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist @ [(nt, l, r)])
+      = filter (\<lambda>x. memR (args_ivl args) (nt - fst x)) (eauxlist3 kL cL kR cR auxlist)
+        @ [(nt, etabc kL cL l, etabc kR cR r)]"
+    using eauxlist3_filter_append[where P = "\<lambda>t. memR (args_ivl args) (nt - t)" and kL = kL
+        and cL = cL and kR = kR and cR = cR and auxlist = auxlist and nt = nt and l = l and r = r]
+    by (simp add: split_def)
+  ultimately show ?thesis using w tl tr ok by (auto simp: etw_def)
+qed
+
+lemma etw_window:
+  assumes v: "etw kL cL kR cR args cur daux auxlist"
+  shows "tw_empty daux \<longleftrightarrow> filter (\<lambda>(t, _). mem (args_ivl args) (cur - t)) auxlist = []"
+proof -
+  have d: "trel (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+    using v by (simp add: etw_def)
+  show ?thesis unfolding trel_empty[OF d]
+    by (simp add: eauxlist3_def filter_empty_conv split_def)
+qed
+
+lemma etw_result:
+  assumes v: "etw kL cL kR cR args cur daux auxlist" and ne: "\<not> tw_empty daux"
+    and fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+  shows "tw_result daux = etabc kR cR (snd (trigger_results args cur auxlist))"
+proof -
+  have w: "\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r" and ok: "tok cR cL args"
+    and d: "trel (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+    using v by (auto simp: etw_def)
+  have dm: "emsk_args (eargs cR cL args) (emsk cR cL)"
+    unfolding emsk_def
+    by (rule emsk_args_dargs[OF eframeD(2)[OF fR] eframeD(2)[OF fL] eframe_sub[OF fR fL sub]])
+  have wf': "\<forall>x \<in> set (eauxlist3 kL cL kR cR auxlist).
+      table (args_L (eargs cR cL args)) (fst (snd x)) \<and> table (args_R (eargs cR cL args)) (snd (snd x))"
+    by (auto simp: eauxlist3_def table_etabc)
+  have ok': "mem (args_ivl (eargs cR cL args)) 0 \<or>
+      (args_L (eargs cR cL args) = args_R (eargs cR cL args) \<and> args_pos (eargs cR cL args))"
+    using ok by (simp add: tok_def)
+  have fl: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
+    using etw_window[OF v] ne by (auto simp: split_def)
+  have f1: "fst (trigger_results args cur auxlist) = kR" using fl aR by simp
+  have f2: "fst (trigger_results (eargs cR cL args) cur (eauxlist3 kL cL kR cR auxlist)) = cR"
+    using fl length_filter_eauxlist3[of "\<lambda>t. mem (args_ivl args) (cur - t)" kL cL kR cR auxlist]
+    by simp
+  have "tw_result daux = snd (trigger_results (eargs cR cL args) cur (eauxlist3 kL cL kR cR auxlist))"
+    by (rule trel_result[OF d ne dm wf' ok'])
+  also have "\<dots> = etabc kR cR (snd (trigger_results args cur auxlist))"
+    using etabc_trigger_results(2)[OF fR fL sub aL aR w, of cur] unfolding f1 f2 .
+  finally show ?thesis .
+qed
+
+lemma etw_result_empty:
+  assumes v: "etw kL cL kR cR args cur daux auxlist" and e: "tw_empty daux"
+  shows "trigger_results args cur auxlist = ([], unit_table)"
+  using etw_window[OF v] e by (simp add: split_def)
+
+lemma sw_null_push: "\<not> sw_null (sw_push f g t e s)"
+  by (cases s) (simp add: sw_push_def sw_null_def split: list.splits)
+
+lemma tw_update_not_empty:
+  assumes m0: "mem (args_ivl args) 0"
+  shows "\<not> tw_empty (tw_update args nt l r ax)"
+  using m0 by (cases ax) (simp add: tw_update_def tw_empty_def Let_def sw_null_push)
 
 (*<*)
 end

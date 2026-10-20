@@ -58,7 +58,7 @@ function (sequential) mmonitorable_exec :: "'t Formula.formula \<Rightarrow> boo
 | "mmonitorable_exec (Formula.Until \<phi> I \<psi>) = (Formula.fv \<phi> \<subseteq> Formula.fv \<psi> \<and> bounded I \<and>
     (mmonitorable_exec \<phi> \<or> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> mmonitorable_exec \<phi>' | _ \<Rightarrow> False)) \<and> mmonitorable_exec \<psi>)"
 | "mmonitorable_exec (Formula.Trigger \<phi> I \<psi>) = safe_dual False mmonitorable_exec \<phi> I \<psi>"
-| "mmonitorable_exec (Formula.Release \<phi> I \<psi>) = (mem I 0 \<and> bounded I \<and> mmonitorable_exec \<psi> \<and> fv \<phi> \<subseteq> fv \<psi> \<and> mmonitorable_exec (release_safe_0 \<phi> I \<psi>))"
+| "mmonitorable_exec (Formula.Release \<phi> I \<psi>) = (mem I 0 \<and> bounded I \<and> mmonitorable_exec \<psi> \<and> fv \<phi> \<subseteq> fv \<psi> \<and> mmonitorable_exec (Formula.And \<psi> \<phi>))"
 | "mmonitorable_exec (Formula.MatchP I r) = Regex.safe_regex fv (\<lambda>g \<phi>. mmonitorable_exec \<phi> \<or> (g = Lax \<and> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> mmonitorable_exec \<phi>' | _ \<Rightarrow> False))) Past Strict r"
 | "mmonitorable_exec (Formula.MatchF I r) = (Regex.safe_regex fv (\<lambda>g \<phi>. mmonitorable_exec \<phi> \<or> (g = Lax \<and> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> mmonitorable_exec \<phi>' | _ \<Rightarrow> False))) Futu Strict r \<and> bounded I)"
 | "mmonitorable_exec (Formula.TP t) = (Formula.is_Var t \<or> Formula.is_Const t)"
@@ -84,8 +84,7 @@ next
 next
   case (R4 \<phi> I \<psi>)
   then show ?case 
-    using size'_Release[of \<phi> I \<psi>]
-    by auto
+    by (simp split: formula.splits)
 next
   case (Ands1 \<phi>s \<phi>)
   then show ?case
@@ -958,6 +957,32 @@ datatype pred_mode = Copy | Simple | Match
 
 datatype mtrm = MVar nat | MConst event_data
 
+text \<open>A freeze whose body reads the frozen predicate only at the body's first variables
+  (@{const key_sep}) can be evaluated without a copy per frozen table: one copy of the body is fed
+  a table @{term L} that contains every pending frozen table, and one the empty table, both as live
+  copies; the verdict for a time point takes the first copy's rows whose frozen tuple is in the
+  time point's frozen table and the second copy's other rows.  Which of the two evaluations runs
+  is decided by the work they count (@{text frz_step} below): it has no bearing on the verdicts.
+  The state of the decision: none for a freeze that is not separable; in the replay mode, the
+  accumulated regret, the backoff factor, the steps it has measured, the union of the frozen tables
+  of the current measurement with the number of its steps that brought new tuples, the estimates of
+  the size of @{term L} and of that number, and the frozen tables of the recent steps; in the
+  separable mode, the table @{term L} with its size, the progress of the two copies and their verdicts from
+  the first pending time point on (in pairs), and the regret, backoff, epoch steps and epoch
+  union.\<close>
+
+datatype ('a, 't) frz_sep =
+    FSOff
+  | FSStock nat nat nat 'a nat nat nat "'a list"
+  | FSSep 'a nat nat "('t \<times> 't) list" nat nat nat 'a
+
+text \<open>The operations on the frozen tables (of type @{typ 'a}) and verdicts (of type @{typ 't}) that
+  the separable evaluation needs: the combination of a row of the two copies at a frozen table,
+  the union, the number of tuples of a table not in another, the size, and the empty table.\<close>
+
+datatype ('a, 't) frz_ops = FrzOps (fo_cmb: "'t \<Rightarrow> 't \<Rightarrow> 'a \<Rightarrow> 't") (fo_un: "'a \<Rightarrow> 'a \<Rightarrow> 'a")
+  (fo_fr: "'a \<Rightarrow> 'a \<Rightarrow> nat") (fo_cd: "'a \<Rightarrow> nat") (fo_emp: 'a)
+
 text \<open>Each node produces its tables over the column list @{const Formula.fv_list} of its
   formula.  A node records the column lists of its operands where it needs them to combine
   their tables: the conjunction, disjunction and existential quantifier, the bound formula
@@ -973,6 +998,8 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
      nat nat nat "event_data table list"
      "('msaux, 'muaux, 'mtaux) mformula" nat nat "ts list" "event_data table list" enat bool bool
      "nat option" "('msaux, 'muaux, 'mtaux) mformula"
+     "(event_data list set, event_data table) frz_sep" "nat list" "('msaux, 'muaux, 'mtaux) mformula"
+     "('msaux, 'muaux, 'mtaux) mformula"
   | MLetPast Formula.name nat "nat list" "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
   | MAnd "nat list" "('msaux, 'muaux, 'mtaux) mformula" bool "nat list" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
   | MAndAssign "nat list" "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
@@ -988,6 +1015,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   | MSince args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2S" "'msaux"
   | MUntil args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" ts "'muaux"
   | MTrigger args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" "'mtaux"
+  | MRelease args "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2" "ts list" ts "event_data muaux"
   | MMatchP \<I> "nat list" "nat list list" "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" "event_data mr\<delta>aux"
   | MMatchF \<I> "nat list" "nat list list" "mregex" "mregex list" "('msaux, 'muaux, 'mtaux) mformula list" "event_data mbufn" "ts list" ts "event_data ml\<delta>aux"
   | MTP mtrm nat
@@ -1280,6 +1308,22 @@ lemma eval_until_auxlist': "eval_until I nt auxlist = (res, auxlist') \<Longrigh
   by (induction I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
     (auto split: if_splits prod.splits)
 
+text \<open>The release with 0 in its interval is evaluated natively, dually to the until. For each
+  time point @{term i} whose verdict is pending, the auxiliary list holds the tuples that are still
+  waiting to be released (they satisfied the right operand at every point of the window so far, and
+  the left operand at none) and the tuples that are still alive (each point of the window so far
+  where they did not satisfy the right operand was preceded by one where they satisfied the left
+  operand). Both tables are over the columns of the right operand, which contain those of the left
+  operand. Once the window of @{term i} has been left, the alive tuples are its verdict
+  (@{const eval_until}).\<close>
+
+definition update_release :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data muaux \<Rightarrow> event_data muaux" where
+  "update_release args rel1 rel2 nt aux =
+    map (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
+      then (t, join (args_R args) (a1 \<inter> rel2) (\<not> args_pos args) (args_L args) rel1, a2 - (a1 - rel2))
+      else (t, a1, a2)) aux @
+    [(nt, join (args_R args) rel2 (\<not> args_pos args) (args_L args) rel1, rel2)]"
+
 locale muaux =
   fixes valid_muaux :: "args \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> event_data muaux \<Rightarrow> bool"
     and init_muaux :: "args \<Rightarrow> 'muaux"
@@ -1404,6 +1448,19 @@ lemma (in mtaux) init_trigger_cong[fundef_cong]:
   using assms
   by (auto simp: init_trigger_def split: formula.splits)
 
+text \<open>The left operand that the native release evaluates: the left operand itself if it is
+  safe, the negated formula if it is the negation of a safe formula, and otherwise its conjunction
+  with the right operand, which is equivalent with 0 in the interval
+  (@{thm [source] sat_release_conj_0}).\<close>
+
+definition release_left :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula \<times> bool" where
+  "release_left \<phi> \<psi> = (if safe_formula \<phi> then (\<phi>, True) else (case \<phi> of
+      Formula.Neg \<phi>' \<Rightarrow> if safe_formula \<phi>' then (\<phi>', False) else (Formula.And \<psi> \<phi>, True)
+    | _ \<Rightarrow> (Formula.And \<psi> \<phi>, True)))"
+
+lemma size'_release_left: "size' (fst (release_left \<phi> \<psi>)) < size' (Formula.Release \<phi> I \<psi>)"
+  by (auto simp: release_left_def split: formula.splits)
+
 
 
 subsubsection \<open> minit0 \<close>
@@ -1439,6 +1496,13 @@ fun neg_pred :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Ri
 | "neg_pred p (Formula.MatchF I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
 | "neg_pred p _ = False"
 
+text \<open>A freeze starts in the replay mode if its body is separable in the frozen predicate and
+  reads it at all, and is never evaluated in the separable mode otherwise.\<close>
+
+definition frz_sep_init :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> ('a set, 'b) frz_sep" where
+  "frz_sep_init pn \<psi> = (if key_sep pn \<psi> \<and> Formula.contains_pred pn \<psi> then FSStock 0 1 0 {} 0 0 0 [] else FSOff)"
+
+
 function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula" where
   "minit0 n (Formula.Neg \<phi>) = (if fv \<phi> = {} then MNeg (minit0 n \<phi>) else MRel empty_table)"
 | "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel t1 t2)"
@@ -1446,7 +1510,8 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
 | "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
     (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)
-    (neg_pred (p, Formula.nfv \<phi>) \<psi>) None (minit0 n \<psi>)"
+    (neg_pred (p, Formula.nfv \<phi>) \<psi>) None (minit0 n \<psi>)
+    (frz_sep_init (p, Formula.nfv \<phi>) \<psi>) (Formula.fv_list \<psi>) (minit0 n \<psi>) (minit0 n \<psi>)"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (Formula.fv_list \<phi>) (minit0 n \<phi>) (Formula.fv_list \<psi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1484,7 +1549,8 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Release \<phi> I \<psi>) = (
   if mem I 0
     then
-      minit0 n (release_safe_0 \<phi> I \<psi>)
+      MRelease (init_args I n (Formula.fv_list (fst (release_left \<phi> \<psi>))) (Formula.fv_list \<psi>)
+        (snd (release_left \<phi> \<psi>)) None) (minit0 n (fst (release_left \<phi> \<psi>))) (minit0 n \<psi>) ([], []) [] 0 []
     else
       minit0 n (release_safe_bounded \<phi> I \<psi>))"
 | "minit0 n (Formula.MatchP I r) =
@@ -1536,7 +1602,7 @@ next
 next
   case (8 \<phi> I \<psi>)
   then show ?case 
-    using size'_release_aux(4)[of \<phi> I \<psi>]
+    using size'_release_left[of \<phi> \<psi> I]
     by simp
 next
   case (9 \<phi> I \<psi>)
@@ -1553,12 +1619,6 @@ next
     by (clarsimp  dest!: to_mregex_ok[OF sym] atms_size')
 qed
   
-
-lemma (in maux) minit0_release_0:
-  assumes mem: "mem I 0"
-  shows "minit0 n (Formula.Release \<phi> I \<psi>) = minit0 n (release_safe_0 \<phi> I \<psi>)"
-  using assms
-  by auto
 
 lemma (in maux) minit0_release_bounded:
   assumes mem: "\<not>mem I 0"
@@ -2348,6 +2408,342 @@ proof -
     using r' by simp
 qed
 
+text \<open>The separable evaluation of @{const MFrz}.  The two live copies are replays of the replay
+  base over its window, one with the table @{term L} and one with the empty table at every time
+  point of the window (@{text frz_copies}); they replace the slots only if they have their sizes,
+  as the live copy of the replay mode does.  Their verdicts from the first pending time point
+  @{term i} on are kept in pairs, those the base already holds included (paired with
+  themselves).\<close>
+
+definition frz_copies :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'm \<Rightarrow> 't list \<times> 'm) \<Rightarrow> 'a \<Rightarrow>
+    'k \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'm \<Rightarrow> 'm \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
+    ('m \<times> 'm \<times> nat \<times> ('t \<times> 't) list) option" where
+  "frz_copies sz ev emp pm dbe j i L \<sigma>S \<sigma>E s = (case s of (\<rho>, w, pR, tq, rb) \<Rightarrow>
+     (case ev [] (Mapping.update pm (replicate (j - w) L) dbe) \<rho> of (uS, \<rho>S) \<Rightarrow>
+      (case ev [] (Mapping.update pm (replicate (j - w) emp) dbe) \<rho> of (uE, \<rho>E) \<Rightarrow>
+       if sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E
+       then Some (\<rho>S, \<rho>E, pR + length uS,
+         drop (min i (pR + length uS) - (pR - length rb)) (zip (rb @ uS) (rb @ uE)))
+       else None)))"
+
+text \<open>The verdicts of the pending time points that the two copies have, in order.\<close>
+
+definition frz_emit :: "('t \<Rightarrow> 't \<Rightarrow> 'a \<Rightarrow> 't) \<Rightarrow> 'a list \<Rightarrow> ('t \<times> 't) list \<Rightarrow> 't list" where
+  "frz_emit cmb \<alpha>s buf = map2 (\<lambda>\<alpha> (yS, yE). cmb yS yE \<alpha>) \<alpha>s buf"
+
+text \<open>The work model of the decision.  A copy of the replay mode replays the window, of length
+  @{term k}, with its frozen table: its work is @{term k} times the table's size.  The separable
+  mode steps its two copies with the table @{term L} (a factor @{text frz_lambda} times its size)
+  and rebuilds them, a replay with @{term L}, when a new frozen table is not contained in
+  @{term L}.  Each mode accumulates the work it does less than the other would (the regret of
+  having switched) and the work the other would do less; the replay mode switches when the latter
+  exceeds the work of a rebuild, the separable mode when it exceeds that of a replay of @{term L},
+  and each switch back to the replay mode doubles the threshold of the next switch to the
+  separable mode.  The table @{term L} only grows with new frozen tables; at the end of an epoch
+  of @{text frz_epoch} steps it shrinks to the frozen tables of the epoch and the pending ones if
+  that halves it.
+
+  A replay of a body that refers only to the past is cut at the time point it decides
+  (@{const frz_cut}), and the work of the replay mode is counted with the cut length.  The replay
+  mode does not track the tables it would put in @{term L}: while the cut length is at most
+  @{text frz_lambda} the replay is no more work than stepping the copies, and otherwise it measures
+  the size of @{term L} and the steps that bring new tuples during the first @{text frz_epoch}
+  steps of every @{text frz_cycle}, starting from the union of the recent frozen tables, and uses
+  the measurement until the next one.  It keeps the frozen tables of the last @{text frz_keep}
+  steps, which give @{term L} at a switch.\<close>
+
+definition frz_lambda :: nat where "frz_lambda = 6"
+definition frz_c0 :: nat where "frz_c0 = 1000"
+definition frz_epoch :: nat where "frz_epoch = 64"
+definition frz_cycle :: nat where "frz_cycle = 256"
+definition frz_keep :: nat where "frz_keep = 128"
+
+definition frz_absorb :: "('a, 't) frz_ops \<Rightarrow> 'a list \<Rightarrow> 'a \<times> nat \<times> nat \<Rightarrow> 'a \<times> nat \<times> nat" where
+  "frz_absorb ops xs = fold (\<lambda>\<alpha> (L, n, f). let c = fo_fr ops \<alpha> L in (fo_un ops L \<alpha>, n + c, f + c)) xs"
+
+definition frz_unions :: "('a, 't) frz_ops \<Rightarrow> 'a list \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "frz_unions ops xs = fold (\<lambda>\<alpha> L. fo_un ops L \<alpha>) xs"
+
+text \<open>The measurement of the replay mode in a step (if @{term g}, the cut length exceeds
+  @{text frz_lambda}): the steps measured, the union of the frozen tables of the current
+  measurement, the steps of it with new tuples, and the two estimates.\<close>
+
+definition frz_meas :: "('a, 't) frz_ops \<Rightarrow> bool \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow>
+    nat \<times> 'a \<times> nat \<times> nat \<times> nat \<Rightarrow> nat \<times> 'a \<times> nat \<times> nat \<times> nat" where
+  "frz_meas ops g rs xsr m = (case m of (cy, Lm, nm, en, ep) \<Rightarrow>
+     if g then
+       (let c = cy mod frz_cycle in
+        if c < frz_epoch then
+          (case frz_absorb ops xsr (if c = 0 then frz_unions ops rs (fo_emp ops) else Lm, 0, 0) of
+            (Lm1, _, nf) \<Rightarrow> let nm1 = nm + (if 0 < nf then 1 else 0) in
+              if Suc c = frz_epoch then (Suc cy, fo_emp ops, 0, fo_cd ops Lm1, nm1)
+              else (Suc cy, Lm1, nm1, en, ep))
+        else (Suc cy, Lm, nm, en, ep))
+     else m)"
+
+text \<open>The replay mode: the copies of @{const frz_live_loop}, then the decision.\<close>
+
+definition frz_stock where
+  "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s = (case c of (rg, bo, cy, Lm, nm, en, ep, rs) \<Rightarrow>
+     (case frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s of (ys, \<alpha>s', lv, s') \<Rightarrow>
+      (case frz_meas ops (frz_lambda < frz_cut po (fst (snd s')) i j) rs xsr (cy, Lm, nm, en, ep) of
+        (cy', Lm', nm', en', ep') \<Rightarrow>
+       let k = j - fst (snd s');
+           ct = frz_cut po (fst (snd s')) i j;
+           rs' = take frz_keep (xsr @ rs);
+           rg' = rg + ct * sum_list (map (fo_cd ops) xsr) - (frz_lambda * en' + ct * en' * ep' div frz_epoch)
+       in if frz_epoch \<le> cy' \<and> bo * (k * en' + frz_c0) < rg'
+          then (let L = frz_unions ops \<alpha>s' (frz_unions ops rs' (fo_emp ops)) in
+            case frz_copies sz ev (fo_emp ops) pm dbe j (i + length ys) L \<sigma>S \<sigma>E s' of
+              Some (\<rho>S, \<rho>E, pX, buf) \<Rightarrow> (ys, \<alpha>s', None, s', FSSep L (fo_cd ops L) pX buf 0 bo 0 (fo_emp ops), \<rho>S, \<rho>E)
+            | None \<Rightarrow> (ys, \<alpha>s', lv, s', FSStock 0 bo cy' Lm' nm' en' ep' rs', \<sigma>S, \<sigma>E))
+          else (ys, \<alpha>s', lv, s', FSStock rg' bo cy' Lm' nm' en' ep' rs', \<sigma>S, \<sigma>E))))"
+
+text \<open>A step of the freeze after the new time points: the live copies @{term fd} of the separable
+  mode have been fed them (with @{term L} and the empty table), and @{term xsr} are the new frozen
+  tables.  The copies are rebuilt if a new frozen table is not contained in @{term L}, or if the
+  table shrinks at the end of an epoch.\<close>
+
+definition frz_step where
+  "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s = (case sx of
+     FSSep L nL pX buf rg bo tk Lr \<Rightarrow>
+       (case frz_absorb ops xsr (L, nL, 0) of (L1, nL1, nf) \<Rightarrow>
+        let Lr1 = frz_unions ops xsr Lr;
+            ep = frz_epoch \<le> Suc tk;
+            Lp = frz_unions ops \<alpha>s Lr1;
+            nP = (if ep then fo_cd ops Lp else 0);
+            pr = (nf = 0 \<and> ep \<and> 2 * nP + 256 < nL1);
+            rb = (0 < nf \<or> pr);
+            Ln = (if pr then Lp else L1);
+            nLn = (if pr then nP else nL1);
+            tk' = (if ep then 0 else Suc tk);
+            Lr' = (if ep then fo_emp ops else Lr1);
+            s2 = (if rb then frz_adv_st sz ev pm dbe fl d j i s else s);
+            cp = (if rb then frz_copies sz ev (fo_emp ops) pm dbe j i Ln \<sigma>S \<sigma>E s2
+              else (case fd of
+                Some ((uS, \<rho>S), (uE, \<rho>E)) \<Rightarrow> if sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E
+                  then Some (\<rho>S, \<rho>E, pX + length uS,
+                    drop (min i (pX + length uS) - (pX - length buf)) (buf @ zip uS uE))
+                  else None
+              | None \<Rightarrow> None))
+        in (case cp of
+          None \<Rightarrow> frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S \<sigma>E s2
+        | Some (\<rho>S, \<rho>E, pX', buf') \<Rightarrow>
+          (let ys = frz_emit (fo_cmb ops) \<alpha>s buf';
+               s' = frz_adv_st sz ev pm dbe fl d j (i + length ys) s2;
+               k = j - fst (snd s');
+               rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) -
+                 frz_cut po (fst (snd s')) i j * sum_list (map (fo_cd ops) xsr)
+           in if k * max 1 nLn + frz_c0 < rg'
+             then (ys, drop (length ys) \<alpha>s, None, s', FSStock 0 (2 * bo) 0 (fo_emp ops) 0 0 0 [Ln], \<sigma>S, \<sigma>E)
+             else (ys, drop (length ys) \<alpha>s, None, s', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S, \<rho>E))))
+   | FSStock rg bo cy Lm nm en ep rs \<Rightarrow> frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr (rg, bo, cy, Lm, nm, en, ep, rs) \<sigma>S \<sigma>E s
+   | FSOff \<Rightarrow> (case frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s of
+       (ys, \<alpha>s', lv, s') \<Rightarrow> (ys, \<alpha>s', lv, s', FSOff, \<sigma>S, \<sigma>E)))"
+
+lemma frz_copies_cong[fundef_cong]:
+  assumes "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev ts db \<psi> = ev' ts db \<psi>"
+  shows "frz_copies sz ev emp pm dbe j i L \<sigma>S \<sigma>E s = frz_copies sz ev' emp pm dbe j i L \<sigma>S \<sigma>E s"
+  using assms by (auto simp: frz_copies_def split: prod.splits)
+
+lemma frz_copies_size:
+  "frz_copies sz ev emp pm dbe j i L \<sigma>S \<sigma>E s = Some (\<rho>S, \<rho>E, pX, buf) \<Longrightarrow> sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E"
+  by (auto simp: frz_copies_def split: prod.splits if_splits)
+
+lemma frz_stock_cong[fundef_cong]:
+  assumes "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev ts db \<psi> = ev' ts db \<psi>"
+  shows "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s =
+    frz_stock sz ev' ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s"
+proof -
+  obtain ys \<alpha>s' lv s' where l: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s', lv, s')"
+    by (metis prod_cases4)
+  have l': "frz_live_loop sz ev' pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s', lv, s')"
+    using l frz_live_loop_cong[of sz s ev ev', OF assms] by simp
+  have sz: "sz (fst s') = sz (fst s)"
+    by (rule frz_live_loop_size[OF l])
+  have cps: "frz_copies sz ev e pm dbe j i' L \<sigma>S \<sigma>E s' = frz_copies sz ev' e pm dbe j i' L \<sigma>S \<sigma>E s'" for e i' L
+    by (rule frz_copies_cong) (use assms sz in simp)
+  show ?thesis
+    unfolding frz_stock_def l l' prod.case by (simp only: cps)
+qed
+
+lemma frz_stock_eq:
+  assumes "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys0, \<alpha>s0, lv0, s0)"
+    and "frz_meas ops (frz_lambda < frz_cut po (fst (snd s0)) i j) rs xsr (cy, Lm, nm, en, ep) =
+      (cy', Lm', nm', en', ep')"
+  shows "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr (rg, bo, cy, Lm, nm, en, ep, rs) \<sigma>S \<sigma>E s =
+    (let k = j - fst (snd s0);
+         ct = frz_cut po (fst (snd s0)) i j;
+         rs' = take frz_keep (xsr @ rs);
+         rg' = rg + ct * sum_list (map (fo_cd ops) xsr) - (frz_lambda * en' + ct * en' * ep' div frz_epoch);
+         L = frz_unions ops \<alpha>s0 (frz_unions ops rs' (fo_emp ops))
+     in if frz_epoch \<le> cy' \<and> bo * (k * en' + frz_c0) < rg'
+        then (case frz_copies sz ev (fo_emp ops) pm dbe j (i + length ys0) L \<sigma>S \<sigma>E s0 of
+            Some (\<rho>S, \<rho>E, pX, buf) \<Rightarrow> (ys0, \<alpha>s0, None, s0, FSSep L (fo_cd ops L) pX buf 0 bo 0 (fo_emp ops), \<rho>S, \<rho>E)
+          | None \<Rightarrow> (ys0, \<alpha>s0, lv0, s0, FSStock 0 bo cy' Lm' nm' en' ep' rs', \<sigma>S, \<sigma>E))
+        else (ys0, \<alpha>s0, lv0, s0, FSStock rg' bo cy' Lm' nm' en' ep' rs', \<sigma>S, \<sigma>E))"
+  unfolding frz_stock_def assms prod.case Let_def ..
+
+lemma frz_stock_size:
+  assumes "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s = (ys, \<alpha>s', lv, s', sx', \<rho>S, \<rho>E)"
+  shows "sz (fst s') = sz (fst s) \<and> sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E"
+proof -
+  obtain ys0 \<alpha>s0 lv0 s0 where l: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys0, \<alpha>s0, lv0, s0)"
+    by (metis prod_cases4)
+  have sz0: "sz (fst s0) = sz (fst s)"
+    by (rule frz_live_loop_size[OF l])
+  obtain rg bo cy Lm nm en ep rs where c: "c = (rg, bo, cy, Lm, nm, en, ep, rs)"
+    by (metis prod.collapse)
+  obtain cy' Lm' nm' en' ep' where ab: "frz_meas ops (frz_lambda < frz_cut po (fst (snd s0)) i j) rs xsr
+      (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+    by (metis prod_cases5)
+  have "case frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr c \<sigma>S \<sigma>E s of (_, _, _, s', _, \<rho>S, \<rho>E) \<Rightarrow>
+      sz (fst s') = sz (fst s) \<and> sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E"
+    unfolding c frz_stock_eq[OF l ab] Let_def
+    by (auto simp: sz0 split: option.split prod.split dest: frz_copies_size)
+  then show ?thesis
+    using assms by simp
+qed
+
+lemma frz_step_cong[fundef_cong]:
+  assumes "\<And>ts db \<psi>. sz \<psi> = sz (fst s) \<Longrightarrow> ev ts db \<psi> = ev' ts db \<psi>"
+  shows "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s =
+    frz_step sz ev' ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s"
+proof -
+  have adv: "frz_adv_st sz ev pm dbe fl d j i' s = frz_adv_st sz ev' pm dbe fl d j i' s" for i'
+    by (rule frz_adv_st_cong) (rule assms)
+  have sz_if: "sz (fst (if b then frz_adv_st sz ev' pm dbe fl d j i' s else s)) = sz (fst s)" for b i'
+    using size_frz_adv_st[of sz ev' pm dbe fl d j i' s] by simp
+  have cpG: "frz_copies sz ev e pm dbe j i' L \<sigma>S \<sigma>E s2 = frz_copies sz ev' e pm dbe j i' L \<sigma>S \<sigma>E s2"
+    if "sz (fst s2) = sz (fst s)" for e i' L s2
+    by (rule frz_copies_cong) (use assms that in simp)
+  have stG: "frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr lr' c \<sigma>S \<sigma>E s2 =
+      frz_stock sz ev' ops pm dbe fl d po j i \<alpha>s xsr lr' c \<sigma>S \<sigma>E s2"
+    if "sz (fst s2) = sz (fst s)" for lr' c s2
+    by (rule frz_stock_cong) (use assms that in simp)
+  have advG: "frz_adv_st sz ev pm dbe fl d j i' s2 = frz_adv_st sz ev' pm dbe fl d j i' s2"
+    if "sz (fst s2) = sz (fst s)" for i' s2
+    by (rule frz_adv_st_cong) (use assms that in simp)
+  have lp: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = frz_live_loop sz ev' pm dbe fl d po j i \<alpha>s lr s"
+    by (rule frz_live_loop_cong) (rule assms)
+  show ?thesis
+    unfolding frz_step_def Let_def
+    by (simp only: adv sz_if cpG stG advG lp)
+qed
+
+lemma frz_step_sep_eq:
+  assumes "frz_absorb ops xsr (L, nL, 0) = (L1, nL1, nf)"
+  shows "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd (FSSep L nL pX buf rg bo tk Lr) \<sigma>S \<sigma>E s =
+    (let Lr1 = frz_unions ops xsr Lr;
+         ep = frz_epoch \<le> Suc tk;
+         Lp = frz_unions ops \<alpha>s Lr1;
+         nP = (if ep then fo_cd ops Lp else 0);
+         pr = (nf = 0 \<and> ep \<and> 2 * nP + 256 < nL1);
+         rb = (0 < nf \<or> pr);
+         Ln = (if pr then Lp else L1);
+         nLn = (if pr then nP else nL1);
+         tk' = (if ep then 0 else Suc tk);
+         Lr' = (if ep then fo_emp ops else Lr1);
+         s2 = (if rb then frz_adv_st sz ev pm dbe fl d j i s else s);
+         cp = (if rb then frz_copies sz ev (fo_emp ops) pm dbe j i Ln \<sigma>S \<sigma>E s2
+           else (case fd of
+             Some ((uS, \<rho>S), (uE, \<rho>E)) \<Rightarrow> if sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E
+               then Some (\<rho>S, \<rho>E, pX + length uS,
+                 drop (min i (pX + length uS) - (pX - length buf)) (buf @ zip uS uE))
+               else None
+           | None \<Rightarrow> None))
+     in (case cp of
+       None \<Rightarrow> frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S \<sigma>E s2
+     | Some (\<rho>S, \<rho>E, pX', buf') \<Rightarrow>
+       (let ys = frz_emit (fo_cmb ops) \<alpha>s buf';
+            s' = frz_adv_st sz ev pm dbe fl d j (i + length ys) s2;
+            k = j - fst (snd s');
+            rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) -
+                 frz_cut po (fst (snd s')) i j * sum_list (map (fo_cd ops) xsr)
+        in if k * max 1 nLn + frz_c0 < rg'
+          then (ys, drop (length ys) \<alpha>s, None, s', FSStock 0 (2 * bo) 0 (fo_emp ops) 0 0 0 [Ln], \<sigma>S, \<sigma>E)
+          else (ys, drop (length ys) \<alpha>s, None, s', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S, \<rho>E))))"
+  unfolding frz_step_def frz_sep.case assms prod.case ..
+
+lemma frz_step_size:
+  assumes "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s = (ys, \<alpha>s', lv, s', sx', \<rho>S, \<rho>E)"
+  shows "sz (fst s') = sz (fst s) \<and> sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E"
+proof (cases sx)
+  case FSOff
+  obtain ys0 \<alpha>s0 lv0 s0 where l: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys0, \<alpha>s0, lv0, s0)"
+    by (metis prod_cases4)
+  show ?thesis
+    using assms FSOff frz_live_loop_size[OF l] by (simp add: frz_step_def l)
+next
+  case (FSStock rg bo cy Lm nm en ep rs)
+  with assms show ?thesis
+    using frz_stock_size by (simp add: frz_step_def)
+next
+  case (FSSep L nL pX buf rg bo tk Lr)
+  obtain L1 nL1 nf where ab: "frz_absorb ops xsr (L, nL, 0) = (L1, nL1, nf)"
+    by (metis prod_cases3)
+  define Lr1 where "Lr1 = frz_unions ops xsr Lr"
+  define ep where "ep = (frz_epoch \<le> Suc tk)"
+  define nP where "nP = (if ep then fo_cd ops (frz_unions ops \<alpha>s Lr1) else 0)"
+  define pr where "pr = (nf = 0 \<and> ep \<and> 2 * nP + 256 < nL1)"
+  define rb where "rb = (0 < nf \<or> pr)"
+  define Ln where "Ln = (if pr then frz_unions ops \<alpha>s Lr1 else L1)"
+  define nLn where "nLn = (if pr then nP else nL1)"
+  define tk' where "tk' = (if ep then 0 else Suc tk)"
+  define Lr' where "Lr' = (if ep then fo_emp ops else Lr1)"
+  define sB where "sB = (if rb then frz_adv_st sz ev pm dbe fl d j i s else s)"
+  define cq where "cq = (if rb then frz_copies sz ev (fo_emp ops) pm dbe j i Ln \<sigma>S \<sigma>E sB
+    else (case fd of Some ((uS, \<rho>S), (uE, \<rho>E)) \<Rightarrow> if sz \<rho>S = sz \<sigma>S \<and> sz \<rho>E = sz \<sigma>E
+        then Some (\<rho>S, \<rho>E, pX + length uS, drop (min i (pX + length uS) - (pX - length buf)) (buf @ zip uS uE))
+        else None
+      | None \<Rightarrow> None))"
+  have stq: "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s = (case cq of
+      None \<Rightarrow> frz_stock sz ev ops pm dbe fl d po j i \<alpha>s xsr None (0, bo, 0, fo_emp ops, 0, 0, 0, [Ln]) \<sigma>S \<sigma>E sB
+    | Some (\<rho>S2, \<rho>E2, pX', buf') \<Rightarrow>
+      (let ys = frz_emit (fo_cmb ops) \<alpha>s buf';
+           s'' = frz_adv_st sz ev pm dbe fl d j (i + length ys) sB;
+           k = j - fst (snd s'');
+           rg' = rg + (frz_lambda * nLn + (if rb then k * nLn else 0)) -
+                 frz_cut po (fst (snd s'')) i j * sum_list (map (fo_cd ops) xsr)
+       in if k * max 1 nLn + frz_c0 < rg'
+         then (ys, drop (length ys) \<alpha>s, None, s'', FSStock 0 (2 * bo) 0 (fo_emp ops) 0 0 0 [Ln], \<sigma>S, \<sigma>E)
+         else (ys, drop (length ys) \<alpha>s, None, s'', FSSep Ln nLn pX' (drop (length ys) buf') rg' bo tk' Lr', \<rho>S2, \<rho>E2)))"
+    unfolding FSSep frz_step_sep_eq[OF ab] Let_def
+    by (simp only: Lr1_def ep_def nP_def pr_def rb_def Ln_def nLn_def tk'_def Lr'_def sB_def cq_def)
+  have szB: "sz (fst sB) = sz (fst s)"
+    by (simp add: sB_def size_frz_adv_st)
+  show ?thesis
+  proof (cases cq)
+    case None
+    show ?thesis
+      using frz_stock_size[OF assms[unfolded stq None option.case]] szB by simp
+  next
+    case (Some cc)
+    then obtain \<rho>S2 \<rho>E2 pX2 buf2 where cqS: "cq = Some (\<rho>S2, \<rho>E2, pX2, buf2)"
+      by (metis prod_cases4)
+    have cqsz: "sz \<rho>S2 = sz \<sigma>S \<and> sz \<rho>E2 = sz \<sigma>E"
+    proof (cases rb)
+      case True
+      then show ?thesis
+        using cqS frz_copies_size[of sz ev "fo_emp ops" pm dbe j i Ln \<sigma>S \<sigma>E sB] by (simp add: cq_def)
+    next
+      case False
+      then show ?thesis
+        using cqS by (auto simp: cq_def split: option.splits if_splits)
+    qed
+    show ?thesis
+      using assms[unfolded stq cqS option.case prod.case Let_def] cqsz szB
+      by (auto simp: size_frz_adv_st split: if_splits)
+  qed
+qed
+
+text \<open>The operations of the separable evaluation on the kernel's tables: a verdict's tuple, over
+  the body's columns @{term cs}, is read at the frozen predicate's variables.\<close>
+
+definition frz_kops :: "nat \<Rightarrow> nat list \<Rightarrow> (event_data list set, event_data table) frz_ops" where
+  "frz_kops m cs = FrzOps (\<lambda>yS yE \<alpha>. {x \<in> yS. val m cs x \<in> \<alpha>} \<union> {x \<in> yE. val m cs x \<notin> \<alpha>})
+    (\<union>) (\<lambda>\<alpha> L. card (\<alpha> - L)) card {}"
+
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
 | "list_of_option (Some x) = [x]"
@@ -2399,25 +2795,32 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
       (ys, \<psi>) = meval n ts (Mapping.update (p, m) (map (reorder [0..<m] cs) xs) db) \<psi>
     in (ys, MLet p m cs \<phi> \<psi>))"
-| "meval n ts db (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
+| "meval n ts db (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
          (rs, \<rho>) = meval n ts db0 \<rho>;
-         (zs0_out, jfrz, fl, \<alpha>s, lr) =
+         (zs0_out, jfrz, fl, \<alpha>s, lr, xsr, fd) =
            (let zs0_out = drop (jfrz - jpsi0) zs0;
-                \<alpha>s0 = \<alpha>s @ map (reorder [0..<m] cs) xs;
+                xsr = map (reorder [0..<m] cs) xs;
+                \<alpha>s0 = \<alpha>s @ xsr;
                 \<alpha>s1 = drop (jfrz - jphi + length zs0_out) \<alpha>s0
             in (zs0_out, jfrz + length zs0_out, frz_fill ng \<alpha>s0, \<alpha>s1,
               case lv of None \<Rightarrow> None | Some g \<Rightarrow>
                 if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
                 then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
-                else None));
-         (ys, \<alpha>s', lv, \<rho>, w, pR, tq, rb) = frz_live_loop size (meval n) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
-           fl d po j jfrz \<alpha>s lr (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+                else None,
+              xsr,
+              case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+                Some (meval n ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+                  meval n ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+              | _ \<Rightarrow> None));
+         (ys, \<alpha>s', lv, (\<rho>, w, pR, tq, rb), sx, \<rho>S, \<rho>E) = frz_step size (meval n) (frz_kops m cS) (p, m)
+           (Mapping.map_values (\<lambda>_ _. []) db) fl d po j jfrz \<alpha>s xsr lr fd sx \<rho>S \<rho>E
+           (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
              drop (min jfrz (pR + length rs) - (pR - length rb)) (rb @ rs))
      in (zs0_out @ ys, MFrz p m cs \<phi> \<psi> (jfrz + length ys) (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> w pR tq rb d po ng
-       (frz_keep_lv (if po then None else lv) \<rho>L) (frz_keep_st (if po then None else lv) \<rho>L)))"
+       (frz_keep_lv (if po then None else lv) \<rho>L) (frz_keep_st (if po then None else lv) \<rho>L) sx cS \<rho>S \<rho>E))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
@@ -2488,6 +2891,11 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             (fv_z, z) = result_mtaux args aux
         in (zs @ [(z)], aux)) ([], aux) (mbuf2_add xs ys buf) (nts @ ts)
     in (zs, MTrigger args \<phi> \<psi> buf nts aux))"
+| "meval n ts db (MRelease args \<phi> \<psi> buf nts t aux) =
+    (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
+      (aux, buf, nt, nts') = mbuf2t_take (update_release args) aux (mbuf2_add xs ys buf) t (nts @ ts);
+      (zs, aux) = eval_until (args_ivl args) nt aux
+    in (zs, MRelease args \<phi> \<psi> buf nts' nt aux))"
 | "meval n ts db (MMatchP I cs dss mr mrs \<phi>s buf nts aux) =
     (let (xss, \<phi>s) = map_split id (map (meval n ts db) \<phi>s);
       ((zs, aux), buf, _, nts) = mbufnt_take (\<lambda>rels t (zs, aux).
@@ -2538,7 +2946,7 @@ proof (induct rule: meval.pinduct)
   then show ?case
     by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
 next
-  case (4 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) \<comment> \<open>\<^const>\<open>MFrz\<close>\<close>
+  case (4 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) \<comment> \<open>\<^const>\<open>MFrz\<close>\<close>
   let ?db0 = "Mapping.update (p, m) [] db"
   obtain xs \<phi>' where \<phi>': "meval m ts db \<phi> = (xs, \<phi>')"
     by fastforce
@@ -2552,37 +2960,46 @@ next
     using 4(3)[OF \<phi>'[symmetric] refl refl] \<psi>' by simp
   have s\<rho>: "size \<rho>' = size \<rho>"
     using 4(4)[OF \<phi>'[symmetric] refl refl \<psi>'[symmetric] refl] \<rho>' by simp
-  obtain zo jf fl as lr where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
-       \<alpha>s0 = \<alpha>s @ map (reorder [0..<m] cs) xs;
+  obtain zo jf fl as lr xsr fd where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       xsr = map (reorder [0..<m] cs) xs;
+       \<alpha>s0 = \<alpha>s @ xsr;
        \<alpha>s1 = drop (jfrz - jphi + length zs0_out) \<alpha>s0
      in (zs0_out, jfrz + length zs0_out, frz_fill ng \<alpha>s0, \<alpha>s1,
        case lv of None \<Rightarrow> None | Some g \<Rightarrow>
          if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
          then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
-         else None)) = (zo, jf, fl, as, lr)"
-    by (rule prod_cases5)
-  obtain ys as' lv' s' where lp0: "frz_live_loop size (meval n) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
-      fl d po j jf as lr (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
-        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s')"
-    by (metis prod_cases4)
+         else None,
+       xsr,
+       case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+         Some (meval n ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+           meval n ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+       | _ \<Rightarrow> None)) = (zo, jf, fl, as, lr, xsr, fd)"
+    by (metis prod_cases7)
+  obtain ys as' lv' s' sx' \<rho>S' \<rho>E' where lp0: "frz_step size (meval n) (frz_kops m cS) (p, m)
+      (Mapping.map_values (\<lambda>_ _. []) db) fl d po j jf as xsr lr fd sx \<rho>S \<rho>E
+      (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s', sx', \<rho>S', \<rho>E')"
+    by (metis prod_cases7)
   obtain \<rho>'' w' pR' tq' rb' where s': "s' = (\<rho>'', w', pR', tq', rb')"
     by (metis prod_cases5)
-  have s\<rho>'': "size \<rho>'' = size \<rho>"
-    using frz_live_loop_size[OF lp0] s\<rho> s' by simp
-  have "snd (meval n ts db (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) =
-    MFrz p m cs \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L)"
+  have s\<rho>'': "size \<rho>'' = size \<rho>" and sS: "size \<rho>S' = size \<rho>S" and sE: "size \<rho>E' = size \<rho>E"
+    using frz_step_size[OF lp0] s\<rho> s' by simp_all
+  have "snd (meval n ts db (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)) =
+    MFrz p m cs \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng
+      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L) sx' cS \<rho>S' \<rho>E'"
     by (simp only: meval.psimps(4)[OF 4(1)] \<phi>' \<psi>' \<rho>' st lp0[unfolded s'] Let_def[where s = ?db0]
         Let_def[where s = "(xs, \<phi>')"] Let_def[where s = "(zs0, \<psi>')"] Let_def[where s = "(rs, \<rho>')"]
-        Let_def[where s = "(zo, jf, fl, as, lr)"] Let_def[where s = "(ys, as', lv', \<rho>'', w', pR', tq', rb')"]
+        Let_def[where s = "(zo, jf, fl, as, lr, xsr, fd)"]
+        Let_def[where s = "(ys, as', lv', (\<rho>'', w', pR', tq', rb'), sx', \<rho>S', \<rho>E')"]
         prod.case snd_conv)
   then show ?case
-    using s\<phi> s\<psi> s\<rho>'' by simp
+    using s\<phi> s\<psi> s\<rho>'' sS sE by simp
   \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
 qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply size_frz_keep_st cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
-  text \<open>The live copy is a subterm.  The copies and the window's moves evaluate a replay base of
+  text \<open>The live copies are subterms.  The copies and the window's moves evaluate a replay base of
     the size of the one the node holds (@{const frz_live_loop}): left to the automation below, this
     case takes long, since the many equations of the body's @{text let}s are tried in both
     orientations.
@@ -2596,12 +3013,20 @@ proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
   then show ?case
     by simp
 next
-  case (8 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb xg xh
-    yc xi yd xj yca xk ycb tsa dba \<psi>')
-  have "size yb = size \<rho>"
-    using psize_snd_meval[of n ts xb \<rho>] 8 by (metis snd_conv)
+  case 8 \<comment> \<open>the copy of the separable mode with the frozen table, a subterm\<close>
   then show ?case
-    using 8 by simp
+    by simp
+next
+  case 9 \<comment> \<open>the copy of the separable mode with the empty table, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case (10 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E x xa y xb xc xd ya xe
+    xf yb xg xh yc xi yd xj yca xk ycb xl ycc xm ycd tsa dba \<psi>')
+  have "size yb = size \<rho>"
+    using psize_snd_meval[of n ts xb \<rho>] 10 by (metis snd_conv)
+  then show ?case
+    using 10 by simp
 qed (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
 
@@ -2612,12 +3037,13 @@ end (* fixes j *)
 
 lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast 
     MAnd MAndAssign MAndRel MAndTrigger MAnds MOr MNeg
-    MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS]:
+    MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS MRelease]:
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
    (\<And>p m cs \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m cs \<phi> \<psi>)) \<Longrightarrow>
-   (\<And>p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
-     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
+     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P \<rho>S \<Longrightarrow> P \<rho>E \<Longrightarrow>
+     P (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)) \<Longrightarrow>
    (\<And>p m cs \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m cs \<phi> \<psi> i buf)) \<Longrightarrow>
    (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
    (\<And>cs \<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign cs \<phi> conf)) \<Longrightarrow>
@@ -2637,6 +3063,7 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
    (\<And>I cs dss mr mrs \<phi>s buf nts t aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchF I cs dss mr mrs \<phi>s buf nts t aux)) \<Longrightarrow>
    (\<And>mt i. P (MTP mt i)) \<Longrightarrow>
    (\<And>mt. P (MTS mt)) \<Longrightarrow>
+   (\<And>args \<phi> \<psi> buf nts t aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MRelease args \<phi> \<psi> buf nts t aux)) \<Longrightarrow>
    P mf"
 proof (induct "size mf" arbitrary: mf rule: less_induct)
   case less
@@ -2655,7 +3082,7 @@ proof (induct "size mf" arbitrary: mf rule: less_induct)
     case (MLet p m cs \<phi> \<psi>)
     show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
   next
-    case (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
+    case (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)
     show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
   next
     case (MLetPast p m cs \<phi> \<psi> i buf)
@@ -2714,6 +3141,9 @@ proof (induct "size mf" arbitrary: mf rule: less_induct)
   next
     case (MTS mt)
     show ?thesis unfolding MTS by (rule less.prems(23))
+  next
+    case (MRelease args \<phi> \<psi> buf nts t aux)
+    show ?thesis unfolding MRelease by (rule less.prems(24)) (rule IH, simp add: MRelease)+
   qed
 qed
 

@@ -163,10 +163,12 @@ function (sequential) eof ::
       else EFail)"
 | "eof n ks cs (MLet p m kks \<phi> \<psi>) =
      (if ecols kks = [0..<m] then ELet p m (eof m kks [0..<m] \<phi>) (eof n ks cs \<psi>) else EFail)"
-| "eof n ks cs (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
-     (if ecols kks = [0..<m] \<and> \<alpha>s = [] \<and> rb = []
+| "eof n ks cs (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
+     (if ecols kks = [0..<m] \<and> \<alpha>s = [] \<and> rb = [] \<and> cS = ks \<and>
+         (case sx of FSSep _ _ _ _ _ _ _ _ \<Rightarrow> False | _ \<Rightarrow> True)
       then EFrz p m (eof m kks [0..<m] \<phi>) (eof n ks cs \<psi>) jfrz jpsi0 jphi []
-        (eof n ks cs \<rho>) w pR tq [] d po ng lv (eof n ks cs \<rho>L) else EFail)"
+        (eof n ks cs \<rho>) w pR tq [] d po ng lv (eof n ks cs \<rho>L) sx cs (eof n ks cs \<rho>S) (eof n ks cs \<rho>E)
+      else EFail)"
 | "eof n ks cs (MLetPast p m kks \<phi> \<psi> i buf) =
      (if ecols kks = [0..<m] \<and> buf = None
       then ELetPast p m (eof m kks [0..<m] \<phi>) (eof n ks cs \<psi>) i None else EFail)"
@@ -176,7 +178,14 @@ function (sequential) eof ::
          buf = ([], []) \<and> nts = []
       then ETrigger (eargs cs cL args) (emb_plan cs cL)
              (eof n kL cL \<phi>) (eof n kR cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (ginit_mmtaux (eargs cs cL args) (emsk cs cL))
+             (tw_init (eargs cs cL args) (emsk cs cL))
+      else EFail)"
+| "eof n ks cs (MRelease args \<phi> \<psi> buf nts t aux) =
+     (let kL = args_L args; kR = args_R args; cL = ecols kL in
+      if ks = kR \<and> cs = ecols kR \<and> set kL \<subseteq> set kR \<and> buf = ([], []) \<and> nts = [] \<and> aux = []
+      then ERelease (eargs cs cL args) (emsk cs cL)
+             (eof n kL cL \<phi>) (eof n kR cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty t
+             eraux_init
       else EFail)"
 | "eof n ks cs (MAndTrigger k \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
      (let kL = args_L args; kR = args_R args; cR = ecols kR; cL = ecols kL in
@@ -184,7 +193,7 @@ function (sequential) eof ::
          tok cR cL args \<and> buf1 = ([], []) \<and> buf2 = ([], []) \<and> nts = []
       then EAndTrigger (mk_djoin cs cR) (eof n ks cs \<alpha>) (mbuf_t_empty, mbuf_t_empty) (eargs cR cL args)
              (eof n kL cL \<phi>) (eof n kR cR \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (ginit_mmtaux (eargs cR cL args) (emsk cR cL))
+             (tw_init (eargs cR cL args) (emsk cR cL))
       else EFail)"
 | "eof n ks cs (MMatchP I k dss mr mrs L buf nts aux) =
      (let css = map ecols dss in
@@ -251,14 +260,6 @@ lemma eframe_fv_list: "eframe (Formula.fv_list \<phi>) (ecols (Formula.fv_list \
   by (rule eframe_dcols[OF distinct_fvi_list])
 
 subsection \<open>The kernel's initial state\<close>
-
-text \<open>The kernel compiles a release by rewriting it; the rewritten formula has the same
-  free-variable list as the original.\<close>
-
-lemma fv_list_release_safe_0:
-  "Formula.fv \<phi> \<subseteq> Formula.fv \<psi> \<Longrightarrow>
-   Formula.fv_list (release_safe_0 \<phi> I \<psi>) = Formula.fv_list (Formula.Release \<phi> I \<psi>)"
-  by (simp add: release_safe_0_def always_safe_0_def cols_union_subset)
 
 lemma fv_list_and_release_safe_bounded:
   "Formula.fv (Formula.Release \<phi>' I \<psi>') \<subseteq> Formula.fv \<phi> \<Longrightarrow>
@@ -378,17 +379,17 @@ lemma etrigger_rel_init:
     and fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
     and ok: "tok cR cL args"
   shows "etrigger_rel kR cR kL cL args tw (init_mmtaux args)
-     (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) ([], []) ([], []) []"
+     (tw_init (eargs cR cL args) (emsk cR cL)) ([], []) ([], []) []"
 proof -
   have i: "args_ivl args = I" and p: "args_pos args = pos" unfolding a by (simp_all add: init_args_def)
   have e: "cL = cR \<Longrightarrow> set kL = set kR" using eframeD(3)[OF fR] eframeD(3)[OF fL] by auto
   have v: "valid_mmtaux args 0 (init_mmtaux args) []"
     using valid_init_mmtaux[of I kL kR pos n agg] ok sub e eframeD(1)[OF fL] eframeD(1)[OF fR]
     unfolding a by (auto simp: tok_def init_args_def Let_def split: if_splits)
-  have d: "etaux kL cL kR cR args 0 (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) []"
-    by (rule etaux_init[OF fR fL sub ok])
+  have d: "etw kL cL kR cR args 0 (tw_init (eargs cR cL args) (emsk cR cL)) []"
+    by (rule etw_init[OF ok])
   have "etrigger_rel kR cR kL cL args tw (init_mmtaux args)
-      (ginit_mmtaux (eargs cR cL args) (emsk cR cL)) ([], [])
+      (tw_init (eargs cR cL args) (emsk cR cL)) ([], [])
       (map (etabc kL cL) [], map (etabc kR cR) []) []"
     by (rule etrigger_relI[OF v _ d]) simp_all
   then show ?thesis by (simp only: list.map)
@@ -472,12 +473,34 @@ proof -
     unfolding a by (simp_all add: init_args_def)
   have ok: "tok (ecols kR) (ecols kL) args" by (rule tok_mem0) (simp add: ag m0)
   have rl: "etrigger_rel kR (ecols kR) kL (ecols kL) args tw (init_mmtaux args)
-      (ginit_mmtaux (eargs (ecols kR) (ecols kL) args) (emsk (ecols kR) (ecols kL)))
+      (tw_init (eargs (ecols kR) (ecols kL) args) (emsk (ecols kR) (ecols kL)))
       ([], []) ([], []) []"
     by (rule etrigger_rel_init[OF a eframe_dcols[OF dR] eframe_dcols[OF dL] sub ok])
   show ?thesis
     by (simp add: ag sub m0 Let_def)
       (rule EsTrigger[OF eframe_dcols[OF dR] s1 s2 sub ag(1,2) _ refl refl], use rl in \<open>simp_all add: ag m0\<close>)
+qed
+
+lemma eof_release_z:
+  assumes "efail_nodes (eof n ks cs (MRelease args \<phi> \<psi> buf nts t aux)) = 0"
+  shows "efail_nodes (eof n (args_L args) (ecols (args_L args)) \<phi>) = 0"
+    and "efail_nodes (eof n (args_R args) (ecols (args_R args)) \<psi>) = 0"
+  using assms by (auto simp: Let_def split: if_splits)
+
+lemma esim_dof_release:
+  assumes a: "args = init_args I n kL kR pos None"
+    and s1: "esim n kL (ecols kL) tw (eof n kL (ecols kL) \<phi>) \<phi>"
+    and s2: "esim n kR (ecols kR) tw (eof n kR (ecols kR) \<psi>) \<psi>"
+    and dL: "distinct kL" and dR: "distinct kR" and sub: "set kL \<subseteq> set kR"
+  shows "esim n kR (ecols kR) tw (eof n kR (ecols kR) (MRelease args \<phi> \<psi> ([], []) [] 0 []))
+     (MRelease args \<phi> \<psi> ([], []) [] 0 [])"
+proof -
+  have ag: "args_L args = kL" "args_R args = kR"
+    unfolding a by (simp_all add: init_args_def)
+  show ?thesis
+    by (simp add: ag sub Let_def)
+      (rule EsRelease[OF eframe_dcols[OF dR] s1 s2 sub ag refl refl],
+        simp_all add: ebuf2_def erelease_rel_init)
 qed
 
 lemma esim_dof_minit0_trigger:
@@ -704,8 +727,19 @@ next
     using Frz.prems(2) unfolding c by (simp_all split: if_splits)
   have s1: "eofc (Formula.nfv \<phi>) tw \<phi>" by (rule Frz.IH(1)[OF fvi_less_nfv z1])
   have s2: "eofc n tw \<psi>" using Frz.prems(1) z2 by (intro Frz.IH(2)) simp_all
-  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c
-    by (auto intro!: EsFrz[where rb = "[]", unfolded list.map(1)])
+  have sx: "map_frz_sep id (etabc (Formula.fv_list \<psi>) (ecols (Formula.fv_list \<psi>)))
+      (frz_sep_init (p, Formula.nfv \<phi>) \<psi> :: (event_data list set, event_data table) frz_sep) =
+    frz_sep_init (p, Formula.nfv \<phi>) \<psi>"
+    by (simp add: frz_sep_init_def)
+  have nsep: "(frz_sep_init (p, Formula.nfv \<phi>) \<psi> :: (event_data list set, event_data table) frz_sep) \<noteq>
+      FSSep L nL pX buf rg bo tk Lr" for L nL pX buf rg bo tk Lr
+    by (simp add: frz_sep_init_def)
+  have ncase: "(case frz_sep_init (p, Formula.nfv \<phi>) \<psi> :: (event_data list set, event_data table) frz_sep of
+      FSSep _ _ _ _ _ _ _ _ \<Rightarrow> False | _ \<Rightarrow> True)"
+    by (simp add: frz_sep_init_def)
+  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c nsep ncase
+    by (auto intro!: EsFrz[where rb = "[]" and sx = "frz_sep_init (p, Formula.nfv \<phi>) \<psi>"
+      and ks = "Formula.fv_list \<psi>" and cs = "ecols (Formula.fv_list \<psi>)", unfolded list.map(1) sx])
 next
   case (LetPast p \<phi> \<psi>)
   have c: "ecols (Formula.fv_list \<phi>) = [0..<Formula.nfv \<phi>]"
@@ -822,7 +856,7 @@ next
     have s3: "eofc n tw \<psi>'" by (rule And_Trigger.IH(3)[OF bR z3])
     have rl: "etrigger_rel (Formula.fv_list \<psi>') (ecols (Formula.fv_list \<psi>'))
         (Formula.fv_list \<phi>') (ecols (Formula.fv_list \<phi>')) ?args tw (init_mmtaux ?args)
-        (ginit_mmtaux (eargs (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>')) ?args)
+        (tw_init (eargs (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>')) ?args)
           (emsk (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>'))))
         ([], []) ([], []) []"
       by (rule etrigger_rel_init[OF refl eframe_fv_list eframe_fv_list _ ok]) (simp add: sub)
@@ -1194,13 +1228,38 @@ next
 next
   case (Release_0 \<phi> I \<psi>)
   have sub: "Formula.fv \<phi> \<subseteq> Formula.fv \<psi>" using Release_0.hyps(4) .
-  have m: "minit0 n (Formula.Release \<phi> I \<psi>) = minit0 n (release_safe_0 \<phi> I \<psi>)"
-    using Release_0.hyps(1) by simp
-  have e: "Formula.fv_list (Formula.Release \<phi> I \<psi>) = Formula.fv_list (release_safe_0 \<phi> I \<psi>)"
-    by (rule fv_list_release_safe_0[OF sub, symmetric])
+  obtain \<phi>'' pos where rl: "release_left \<phi> \<psi> = (\<phi>'', pos)"
+    by (cases "release_left \<phi> \<psi>")
+  have sub'': "Formula.fv \<phi>'' \<subseteq> Formula.fv \<psi>"
+    by (rule fv_release_left[OF rl sub])
+  have b: "\<forall>x \<in> Formula.fv \<psi>. x < n" using Release_0.prems(1) by simp
+  have b'': "\<forall>x \<in> Formula.fv \<phi>''. x < n" using b sub'' by auto
+  have e: "Formula.fv_list (Formula.Release \<phi> I \<psi>) = Formula.fv_list \<psi>"
+    using sub by (simp add: cols_union_subset)
+  let ?args = "init_args I n (Formula.fv_list \<phi>'') (Formula.fv_list \<psi>) pos None"
+  have m: "minit0 n (Formula.Release \<phi> I \<psi>) = MRelease ?args
+      (minit0 n \<phi>'') (minit0 n \<psi>) ([], []) [] 0 []"
+    using Release_0.hyps(1) rl by simp
+  note z = eof_release_z[OF Release_0.prems(2)[unfolded m e]]
+  have z1: "eofz n \<phi>''" and z2: "eofz n \<psi>" using z by (simp_all add: init_args_def)
+  have s2: "eofc n tw \<psi>" by (rule Release_0(6)[OF b z2])
+  have s1: "eofc n tw \<phi>''"
+    using release_left_cases[OF rl]
+  proof (elim disjE conjE)
+    assume "\<phi>'' = \<phi>" "safe_formula \<phi>"
+    then show ?thesis
+      using Release_0(8) b'' z1 by auto
+  next
+    assume "\<phi> = Formula.Neg \<phi>''" "safe_formula \<phi>''"
+    then show ?thesis
+      using Release_0(9) b'' z1 by auto
+  next
+    assume "\<phi>'' = Formula.And \<psi> \<phi>"
+    then show ?thesis
+      using Release_0(7) b'' z1 by auto
+  qed
   show ?case unfolding m e
-    by (rule Release_0.IH[OF _ Release_0.prems(2)[unfolded m e]])
-      (use Release_0.prems(1) in \<open>simp add: release_fvi(1)\<close>)
+    by (rule esim_dof_release[OF refl s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub'')
 next
   case (Release \<phi> I \<psi>) then show ?case by simp
 next

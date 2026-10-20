@@ -1,6 +1,6 @@
 (*<*)
 theory Eval
-  imports Window_Dispatch Trigger_Window Kernel_Call
+  imports Window_Dispatch Release_Window Trigger_Window Kernel_Call
 begin
 (*>*)
 
@@ -67,10 +67,12 @@ datatype eformula =
   | ELet Formula.name nat eformula eformula
   | EFrz Formula.name nat eformula eformula nat nat nat "event_data table list"
       eformula nat nat "ts list" "event_data table list" enat bool bool "nat option" eformula
+      "(event_data list set, event_data table) frz_sep" "nat list" eformula eformula
   | ELetPast Formula.name nat eformula eformula nat "event_data table option"
-  | ETrigger args "nat option list" eformula eformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
+  | ETrigger args "nat option list" eformula eformula uebuf2 "ts mbuf_t" "event_data twaux"
+  | ERelease args "bool list" eformula eformula uebuf2 "ts mbuf_t" ts "event_data eraux"
   | EAndTrigger ejoin_plan eformula "event_data table mbuf_t \<times> event_data table option mbuf_t"
-      args eformula eformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
+      args eformula eformula uebuf2 "ts mbuf_t" "event_data twaux"
   | EMatchP nat \<I> mregex "mregex list" "nat option list list" "eformula list"
       uebufn "ts mbuf_t" "event_data mr\<delta>aux"
   | EMatchF nat \<I> mregex "mregex list" "nat option list list" "eformula list"
@@ -95,10 +97,11 @@ fun efail_nodes :: "eformula \<Rightarrow> nat" where
 | "efail_nodes (EUntil args msk \<phi> \<psi> buf nts t aux) = efail_nodes \<phi> + efail_nodes \<psi>"
 | "efail_nodes (EAndAssign p t \<phi>) = efail_nodes \<phi>"
 | "efail_nodes (ELet p m \<phi> \<psi>) = efail_nodes \<phi> + efail_nodes \<psi>"
-| "efail_nodes (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
+| "efail_nodes (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
     efail_nodes \<phi> + efail_nodes \<psi> + efail_nodes \<rho>"
 | "efail_nodes (ELetPast p m \<phi> \<psi> i buf) = efail_nodes \<phi> + efail_nodes \<psi>"
 | "efail_nodes (ETrigger dags pl \<phi> \<psi> dbuf nts daux) = efail_nodes \<phi> + efail_nodes \<psi>"
+| "efail_nodes (ERelease dags msk \<phi> \<psi> dbuf nts t daux) = efail_nodes \<phi> + efail_nodes \<psi>"
 | "efail_nodes (EAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> ebuf2 nts daux) =
      efail_nodes \<alpha> + efail_nodes \<phi> + efail_nodes \<psi>"
 | "efail_nodes (EMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map efail_nodes L)"
@@ -170,24 +173,29 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
      (let (xs, \<phi>') = eeval j ts db \<phi>;
           (ys, \<psi>') = eeval j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, ELet p m \<phi>' \<psi>'))"
-| "eeval j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
+| "eeval j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
      (let (xs, \<phi>) = eeval j ts db \<phi>;
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = eeval j ts db0 \<psi>;
           (rs, \<rho>) = eeval j ts db0 \<rho>;
-          (zs0_out, jfrz, fl, \<alpha>s, lr) =
+          (zs0_out, jfrz, fl, \<alpha>s, lr, fd) =
             (let zs0_out = drop (jfrz - jpsi0) zs0;
                  \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
              in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
                case lv of None \<Rightarrow> None | Some g \<Rightarrow>
                  if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
                  then Some (g, eeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
-                 else None));
-          (ys, \<alpha>s', lv, \<rho>, w, pR, tq, rb) = frz_live_loop size (eeval j) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
-            fl d po j jfrz \<alpha>s lr (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+                 else None,
+               case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+                 Some (eeval j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+                   eeval j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+               | _ \<Rightarrow> None));
+          (ys, \<alpha>s', lv, (\<rho>, w, pR, tq, rb), sx, \<rho>S, \<rho>E) = frz_step size (eeval j) (frz_kops m cS) (p, m)
+            (Mapping.map_values (\<lambda>_ _. []) db) fl d po j jfrz \<alpha>s xs lr fd sx \<rho>S \<rho>E
+            (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
               drop (min jfrz (pR + length rs) - (pR - length rb)) (rb @ rs))
       in (zs0_out @ ys, EFrz p m \<phi> \<psi> (jfrz + length ys) (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> w pR tq rb d po ng
-        (frz_keep_lv (if po then None else lv) \<rho>L) (frz_keep_st (if po then None else lv) \<rho>L)))"
+        (frz_keep_lv (if po then None else lv) \<rho>L) (frz_keep_st (if po then None else lv) \<rho>L) sx cS \<rho>S \<rho>E))"
 | "eeval j ts db (ELetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -196,17 +204,17 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
 | "eeval j ts db (ETrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = eeval j ts db \<phi>; (ys, \<psi>') = eeval j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-            let ax = gupdate_mmtaux dags t r1 r2 ax
-            in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+            let ax = tw_update dags t r1 r2 ax
+            in (zs @ [tw_result ax], ax)) ([], daux)
             (mebuf2_add xs ys dbuf) (nts @@ ts)
       in (zs, ETrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
 | "eeval j ts db (EAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> ebuf2 nts daux) =
      (let (as, \<alpha>') = eeval j ts db \<alpha>; (xs, \<phi>') = eeval j ts db \<phi>;
           (ys, \<psi>') = eeval j ts db \<psi>;
           ((ws, daux'), dbuf2', nts') = mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-            let ax = gupdate_mmtaux dags t r1 r2 ax
-            in (ws @ [if gmmtaux_empty ax then None
-                      else Some (gresult_mmtaux dags ax)], ax)) ([], daux)
+            let ax = tw_update dags t r1 r2 ax
+            in (ws @ [if tw_empty ax then None
+                      else Some (tw_result ax)], ax)) ([], daux)
             (mebuf2_add xs ys ebuf2) (nts @@ ts);
           (zs, dbuf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
             | Some z \<Rightarrow> gbin_join pl r1 True z) (mebuf2_add as ws dbuf1)
@@ -225,6 +233,12 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
              daux (mebufn_add (map fst R) dbuf) t (nts @@ ts);
           (zs, daux'') = geval_matchF I mr nt daux'
       in (zs, EMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
+| "eeval j ts db (ERelease dags msk \<phi> \<psi> buf nts t aux) =
+     (let (xs, \<phi>') = eeval j ts db \<phi>; (ys, \<psi>') = eeval j ts db \<psi>;
+          (aux', buf', nt, nts') = mebuf2t_take (eraux_update dags msk) aux
+            (mebuf2_add xs ys buf) t (nts @@ ts);
+          (zs, aux'') = eraux_eval (args_ivl dags) nt aux'
+      in (zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
   by pat_completeness (simp_all only: prod.inject eformula.inject eformula.distinct simp_thms)
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
@@ -249,7 +263,7 @@ proof (induct rule: eeval.pinduct)
   then show ?case
     by (simp add: eeval.psimps(11)[OF 11(1)] \<phi>' mp del: meprev_next.simps)
 next
-  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) \<comment> \<open>\<^const>\<open>EFrz\<close>\<close>
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) \<comment> \<open>\<^const>\<open>EFrz\<close>\<close>
   let ?db0 = "Mapping.update (p, m) [] db"
   obtain xs \<phi>' where \<phi>': "eeval j ts db \<phi> = (xs, \<phi>')"
     by fastforce
@@ -263,31 +277,37 @@ next
     using 20(3)[OF \<phi>'[symmetric] refl refl] \<psi>' by simp
   have s\<rho>: "size \<rho>' = size \<rho>"
     using 20(4)[OF \<phi>'[symmetric] refl refl \<psi>'[symmetric] refl] \<rho>' by simp
-  obtain zo jf fl as lr where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+  obtain zo jf fl as lr fd where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
        \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
      in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
        case lv of None \<Rightarrow> None | Some g \<Rightarrow>
          if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
          then Some (g, eeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
-         else None)) = (zo, jf, fl, as, lr)"
-    by (rule prod_cases5)
-  obtain ys as' lv' s' where lp0: "frz_live_loop size (eeval j) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
-      fl d po j jf as lr (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
-        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s')"
-    by (metis prod_cases4)
+         else None,
+       case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+         Some (eeval j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+           eeval j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+       | _ \<Rightarrow> None)) = (zo, jf, fl, as, lr, fd)"
+    by (metis prod_cases6)
+  obtain ys as' lv' s' sx' \<rho>S' \<rho>E' where lp0: "frz_step size (eeval j) (frz_kops m cS) (p, m)
+      (Mapping.map_values (\<lambda>_ _. []) db) fl d po j jf as xs lr fd sx \<rho>S \<rho>E
+      (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s', sx', \<rho>S', \<rho>E')"
+    by (metis prod_cases7)
   obtain \<rho>'' w' pR' tq' rb' where s': "s' = (\<rho>'', w', pR', tq', rb')"
     by (metis prod_cases5)
-  have s\<rho>'': "size \<rho>'' = size \<rho>"
-    using frz_live_loop_size[OF lp0] s\<rho> s' by simp
-  have "snd (eeval j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) =
+  have s\<rho>'': "size \<rho>'' = size \<rho>" and sS: "size \<rho>S' = size \<rho>S" and sE: "size \<rho>E' = size \<rho>E"
+    using frz_step_size[OF lp0] s\<rho> s' by simp_all
+  have "snd (eeval j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)) =
     EFrz p m \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng
-      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L)"
+      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L) sx' cS \<rho>S' \<rho>E'"
     by (simp only: eeval.psimps(20)[OF 20(1)] \<phi>' \<psi>' \<rho>' st lp0[unfolded s'] Let_def[where s = ?db0]
         Let_def[where s = "(xs, \<phi>')"] Let_def[where s = "(zs0, \<psi>')"] Let_def[where s = "(rs, \<rho>')"]
-        Let_def[where s = "(zo, jf, fl, as, lr)"] Let_def[where s = "(ys, as', lv', \<rho>'', w', pR', tq', rb')"]
+        Let_def[where s = "(zo, jf, fl, as, lr, fd)"]
+        Let_def[where s = "(ys, as', lv', (\<rho>'', w', pR', tq', rb'), sx', \<rho>S', \<rho>E')"]
         prod.case snd_conv)
   then show ?case
-    using s\<phi> s\<psi> s\<rho>'' by simp
+    using s\<phi> s\<psi> s\<rho>'' sS sE by simp
 next
   case (21 j ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>ELetPast\<close>\<close>
   obtain xs i' buf' \<phi>' where lp:
@@ -317,12 +337,20 @@ proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_case
   then show ?case
     by simp
 next
-  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb xg xh
-    yc xi yd xj yca xk ycb tsa dba \<psi>')
-  have "size yb = size \<rho>"
-    using psize_snd_eeval[of j ts xb \<rho>] 24 by (metis snd_conv)
+  case 24 \<comment> \<open>the copy of the separable mode with the frozen table, a subterm\<close>
   then show ?case
-    using 24 by simp
+    by simp
+next
+  case 25 \<comment> \<open>the copy of the separable mode with the empty table, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case (26 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E x xa y xb xc xd ya xe
+    xf yb xg xh yc xi yd xj yca xk ycb xl ycc tsa dba \<psi>')
+  have "size yb = size \<rho>"
+    using psize_snd_eeval[of j ts xb \<rho>] 26 by (metis snd_conv)
+  then show ?case
+    using 26 by simp
 qed (auto simp: termination_simp dest!: psize_snd_eeval dest: sym)
 
 lemmas size_snd_eeval = psize_snd_eeval[OF total_eeval[THEN spec]]
@@ -699,6 +727,114 @@ proof -
   then show ?thesis using ev dn dns dbf bfs by simp
 qed
 
+subsection \<open>The release structure at the ascending frame\<close>
+
+text \<open>
+  The release node steps its structure through the buffer like the Until node, with the
+  timestamp-indexed relation, and reads it with @{const eraux_eval}, which pops the same entries
+  as @{const eval_until} pops from the list the structure stands for.
+\<close>
+
+lemma release_step_rel:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and rel: "erelease_rel kR cR (args_ivl args) tw t aux daux nts"
+    and lu: "list_all (ftable kL) (fst buf)" and lv: "list_all (ftable kR) (snd buf)"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and s: "sorted tss" and bnd: "\<forall>u \<in> set tss. tw \<le> u"
+    and we: "mbuf2t_take (update_release args) aux (mbuf2_add as bs buf) t (nts @ tss)
+      = (aux1, buf1, nt, nts1)"
+    and de: "mbuf2t_take (eraux_update (eargs cR cL args) (emsk cR cL)) daux
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs)
+        (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))) t (nts @ tss)
+      = (daux1, dbuf1, dnt, dnts1)"
+    and wev: "eval_until (args_ivl args) nt aux1 = (zs, aux2)"
+    and dev: "eraux_eval (args_ivl args) dnt daux1 = (dzs, daux2)"
+  shows "dzs = map (etabc kR cR) zs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+     dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
+     list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+     erelease_rel kR cR (args_ivl args) (enext tw tss) nt aux2 daux2 nts1"
+proof -
+  have wfa: "\<forall>(u, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and er: "erel (args_ivl args) daux (eauxlist3 kR cR kR cR aux)"
+    and ct: "fst daux \<le> t" and ttw: "t \<le> tw"
+    and sn: "sorted nts" and cn: "\<forall>u \<in> set nts. fst daux \<le> u \<and> u \<le> tw"
+    using rel unfolding erelease_rel_def by blast+
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have mda: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs)
+      (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))
+      = (map (etabc kL cL) us, map (etabc kR cR) vs)"
+    unfolding us_def vs_def by simp
+  have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
+  define Rel :: "ts \<Rightarrow> event_data muaux \<Rightarrow> event_data eraux \<Rightarrow> bool" where
+    "Rel = (\<lambda>u z z'. (\<forall>(u, a1, a2) \<in> set z. table kR a1 \<and> table kR a2) \<and>
+      erel (args_ivl args) z' (eauxlist3 kR cR kR cR z) \<and> fst z' \<le> u)"
+  have step: "Rel t' (update_release args a b t' z)
+      (eraux_update (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t' z')"
+    if a: "a \<in> set us" and b: "b \<in> set vs" and r: "Rel u z z'" and ut: "u \<le> t'"
+    for a b t' u z z'
+  proof -
+    have t1: "table kL a" and t2: "table kR b" using a b lus lvs by (auto simp: list_all_iff)
+    have w: "\<forall>(u, a1, a2) \<in> set z. table kR a1 \<and> table kR a2"
+      and e: "erel (args_ivl args) z' (eauxlist3 kR cR kR cR z)" and f: "fst z' \<le> u"
+      using r by (simp_all add: Rel_def)
+    have eq: "eauxlist3 kR cR kR cR (update_release args a b t' z) =
+        eupdate_release (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t'
+          (eauxlist3 kR cR kR cR z)"
+      by (rule eauxlist3_update_release[OF fR fL sub w t1 t2 aL aR]) simp_all
+    have "erel (args_ivl args)
+        (eraux_update (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t' z')
+        (eupdate_release (eargs cR cL args) (emsk cR cL) (etabc kL cL a) (etabc kR cR b) t'
+          (eauxlist3 kR cR kR cR z))"
+      by (rule erel_update[OF e]) (use f ut in simp_all)
+    then show ?thesis
+      using eauxlist3_wf_update_release[OF w sub t1 t2 aL aR] by (simp add: Rel_def eq)
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>u \<in> set (nts @ tss). fst daux \<le> u" using cn bnd ct ttw by fastforce
+  have tdn: "t \<le> enext tw tss" using ttw enext_ge[OF bnd] by simp
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> enext tw tss"
+    using cn enext_ge[OF bnd] enext_bound[OF s] by fastforce
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  have we': "mbuf2t_take (update_release args) aux (us, vs) t (nts @ tss)
+      = (aux1, (b1, b2), nt, nts1)" using we unfolding ma bfs by simp
+  have de': "mbuf2t_take (eraux_update (eargs cR cL args) (emsk cR cL)) daux
+      (map (etabc kL cL) us, map (etabc kR cR) vs) t (nts @ tss) = (daux1, dbuf1, dnt, dnts1)"
+    using de unfolding mda by simp
+  have vr: "Rel (fst daux) aux daux" using wfa er by (simp add: Rel_def)
+  have R: "(\<exists>u. Rel u aux1 daux1 \<and> u \<le> nt \<and> (\<forall>v \<in> set nts1. u \<le> v)) \<and> sorted nts1 \<and>
+      (nt = t \<or> nt \<in> set (nts @ tss)) \<and> set nts1 \<subseteq> set (nts @ tss) \<and>
+      dbuf1 = (map (etabc kL cL) b1, map (etabc kR cR) b2) \<and> dnt = nt \<and> dnts1 = nts1"
+    by (rule mbuf2t_take_rel_ts[OF step vr ct sts cts we' de'])
+  obtain u where vu: "Rel u aux1 daux1" and unt: "u \<le> nt"
+    and un: "\<forall>v \<in> set nts1. u \<le> v" using R by blast
+  have dn: "dnt = nt" and dns: "dnts1 = nts1" and sn1: "sorted nts1"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)"
+    and dbf: "dbuf1 = (map (etabc kL cL) b1, map (etabc kR cR) b2)" using R by blast+
+  have ntdn: "nt \<le> enext tw tss" using R tdn bound by blast
+  have w1: "\<forall>(u, a1, a2) \<in> set aux1. table kR a1 \<and> table kR a2"
+    and e1: "erel (args_ivl args) daux1 (eauxlist3 kR cR kR cR aux1)" and f1: "fst daux1 \<le> u"
+    using vu by (simp_all add: Rel_def)
+  have ev: "eval_until (args_ivl args) nt (eauxlist3 kR cR kR cR aux1)
+      = (map (etabc kR cR) zs, eauxlist3 kR cR kR cR aux2)"
+    by (rule eauxlist3_eval_until[OF wev])
+  have dz: "dzs = map (etabc kR cR) zs" and e2: "erel (args_ivl args) daux2 (eauxlist3 kR cR kR cR aux2)"
+    and f2: "fst daux2 = fst daux1"
+    using erel_eval[OF e1 order_trans[OF f1 unt] dev[unfolded dn]] ev by simp_all
+  have w2: "\<forall>(u, a1, a2) \<in> set aux2. table kR a1 \<and> table kR a2"
+    by (rule eauxlist3_wf_eval_until[OF w1 wev])
+  have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
+  have lb1: "list_all (ftable kL) b1" using sb lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable kR) b2" using sb lvs by (auto simp: list_all_iff)
+  have "erelease_rel kR cR (args_ivl args) (enext tw tss) nt aux2 daux2 nts1"
+    unfolding erelease_rel_def using w2 e2 f2 f1 unt ntdn sn1 un sub1 bound by fastforce
+  then show ?thesis using dz dn dns dbf lb1 lb2 bfs by simp
+qed
+
 subsection \<open>The Trigger structure at the ascending frame, and its buffer\<close>
 
 text \<open>
@@ -710,12 +846,12 @@ text \<open>
 \<close>
 
 definition etrigger_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
-    event_data mmtaux \<Rightarrow> event_data gmmtaux \<Rightarrow> event_data mbuf2 \<Rightarrow>
+    event_data mmtaux \<Rightarrow> event_data twaux \<Rightarrow> event_data mbuf2 \<Rightarrow>
     event_data mbuf2 \<Rightarrow> ts list \<Rightarrow> bool" where
   "etrigger_rel kR cR kL cL args tw aux daux buf dbuf nts \<longleftrightarrow>
      (\<exists>cur auxlist. valid_mmtaux args cur aux auxlist \<and>
         (\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r) \<and>
-        etaux kL cL kR cR args cur daux auxlist \<and> cur \<le> tw \<and>
+        etw kL cL kR cR args cur daux auxlist \<and> cur \<le> tw \<and>
         list_all (ftable kL) (fst buf) \<and>
         list_all (ftable kR) (snd buf) \<and>
         sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw) \<and>
@@ -724,7 +860,7 @@ definition etrigger_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightar
 lemma etrigger_relI:
   "valid_mmtaux args cur aux auxlist \<Longrightarrow>
    (\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r) \<Longrightarrow>
-   etaux kL cL kR cR args cur daux auxlist \<Longrightarrow> cur \<le> tw \<Longrightarrow>
+   etw kL cL kR cR args cur daux auxlist \<Longrightarrow> cur \<le> tw \<Longrightarrow>
    list_all (ftable kL) xs \<Longrightarrow> list_all (ftable kR) ys \<Longrightarrow>
    sorted nts \<Longrightarrow> \<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw \<Longrightarrow>
    etrigger_rel kR cR kL cL args tw aux daux (xs, ys)
@@ -736,7 +872,7 @@ lemma etrigger_relE:
   assumes "etrigger_rel kR cR kL cL args tw aux daux buf dbuf nts"
   obtains cur auxlist where "valid_mmtaux args cur aux auxlist"
     and "\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
-    and "etaux kL cL kR cR args cur daux auxlist" and "cur \<le> tw"
+    and "etw kL cL kR cR args cur daux auxlist" and "cur \<le> tw"
     and "list_all (ftable kL) (fst buf)"
     and "list_all (ftable kR) (snd buf)"
     and "sorted nts" and "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
@@ -745,8 +881,8 @@ lemma etrigger_relE:
 
 text \<open>One firing of the trigger structure: the buffer traversal that steps it once per pending
   timestamp and collects what it answers.  The two runs stay in step by
-  @{thm [source] mbuf2T_take_rel}, and each individual step is @{thm [source] etaux_update}
-  followed by @{thm [source] etaux_result}.\<close>
+  @{thm [source] mbuf2T_take_rel}, and each individual step is @{thm [source] etw_update}
+  followed by @{thm [source] etw_result}.\<close>
 
 lemma etrigger_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -760,8 +896,8 @@ lemma etrigger_step_rel:
         in (zs @ [z], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
       = ((zs, aux1), buf1, nts1)"
     and de: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
-        let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-        in (zs @ [gresult_mmtaux (eargs cR cL args) ax], ax)) ([], daux)
+        let ax = tw_update (eargs cR cL args) t r1 r2 ax
+        in (zs @ [tw_result ax], ax)) ([], daux)
         (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) (nts @ tss)
       = ((dzs, daux1), dbuf1, dnts1)"
   shows "dzs = map (etabc kR cR) zs \<and> dnts1 = nts1 \<and>
@@ -769,7 +905,7 @@ lemma etrigger_step_rel:
 proof -
   obtain cur auxlist where vw: "valid_mmtaux args cur aux auxlist"
     and wf: "\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
-    and vd: "etaux kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
+    and vd: "etw kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
     and lu: "list_all (ftable kL) (fst buf)"
     and lv: "list_all (ftable kR) (snd buf)"
     and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
@@ -783,13 +919,13 @@ proof -
     let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
     in (zs @ [z], ax))"
   define gd where "gd = (\<lambda>r1 r2 t (zs :: event_data table list, ax).
-    let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-    in (zs @ [gresult_mmtaux (eargs cR cL args) ax], ax))"
+    let ax = tw_update (eargs cR cL args) t r1 r2 ax
+    in (zs @ [tw_result ax], ax))"
   define R where "R = (\<lambda>v (pr :: event_data table list \<times> event_data mmtaux)
-      (dpr :: event_data table list \<times> event_data gmmtaux).
+      (dpr :: event_data table list \<times> event_data twaux).
     (\<exists>al. valid_mmtaux args v (snd pr) al \<and>
        (\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r) \<and>
-       etaux kL cL kR cR args v (snd dpr) al) \<and>
+       etw kL cL kR cR args v (snd dpr) al) \<and>
      fst dpr = map (etabc kR cR) (fst pr))"
   have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
   have mad: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf
@@ -801,13 +937,13 @@ proof -
       R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
   proof -
     fix a c v w and z :: "event_data table list \<times> event_data mmtaux"
-      and z' :: "event_data table list \<times> event_data gmmtaux"
+      and z' :: "event_data table list \<times> event_data twaux"
     assume au: "a \<in> set us" and cv: "c \<in> set vs" and q: "R w z z'" and wv: "w \<le> v"
     have t1: "ftable kL a" using au lus by (simp add: list_all_iff)
     have t2: "ftable kR c" using cv lvs by (simp add: list_all_iff)
     obtain al where vwz: "valid_mmtaux args w (snd z) al"
       and wfz: "\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r"
-      and vdz: "etaux kL cL kR cR args w (snd z') al"
+      and vdz: "etw kL cL kR cR args w (snd z') al"
       using q unfolding R_def by blast
     have fz: "fst z' = map (etabc kR cR) (fst z)" using q unfolding R_def by blast
     define al' where "al' = filter (\<lambda>(t, _). memR (args_ivl args) (v - t)) al @ [(v, a, c)]"
@@ -816,20 +952,20 @@ proof -
       by (rule valid_update_mmtaux[OF wv _ _ vwz]) (use t1 t2 aL aR in simp_all)
     have wf': "\<forall>(t, l, r) \<in> set al'. ftable kL l \<and> ftable kR r"
       using wfz t1 t2 unfolding al'_def by auto
-    have vd': "etaux kL cL kR cR args v
-        (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
-      unfolding al'_def by (rule etaux_update[OF vdz wv fR fL sub]) (use t1 t2 in simp_all)
-    have ne: "\<not> gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+    have vd': "etw kL cL kR cR args v
+        (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
+      unfolding al'_def by (rule etw_update[OF vdz wv]) (use t1 t2 in simp_all)
+    have ne: "\<not> tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
         (etabc kR cR c) (snd z'))"
-      by (rule gupdate_mmtaux_not_empty[OF m0'])
+      by (rule tw_update_not_empty[OF m0'])
     have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
         = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
-    have dres: "gresult_mmtaux (eargs cR cL args)
-          (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
+    have dres: "tw_result
+          (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
         = etabc kR cR (snd (trigger_results args v al'))"
-      by (rule etaux_result[OF vd' ne fR fL sub aL aR])
-    have dres': "gresult_mmtaux (eargs cR cL args)
-          (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
+      by (rule etw_result[OF vd' ne fR fL sub aL aR])
+    have dres': "tw_result
+          (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
         = etabc kR cR (snd (result_mmtaux args (update_mmtaux args v a c (snd z))))"
       unfolding res by (rule dres)
     have gz: "g a c v z
@@ -837,9 +973,9 @@ proof -
            update_mmtaux args v a c (snd z))"
       by (cases z) (simp add: g_def Let_def case_prod_beta)
     have gdz: "gd (etabc kL cL a) (etabc kR cR c) v z'
-        = (fst z' @ [gresult_mmtaux (eargs cR cL args)
-             (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))],
-           gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
+        = (fst z' @ [tw_result
+             (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))],
+           tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
       by (cases z') (simp add: gd_def Let_def case_prod_beta)
     show "R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
       unfolding R_def gz gdz fst_conv snd_conv
@@ -873,7 +1009,7 @@ proof -
   have lb2: "list_all (ftable kR) b2" using sb2 lvs by (auto simp: list_all_iff)
   obtain al1 where v1: "valid_mmtaux args u aux1 al1"
     and w1: "\<forall>(t, l, r) \<in> set al1. ftable kL l \<and> ftable kR r"
-    and d1: "etaux kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
+    and d1: "etw kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
   have dz: "dzs = map (etabc kR cR) zs" using ru unfolding R_def by simp
   have bnd1: "\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> enext tw tss" using un sub1 bound by auto
   have "etrigger_rel kR cR kL cL args (enext tw tss) aux1 daux1 (b1, b2)
@@ -1039,9 +1175,9 @@ lemma eandtrigger_step_rel:
         in (zs @ [(fv_z, z)], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
       = ((zs, aux1), buf1, nts1)"
     and de: "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
-        let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-        in (ws @ [if gmmtaux_empty ax then None
-                  else Some (gresult_mmtaux (eargs cR cL args) ax)], ax)) ([], daux)
+        let ax = tw_update (eargs cR cL args) t r1 r2 ax
+        in (ws @ [if tw_empty ax then None
+                  else Some (tw_result ax)], ax)) ([], daux)
         (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) (nts @ tss)
       = ((dzs, daux1), dbuf1, dnts1)"
   shows "list_all2 (etres kR cR) zs dzs \<and> dnts1 = nts1 \<and>
@@ -1049,7 +1185,7 @@ lemma eandtrigger_step_rel:
 proof -
   obtain cur auxlist where vw: "valid_mmtaux args cur aux auxlist"
     and wf: "\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
-    and vd: "etaux kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
+    and vd: "etw kL cL kR cR args cur daux auxlist" and ctw: "cur \<le> tw"
     and lu: "list_all (ftable kL) (fst buf)"
     and lv: "list_all (ftable kR) (snd buf)"
     and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
@@ -1062,14 +1198,14 @@ proof -
     let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
     in (zs @ [(fv_z, z)], ax))"
   define gd where "gd = (\<lambda>r1 r2 t (ws :: event_data table option list, ax).
-    let ax = gupdate_mmtaux (eargs cR cL args) t r1 r2 ax
-    in (ws @ [if gmmtaux_empty ax then None
-              else Some (gresult_mmtaux (eargs cR cL args) ax)], ax))"
+    let ax = tw_update (eargs cR cL args) t r1 r2 ax
+    in (ws @ [if tw_empty ax then None
+              else Some (tw_result ax)], ax))"
   define R where "R = (\<lambda>v (pr :: (cols \<times> event_data table) list \<times> event_data mmtaux)
-      (dpr :: event_data table option list \<times> event_data gmmtaux).
+      (dpr :: event_data table option list \<times> event_data twaux).
     (\<exists>al. valid_mmtaux args v (snd pr) al \<and>
        (\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r) \<and>
-       etaux kL cL kR cR args v (snd dpr) al) \<and>
+       etw kL cL kR cR args v (snd dpr) al) \<and>
      list_all2 (etres kR cR) (fst pr) (fst dpr))"
   have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
   have mad: "mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf
@@ -1081,13 +1217,13 @@ proof -
       R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
   proof -
     fix a c v w and z :: "(cols \<times> event_data table) list \<times> event_data mmtaux"
-      and z' :: "event_data table option list \<times> event_data gmmtaux"
+      and z' :: "event_data table option list \<times> event_data twaux"
     assume au: "a \<in> set us" and cv: "c \<in> set vs" and q: "R w z z'" and wv: "w \<le> v"
     have t1: "ftable kL a" using au lus by (simp add: list_all_iff)
     have t2: "ftable kR c" using cv lvs by (simp add: list_all_iff)
     obtain al where vwz: "valid_mmtaux args w (snd z) al"
       and wfz: "\<forall>(t, l, r) \<in> set al. ftable kL l \<and> ftable kR r"
-      and vdz: "etaux kL cL kR cR args w (snd z') al"
+      and vdz: "etw kL cL kR cR args w (snd z') al"
       using q unfolding R_def by blast
     have fz: "list_all2 (etres kR cR) (fst z) (fst z')" using q unfolding R_def by blast
     define al' where "al' = filter (\<lambda>(t, _). memR (args_ivl args) (v - t)) al @ [(v, a, c)]"
@@ -1096,27 +1232,27 @@ proof -
       by (rule valid_update_mmtaux[OF wv _ _ vwz]) (use t1 t2 aL aR in simp_all)
     have wf': "\<forall>(t, l, r) \<in> set al'. ftable kL l \<and> ftable kR r"
       using wfz t1 t2 unfolding al'_def by auto
-    have vd': "etaux kL cL kR cR args v
-        (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
-      unfolding al'_def by (rule etaux_update[OF vdz wv fR fL sub]) (use t1 t2 in simp_all)
+    have vd': "etw kL cL kR cR args v
+        (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z')) al'"
+      unfolding al'_def by (rule etw_update[OF vdz wv]) (use t1 t2 in simp_all)
     have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
         = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
     have dr: "etres kR cR (result_mmtaux args (update_mmtaux args v a c (snd z)))
-        (if gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+        (if tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
              (etabc kR cR c) (snd z')) then None
-         else Some (gresult_mmtaux (eargs cR cL args)
-           (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
+         else Some (tw_result
+           (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
              (snd z'))))"
-    proof (cases "gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+    proof (cases "tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
         (etabc kR cR c) (snd z'))")
       case True
       then show ?thesis
-        unfolding res using etaux_result_empty[OF vd' True]
+        unfolding res using etw_result_empty[OF vd' True]
         by (simp add: etres_def)
     next
       case False
       have nz: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (v - t)) al')"
-        using etaux_window[OF vd'] False by (simp add: split_def)
+        using etw_window[OF vd'] False by (simp add: split_def)
       have lst: "fst (last al') = v" unfolding al'_def by simp
       have ft: "ftable (fst (trigger_results args v al')) (snd (trigger_results args v al'))"
         by (rule conjunct1[OF ftable_trigger_results_weak[OF wf' _ lst aL aR
@@ -1124,22 +1260,22 @@ proof -
           (simp add: al'_def)
       have fv: "fst (trigger_results args v al') = kR" using nz aR by simp
       have tr: "ftable kR (snd (trigger_results args v al'))" using ft unfolding fv .
-      have dres: "gresult_mmtaux (eargs cR cL args)
-            (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
+      have dres: "tw_result
+            (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))
           = etabc kR cR (snd (trigger_results args v al'))"
-        by (rule etaux_result[OF vd' False fR fL sub aL aR])
+        by (rule etw_result[OF vd' False fR fL sub aL aR])
       show ?thesis unfolding res using False fv tr dres by (simp add: etres_def)
     qed
     have gz: "g a c v z = (fst z @ [result_mmtaux args (update_mmtaux args v a c (snd z))],
            update_mmtaux args v a c (snd z))"
       by (cases z) (simp add: g_def Let_def case_prod_beta)
     have gdz: "gd (etabc kL cL a) (etabc kR cR c) v z'
-        = (fst z' @ [if gmmtaux_empty (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a)
+        = (fst z' @ [if tw_empty (tw_update (eargs cR cL args) v (etabc kL cL a)
                (etabc kR cR c) (snd z')) then None
-             else Some (gresult_mmtaux (eargs cR cL args)
-               (gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
+             else Some (tw_result
+               (tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c)
                  (snd z')))],
-           gupdate_mmtaux (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
+           tw_update (eargs cR cL args) v (etabc kL cL a) (etabc kR cR c) (snd z'))"
       by (cases z') (simp add: gd_def Let_def case_prod_beta)
     show "R v (g a c v z) (gd (etabc kL cL a) (etabc kR cR c) v z')"
       unfolding R_def gz gdz fst_conv snd_conv
@@ -1173,7 +1309,7 @@ proof -
   have lb2: "list_all (ftable kR) b2" using sb2 lvs by (auto simp: list_all_iff)
   obtain al1 where v1: "valid_mmtaux args u aux1 al1"
     and w1: "\<forall>(t, l, r) \<in> set al1. ftable kL l \<and> ftable kR r"
-    and d1: "etaux kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
+    and d1: "etw kL cL kR cR args u daux1 al1" using ru unfolding R_def by auto
   have dz: "list_all2 (etres kR cR) zs dzs" using ru unfolding R_def by simp
   have bnd1: "\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> enext tw tss" using un sub1 bound by auto
   have "etrigger_rel kR cR kL cL args (enext tw tss) aux1 daux1 (b1, b2)
@@ -1181,6 +1317,38 @@ proof -
     by (rule etrigger_relI[OF v1 w1 d1 ub lb1 lb2 sn1 bnd1])
   then show ?thesis using dz dn1 bfs dbf1 by simp
 qed
+
+text \<open>The executable tables are read at the frozen predicate's variables through their own
+  columns: reading a tuple's restriction there is reading the tuple.\<close>
+
+lemma val_restrict:
+  assumes "eframe ks cs"
+  shows "val m cs (restrict cs ks x) = val m ks x"
+proof -
+  have "tup_get cs (restrict cs ks x) i = tup_get ks x i" for i
+  proof (cases "i \<in> set cs")
+    case True
+    then show ?thesis
+      by (rule tup_get_restrict)
+  next
+    case False
+    then have "i \<notin> set ks"
+      using eframeD(3)[OF assms] by simp
+    then have "map_of (zip ks x) i = None"
+      by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
+    moreover have "map_of (zip cs (restrict cs ks x)) i = None"
+      using False by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
+    ultimately show ?thesis
+      by (simp only: tup_get_def)
+  qed
+  then show ?thesis
+    by (simp add: val_def)
+qed
+
+lemma etabc_frz_cmb:
+  assumes "eframe ks cs"
+  shows "fo_cmb (frz_kops m cs) (etabc ks cs yS) (etabc ks cs yE) \<alpha> = etabc ks cs (fo_cmb (frz_kops m ks) yS yE \<alpha>)"
+  by (auto simp: frz_kops_def etabc_def val_restrict[OF assms])
 
 subsection \<open>The relation itself\<close>
 
@@ -1361,8 +1529,12 @@ inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<
     esim m kks [0..<m] tw \<phi>d \<phi> \<Longrightarrow> esim n ks cs tw \<psi>d \<psi> \<Longrightarrow>
     esim n ks cs tw \<rho>d \<rho> \<Longrightarrow>
     size \<rho>L = size \<rho> \<Longrightarrow> size \<rho>Ld = size \<rho>d \<Longrightarrow> (lv \<noteq> None \<longrightarrow> esim n ks cs tw \<rho>Ld \<rho>L) \<Longrightarrow>
-    esim n ks cs tw (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d w pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld)
-      (mformula.MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)"
+    size \<rho>S = size \<rho> \<Longrightarrow> size \<rho>Sd = size \<rho>d \<Longrightarrow> size \<rho>E = size \<rho> \<Longrightarrow> size \<rho>Ed = size \<rho>d \<Longrightarrow>
+    (\<forall>L nL pX buf rg bo tk Lr. sx = FSSep L nL pX buf rg bo tk Lr \<longrightarrow>
+      esim n ks cs tw \<rho>Sd \<rho>S \<and> esim n ks cs tw \<rho>Ed \<rho>E) \<Longrightarrow> cS = ks \<Longrightarrow>
+    esim n ks cs tw (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d w pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld
+        (map_frz_sep id (etabc ks cs) sx) cs \<rho>Sd \<rho>Ed)
+      (mformula.MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)"
 | EsLetPast: "eframe ks cs \<Longrightarrow>
     esim m kks [0..<m] tw \<phi>d \<phi> \<Longrightarrow> esim n ks cs tw \<psi>d \<psi> \<Longrightarrow>
     esim n ks cs tw (ELetPast p m \<phi>d \<psi>d i buf) (mformula.MLetPast p m kks \<phi> \<psi> i buf)"
@@ -1374,6 +1546,14 @@ inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<
     etrigger_rel kR cR kL cL args tw aux daux buf (rbuf2 dbuf) nts \<Longrightarrow> Rep_mbuf_t dnts = nts \<Longrightarrow>
     esim n kR cR tw (ETrigger dags pl \<phi>d \<psi>d dbuf dnts daux)
       (mformula.MTrigger args \<phi> \<psi> buf nts aux)"
+| EsRelease: "eframe kR cR \<Longrightarrow>
+    esim n kL cL tw \<phi>d \<phi> \<Longrightarrow> esim n kR cR tw \<psi>d \<psi> \<Longrightarrow>
+    set kL \<subseteq> set kR \<Longrightarrow> args_L args = kL \<Longrightarrow> args_R args = kR \<Longrightarrow>
+    dags = eargs cR cL args \<Longrightarrow> msk = emsk cR cL \<Longrightarrow>
+    ebuf2 kL cL kR cR buf (rbuf2 dbuf) \<Longrightarrow> Rep_mbuf_t dnts = nts \<Longrightarrow>
+    erelease_rel kR cR (args_ivl args) tw t aux daux nts \<Longrightarrow>
+    esim n kR cR tw (ERelease dags msk \<phi>d \<psi>d dbuf dnts t daux)
+      (mformula.MRelease args \<phi> \<psi> buf nts t aux)"
 | EsAndTrigger: "eframe ks cs \<Longrightarrow>
     esim n ks cs tw \<alpha>d \<alpha> \<Longrightarrow> esim n kL cL tw \<phi>d \<phi> \<Longrightarrow> esim n kR cR tw \<psi>d \<psi> \<Longrightarrow>
     set kL \<subseteq> set kR \<Longrightarrow> set kR \<subseteq> set ks \<Longrightarrow>
@@ -3175,11 +3355,14 @@ next
       by (rule esim.EsLet[OF wf s1 s2])
   qed
 next
-  case (EsFrz ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> \<rho>d \<rho> \<rho>L \<rho>Ld lv p jfrz jpsi0 jphi \<alpha>s wv pR tq rb d po ng)
+  case (EsFrz ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> \<rho>d \<rho> \<rho>L \<rho>Ld lv \<rho>S \<rho>Sd \<rho>E \<rho>Ed sx cS p jfrz jpsi0 jphi \<alpha>s
+    wv pR tq rb d po ng)
   note wf = EsFrz.hyps(1) and sim1 = EsFrz.hyps(2)
     and IH1 = EsFrz.hyps(3) and sim2 = EsFrz.hyps(4) and IH2 = EsFrz.hyps(5)
     and sim3 = EsFrz.hyps(6) and IH3 = EsFrz.hyps(7)
     and szL = EsFrz.hyps(8) and szLd = EsFrz.hyps(9)
+    and szS = EsFrz.hyps(11) and szSd = EsFrz.hyps(12) and szE = EsFrz.hyps(13) and szEd = EsFrz.hyps(14)
+    and simSE = EsFrz.hyps(15) and cS = EsFrz.hyps(16)
     and kg = EsFrz.prems(4) and sts = kgood_sorted[OF EsFrz.prems(4)]
     and mts = EsFrz.prems(1) and mv = EsFrz.prems(2) and le = EsFrz.prems(3)
   have kg1: "kgood m kks j ts db \<phi>" by (rule kgood_MFrz_phi[OF kg])
@@ -3231,7 +3414,7 @@ next
       map (etabc ks cs) (fst (meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>)) \<and>
       R (snd (meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>))
         (snd (eeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>d))"
-    if r: "R \<chi> \<chi>d" and X: "X \<in> ?A"
+    if r: "R \<chi> \<chi>d"
       and kgc: "kgood n ks j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>" for \<chi> \<chi>d c X
   proof -
     obtain us \<chi>' where eu: "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi> = (us, \<chi>')"
@@ -3288,29 +3471,73 @@ next
     then show ?thesis
       by (auto simp: lrk_def lrd_def split: option.splits)
   qed
+  \<comment> \<open>the two live copies of the separable mode, fed the new time points\<close>
+  define fdk where "fdk = (case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+    Some (meval j n ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+      meval j n ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+    | _ \<Rightarrow> None)"
+  define fdd where "fdd = (case map_frz_sep id (etabc ks cs) sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+    Some (eeval j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>Sd,
+      eeval j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>Ed)
+    | _ \<Rightarrow> None)"
+  have fdrel: "rel_option (\<lambda>((uS, \<rho>S), (uE, \<rho>E)) ((uS', \<rho>S'), (uE', \<rho>E')).
+      uS' = map (etabc ks cs) uS \<and> uE' = map (etabc ks cs) uE \<and> R \<rho>S \<rho>S' \<and> R \<rho>E \<rho>E') fdk fdd"
+  proof (cases sx)
+    case (FSSep L nL pX buf rg bo tk Lr)
+    have simS: "esim n ks cs tw \<rho>Sd \<rho>S" and simE: "esim n ks cs tw \<rho>Ed \<rho>E"
+      using simSE FSSep by blast+
+    have kgS: "kgood n ks j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S"
+      and kgE: "kgood n ks j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E"
+      using kgood_MFrz_sep[OF kg FSSep] by blast+
+    have szs: "size \<rho>S < NN" "size \<rho>E < NN"
+      by (rule order.strict_trans2[OF _ le], simp)+
+    obtain uS \<chi>S where eS: "meval j n ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S = (uS, \<chi>S)"
+      by fastforce
+    obtain uE \<chi>E where eE: "meval j n ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E = (uE, \<chi>E)"
+      by fastforce
+    obtain dS where dS: "eeval j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>Sd = (map (etabc ks cs) uS, dS)"
+      and sS: "esim n ks cs (enext tw ts) dS \<chi>S"
+      using Q[OF szs(1) simS mts eS kgS] by blast
+    obtain dE where dE: "eeval j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>Ed = (map (etabc ks cs) uE, dE)"
+      and sE: "esim n ks cs (enext tw ts) dE \<chi>E"
+      using Q[OF szs(2) simE mts eE kgE] by blast
+    have "size \<chi>S = size \<rho>" "size \<chi>E = size \<rho>"
+      using default_maux.size_snd_meval[of j n ts _ \<rho>S] default_maux.size_snd_meval[of j n ts _ \<rho>E]
+        eS eE szS szE by (metis snd_conv)+
+    moreover have "size dS = size \<rho>d" "size dE = size \<rho>d"
+      using size_snd_eeval[of j ts _ \<rho>Sd] size_snd_eeval[of j ts _ \<rho>Ed] dS dE szSd szEd by (metis snd_conv)+
+    ultimately show ?thesis
+      using FSSep eS eE dS dE sS sE by (simp add: fdk_def fdd_def R_def)
+  qed (simp_all add: fdk_def fdd_def)
+  \<comment> \<open>the step: the two runs evaluate related states on the same tables\<close>
+  define Rs where "Rs (st :: (mmasaux, muaux_dq, event_data mmtaux) mformula) (dst :: eformula) \<longleftrightarrow>
+    size st = size \<rho> \<and> size dst = size \<rho>d" for st dst
+  let ?B = "frz_tabs ?A sx"
   let ?k = "min (jfrz + length ?zout) (pR + length rs) - (pR - length rb)"
   let ?tq1 = "if d = \<infinity> then [] else tq @ ts"
   let ?s = "(\<rho>2, wv, pR + length rs, ?tq1, drop ?k (rb @ rs))"
   let ?sd = "(\<rho>d2, wv, pR + length rs, ?tq1, drop ?k (map (etabc ks cs) rb @ map (etabc ks cs) rs))"
-  obtain ys as' lvk \<rho>3 w3 pR3 tq3 rb3 where e3: "frz_live_loop size (meval j n) (p, m) ?dbe ?F d po j
-      (jfrz + length ?zout) ?as1 lrk ?s = (ys, as', lvk, \<rho>3, w3, pR3, tq3, rb3)"
-    by (metis prod_cases4 prod_cases5)
-  obtain dys das' lvd sd3 where d3: "frz_live_loop size (eeval j) (p, m) ?dbe ?F d po j
-      (jfrz + length ?zout) ?as1 lrd ?sd = (dys, das', lvd, sd3)"
-    by (metis prod_cases4)
-  have d3': "frz_live_loop size (eeval j) (p, m) ?dbe (id ?F) d po j
-      (jfrz + length ?zout) (map id ?as1) lrd ?sd = (dys, das', lvd, sd3)"
-    using d3 by simp
+  obtain ys as' lvk \<rho>3 w3 pR3 tq3 rb3 sx3 \<rho>S3 \<rho>E3 where e3: "frz_step size (meval j n) (frz_kops m cS) (p, m) ?dbe ?F
+      d po j (jfrz + length ?zout) ?as1 ?as lrk fdk sx \<rho>S \<rho>E ?s = (ys, as', lvk, (\<rho>3, w3, pR3, tq3, rb3), sx3, \<rho>S3, \<rho>E3)"
+    by (metis prod_cases7 prod_cases5)
+  obtain dys das' lvd sd3 dsx3 \<rho>Sd3 \<rho>Ed3 where d3: "frz_step size (eeval j) (frz_kops m cs) (p, m) ?dbe ?F d po j
+      (jfrz + length ?zout) ?as1 ?as lrd fdd (map_frz_sep id (etabc ks cs) sx) \<rho>Sd \<rho>Ed ?sd =
+      (dys, das', lvd, sd3, dsx3, \<rho>Sd3, \<rho>Ed3)"
+    by (metis prod_cases7)
   have st0: "frz_st_rel R (etabc ks cs) ?s ?sd"
     using s4 sz\<rho>2 sz\<rho>d2 by (simp add: R_def drop_map flip: map_append)
-  have frel: "dys = map (etabc ks cs) ys \<and> das' = map id as' \<and>
+  have ops: "frz_ops_rel (etabc ks cs) (frz_kops m cS) (frz_kops m cs)"
+    unfolding frz_ops_rel_def cS using etabc_frz_cmb[OF wf] by (simp add: frz_kops_def)
+  have frel: "dys = map (etabc ks cs) ys \<and> das' = as' \<and>
       rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lvk lvd \<and>
-      frz_st_rel R (etabc ks cs) (\<rho>3, w3, pR3, tq3, rb3) sd3"
-  proof (rule frz_live_loop_rel_inv[where K = "frz_kinv n ks j (p, m) d ?dbe ?A" and A = ?A,
-        OF _ _ subA st0 _ lrel e3 d3'])
+      frz_st_rel R (etabc ks cs) (\<rho>3, w3, pR3, tq3, rb3) sd3 \<and> frz_kinv n ks j (p, m) d ?dbe ?A ?B (\<rho>3, w3, pR3, tq3, rb3) \<and>
+      dsx3 = map_frz_sep id (etabc ks cs) sx3 \<and> Rs \<rho>S3 \<rho>Sd3 \<and> Rs \<rho>E3 \<rho>Ed3 \<and>
+      (\<forall>L nL pX buf rg bo tk Lr. sx3 = FSSep L nL pX buf rg bo tk Lr \<longrightarrow> R \<rho>S3 \<rho>Sd3 \<and> R \<rho>E3 \<rho>Ed3)"
+  proof (rule frz_step_rel_inv[where K = "frz_kinv n ks j (p, m) d ?dbe ?A ?B" and A = ?A and B = ?B and Rs = Rs,
+        OF _ _ _ _ _ ops _ _ _ subA _ st0 _ _ _ _ _ lrel fdrel e3 d3])
     \<comment> \<open>the window's move\<close>
     fix s s' i
-    assume st: "frz_st_rel R (etabc ks cs) s s'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A s"
+    assume st: "frz_st_rel R (etabc ks cs) s s'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A ?B s"
     obtain \<rho>' w' pR' tq' rb' where s: "s = (\<rho>', w', pR', tq', rb')"
       by (metis prod_cases5)
     with st obtain \<rho>d' where s': "s' = (\<rho>d', w', pR', tq', map (etabc ks cs) rb')" and R: "R \<rho>' \<rho>d'"
@@ -3321,32 +3548,55 @@ next
     have Fa: "?F \<in> ?A" by simp
     obtain rs2 \<sigma>2 where e: "meval j n [] (Mapping.update (p, m) (replicate ?a ?F) ?dbe) \<rho>' = (rs2, \<sigma>2)"
       by fastforce
-    obtain rs2' \<sigma>2' where e': "eeval j [] (Mapping.update (p, m) (replicate ?a (id ?F)) ?dbe) \<rho>d' = (rs2', \<sigma>2')"
+    obtain rs2' \<sigma>2' where e': "eeval j [] (Mapping.update (p, m) (replicate ?a ?F) ?dbe) \<rho>d' = (rs2', \<sigma>2')"
       by fastforce
     have ag: "rs2' = map (etabc ks cs) rs2 \<and> R \<sigma>2 \<sigma>2'"
-      using agree[OF R Fa frz_kinv_call[OF K[unfolded s] Fa a]] e e' by simp
+      using agree[OF R frz_kinv_call[OF K[unfolded s] Fa a]] e e' by simp
     have sz: "size \<sigma>2 = size \<rho>'" "size \<sigma>2' = size \<rho>d'"
       using ag R by (simp_all add: R_def)
     show "frz_st_rel R (etabc ks cs) (frz_adv_st size (meval j n) (p, m) ?dbe ?F d j i s)
-        (frz_adv_st size (eeval j) (p, m) ?dbe (id ?F) d j i s') \<and>
-      frz_kinv n ks j (p, m) d ?dbe ?A (frz_adv_st size (meval j n) (p, m) ?dbe ?F d j i s)"
+        (frz_adv_st size (eeval j) (p, m) ?dbe ?F d j i s') \<and>
+      frz_kinv n ks j (p, m) d ?dbe ?A ?B (frz_adv_st size (meval j n) (p, m) ?dbe ?F d j i s)"
       using frz_kinv_adv[OF K Fa, of i] s s' e e' ag sz
       by (auto simp: frz_adv_st_def Let_def drop_map[symmetric])
   next
-    \<comment> \<open>a copy\<close>
+    \<comment> \<open>a copy of the replay mode\<close>
     fix \<rho>' w' pR' tq' rb' \<rho>d' X i
-    assume R: "R \<rho>' \<rho>d'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A (\<rho>', w', pR', tq', rb')" and X: "X \<in> ?A"
-    show "fst (eeval j [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) (id X)) ?dbe) \<rho>d') =
+    assume R: "R \<rho>' \<rho>d'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A ?B (\<rho>', w', pR', tq', rb')" and X: "X \<in> ?A"
+    show "fst (eeval j [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) X) ?dbe) \<rho>d') =
         map (etabc ks cs) (fst (meval j n [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) X) ?dbe) \<rho>')) \<and>
       R (snd (meval j n [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) X) ?dbe) \<rho>'))
-        (snd (eeval j [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) (id X)) ?dbe) \<rho>d'))"
-      using agree[OF R X frz_kinv_call[OF K X frz_cut_le]] by simp
+        (snd (eeval j [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) X) ?dbe) \<rho>d'))"
+      using agree[OF R frz_kinv_call[OF K X frz_cut_le]] by simp
   next
-    show "frz_kinv n ks j (p, m) d ?dbe ?A ?s"
+    \<comment> \<open>a replay of the separable mode\<close>
+    fix \<rho>' w' pR' tq' rb' \<rho>d' X
+    assume R: "R \<rho>' \<rho>d'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A ?B (\<rho>', w', pR', tq', rb')" and X: "X \<in> ?B"
+    show "fst (eeval j [] (Mapping.update (p, m) (replicate (j - w') X) ?dbe) \<rho>d') =
+        map (etabc ks cs) (fst (meval j n [] (Mapping.update (p, m) (replicate (j - w') X) ?dbe) \<rho>')) \<and>
+      R (snd (meval j n [] (Mapping.update (p, m) (replicate (j - w') X) ?dbe) \<rho>'))
+        (snd (eeval j [] (Mapping.update (p, m) (replicate (j - w') X) ?dbe) \<rho>d'))"
+      using agree[OF R frz_kinv_call_B[OF K X order_refl]] by simp
+  next
+    show "R \<psi>1 \<psi>1' \<Longrightarrow> Rs \<psi>2 \<psi>2' \<Longrightarrow> size \<psi>1 = size \<psi>2 \<longleftrightarrow> size \<psi>1' = size \<psi>2'" for \<psi>1 \<psi>1' \<psi>2 \<psi>2'
+      by (simp add: R_def Rs_def)
+    show "R \<psi> \<psi>' \<Longrightarrow> Rs \<psi> \<psi>'" for \<psi> \<psi>'
+      by (simp add: R_def Rs_def)
+    show "X \<in> ?B \<Longrightarrow> Y \<in> ?B \<Longrightarrow> fo_un (frz_kops m cS) X Y \<in> ?B" for X Y
+      by (auto simp: frz_tabs_def frz_kops_def)
+    show "?A \<subseteq> ?B" "fo_emp (frz_kops m cS) \<in> ?B"
+      by (auto simp: frz_tabs_def frz_kops_def)
+    show "set ?as \<subseteq> ?B"
+      by (auto simp: frz_tabs_def)
+    show "frz_kinv n ks j (p, m) d ?dbe ?A ?B ?s"
       by (rule kgood_MFrz_kinv[OF kg e1 e4])
+    show "Lm \<in> ?B \<and> set rs \<subseteq> ?B" if "sx = FSStock rg bo cy Lm nm en ep rs" for rg bo cy Lm nm en ep rs
+      using that by (auto simp: frz_tabs_def)
+    show "L \<in> ?B \<and> Lr \<in> ?B" if "sx = FSSep L nL pX buf rg bo tk Lr" for L nL pX buf rg bo tk Lr
+      using that by (auto simp: frz_tabs_def)
+    show "Rs \<rho>S \<rho>Sd" "Rs \<rho>E \<rho>Ed"
+      using szS szSd szE szEd by (simp_all add: Rs_def)
   qed
-  have sub: "set as' \<subseteq> set ?as1"
-    using frz_live_loop_inv[where P = "\<lambda>_. True" and T = "\<lambda>_. True", OF _ _ _ e3] by (simp add: list_all_iff)
   obtain \<rho>d3 where sd3: "sd3 = (\<rho>d3, w3, pR3, tq3, map (etabc ks cs) rb3)" and R3: "R \<rho>3 \<rho>d3"
     using frel by (cases sd3) auto
   let ?lvk = "if po then None else lvk"
@@ -3358,54 +3608,68 @@ next
   \<comment> \<open>the two runs agree, component by component\<close>
   let ?jfrz1 = "jfrz + length ?zout + length ys"
   have stk: "(let zs0_out = drop (jfrz - jpsi0) zs0;
-       \<alpha>s0 = \<alpha>s @ map (reorder [0..<m] kks) as0;
+       xsr = map (reorder [0..<m] kks) as0;
+       \<alpha>s0 = \<alpha>s @ xsr;
        \<alpha>s1 = drop (jfrz - jphi + length zs0_out) \<alpha>s0
      in (zs0_out, jfrz + length zs0_out, frz_fill ng \<alpha>s0, \<alpha>s1,
        case lv of None \<Rightarrow> None | Some g \<Rightarrow>
          if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
          then Some (g, meval j n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
-         else None)) = (?zout, jfrz + length ?zout, ?F, ?as1, lrk)"
-    by (simp only: Let_def lrk_def)
+         else None,
+       xsr,
+       case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+         Some (meval j n ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+           meval j n ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+       | _ \<Rightarrow> None)) = (?zout, jfrz + length ?zout, ?F, ?as1, lrk, ?as, fdk)"
+    by (simp only: Let_def lrk_def fdk_def)
   have std: "(let zs0_out = drop (jfrz - jpsi0) (map (etabc ks cs) zs0);
        \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ ?as)
      in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ ?as), \<alpha>s1,
        case lv of None \<Rightarrow> None | Some g \<Rightarrow>
          if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
          then Some (g, eeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>Ld)
-         else None)) = (map (etabc ks cs) ?zout, jfrz + length ?zout, ?F, ?as1, lrd)"
-    by (simp only: Let_def lrd_def drop_map length_map map_is_Nil_conv)
-  have mq: "meval j n ts db (mformula.MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> wv pR tq rb d po ng lv \<rho>L) =
+         else None,
+       case map_frz_sep id (etabc ks cs) sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+         Some (eeval j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>Sd,
+           eeval j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>Ed)
+       | _ \<Rightarrow> None)) = (map (etabc ks cs) ?zout, jfrz + length ?zout, ?F, ?as1, lrd, fdd)"
+    by (simp only: Let_def lrd_def fdd_def drop_map length_map map_is_Nil_conv)
+  have mq: "meval j n ts db (mformula.MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> wv pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
       (?zout @ ys, mformula.MFrz p m kks \<phi>2 \<psi>2 (jfrz + length ?zout + length ys) (jpsi0 + length zs0)
-        (jphi + length as0) as' \<rho>3 w3 pR3 tq3 rb3 d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L))"
+        (jphi + length as0) as' \<rho>3 w3 pR3 tq3 rb3 d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L) sx3 cS \<rho>S3 \<rho>E3)"
     by (simp only: default_maux.meval.simps e1 e2 e4 stk e3 Let_def[where s = "Mapping.update (p, m) [] db"]
         Let_def[where s = "(as0, \<phi>2)"] Let_def[where s = "(zs0, \<psi>2)"] Let_def[where s = "(rs, \<rho>2)"]
-        Let_def[where s = "(?zout, jfrz + length ?zout, ?F, ?as1, lrk)"]
-        Let_def[where s = "(ys, as', lvk, \<rho>3, w3, pR3, tq3, rb3)"] prod.case)
+        Let_def[where s = "(?zout, jfrz + length ?zout, ?F, ?as1, lrk, ?as, fdk)"]
+        Let_def[where s = "(ys, as', lvk, (\<rho>3, w3, pR3, tq3, rb3), sx3, \<rho>S3, \<rho>E3)"] prod.case)
   have x: "xs = ?zout @ ys"
     and f: "\<phi>' = mformula.MFrz p m kks \<phi>2 \<psi>2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as0) as'
-        \<rho>3 w3 pR3 tq3 rb3 d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L)"
+        \<rho>3 w3 pR3 tq3 rb3 d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L) sx3 cS \<rho>S3 \<rho>E3"
     using mv unfolding mq by simp_all
-  have dq: "eeval j ts db (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld) =
+  have dq: "eeval j ts db (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld
+        (map_frz_sep id (etabc ks cs) sx) cs \<rho>Sd \<rho>Ed) =
       (map (etabc ks cs) ?zout @ dys, EFrz p m \<phi>d2 \<psi>d2 (jfrz + length ?zout + length dys) (jpsi0 + length zs0)
         (jphi + length as0) das' \<rho>d3 w3 pR3 tq3 (map (etabc ks cs) rb3) d po ng
-        (frz_keep_lv ?lvd \<rho>Ld) (frz_keep_st ?lvd \<rho>Ld))"
+        (frz_keep_lv ?lvd \<rho>Ld) (frz_keep_st ?lvd \<rho>Ld) dsx3 cs \<rho>Sd3 \<rho>Ed3)"
     by (simp only: eeval.simps d1 d2 d4 std length_map d3[unfolded sd3]
         Let_def[where s = "Mapping.update (p, m) [] db"]
         Let_def[where s = "(?as, \<phi>d2)"] Let_def[where s = "(map (etabc ks cs) zs0, \<psi>d2)"]
         Let_def[where s = "(map (etabc ks cs) rs, \<rho>d2)"]
-        Let_def[where s = "(map (etabc ks cs) ?zout, jfrz + length ?zout, ?F, ?as1, lrd)"]
-        Let_def[where s = "(dys, das', lvd, \<rho>d3, w3, pR3, tq3, map (etabc ks cs) rb3)"] prod.case)
+        Let_def[where s = "(map (etabc ks cs) ?zout, jfrz + length ?zout, ?F, ?as1, lrd, fdd)"]
+        Let_def[where s = "(dys, das', lvd, (\<rho>d3, w3, pR3, tq3, map (etabc ks cs) rb3), dsx3, \<rho>Sd3, \<rho>Ed3)"] prod.case)
   show ?case
   proof (intro exI conjI)
-    show "eeval j ts db (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld)
+    show "eeval j ts db (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld
+          (map_frz_sep id (etabc ks cs) sx) cs \<rho>Sd \<rho>Ed)
         = (map (etabc ks cs) xs, EFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as0) as'
-            \<rho>d3 w3 pR3 tq3 (map (etabc ks cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld))"
+            \<rho>d3 w3 pR3 tq3 (map (etabc ks cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)
+            (map_frz_sep id (etabc ks cs) sx3) cs \<rho>Sd3 \<rho>Ed3)"
       unfolding dq x using frel keep(1) by simp
     show "esim n ks cs (enext tw ts) (EFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as0) as'
-            \<rho>d3 w3 pR3 tq3 (map (etabc ks cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)) \<phi>'"
+            \<rho>d3 w3 pR3 tq3 (map (etabc ks cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)
+            (map_frz_sep id (etabc ks cs) sx3) cs \<rho>Sd3 \<rho>Ed3) \<phi>'"
       unfolding f
       by (rule esim.EsFrz[OF wf s1 s2])
-        (use R3 szL szLd keep(2) in \<open>simp_all add: R_def\<close>)
+        (use R3 szL szLd keep(2) frel cS in \<open>simp_all add: R_def Rs_def\<close>)
   qed
 next
   case (EsLetPast ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> p i buf)
@@ -3482,20 +3746,20 @@ next
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
   obtain dzs daux2 ebuf2 dnts2 where d3: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+      let ax = tw_update dags t r1 r2 ax
+      in (zs @ [tw_result ax], ax)) ([], daux)
       (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) (nts @ ts)
       = ((dzs, daux2), ebuf2, dnts2)"
     by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+      let ax = tw_update dags t r1 r2 ax
+      in (zs @ [tw_result ax], ax)) ([], daux)
       (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) (nts @ ts)") auto
   have step: "dzs = map (etabc kR cR) zs \<and> dnts2 = nts2 \<and>
       etrigger_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 ebuf2 nts2"
     by (rule etrigger_step_rel[OF wf fL sub aL aR m0 rel ta tb sts mts e3 d3[unfolded dag]])
   obtain ub un where eu: "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+      let ax = tw_update dags t r1 r2 ax
+      in (zs @ [tw_result ax], ax)) ([], daux)
       (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) (dnts @@ ts)
       = ((dzs, daux2), ub, un)" and ub: "rbuf2 ub = ebuf2" and un: "Rep_mbuf_t un = dnts2"
     by (rule mebuf2T_take_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
@@ -3508,6 +3772,75 @@ next
       unfolding f
       by (rule esim.EsTrigger[OF wf s1 s2 sub
             aL aR m0 dag pe]) (use step ub un in simp_all)
+  qed
+next
+  case (EsRelease kR cR n kL cL tw \<phi>d \<phi> \<psi>d \<psi> args dags msk buf dbuf dnts nts t aux daux)
+  note wf = EsRelease.hyps(1)
+    and sim1 = EsRelease.hyps(2) and IH1 = EsRelease.hyps(3)
+    and sim2 = EsRelease.hyps(4) and IH2 = EsRelease.hyps(5)
+    and sub = EsRelease.hyps(6) and aL = EsRelease.hyps(7) and aR = EsRelease.hyps(8)
+    and dag = EsRelease.hyps(9) and pe = EsRelease.hyps(10)
+    and eb = EsRelease.hyps(11) and ne = EsRelease.hyps(12) and rel = EsRelease.hyps(13)
+    and kg = EsRelease.prems(4) and sts = kgood_sorted[OF EsRelease.prems(4)]
+    and mts = EsRelease.prems(1) and m = EsRelease.prems(2)
+  have kg1: "kgood n kL j ts db \<phi>" and kg2: "kgood n kR j ts db \<psi>"
+    using kgood_MRelease[OF kg] aL aR by simp_all
+  obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
+  obtain aux1 buf1 nt nts1 where e3: "mbuf2t_take (update_release args) aux (mbuf2_add as bs buf) t
+      (nts @ ts) = (aux1, buf1, nt, nts1)"
+    by (cases "mbuf2t_take (update_release args) aux (mbuf2_add as bs buf) t (nts @ ts)")
+  obtain zs aux2 where e4: "eval_until (args_ivl args) nt aux1 = (zs, aux2)"
+    by (cases "eval_until (args_ivl args) nt aux1")
+  have x: "xs = zs" and f: "\<phi>' = mformula.MRelease args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
+    using m e1 e2 e3 e4 by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ EsRelease.prems(3)], simp)+
+  obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
+    and s1: "esim n kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF mts e1 sz1 kg1] by blast
+  obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
+    and s2: "esim n kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF mts e2 sz2 kg2] by blast
+  have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
+  have ta: "list_all (ftable kL) as"
+    by (rule kgood_tables[OF kg1 e1])
+  have tb: "list_all (ftable kR) bs"
+    by (rule kgood_tables[OF kg2 e2])
+  have lu: "list_all (ftable kL) (fst buf)" and lv: "list_all (ftable kR) (snd buf)"
+    and dbe: "rbuf2 dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))"
+    using eb unfolding ebuf2_def by blast+
+  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eraux_update dags msk) daux
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)
+      = (daux1, dbuf1, dnt, dnts1)"
+    by (cases "mbuf2t_take (eraux_update dags msk) daux
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)")
+  obtain dzs daux2 where d4: "eraux_eval (args_ivl args) dnt daux1 = (dzs, daux2)"
+    by (cases "eraux_eval (args_ivl args) dnt daux1")
+  have st: "dzs = map (etabc kR cR) zs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+      dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
+      list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+      erelease_rel kR cR (args_ivl args) (enext tw ts) nt aux2 daux2 nts1"
+    by (rule release_step_rel[OF wf fL sub aL aR rel lu lv ta tb sts mts e3
+        d3[unfolded dag pe dbe] e4 d4])
+  obtain ua ub nt' un where eu: "mebuf2t_take (eraux_update dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, nt', un)"
+    by (cases "mebuf2t_take (eraux_update dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts)")
+  have "(ua, rbuf2 ub, nt', Rep_mbuf_t un) = (daux1, dbuf1, dnt, dnts1)"
+    using mbuf2t_take_rbuf2[of "eraux_update dags msk" daux
+        "mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf" t dnts ts]
+    unfolding eu ne mbuf2_add_rbuf2[symmetric] d3 by simp
+  then have ua: "ua = daux1" and ub: "rbuf2 ub = dbuf1" and nt': "nt' = nt"
+    and un: "Rep_mbuf_t un = nts1"
+    using st by simp_all
+  show ?case
+  proof (intro exI conjI)
+    show "eeval j ts db (ERelease dags msk \<phi>d \<psi>d dbuf dnts t daux)
+        = (map (etabc kR cR) xs, ERelease dags msk \<phi>d2 \<psi>d2 ub un nt daux2)"
+      using d1 d2 eu d4 x ua nt' st by (simp add: dag)
+    show "esim n kR cR (enext tw ts) (ERelease dags msk \<phi>d2 \<psi>d2 ub un nt daux2) \<phi>'"
+      unfolding f
+      by (rule esim.EsRelease[OF wf s1 s2 sub aL aR dag pe _ un])
+        (use st ub in \<open>simp_all add: ebuf2_def\<close>)
   qed
 next
   case (EsAndTrigger ks cs n tw \<alpha>d \<alpha> kL cL \<phi>d \<phi> kR cR \<psi>d \<psi> args dags pl buf1 dbf1 aux daux buf2 dbf2 nts dnts)
@@ -3557,21 +3890,21 @@ next
   have tb: "list_all (ftable kR) ys1"
     by (rule kgood_tables[OF kg2 e2])
   obtain dws daux2 dbf2' dnts2 where d3: "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      let ax = tw_update dags t r1 r2 ax
+      in (ws @ [if tw_empty ax then None else Some (tw_result ax)], ax))
       ([], daux) (mbuf2_add (map (etabc kL cL) xs1) (map (etabc kR cR) ys1) (rbuf2 dbf2)) (nts @ ts)
       = ((dws, daux2), dbf2', dnts2)"
     by (cases "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      let ax = tw_update dags t r1 r2 ax
+      in (ws @ [if tw_empty ax then None else Some (tw_result ax)], ax))
       ([], daux) (mbuf2_add (map (etabc kL cL) xs1) (map (etabc kR cR) ys1) (rbuf2 dbf2))
       (nts @ ts)") auto
   have step: "list_all2 (etres kR cR) ws dws \<and> dnts2 = nts2 \<and>
       etrigger_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2' dbf2' nts2"
     by (rule eandtrigger_step_rel[OF fR fL subLR aL aR ok rel ta tb sts mts e3 d3[unfolded dag]])
   obtain ub2 un where eu: "mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      let ax = tw_update dags t r1 r2 ax
+      in (ws @ [if tw_empty ax then None else Some (tw_result ax)], ax))
       ([], daux) (mebuf2_add (map (etabc kL cL) xs1) (map (etabc kR cR) ys1) dbf2) (dnts @@ ts)
       = ((dws, daux2), ub2, un)" and ub2: "rbuf2 ub2 = dbf2'" and un: "Rep_mbuf_t un = dnts2"
     by (rule mebuf2T_take_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
