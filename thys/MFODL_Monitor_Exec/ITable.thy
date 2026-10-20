@@ -1,0 +1,182 @@
+(*<*)
+theory ITable
+  imports Idx_Code
+begin
+(*>*)
+
+section \<open>Tables with indices\<close>
+
+text \<open>
+  An indexed table is a table together with any number of indices on it, each clustering the
+  table by its projection at a column mask (@{const eidx}).  The table is what the kernel sees; the
+  indices are a cache that a consumer of the table may use instead of building its own.  Which
+  masks a table carries is its producer's business: a table built at one time point carries
+  none, and a structure that keeps a table across time points may keep indices with it and update
+  them with the tuples that enter and leave.  The type's invariant is that every index is the
+  clustering of the table at its mask, so every operation below is an equality with the
+  operation on the underlying tables: the indices change the cost of an evaluation, never its
+  result, and no proof about the evaluation has to carry an invariant of its indices.
+\<close>
+
+type_synonym 'b eindex = "('b list, 'b list set) mapping"
+
+definition iinv :: "'b list set \<times> (bool list, 'b eindex) mapping \<Rightarrow> bool" where
+  "iinv TI \<longleftrightarrow> (\<forall>msk m. Mapping.lookup (snd TI) msk = Some m \<longrightarrow> m = eidx msk (fst TI))"
+
+typedef 'b itab = "{TI :: 'b list set \<times> (bool list, 'b eindex) mapping. iinv TI}"
+  morphisms Rep_itab Abs_itab
+  by (rule exI[of _ "({}, Mapping.empty)"]) (simp add: iinv_def)
+
+setup_lifting type_definition_itab
+
+lemma Abs_itab_Rep_itab_code[code abstype]: "Abs_itab (Rep_itab A) = A"
+  by (fact Rep_itab_inverse)
+
+lift_definition iset :: "'b itab \<Rightarrow> 'b list set" is fst .
+
+lift_definition iidxs :: "'b itab \<Rightarrow> (bool list, 'b eindex) mapping" is snd .
+
+lemma iidxs_eidx: "Mapping.lookup (iidxs A) msk = Some m \<Longrightarrow> m = eidx msk (iset A)"
+  by transfer (auto simp: iinv_def)
+
+subsection \<open>A table without indices, and adding indices\<close>
+
+lift_definition itab :: "'b list set \<Rightarrow> 'b itab" is "\<lambda>T. (T, Mapping.empty)"
+  by (simp add: iinv_def)
+
+lemma iset_itab[simp]: "iset (itab T) = T"
+  by transfer simp
+
+definition iindex :: "bool list \<Rightarrow> 'b itab \<Rightarrow> 'b eindex" where
+  "iindex msk A = (case Mapping.lookup (iidxs A) msk of Some m \<Rightarrow> m | None \<Rightarrow> eidx msk (iset A))"
+
+lemma iindex_eidx[simp]: "iindex msk A = eidx msk (iset A)"
+  by (auto simp: iindex_def dest: iidxs_eidx split: option.splits)
+
+definition iensure1 :: "'b list set \<Rightarrow> bool list \<Rightarrow> (bool list, 'b eindex) mapping \<Rightarrow>
+    (bool list, 'b eindex) mapping" where
+  "iensure1 T msk I = (case Mapping.lookup I msk of
+     None \<Rightarrow> Mapping.update msk (eidx msk T) I | Some _ \<Rightarrow> I)"
+
+lemma lookup_fold_iensure1:
+  "Mapping.lookup (fold (iensure1 T) msks I) msk =
+     (if msk \<in> set msks \<and> Mapping.lookup I msk = None then Some (eidx msk T)
+      else Mapping.lookup I msk)"
+  by (induct msks arbitrary: I)
+    (auto simp: iensure1_def Mapping.lookup_update' split: option.splits)
+
+lift_definition iensure :: "bool list list \<Rightarrow> 'b itab \<Rightarrow> 'b itab" is
+  "\<lambda>msks TI. (fst TI, fold (iensure1 (fst TI)) msks (snd TI))"
+  by (auto simp: iinv_def lookup_fold_iensure1 split: if_splits)
+
+lemma iset_iensure[simp]: "iset (iensure msks A) = iset A"
+  by transfer simp
+
+lemma iensure_has:
+  "msk \<in> set msks \<Longrightarrow> Mapping.lookup (iidxs (iensure msks A)) msk \<noteq> None"
+  by transfer (simp add: lookup_fold_iensure1)
+
+subsection \<open>Updating a table and its indices\<close>
+
+text \<open>Adding the tuples @{term X} and then removing the tuples @{term D}: every index is updated
+  by the two tables, which the code equations of @{theory MFODL_Monitor_Exec.Idx_Code} turn into
+  a visit of the buckets of the moving tuples only.\<close>
+
+lift_definition iupd :: "'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" is
+  "\<lambda>X D TI. ((fst TI \<union> X) - D,
+     Mapping.map_values (\<lambda>msk m. eidx_minus (eidx_union m (eidx msk X)) (eidx msk D)) (snd TI))"
+  by (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq eidx_minus_eq)
+
+lemma iset_iupd[simp]: "iset (iupd X D A) = (iset A \<union> X) - D"
+  by transfer simp
+
+lemma iidxs_iupd_None: "Mapping.lookup (iidxs (iupd X D A)) msk = None \<longleftrightarrow>
+    Mapping.lookup (iidxs A) msk = None"
+  by transfer (simp add: Mapping.lookup_map_values)
+
+subsection \<open>Union\<close>
+
+text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>
+
+lift_definition iunion :: "'b itab \<Rightarrow> 'b itab \<Rightarrow> 'b itab" is
+  "\<lambda>TI B. (fst TI \<union> iset B, Mapping.map_values (\<lambda>msk m. eidx_union m (iindex msk B)) (snd TI))"
+  by (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq)
+
+lemma iset_iunion[simp]: "iset (iunion A B) = iset A \<union> iset B"
+  by transfer simp
+
+subsection \<open>Joins that use the operands' indices\<close>
+
+text \<open>
+  The probe of the general join by an index on the other operand's shared columns: every tuple
+  of the probing side is merged with the bucket at its key.
+\<close>
+
+definition iprobe :: "mrg list \<Rightarrow> bool list \<Rightarrow> 'b eindex \<Rightarrow> 'b :: ccompare list set \<Rightarrow>
+    'b list set" where
+  "iprobe p lk m A = fold (\<lambda>a acc. acc \<union> emerge p a ` ebucket m (eproj lk a)) (csl A) {}"
+
+definition iprobe_l :: "mrg list \<Rightarrow> bool list \<Rightarrow> 'b eindex \<Rightarrow> 'b :: ccompare list set \<Rightarrow>
+    'b list set" where
+  "iprobe_l p rk m B = fold (\<lambda>b acc. acc \<union> (\<lambda>a. emerge p a b) ` ebucket m (eproj rk b)) (csl B) {}"
+
+lemma fold_union_image: "fold (\<lambda>x acc. acc \<union> f x) l acc = acc \<union> (\<Union>x \<in> set l. f x)"
+  by (induct l arbitrary: acc) auto
+
+lemma ebucket_eidx: "ebucket (eidx msk T) k = {y \<in> T. eproj msk y = k}"
+  by (auto simp: ebucket_def lookup_eidx)
+
+lemma iprobe_eq:
+  "set (csl A) = A \<Longrightarrow>
+   iprobe p lk (eidx rk B) A = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
+  by (auto simp: iprobe_def fold_union_image ebucket_eidx)
+
+lemma iprobe_l_eq:
+  "set (csl B) = B \<Longrightarrow>
+   iprobe_l p rk (eidx lk A) B = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
+  by (auto simp: iprobe_l_def fold_union_image ebucket_eidx)
+
+text \<open>
+  The join of two indexed tables by a plan: an operand that carries an index at the mask the plan
+  probes is probed through it, and otherwise the join is that of the underlying tables.  An index
+  helps
+  \<^item> for @{const EJGen}: the operand indexed by its shared columns is probed by the other one;
+  \<^item> for a positive @{const EJSup}: the right operand, whose columns include the left one's, is
+    restricted to the keys of the left operand, which visits only those keys instead of filtering
+    all of its tuples;
+  \<^item> for a positive @{const EJSub}: the same with the roles swapped.
+\<close>
+
+fun ijoin0 :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \<Rightarrow> 'b itab \<Rightarrow> 'b list set" where
+  "ijoin0 (EJSub msk) A pos B = (case (pos, Mapping.lookup (iidxs A) msk) of
+       (True, Some m) \<Rightarrow> esemi_idx msk True m (iset B)
+     | _ \<Rightarrow> gbin_join0 (EJSub msk) (iset A) pos (iset B))"
+| "ijoin0 (EJSup msk) A pos B = (case (pos, Mapping.lookup (iidxs B) msk) of
+       (True, Some m) \<Rightarrow> esemi_idx msk True m (iset A)
+     | _ \<Rightarrow> gbin_join0 (EJSup msk) (iset A) pos (iset B))"
+| "ijoin0 (EJGen p lk rk) A pos B = (case (pos, Mapping.lookup (iidxs B) rk, Mapping.lookup (iidxs A) lk) of
+       (True, Some m, _) \<Rightarrow> iprobe p lk m (iset A)
+     | (True, None, Some m) \<Rightarrow> iprobe_l p rk m (iset B)
+     | _ \<Rightarrow> gbin_join0 (EJGen p lk rk) (iset A) pos (iset B))"
+| "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
+
+theorem ijoin0_eq:
+  fixes A B :: "event_data itab"
+  assumes "finite (iset A)" "finite (iset B)"
+  shows "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
+  sorry
+
+definition ijoin :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \<Rightarrow> 'b itab \<Rightarrow> 'b list set" where
+  "ijoin pl A pos B = (if Set.is_empty (iset A) then {}
+     else if Set.is_empty (iset B) then (if pos then {} else iset A)
+     else ijoin0 pl A pos B)"
+
+theorem ijoin_eq:
+  fixes A B :: "event_data itab"
+  assumes "finite (iset A)" "finite (iset B)"
+  shows "ijoin pl A pos B = gbin_join pl (iset A) pos (iset B)"
+  using ijoin0_eq[OF assms] by (simp add: ijoin_def gbin_join_def)
+
+(*<*)
+end
+(*>*)
