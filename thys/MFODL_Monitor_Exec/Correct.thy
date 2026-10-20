@@ -148,10 +148,10 @@ proof -
       = (map (etabc ks cs) xs, dm)"
     and sim': "esim n ks cs (enext tw [snd tdb]) dm m"
     using esim_deval[OF sim _ e] le kg by auto
-  obtain ixs im where ie: "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst) = (ixs, im)"
+  obtain ixs im where iev: "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst) = (ixs, im)"
     by (cases "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)")
   have ixs: "map iset ixs = map (etabc ks cs) xs" and dm: "dm = eabs im"
-    using ieval_eeval[OF ie] d by simp_all
+    using ieval_eeval[OF iev] d by simp_all
   have tb: "list_all (ftable ks) xs"
     by (rule kgood_tables[OF kg e])
   have dnx: "enext tw [snd tdb] = snd tdb" by (simp add: enext_def)
@@ -171,7 +171,7 @@ proof -
   have D: "emstep tdb dst = (vs,
       \<lparr> emstate_i = i', emstate_j = mstate_j st + 1, emstate_m = im,
         emstate_n = n, emstate_cs = cs, emstate_t = tq \<rparr>)"
-    using ie ixs A unfolding emstep_def i j dn dcs dm by simp
+    using iev ixs A unfolding emstep_def i j dn dcs by simp
   show ?thesis
     unfolding E D fst_conv snd_conv ie ve
     using sim'[unfolded dnx dm] tb te
