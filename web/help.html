@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VeriMon 2.0 Help</title>
+    <meta name="description" content="How to use the web version of VeriMon 2.0, and the syntax of its formulas, signatures and logs">
+    <link rel="stylesheet" href="verimon.css">
+    <style>
+      h1 { white-space: normal; }
+      h2 { border-bottom: 1px solid #ddd; padding-bottom: 0.2em; }
+      pre, code { font-family: monospace; font-size: 14px; }
+      pre { background: #f6f8f8; border: 1px solid #e0e4e4; padding: 0.8em 1em; overflow-x: auto; line-height: 1.45em; }
+      code { background: #f6f8f8; padding: 0 0.2em; }
+      pre code { background: none; padding: 0; }
+      table.ops { border-collapse: collapse; width: 100%; margin: 0.5em 0 1em; }
+      table.ops th, table.ops td { text-align: left; vertical-align: top; padding: 0.3em 0.6em; border-bottom: 1px solid #e6e9e9; }
+      table.ops th { color: #222; font-weight: 600; }
+      .nt { font-style: italic; color: #0b5d8f; }
+      .back { margin: 0; font-size: 15px; }
+      @media (max-width: 600px) { body { padding: 1em 16px 3em; } }
+    </style>
+  </head>
+  <body>
+    <p class="back"><a href="index.html">&larr; back to the monitor</a></p>
+    <h1>VeriMon 2.0 <font size=3>Help</font></h1>
+
+    <p>VeriMon is a monitor for metric first-order dynamic logic (MFODL). It checks a log, a sequence
+      of time-stamped sets of events, against a formula, and reports at which time points and for which
+      values of the formula's free variables the formula is satisfied. VeriMon 2.0 is formally verified
+      end to end in Isabelle/HOL: the parsers of formulas, signatures and logs, the preparation of the
+      formula and the monitor are code generated from the formalization. This page runs that code,
+      compiled to JavaScript, in your browser; nothing is sent anywhere.</p>
+
+    <p>The sources, the formalization, the command-line tool and its documentation are at
+      <a href="https://github.com/dtraytel/verimon">github.com/dtraytel/verimon</a>.</p>
+
+    <h2 id="page">Using this page</h2>
+    <ul>
+      <li><b>Examples</b>: pick one from the list, or edit any of the three inputs; each can also be
+        loaded from a file.</li>
+      <li><b>Signature</b>: the predicates that the formula and the log may use, with their argument
+        types (<a href="#signature">syntax</a>).</li>
+      <li><b>MFODL formula</b>: the property to check (<a href="#grammar">syntax</a>).</li>
+      <li><b>negate</b>: monitor the negation of the formula. A policy is usually written as what
+        must hold, and its violations are the satisfactions of its negation.</li>
+      <li><b>Log</b>: the events (<a href="#log">syntax</a>).</li>
+      <li><b>Verdicts</b>: the satisfactions, one line per time point (<a href="#verdicts">format</a>).</li>
+    </ul>
+    <p>The inputs are checked as you type. A <b>green</b> border means the input is fine. A
+      <b>red</b> border means an error; hover over the input to see the message. A <b>yellow</b>
+      formula with a telescope is well-formed but not monitorable; hover over it to see why. A yellow
+      log has verdicts; a check mark on the log means that there are none.</p>
+
+    <h2 id="grammar">Formulas</h2>
+    <p>Formulas use MonPoly's syntax. In the grammar below, <code>[ ]</code> encloses optional
+      parts, <code>{ }</code> parts that may repeat, and <code>|</code> separates alternatives.
+      Keywords are in capitals.</p>
+<pre><code><span class="nt">formula</span> ::= TRUE | FALSE
+          | <span class="nt">pred</span> ( [<span class="nt">arg</span> {, <span class="nt">arg</span>}] )                  an event; <span class="nt">arg</span> ::= <span class="nt">term</span> | _
+          | <span class="nt">term</span> = <span class="nt">term</span> | <span class="nt">term</span> &lt; <span class="nt">term</span> | <span class="nt">term</span> &lt;= <span class="nt">term</span> | <span class="nt">term</span> &gt; <span class="nt">term</span> | <span class="nt">term</span> &gt;= <span class="nt">term</span>
+          | NOT <span class="nt">formula</span>
+          | <span class="nt">formula</span> AND <span class="nt">formula</span> | <span class="nt">formula</span> OR <span class="nt">formula</span>
+          | <span class="nt">formula</span> IMPLIES <span class="nt">formula</span> | <span class="nt">formula</span> EQUIV <span class="nt">formula</span>
+          | EXISTS <span class="nt">var</span> {, <span class="nt">var</span>} . <span class="nt">formula</span> | FORALL <span class="nt">var</span> {, <span class="nt">var</span>} . <span class="nt">formula</span>
+          | PREV [<span class="nt">interval</span>] <span class="nt">formula</span> | NEXT [<span class="nt">interval</span>] <span class="nt">formula</span>
+          | ONCE [<span class="nt">interval</span>] <span class="nt">formula</span> | EVENTUALLY [<span class="nt">interval</span>] <span class="nt">formula</span>
+          | PAST_ALWAYS [<span class="nt">interval</span>] <span class="nt">formula</span> | ALWAYS [<span class="nt">interval</span>] <span class="nt">formula</span>
+          | <span class="nt">formula</span> SINCE [<span class="nt">interval</span>] <span class="nt">formula</span> | <span class="nt">formula</span> UNTIL [<span class="nt">interval</span>] <span class="nt">formula</span>
+          | <span class="nt">formula</span> TRIGGER [<span class="nt">interval</span>] <span class="nt">formula</span> | <span class="nt">formula</span> RELEASE [<span class="nt">interval</span>] <span class="nt">formula</span>
+          | MATCHP [<span class="nt">interval</span>] <span class="nt">regex</span> | MATCHF [<span class="nt">interval</span>] <span class="nt">regex</span>
+          | <span class="nt">var</span> &lt;- <span class="nt">aggop</span> <span class="nt">var</span> [; <span class="nt">var</span> {, <span class="nt">var</span>}] <span class="nt">formula</span>
+          | LET <span class="nt">pred</span> ( [<span class="nt">var</span> {, <span class="nt">var</span>}] ) = <span class="nt">formula</span> IN <span class="nt">formula</span>
+          | LETPAST <span class="nt">pred</span> ( [<span class="nt">var</span> {, <span class="nt">var</span>}] ) = <span class="nt">formula</span> IN <span class="nt">formula</span>
+          | FRZ <span class="nt">pred</span> ( [<span class="nt">var</span> {, <span class="nt">var</span>}] ) = <span class="nt">formula</span> IN <span class="nt">formula</span>
+          | ( <span class="nt">formula</span> )
+
+<span class="nt">term</span>     ::= <span class="nt">var</span> | <span class="nt">constant</span>
+          | <span class="nt">term</span> + <span class="nt">term</span> | <span class="nt">term</span> - <span class="nt">term</span> | <span class="nt">term</span> * <span class="nt">term</span> | <span class="nt">term</span> / <span class="nt">term</span> | <span class="nt">term</span> MOD <span class="nt">term</span> | - <span class="nt">term</span>
+          | <span class="nt">function</span> ( <span class="nt">term</span> ) | ( <span class="nt">term</span> )
+<span class="nt">function</span> ::= i2f | f2i
+<span class="nt">constant</span> ::= <span class="nt">integer</span> | <span class="nt">float</span> | "<span class="nt">string</span>"          e.g. 42, -7, 3.25, "db2"
+<span class="nt">aggop</span>    ::= CNT | SUM | AVG | MIN | MAX | MED
+
+<span class="nt">interval</span> ::= [<span class="nt">bound</span>,<span class="nt">bound</span>] | (<span class="nt">bound</span>,<span class="nt">bound</span>] | [<span class="nt">bound</span>,<span class="nt">bound</span>) | (<span class="nt">bound</span>,<span class="nt">bound</span>)
+<span class="nt">bound</span>    ::= <span class="nt">integer</span> [d | h | m | s] | *        e.g. [0,7d], (0,10], [1,*)
+
+<span class="nt">regex</span>    ::= <span class="nt">regex</span> + <span class="nt">regex</span>                        alternative
+          | <span class="nt">regex</span> <span class="nt">regex</span>                           concatenation
+          | <span class="nt">regex</span> *                               repetition
+          | .                                     one step (wildcard)
+          | <span class="nt">formula</span> ?                             test
+          | <span class="nt">formula</span>                               a test and a step
+          | ( <span class="nt">regex</span> )</code></pre>
+
+    <p>An argument <code>_</code> of an event is a variable that occurs nowhere else. The
+      bounds of an interval are distances between timestamps: a plain number is in the log's
+      timestamp units, and days (<code>d</code>), hours (<code>h</code>), minutes (<code>m</code>)
+      and seconds (<code>s</code>) assume that timestamps are seconds; an upper bound
+      <code>*</code> is unbounded. Variables and predicate names consist of letters,
+      digits and <code>_</code>, and start with a letter. A variable that
+      is not bound by a quantifier, an aggregation or a <code>LET</code> is a free variable: the
+      verdicts list its values. <code>(* ... *)</code> and <code>#</code> to the end of the line
+      are comments.</p>
+
+    <h3>Precedence</h3>
+    <table class="ops">
+      <tr><th>binds</th><th>operators</th></tr>
+      <tr><td>tightest</td><td><code>NOT</code></td></tr>
+      <tr><td></td><td><code>AND</code> (left associative)</td></tr>
+      <tr><td></td><td><code>OR</code> (left associative)</td></tr>
+      <tr><td></td><td><code>IMPLIES</code> (right associative)</td></tr>
+      <tr><td></td><td><code>EQUIV</code> (left associative)</td></tr>
+      <tr><td>loosest</td><td><code>SINCE</code>, <code>UNTIL</code>, <code>TRIGGER</code>, <code>RELEASE</code> (right associative)</td></tr>
+    </table>
+    <p>The prefix operators extend as far to the right as possible: <code>PREV</code>,
+      <code>NEXT</code>, <code>ONCE</code>, <code>EVENTUALLY</code>, <code>PAST_ALWAYS</code>,
+      <code>ALWAYS</code>, <code>EXISTS</code> and <code>FORALL</code> include the Boolean
+      connectives to their right but stop at a binary temporal operator, so
+      <code>ONCE p(x) AND q(x) SINCE r(x)</code> is <code>(ONCE (p(x) AND q(x))) SINCE r(x)</code>.
+      <code>LET</code>, <code>LETPAST</code>, <code>FRZ</code> and aggregations include
+      everything to their right. When in doubt, add parentheses.</p>
+
+    <h3>Meaning</h3>
+    <table class="ops">
+      <tr><th>formula</th><th>holds at time point <i>i</i> if</th></tr>
+      <tr><td><code>PREV I φ</code></td><td>φ holds at <i>i</i>&minus;1, and the distance of their timestamps is in <i>I</i></td></tr>
+      <tr><td><code>NEXT I φ</code></td><td>φ holds at <i>i</i>+1, within distance <i>I</i></td></tr>
+      <tr><td><code>ONCE I φ</code></td><td>φ holds at some earlier or the same time point within distance <i>I</i></td></tr>
+      <tr><td><code>EVENTUALLY I φ</code></td><td>φ holds at some later or the same time point within distance <i>I</i></td></tr>
+      <tr><td><code>PAST_ALWAYS I φ</code></td><td>φ holds at all earlier and the same time points within distance <i>I</i></td></tr>
+      <tr><td><code>ALWAYS I φ</code></td><td>φ holds at all later and the same time points within distance <i>I</i></td></tr>
+      <tr><td><code>φ SINCE I ψ</code></td><td>ψ holds at some time point <i>j</i> &le; <i>i</i> within distance <i>I</i>, and φ at all time points after <i>j</i> up to <i>i</i></td></tr>
+      <tr><td><code>φ UNTIL I ψ</code></td><td>ψ holds at some time point <i>j</i> &ge; <i>i</i> within distance <i>I</i>, and φ at all time points from <i>i</i> before <i>j</i></td></tr>
+      <tr><td><code>φ TRIGGER I ψ</code></td><td>at every earlier or the same time point <i>j</i> within distance <i>I</i>, ψ holds or φ held at some time point after <i>j</i> (the dual of <code>SINCE</code>)</td></tr>
+      <tr><td><code>φ RELEASE I ψ</code></td><td>the future dual of <code>TRIGGER</code></td></tr>
+      <tr><td><code>MATCHP I r</code></td><td>some stretch of time points ending at <i>i</i> and starting within distance <i>I</i> matches <i>r</i></td></tr>
+      <tr><td><code>MATCHF I r</code></td><td>some stretch of time points starting at <i>i</i> and ending within distance <i>I</i> matches <i>r</i></td></tr>
+      <tr><td><code>y &lt;- SUM x; g φ</code></td><td><i>y</i> is the sum of <i>x</i> over the satisfactions of φ, grouped by the values of <i>g</i></td></tr>
+      <tr><td><code>LET p(x) = φ IN ψ</code></td><td>ψ holds, where <code>p</code> stands for φ</td></tr>
+      <tr><td><code>LETPAST p(x) = φ IN ψ</code></td><td>as <code>LET</code>, but φ may refer to <code>p</code> at earlier time points (recursion through <code>PREV</code>, <code>ONCE</code>, ...)</td></tr>
+      <tr><td><code>FRZ p(x) = φ IN ψ</code></td><td>ψ holds, where <code>p</code> stands for φ's satisfactions at <i>i</i>, at every time point ψ refers to</td></tr>
+    </table>
+    <p>The distance is the difference of the timestamps; an interval without bound is
+      <code>[0,*)</code>. In a regular expression, <code>φ?</code> tests φ without moving and
+      <code>.</code> moves one time point. A bare formula φ is a test and a step:
+      <code>φ? .</code> in <code>MATCHF</code>, <code>. φ?</code> in <code>MATCHP</code>.
+      Some keywords have synonyms: <code>PREVIOUS</code>, <code>SOMETIMES</code> (for
+      <code>EVENTUALLY</code>), <code>HISTORICALLY</code> (for <code>PAST_ALWAYS</code>), and
+      <code>|&gt;</code> or <code>FORWARD</code> (for <code>MATCHF</code>), <code>&lt;|</code>
+      or <code>BACKWARD</code> (for <code>MATCHP</code>).</p>
+
+    <h3>Monitorability</h3>
+    <p>VeriMon computes the finite set of satisfying values at each time point. This requires the
+      formula to be <i>monitorable</i>: roughly, every free variable must be bound by an event or an
+      equation, a negation may only follow a conjunct that binds its variables
+      (<code>p(x) AND NOT q(x)</code>, not <code>NOT q(x)</code> alone), the two sides of
+      <code>OR</code> must have the same free variables, and future operators need bounded
+      intervals. VeriMon rewrites a formula that is not monitorable as it stands, for example by
+      pushing negations inwards; if that does not help, the formula is marked with the telescope.
+      A policy <code>p(x) IMPLIES ONCE q(x)</code> is not monitorable, but its negation is: tick
+      <b>negate</b> to see its violations.</p>
+    <p>MonPoly's <code>SUBSTRING</code>, <code>MATCHES</code>, regular expression constants
+      <code>r"..."</code> and its other term functions (<code>i2s</code>, <code>YEAR</code>,
+      <code>FORMAT_DATE</code>, ...) are parsed but not supported.</p>
+
+    <h2 id="signature">Signatures</h2>
+    <p>One predicate per line, with the types of its arguments, optionally named:</p>
+<pre><code>publish(int)
+approve(manager:string, report:int)
+reading(sensor:string, value:float)</code></pre>
+    <p>The types are <code>int</code>, <code>float</code> and <code>string</code>. The predicates
+      <code>tp(i)</code>, <code>ts(t)</code> and <code>tpts(i, t)</code>, which give the current
+      time point and timestamp, are built in.</p>
+
+    <h2 id="log">Logs</h2>
+    <p>A log is a sequence of time points. Each starts with <code>@</code> and its timestamp, a
+      non-negative integer, followed by its events: a predicate name and one or more tuples of
+      values.</p>
+<pre><code>@0  approve(Alice, 152) publish(160)
+@10 publish(152)(163)            # two events of publish
+@10 approve("Bob", 163);         # same timestamp, next time point
+@25</code></pre>
+    <p>Timestamps must not decrease. Strings may be written without quotes if they consist of
+      letters, digits and <code>_[]/:-.!</code>. A <code>;</code> may end a time point, and
+      <code>#</code> starts a comment. Time units in formulas (<code>7d</code>) assume that
+      timestamps are seconds.</p>
+
+    <h2 id="verdicts">Verdicts</h2>
+<pre><code>@1307955600 (time point 0): (160)
+@1308477599 (time point 1): (152) (187)</code></pre>
+    <p>Each line gives a timestamp, the time point, and the tuples of values of the free
+      variables for which the formula is satisfied there, in the order in which the variables
+      first occur in the formula. A formula without free variables shows <code>true</code>. A
+      verdict at a time point is shown once it is final: a formula with future operators
+      waits for the time points that decide it.</p>
+  </body>
+</html>

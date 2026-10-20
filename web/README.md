@@ -21,7 +21,7 @@ Without them, `dune` skips the web version.
 Run `dune build --profile=release web/verimon_js.zip` from the project root.
 
 This builds a ZIP archive `_build/default/web/verimon_js.zip` which contains all files needed to
-run the web version (`index.html`, `verimon.js`, `verimon.css` and two images; the examples are
+run the web version (`index.html`, `help.html`, `verimon.js`, `verimon.css` and two images; the examples are
 embedded in `verimon.js`). The archive's contents can be deployed to a web server, for example.
 
 ## Deployment

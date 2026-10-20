@@ -143,7 +143,12 @@ let onload _ =
       List.iter (fun (text, _) -> option group text) exs;
       Dom.appendChild select group) example_groups;
   Dom.appendChild ex select;
-  append_opt ex " or edit";
+  append_opt ex " or edit (";
+  let help = Html.createA d in
+  help##.href := Js.string "help.html";
+  append_opt help "help";
+  Dom.appendChild ex help;
+  append_opt ex ")";
 
   let tab = Html.createTable d in
   let row cells = let tr = Html.createTr d in List.iter (Dom.appendChild tr) cells; Dom.appendChild tab tr in
