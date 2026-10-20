@@ -185,9 +185,8 @@ lemma ib2_add[simp]: "ib2 (mebuf2_add xs ys b) = mebuf2_add (map iset xs) (map i
   by (cases b) (simp add: ib2_def)
 
 lemma mebuf2_take_ib2:
-  assumes "mebuf2_take g b = (zs, b')" "\<And>x y. iset (g x y) = f (iset x) (iset y)"
-  shows "mebuf2_take f (ib2 b) = (map iset zs, ib2 b')"
-  using assms(1)
+  "mebuf2_take g b = (zs, b') \<Longrightarrow> (\<forall>x y. iset (g x y) = f (iset x) (iset y)) \<Longrightarrow>
+   mebuf2_take f (ib2 b) = (map iset zs, ib2 b')"
 proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
   case (1 g xs ys)
   show ?case
@@ -203,26 +202,39 @@ proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
       proof (cases "mbuf_t_cases ys")
         case (Pair yo ys')
         then show ?thesis
-          using 1 \<open>mbuf_t_cases xs = (xo, xs')\<close> Some assms(2)
+          using 1 \<open>mbuf_t_cases xs = (xo, xs')\<close> Some
           by (cases yo) (auto simp: ib2_def mbuf_t_cases_map split: prod.splits)
       qed
     qed
   qed
 qed
 
-lemma eabs_simps[simp]:
-  "eabs (EOr \<phi> \<psi> buf) = EOr (eabs \<phi>) (eabs \<psi>) (ib2 buf)"
-  "eabs (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eabs \<phi>) pos (eabs \<psi>) (ib2 buf)"
-  by (simp_all add: eabs_def)
+lemmas eabs_simps[simp] = geformula.map[of ib2 id id, folded eabs_def, unfolded id_apply]
+
+lemma map_eabs[simp]: "map eabs (map snd R) = map (eabs \<circ> snd) R"
+  by simp
 
 theorem ieval_eeval:
   "ieval j ts db \<phi> = (xs, \<phi>') \<Longrightarrow> eeval j ts db (eabs \<phi>) = (map iset xs, eabs \<phi>')"
 proof (induction j ts db \<phi> arbitrary: xs \<phi>' rule: ieval.induct)
   case (9 j ts db \<phi> \<psi> buf)
-  show ?case sorry
+  obtain xs1 \<phi>1 where 1: "ieval j ts db \<phi> = (xs1, \<phi>1)" by fastforce
+  obtain ys1 \<psi>1 where 2: "ieval j ts db \<psi> = (ys1, \<psi>1)" by fastforce
+  obtain zs buf' where 3: "mebuf2_take iunion (mebuf2_add xs1 ys1 buf) = (zs, buf')" by fastforce
+  have t: "mebuf2_take (\<union>) (ib2 (mebuf2_add xs1 ys1 buf)) = (map iset zs, ib2 buf')"
+    by (rule mebuf2_take_ib2[OF 3]) simp
+  show ?case
+    using 9(3) 9(1)[OF 1] 9(2)[OF refl 1[symmetric] 2] t by (simp add: 1 2 3)
 next
   case (10 j ts db pl \<phi> pos \<psi> buf)
-  show ?case sorry
-qed (auto simp: eabs_def geformula.map_comp comp_def Let_def split: prod.splits)
+  obtain xs1 \<phi>1 where 1: "ieval j ts db \<phi> = (xs1, \<phi>1)" by fastforce
+  obtain ys1 \<psi>1 where 2: "ieval j ts db \<psi> = (ys1, \<psi>1)" by fastforce
+  obtain zs buf' where 3: "mebuf2_take (\<lambda>r1 r2. itab (ijoin pl r1 pos r2)) (mebuf2_add xs1 ys1 buf) = (zs, buf')"
+    by fastforce
+  have t: "mebuf2_take (\<lambda>r1 r2. gbin_join pl r1 pos r2) (ib2 (mebuf2_add xs1 ys1 buf)) = (map iset zs, ib2 buf')"
+    by (rule mebuf2_take_ib2[OF 3]) (simp add: ijoin_eq)
+  show ?case
+    using 10(3) 10(1)[OF 1] 10(2)[OF refl 1[symmetric] 2] t by (simp add: 1 2 3)
+qed (auto simp: Let_def split: prod.splits)
 
 end
