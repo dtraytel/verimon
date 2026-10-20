@@ -3,7 +3,8 @@
 # Logs (gen_logs.py): base has 40 A(x,y), 40 B(x,y), 10 C(x), 10 D(x,y,z) per time point,
 # one time point per second, values in 0..199; rate10/rate80 change the events per time point,
 # dom50/dom1000 the range, burst has sixty time points per timestamp, long has 30000 thin time
-# points, tp250/tp500/tp1000 are base's shape with 250, 500 and 1000 time points.  A window bound
+# points, tp250/tp500/tp1000 are base's shape with 250, 500 and 1000 time points.  miss is
+# tp1000's shape with B, C and D's values shifted out of A's range.  A window bound
 # b on base covers about 40(b+1) A tuples.
 
 ## join: what a conjunction costs by its shape, at one time point
@@ -350,3 +351,12 @@ der-always5    | dom50  | ALWAYS[0,5] (EXISTS y. A(x,y))                        
 der-equiv      | base   | A(x,y) AND (C(x) EQUIV C(y))                                            | an equivalence
 vm-frztrig    | base | C(x) AND (NOT B(x,x) TRIGGER[0,5] C(x))                | the rewriter's freeze into a trigger
 vm-frzrel     | base | C(x) AND (NOT B(x,x) RELEASE[0,5] C(x))                | and into a release
+
+## probe: a guard joined with a window that it does not match (log miss: the guard's values are outside A's), so the join's cost is that of probing the window
+probe-once50-c  | miss | C(x) AND ONCE[0,50] A(x,y)                  | unary guard, bounded window of about 2000 A tuples
+probe-once-c    | miss | C(x) AND ONCE A(x,y)                        | unary guard, unbounded window
+probe-once-b    | miss | B(y,z) AND ONCE A(x,y)                      | the guard shares the window's second column
+probe-once-eq   | miss | A(x,y) AND ONCE A(x,y)                      | control: the guard binds all of the window's columns
+probe-since-c   | miss | C(x) AND ((NOT B(x,y)) SINCE A(x,y))        | unary guard, unbounded SINCE
+probe-ev50-c    | miss | C(x) AND EVENTUALLY[0,50] A(x,y)            | unary guard, bounded future window
+probe-let-c     | miss | LET P(x,y) = ONCE A(x,y) IN C(x) AND P(x,y) | the window bound by LET

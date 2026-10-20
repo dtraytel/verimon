@@ -28,10 +28,18 @@ LOGS = {
     "tp1000":   (1000,    1,    40, 40, 10, 10,  200),
 }
 
+# logs whose B, C and D values are shifted out of A's range (by the domain), so that a guard
+# B(..) or C(..) joined with a window over A finds no partner: the cost of the join is then the
+# cost of probing the window
+MISS = {
+    #  name       tps    tps/ts  nA  nB  nC  nD  domain
+    "miss":     (1000,    1,    40, 40, 10, 10,  200),
+}
+
 SIG = "A(int,int)\nB(int,int)\nC(int)\nD(int,int,int)\n"
 
 
-def write_log(path, tps, per_ts, nA, nB, nC, nD, dom):
+def write_log(path, tps, per_ts, nA, nB, nC, nD, dom, shift=0):
     rnd = random.Random(hash((tps, per_ts, nA, nB, nC, nD, dom)) & 0xffffffff)
     r = rnd.randrange
     with open(path, "w") as f:
@@ -39,9 +47,9 @@ def write_log(path, tps, per_ts, nA, nB, nC, nD, dom):
             ts = tp // per_ts
             parts = ["@%d" % ts]
             parts += ["A(%d,%d)" % (r(dom), r(dom)) for _ in range(nA)]
-            parts += ["B(%d,%d)" % (r(dom), r(dom)) for _ in range(nB)]
-            parts += ["C(%d)" % r(dom) for _ in range(nC)]
-            parts += ["D(%d,%d,%d)" % (r(dom), r(dom), r(dom)) for _ in range(nD)]
+            parts += ["B(%d,%d)" % (shift + r(dom), shift + r(dom)) for _ in range(nB)]
+            parts += ["C(%d)" % (shift + r(dom)) for _ in range(nC)]
+            parts += ["D(%d,%d,%d)" % (shift + r(dom), shift + r(dom), shift + r(dom)) for _ in range(nD)]
             f.write(" ".join(parts) + "\n")
 
 
@@ -50,9 +58,10 @@ if __name__ == "__main__":
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "perf.sig"), "w") as f:
         f.write(SIG)
-    for name, params in LOGS.items():
+    for name, params, shift in [(n, p, 0) for n, p in LOGS.items()] + \
+            [(n, p, p[-1]) for n, p in MISS.items()]:
         path = os.path.join(out, name + ".log")
         if os.path.exists(path):
             continue
-        write_log(path, *params)
+        write_log(path, *params, shift=shift)
         print("wrote", path, "%.1f MB" % (os.path.getsize(path) / 1e6), flush=True)

@@ -44,6 +44,10 @@ HISTORICALLY or ALWAYS, EQUIV), for which the report records VeriMon's times alo
 cost of FRZ grows with the square of the log's length, so the `frz` group runs on the short logs
 `tp250`, `tp500` and `tp1000` (base's shape), and MonPoly runs FRZ with `-nofilteremptytp`,
 since its filter of empty time points rejects FRZ.
+The `probe` group joins a guard with a large past, future or Let-bound window on the log `miss`
+(1000 time points of base's shape, with the values of B, C and D shifted out of A's range), so
+that the guard matches nothing and the join's cost is that of probing the window; its control
+`probe-once-eq` binds all of the window's columns.
 
 ## Results
 
