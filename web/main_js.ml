@@ -116,7 +116,9 @@ let http_get url =
   if code = 0 || code = 200 then Lwt.return content else fst (Lwt.wait ())
 
 let getfile f =
-  try Lwt.return (Sys_js.read_file ~name:f) with Not_found -> http_get f
+  match List.assoc_opt (Filename.basename f) Examples_data.files with
+  | Some s -> Lwt.return s
+  | None -> http_get f
 
 let onload _ =
   let d = Html.document in

@@ -1,7 +1,9 @@
 # Examples of the web version
 
 Each example is a signature (`.sig`), a formula (`.mfotl`) and a log (`.log`); `main_js.ml` lists
-them, in groups, with whether the formula is negated. They are embedded in `verimon.js`.
+them, in groups, with whether the formula is negated. They are compiled into `verimon.js` (as the
+module `Examples_data`, which `gen_examples.ml` writes). The lines of a formula are at most 46
+characters long, so that the formula box shows them in full.
 
 | Example | Files | Source |
 |---|---|---|

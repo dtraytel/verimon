@@ -7,9 +7,17 @@
   (libraries verimon_code zarith zarith_stubs_js lwt js_of_ocaml js_of_ocaml-lwt)
   (modes js)
   (preprocess (pps js_of_ocaml-ppx))
-  (modules main_js)
-  (link_deps (glob_files examples/*))
-  (js_of_ocaml (flags :standard --file examples)))
+  (modules main_js examples_data))
+
+; The examples, compiled into verimon.js.
+(executable
+  (name gen_examples)
+  (modules gen_examples))
+
+(rule
+  (target examples_data.ml)
+  (deps (glob_files examples/*.sig) (glob_files examples/*.mfotl) (glob_files examples/*.log))
+  (action (with-stdout-to %{target} (run ./gen_examples.exe %{deps}))))
 
 (rule (copy main_js.bc.js verimon.js))
 
