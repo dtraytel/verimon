@@ -97,10 +97,96 @@ lemma "b \<noteq> 0 \<Longrightarrow> div_to_zero a b * b + mod_to_zero a b = a"
   by (auto simp: minus_mod_eq_mult_div[symmetric] div_minus_right mod_minus_right ac_simps)
 
 
+text \<open>Hash codes (of the Isabelle Collections Framework) for the values of events: those of the
+  monitor only sample the tuples whose sizes the separable evaluation of @{text FRZ} estimates.
+  A string is hashed by its bytes (its code equation, which reads the bytes of OCaml's string,
+  is in @{text MFODL_Monitor_Exec.Log_Monitor}), a floating-point number by its integer part (NaN
+  and the infinities by 0).
+
+  The code equations below compute the hash codes of integers and lists with the constants of
+  their definitions bound once, as top-level values: a numeral of type @{typ uint32}, or a large
+  one of type @{typ integer}, is otherwise converted from its digits in every call.\<close>
+
+definition hc_mask :: integer where "hc_mask = 0xFFFFFFFF"
+definition hc_half :: integer where "hc_half = 0x80000000"
+definition hc_wrap :: integer where "hc_wrap = 0x100000000"
+definition hc_mult :: hashcode where "hc_mult = 33"
+definition hc_init :: hashcode where "hc_init = 5381"
+
+lemma bit31_take_bit32: "bit (take_bit 32 (k :: int)) 31 \<longleftrightarrow> 2 ^ 31 \<le> take_bit 32 k"
+proof -
+  have eq: "take_bit 32 k = 2 ^ 31 * of_bool (bit k 31) + take_bit 31 k"
+    using take_bit_Suc_from_most[of 31 k] by simp
+  have lt: "0 \<le> take_bit 31 k" "take_bit 31 k < 2 ^ 31"
+    by (rule take_bit_nonnegative, rule take_bit_int_less_exp)
+  have "bit (take_bit 32 k) 31 \<longleftrightarrow> bit k 31"
+    by (simp add: bit_take_bit_iff)
+  also have "\<dots> \<longleftrightarrow> 2 ^ 31 \<le> take_bit 32 k"
+    unfolding eq using lt by (cases "bit k 31") simp_all
+  finally show ?thesis .
+qed
+
+lemma bit31_and_mask:
+  "bit (Bit_Operations.and (i :: integer) 0xFFFFFFFF) 31 \<longleftrightarrow> 0x80000000 \<le> Bit_Operations.and i 0xFFFFFFFF"
+  including integer.lifting
+  apply transfer
+  using bit31_take_bit32 by (simp add: take_bit_eq_mask mask_eq_exp_minus_1)
+
+lemma hashcode_integer_code [code]:
+  "hashcode (i :: integer) = (let i' = Bit_Operations.and i hc_mask in
+    Uint32_signed (if hc_half \<le> i' then i' - hc_wrap else i'))"
+  unfolding hashcode_integer_def hc_mask_def hc_half_def hc_wrap_def Uint32_code Let_def
+    bit31_and_mask by simp
+
+lemma hashcode_list_code [code]:
+  "hashcode (xs :: 'a :: hashable list) = foldl (\<lambda>h x. h * hc_mult + hashcode x) hc_init xs"
+  by (simp add: hashcode_list_def hc_mult_def hc_init_def)
+
+instantiation string8 :: hashable
+begin
+
+definition hashcode_string8 :: "string8 \<Rightarrow> hashcode" where
+  "hashcode_string8 s = hashcode (Rep_string8 s)"
+
+definition def_hashmap_size_string8 :: "string8 itself \<Rightarrow> nat" where
+  "def_hashmap_size_string8 _ = 10"
+
+instance by intro_classes (simp add: def_hashmap_size_string8_def)
+
+end
+
+instantiation double :: hashable
+begin
+
+definition hashcode_double :: "double \<Rightarrow> hashcode" where
+  "hashcode_double x = (if is_nan x \<or> is_infinite x then 0 else hashcode (integer_of_double x))"
+
+definition def_hashmap_size_double :: "double itself \<Rightarrow> nat" where
+  "def_hashmap_size_double _ = 16"
+
+instance by intro_classes (simp add: def_hashmap_size_double_def)
+
+end
+
 datatype event_data = EInt integer | EFloat double | EString string8
 
 derive (eq) ceq event_data
 derive ccompare event_data
+
+instantiation event_data :: hashable
+begin
+
+primrec hashcode_event_data :: "event_data \<Rightarrow> hashcode" where
+  "hashcode_event_data (EInt i) = hashcode i"
+| "hashcode_event_data (EFloat x) = hashcode x"
+| "hashcode_event_data (EString s) = hashcode s + 1"
+
+definition def_hashmap_size_event_data :: "event_data itself \<Rightarrow> nat" where
+  "def_hashmap_size_event_data _ = 16"
+
+instance by intro_classes (simp add: def_hashmap_size_event_data_def)
+
+end
 
 instantiation event_data :: "{ord, plus, minus, uminus, times, divide, modulo}"
 begin

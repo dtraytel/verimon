@@ -77,6 +77,85 @@ declare [[code drop: str8_eq]]
 code_printing
   constant str8_eq \<rightharpoonup> (OCaml) "String.equal"
 
+text \<open>The hash code of a string (@{theory MFODL_Monitor_Devel.Event_Data}) is the fold over its
+  characters; its code reads the bytes of the OCaml string, through the conversion to byte strings,
+  trusted like @{const string8_of_bytes}.\<close>
+
+definition bytes_of_string8 :: "string8 \<Rightarrow> bytes" where
+  "bytes_of_string8 s = Abs_bytes (Rep_string8 s)"
+
+lemma Rep_bytes_of_string8[simp]: "Rep_bytes (bytes_of_string8 s) = Rep_string8 s"
+  by (simp add: bytes_of_string8_def Abs_bytes_inverse)
+
+declare [[code drop: bytes_of_string8]]
+
+code_printing
+  constant bytes_of_string8 \<rightharpoonup> (OCaml) "(fun x -> x)"
+
+lemma hashcode_char_code: "hashcode (c :: char) = Uint32_signed (integer_of_char c)"
+proof -
+  have "0 \<le> (of_char c :: int) \<and> of_char c < (256 :: int)"
+    using nat_of_char_less_256[of c] unfolding of_nat_of_char[where 'a=int, symmetric] by simp
+  then have "\<not> (integer_of_char c < - 0x80000000 \<or> integer_of_char c \<ge> 0x80000000)"
+    including integer.lifting unfolding integer_of_char_def by transfer simp
+  then show ?thesis
+    unfolding hashcode_char_def Uint32_signed_def integer_of_char_def
+    including integer.lifting by (simp, transfer, simp)
+qed
+
+function hash_bytes :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> hashcode \<Rightarrow> hashcode" where
+  "hash_bytes s n i h = (if i < n
+    then hash_bytes s n (i + 1) (h * hc_mult + Uint32_signed (integer_of_char (bytes_at s i)))
+    else h)"
+  by pat_completeness auto
+termination
+  apply (relation "measure (\<lambda>(_, n, i, _). nat_of_integer (n - i))")
+   apply simp
+  apply simp
+  including integer.lifting
+  apply transfer
+  apply simp
+  done
+
+lemma nat_of_integer_Suc: "0 \<le> i \<Longrightarrow> nat_of_integer (i + 1) = Suc (nat_of_integer i)"
+  including integer.lifting by transfer (simp add: Suc_nat_eq_nat_zadd1)
+
+lemma nat_of_integer_less: "0 \<le> i \<Longrightarrow> i < integer_of_nat m \<Longrightarrow> nat_of_integer i < m"
+  including integer.lifting by transfer simp
+
+lemma nat_of_integer_ge: "\<not> i < integer_of_nat m \<Longrightarrow> m \<le> nat_of_integer i"
+  including integer.lifting by transfer simp
+
+lemma hash_bytes_foldl:
+  "0 \<le> i \<Longrightarrow> n = bytes_length s \<Longrightarrow>
+   hash_bytes s n i h = foldl (\<lambda>h c. h * hc_mult + hashcode c) h (drop (nat_of_integer i) (Rep_bytes s))"
+proof (induction s n i h rule: hash_bytes.induct)
+  case (1 s n i h)
+  show ?case
+  proof (cases "i < n")
+    case True
+    have k: "nat_of_integer i < length (Rep_bytes s)"
+      using True 1(2,3) by (simp add: bytes_length_def nat_of_integer_less)
+    have "drop (nat_of_integer i) (Rep_bytes s) =
+      Rep_bytes s ! nat_of_integer i # drop (nat_of_integer (i + 1)) (Rep_bytes s)"
+      using Cons_nth_drop_Suc[OF k] 1(2) by (simp add: nat_of_integer_Suc)
+    then show ?thesis
+      using True 1 by (subst hash_bytes.simps)
+        (simp add: bytes_at_def hashcode_char_code[unfolded hashcode_char_def] del: hash_bytes.simps)
+  next
+    case False
+    then have "length (Rep_bytes s) \<le> nat_of_integer i"
+      using 1(3) by (simp add: bytes_length_def nat_of_integer_ge)
+    then show ?thesis
+      using False by (subst hash_bytes.simps) simp
+  qed
+qed
+
+lemma hashcode_string8_code[code]:
+  "hashcode s = (let b = bytes_of_string8 s in hash_bytes b (bytes_length b) 0 hc_init)"
+  unfolding hashcode_string8_def Let_def
+  by (subst hash_bytes_foldl) (simp_all add: hashcode_list_def hc_mult_def hc_init_def)
+
 subsection \<open>Signatures\<close>
 
 text \<open>The signature as the front end reads it: the predicates with their argument types.\<close>

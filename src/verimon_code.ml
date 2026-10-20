@@ -8242,6 +8242,69 @@ let ceq_event_dataa : (event_data -> event_data -> bool) option
 
 let ceq_event_data = ({ceq = ceq_event_dataa} : event_data ceq);;
 
+type 'a itself = Type;;
+
+let rec def_hashmap_size_event_data uu = Nat (Z.of_int 16);;
+
+let rec push_bit_integer n k = Bit_Shifts.push (integer_of_nat n) k;;
+
+let rec bit_integer
+  k n = not (Z.equal (Z.logand k (push_bit_integer n (Z.of_int 1))) Z.zero);;
+
+let rec uint32
+  i = (let ia = Z.logand i (Z.of_string "4294967295") in
+        (if bit_integer ia (Nat (Z.of_int 31))
+          then Z.to_int32 (Z.sub ia (Z.of_string "4294967296"))
+          else Z.to_int32 ia));;
+
+let hc_mult : int32 = uint32 (Z.of_int 33);;
+
+let rec hash_bytes
+  s n i h =
+    (if Z.lt i n
+      then hash_bytes s n (Z.add i (Z.of_int 1))
+             (Int32.add (Int32.mul h hc_mult)
+               (Z.to_int32
+                 ((Z.of_int (Char.code ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+ s i))))))
+      else h);;
+
+let hc_init : int32 = uint32 (Z.of_int 5381);;
+
+let rec hashcode_string8
+  s = (let b = (fun x -> x) s in
+        hash_bytes b ((Z.of_int (String.length b))) Z.zero hc_init);;
+
+let hc_wrap : Z.t = (Z.of_string "4294967296");;
+
+let hc_mask : Z.t = (Z.of_string "4294967295");;
+
+let hc_half : Z.t = (Z.of_string "2147483648");;
+
+let rec hashcode_integer
+  i = (let ia = Z.logand i hc_mask in
+        Z.to_int32 (if Z.leq hc_half ia then Z.sub ia hc_wrap else ia));;
+
+let rec hashcode_double
+  x = (if FloatUtil.isnan x || FloatUtil.isinfinite x then Int32.zero
+        else hashcode_integer (Z.of_float x));;
+
+let rec hashcode_event_data
+  = function EInt i -> hashcode_integer i
+    | EFloat x -> hashcode_double x
+    | EString s -> Int32.add (hashcode_string8 s) Int32.one;;
+
+type 'a hashable =
+  {hashcode : 'a -> int32; def_hashmap_size : 'a itself -> nat};;
+let hashcode _A = _A.hashcode;;
+let def_hashmap_size _A = _A.def_hashmap_size;;
+
+let hashable_event_data =
+  ({hashcode = hashcode_event_data;
+     def_hashmap_size = def_hashmap_size_event_data}
+    : event_data hashable);;
+
 let set_impl_event_dataa : (event_data, set_impla) phantom = Phantom Set_RBT;;
 
 let set_impl_event_data =
@@ -8433,7 +8496,7 @@ type 'a formula = Pred of string * trm list |
 type ('a, 'b) frz_ops =
   FrzOps of
     ('b -> 'b -> 'a -> 'b) * ('a -> 'a -> 'a) * ('a -> 'a -> nat) *
-      ('a -> nat) * 'a;;
+      ('a -> nat) * 'a * ('a -> 'a);;
 
 type 'a wf_idx =
   Abs_wf_idx of (nat list * (nat list * (('a list), ('a list) set) mapping));;
@@ -14245,11 +14308,11 @@ let rec umtrm
 
 let rec nat_sum_list xs = foldr plus_nata xs zero_nata;;
 
-let rec fo_emp (FrzOps (x1, x2, x3, x4, x5)) = x5;;
+let rec fo_emp (FrzOps (x1, x2, x3, x4, x5, x6)) = x5;;
 
-let rec fo_cmb (FrzOps (x1, x2, x3, x4, x5)) = x1;;
+let rec fo_cmb (FrzOps (x1, x2, x3, x4, x5, x6)) = x1;;
 
-let rec fo_cd (FrzOps (x1, x2, x3, x4, x5)) = x4;;
+let rec fo_cd (FrzOps (x1, x2, x3, x4, x5, x6)) = x4;;
 
 let rec plus_enat
   q qa = match q, qa with Enat m, Enat n -> Enat (plus_nata m n)
@@ -14335,7 +14398,7 @@ let rec frz_live_loop (_B1, _B2)
                in
               (y :: zs, (alpha_sa, (lv, sa))))));;
 
-let rec fo_un (FrzOps (x1, x2, x3, x4, x5)) = x2;;
+let rec fo_un (FrzOps (x1, x2, x3, x4, x5, x6)) = x2;;
 
 let rec frz_unions ops xs = fold (fun alpha l -> fo_un ops l alpha) xs;;
 
@@ -14359,7 +14422,7 @@ let rec frz_copies (_B1, _B2)
                           (zip (rb @ uS) (rb @ uE)))))
         else None));;
 
-let rec fo_fr (FrzOps (x1, x2, x3, x4, x5)) = x3;;
+let rec fo_fr (FrzOps (x1, x2, x3, x4, x5, x6)) = x3;;
 
 let rec frz_absorb
   ops xs =
@@ -14370,30 +14433,31 @@ let rec frz_absorb
 
 let frz_epoch : nat = Nat (Z.of_int 64);;
 
-let frz_cycle : nat = Nat (Z.of_int 256);;
+let rec fo_smp (FrzOps (x1, x2, x3, x4, x5, x6)) = x6;;
+
+let frz_sample : nat = Nat (Z.of_int 8);;
 
 let rec frz_meas
   ops g rs xsr m =
     (let (cy, (lm, (nm, (en, ep)))) = m in
-      (if g then (let c = modulo_nat cy frz_cycle in
-                   (if less_nat c frz_epoch
-                     then (let (lm1, (_, nf)) =
-                             frz_absorb ops xsr
-                               ((if equal_nata c zero_nata
-                                  then frz_unions ops rs (fo_emp ops) else lm),
-                                 (zero_nata, zero_nata))
-                             in
-                           let nm1 =
-                             plus_nata nm
-                               (if less_nat zero_nata nf then one_nata
-                                 else zero_nata)
-                             in
-                            (if equal_nata (suc c) frz_epoch
-                              then (suc cy,
-                                     (fo_emp ops,
-                                       (zero_nata, (fo_cd ops lm1, nm1))))
-                              else (suc cy, (lm1, (nm1, (en, ep))))))
-                     else (suc cy, (lm, (nm, (en, ep))))))
+      (if g then (let c = modulo_nat cy frz_epoch in
+                  let (lm1, (_, nf)) =
+                    frz_absorb ops (mapa (fo_smp ops) xsr)
+                      ((if equal_nata c zero_nata
+                         then frz_unions ops (mapa (fo_smp ops) rs) (fo_emp ops)
+                         else lm),
+                        (zero_nata, zero_nata))
+                    in
+                  let nm1 =
+                    plus_nata nm
+                      (if less_nat zero_nata nf then one_nata else zero_nata)
+                    in
+                   (if equal_nata (suc c) frz_epoch
+                     then (suc cy,
+                            (fo_emp ops,
+                              (zero_nata,
+                                (times_nata frz_sample (fo_cd ops lm1), nm1))))
+                     else (suc cy, (lm1, (nm1, (en, ep))))))
         else m));;
 
 let frz_keep : nat = Nat (Z.of_int 128);;
@@ -14528,6 +14592,16 @@ let rec frz_step (_B1, _B2)
 (ln, nLn, pXa, drop (size_lista ys) bufa, rga, bo, tka, lrb),
                                        (rho_S, rho_E)))))))))));;
 
+let rec hashcode_list _A
+  xs = foldl (fun h x -> Int32.add (Int32.mul h hc_mult) (hashcode _A x))
+         hc_init xs;;
+
+let frz_smask : int32 = uint32 (Z.of_int 7);;
+
+let rec frz_sampled
+  x = (Int32.compare (Int32.logand (hashcode_list hashable_event_data x)
+                       frz_smask) Int32.zero = 0);;
+
 let rec frz_kops
   m cs =
     FrzOps
@@ -14539,7 +14613,7 @@ let rec frz_kops
         (fun alpha l -> edl_card (ed_minus alpha l)),
         card (card_UNIV_list, (ceq_list ceq_event_data),
                (ccompare_list ccompare_event_data)),
-        ed_bot);;
+        ed_bot, ed_filter frz_sampled);;
 
 let rec frz_fill (_A1, _A2, _A3)
   ng alpha_s =
@@ -55360,11 +55434,6 @@ let opt_table : (char list * (okind * char list)) list
 
 let rec opt_lookup
   k = map_option fst (map_of (equal_list equal_char) opt_table k);;
-
-let rec push_bit_integer n k = Bit_Shifts.push (integer_of_nat n) k;;
-
-let rec bit_integer
-  k n = not (Z.equal (Z.logand k (push_bit_integer n (Z.of_int 1))) Z.zero);;
 
 let rec digit7 c = bit_integer ((Z.of_int (Char.code c))) (Nat (Z.of_int 7));;
 

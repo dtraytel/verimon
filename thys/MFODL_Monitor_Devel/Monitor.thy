@@ -978,10 +978,11 @@ datatype ('a, 't) frz_sep =
 
 text \<open>The operations on the frozen tables (of type @{typ 'a}) and verdicts (of type @{typ 't}) that
   the separable evaluation needs: the combination of a row of the two copies at a frozen table,
-  the union, the number of tuples of a table not in another, the size, and the empty table.\<close>
+  the union, the number of tuples of a table not in another, the size, the empty table, and the
+  sample of a table that the work model measures.\<close>
 
 datatype ('a, 't) frz_ops = FrzOps (fo_cmb: "'t \<Rightarrow> 't \<Rightarrow> 'a \<Rightarrow> 't") (fo_un: "'a \<Rightarrow> 'a \<Rightarrow> 'a")
-  (fo_fr: "'a \<Rightarrow> 'a \<Rightarrow> nat") (fo_cd: "'a \<Rightarrow> nat") (fo_emp: 'a)
+  (fo_fr: "'a \<Rightarrow> 'a \<Rightarrow> nat") (fo_cd: "'a \<Rightarrow> nat") (fo_emp: 'a) (fo_smp: "'a \<Rightarrow> 'a")
 
 text \<open>Each node produces its tables over the column list @{const Formula.fv_list} of its
   formula.  A node records the column lists of its operands where it needs them to combine
@@ -2447,15 +2448,15 @@ text \<open>The work model of the decision.  A copy of the replay mode replays t
   (@{const frz_cut}), and the work of the replay mode is counted with the cut length.  The replay
   mode does not track the tables it would put in @{term L}: while the cut length is at most
   @{text frz_lambda} the replay is no more work than stepping the copies, and otherwise it measures
-  the size of @{term L} and the steps that bring new tuples during the first @{text frz_epoch}
-  steps of every @{text frz_cycle}, starting from the union of the recent frozen tables, and uses
-  the measurement until the next one.  It keeps the frozen tables of the last @{text frz_keep}
-  steps, which give @{term L} at a switch.\<close>
+  the size of @{term L} and the steps that bring new tuples on a sample of the tuples
+  (@{const fo_smp}, about one in @{text frz_sample}), over epochs of @{text frz_epoch} steps that
+  start from the sample of the recent frozen tables, and uses each measurement until the next one.
+  It keeps the frozen tables of the last @{text frz_keep} steps, which give @{term L} at a switch.\<close>
 
 definition frz_lambda :: nat where "frz_lambda = 6"
 definition frz_c0 :: nat where "frz_c0 = 1000"
 definition frz_epoch :: nat where "frz_epoch = 64"
-definition frz_cycle :: nat where "frz_cycle = 256"
+definition frz_sample :: nat where "frz_sample = 8"
 definition frz_keep :: nat where "frz_keep = 128"
 
 definition frz_absorb :: "('a, 't) frz_ops \<Rightarrow> 'a list \<Rightarrow> 'a \<times> nat \<times> nat \<Rightarrow> 'a \<times> nat \<times> nat" where
@@ -2465,20 +2466,20 @@ definition frz_unions :: "('a, 't) frz_ops \<Rightarrow> 'a list \<Rightarrow> '
   "frz_unions ops xs = fold (\<lambda>\<alpha> L. fo_un ops L \<alpha>) xs"
 
 text \<open>The measurement of the replay mode in a step (if @{term g}, the cut length exceeds
-  @{text frz_lambda}): the steps measured, the union of the frozen tables of the current
-  measurement, the steps of it with new tuples, and the two estimates.\<close>
+  @{text frz_lambda}): the steps measured, the union of the sampled frozen tables of the current
+  epoch, the steps of it with new sampled tuples, and the two estimates (the size of the union,
+  scaled by @{text frz_sample}, and the steps with new tuples).\<close>
 
 definition frz_meas :: "('a, 't) frz_ops \<Rightarrow> bool \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow>
     nat \<times> 'a \<times> nat \<times> nat \<times> nat \<Rightarrow> nat \<times> 'a \<times> nat \<times> nat \<times> nat" where
   "frz_meas ops g rs xsr m = (case m of (cy, Lm, nm, en, ep) \<Rightarrow>
      if g then
-       (let c = cy mod frz_cycle in
-        if c < frz_epoch then
-          (case frz_absorb ops xsr (if c = 0 then frz_unions ops rs (fo_emp ops) else Lm, 0, 0) of
+       (let c = cy mod frz_epoch in
+          (case frz_absorb ops (map (fo_smp ops) xsr)
+              (if c = 0 then frz_unions ops (map (fo_smp ops) rs) (fo_emp ops) else Lm, 0, 0) of
             (Lm1, _, nf) \<Rightarrow> let nm1 = nm + (if 0 < nf then 1 else 0) in
-              if Suc c = frz_epoch then (Suc cy, fo_emp ops, 0, fo_cd ops Lm1, nm1)
-              else (Suc cy, Lm1, nm1, en, ep))
-        else (Suc cy, Lm, nm, en, ep))
+              if Suc c = frz_epoch then (Suc cy, fo_emp ops, 0, frz_sample * fo_cd ops Lm1, nm1)
+              else (Suc cy, Lm1, nm1, en, ep)))
      else m)"
 
 text \<open>The replay mode: the copies of @{const frz_live_loop}, then the decision.\<close>
@@ -2738,11 +2739,18 @@ next
 qed
 
 text \<open>The operations of the separable evaluation on the kernel's tables: a verdict's tuple, over
-  the body's columns @{term cs}, is read at the frozen predicate's variables.\<close>
+  the body's columns @{term cs}, is read at the frozen predicate's variables.  The sample of a
+  table are its tuples whose hash code is divisible by 8 (@{const frz_sample}): whose last three
+  bits, @{text frz_smask}, are 0.\<close>
+
+definition frz_smask :: hashcode where "frz_smask = 7"
+
+definition frz_sampled :: "event_data list \<Rightarrow> bool" where
+  "frz_sampled x \<longleftrightarrow> Bit_Operations.and (hashcode x) frz_smask = 0"
 
 definition frz_kops :: "nat \<Rightarrow> nat list \<Rightarrow> (event_data list set, event_data table) frz_ops" where
   "frz_kops m cs = FrzOps (\<lambda>yS yE \<alpha>. {x \<in> yS. val m cs x \<in> \<alpha>} \<union> {x \<in> yE. val m cs x \<notin> \<alpha>})
-    (\<union>) (\<lambda>\<alpha> L. card (\<alpha> - L)) card {}"
+    (\<union>) (\<lambda>\<alpha> L. card (\<alpha> - L)) card {} (\<lambda>\<alpha>. {x \<in> \<alpha>. frz_sampled x})"
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"

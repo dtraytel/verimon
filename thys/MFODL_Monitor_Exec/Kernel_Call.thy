@@ -695,12 +695,13 @@ text \<open>The separable mode under the simulation.  The two runs replay the sa
 
 definition frz_ops_rel :: "('t \<Rightarrow> 't') \<Rightarrow> ('a, 't) frz_ops \<Rightarrow> ('a, 't') frz_ops \<Rightarrow> bool" where
   "frz_ops_rel g ops ops' \<longleftrightarrow> fo_un ops' = fo_un ops \<and> fo_fr ops' = fo_fr ops \<and> fo_cd ops' = fo_cd ops \<and>
-    fo_emp ops' = fo_emp ops \<and> (\<forall>yS yE \<alpha>. fo_cmb ops' (g yS) (g yE) \<alpha> = g (fo_cmb ops yS yE \<alpha>))"
+    fo_emp ops' = fo_emp ops \<and> (\<forall>yS yE \<alpha>. fo_cmb ops' (g yS) (g yE) \<alpha> = g (fo_cmb ops yS yE \<alpha>)) \<and>
+    fo_smp ops' = fo_smp ops"
 
 lemma frz_ops_relD:
   assumes "frz_ops_rel g ops ops'"
   shows "fo_un ops' = fo_un ops" "fo_fr ops' = fo_fr ops" "fo_cd ops' = fo_cd ops" "fo_emp ops' = fo_emp ops"
-    "fo_cmb ops' (g yS) (g yE) \<alpha> = g (fo_cmb ops yS yE \<alpha>)"
+    "fo_cmb ops' (g yS) (g yE) \<alpha> = g (fo_cmb ops yS yE \<alpha>)" "fo_smp ops' = fo_smp ops"
   using assms by (simp_all add: frz_ops_rel_def)
 
 lemma frz_unions_rel: "frz_ops_rel g ops ops' \<Longrightarrow> frz_unions ops' xs L = frz_unions ops xs L"
@@ -728,17 +729,20 @@ lemma frz_absorb_in:
 lemma frz_meas_rel:
   assumes "frz_ops_rel g ops ops'"
   shows "frz_meas ops' gt rs xs m = frz_meas ops gt rs xs m"
-  unfolding frz_meas_def frz_ops_relD(3,4)[OF assms] frz_absorb_rel[OF assms] frz_unions_rel[OF assms] ..
+  unfolding frz_meas_def frz_ops_relD(3,4,6)[OF assms] frz_absorb_rel[OF assms] frz_unions_rel[OF assms] ..
 
 lemma frz_meas_in:
   assumes "\<And>X Y. X \<in> B \<Longrightarrow> Y \<in> B \<Longrightarrow> fo_un ops X Y \<in> B" "fo_emp ops \<in> B" "Lm \<in> B" "set rs \<subseteq> B"
     "set xs \<subseteq> B" "frz_meas ops gt rs xs (cy, Lm, nm, en, ep) = (cy', Lm', nm', en', ep')"
+    "\<And>X. X \<in> B \<Longrightarrow> fo_smp ops X \<in> B"
   shows "Lm' \<in> B"
 proof -
-  have u: "frz_unions ops rs (fo_emp ops) \<in> B"
-    by (rule frz_unions_in[OF assms(1,2,4)])
-  have a: "L1 \<in> B" if "frz_absorb ops xs (L0, 0, 0) = (L1, n1, f1)" "L0 \<in> B" for L0 L1 n1 f1
-    using frz_absorb_in[OF assms(1) that(2) assms(5), of 0 0] that(1) by simp
+  have rs: "set (map (fo_smp ops) rs) \<subseteq> B" and xs: "set (map (fo_smp ops) xs) \<subseteq> B"
+    using assms(4,5,7) by auto
+  have u: "frz_unions ops (map (fo_smp ops) rs) (fo_emp ops) \<in> B"
+    by (rule frz_unions_in[OF assms(1,2) rs])
+  have a: "L1 \<in> B" if "frz_absorb ops (map (fo_smp ops) xs) (L0, 0, 0) = (L1, n1, f1)" "L0 \<in> B" for L0 L1 n1 f1
+    using frz_absorb_in[OF assms(1) that(2) xs, of 0 0] that(1) by simp
   show ?thesis
     using assms(2,3,6) u by (auto simp: frz_meas_def Let_def split: if_splits prod.split_asm dest: a)
 qed
