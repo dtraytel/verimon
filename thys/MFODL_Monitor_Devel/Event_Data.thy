@@ -97,10 +97,43 @@ lemma "b \<noteq> 0 \<Longrightarrow> div_to_zero a b * b + mod_to_zero a b = a"
   by (auto simp: minus_mod_eq_mult_div[symmetric] div_minus_right mod_minus_right ac_simps)
 
 
+text \<open>Hash codes (of the Isabelle Collections Framework) for the values of events: those of the
+  monitor only sample the tuples whose sizes the separable evaluation of @{text FRZ} estimates.
+  A floating-point number is hashed by its integer part, NaN and the infinities by 0.\<close>
+
+instantiation string8 :: hashable
+begin
+
+definition hashcode_string8 :: "string8 \<Rightarrow> hashcode" where
+  "hashcode_string8 s = hashcode (literal_string8 s)"
+
+definition def_hashmap_size_string8 :: "string8 itself \<Rightarrow> nat" where
+  "def_hashmap_size_string8 _ = 10"
+
+instance by intro_classes (simp add: def_hashmap_size_string8_def)
+
+end
+
+instantiation double :: hashable
+begin
+
+definition hashcode_double :: "double \<Rightarrow> hashcode" where
+  "hashcode_double x = (if is_nan x \<or> is_infinite x then 0 else hashcode (integer_of_double x))"
+
+definition def_hashmap_size_double :: "double itself \<Rightarrow> nat" where
+  "def_hashmap_size_double _ = 16"
+
+instance by intro_classes (simp add: def_hashmap_size_double_def)
+
+end
+
+derive (hashcode) hash_code double string8
+
 datatype event_data = EInt integer | EFloat double | EString string8
 
 derive (eq) ceq event_data
 derive ccompare event_data
+derive hashable event_data
 
 instantiation event_data :: "{ord, plus, minus, uminus, times, divide, modulo}"
 begin

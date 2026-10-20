@@ -187,24 +187,30 @@ lemma frz_meas_tab:
     and "frz_tab \<sigma> V m \<phi> Lm" "\<forall>X \<in> set rs. frz_tab \<sigma> V m \<phi> X" "\<forall>X \<in> set xs. frz_tab \<sigma> V m \<phi> X"
   shows "frz_tab \<sigma> V m \<phi> Lm'"
 proof -
-  have fin: "\<forall>\<alpha> \<in> set xs. finite \<alpha>"
-    using assms(4) by (simp add: frz_tab_def)
-  have t0: "frz_tab \<sigma> V m \<phi> (frz_unions (frz_kops m' cs) rs {})"
-    by (rule frz_tab_unions[OF frz_tab_empty]) (use assms(3) in blast)
+  let ?s = "fo_smp (frz_kops m' cs)"
+  have smp: "frz_tab \<sigma> V m \<phi> (?s X)" if "frz_tab \<sigma> V m \<phi> X" for X
+    using that by (auto simp: frz_tab_def frz_kops_def)
+  have xs: "\<forall>X \<in> set (map ?s xs). frz_tab \<sigma> V m \<phi> X" and rs: "\<forall>X \<in> set (map ?s rs). frz_tab \<sigma> V m \<phi> X"
+    using assms(3,4) smp by auto
+  have fin: "\<forall>\<alpha> \<in> set (map ?s xs). finite \<alpha>"
+    using xs by (simp add: frz_tab_def)
+  have t0: "frz_tab \<sigma> V m \<phi> (frz_unions (frz_kops m' cs) (map ?s rs) {})"
+    by (rule frz_tab_unions[OF frz_tab_empty]) (use rs in blast)
   have ab: "frz_tab \<sigma> V m \<phi> L1"
-    if "frz_absorb (frz_kops m' cs) xs (L0, 0, 0) = (L1, n1, f1)" "frz_tab \<sigma> V m \<phi> L0" for L0 L1 n1 f1
+    if "frz_absorb (frz_kops m' cs) (map ?s xs) (L0, 0, 0) = (L1, n1, f1)" "frz_tab \<sigma> V m \<phi> L0" for L0 L1 n1 f1
   proof -
-    have "L1 = frz_unions (frz_kops m' cs) xs L0"
+    have "L1 = frz_unions (frz_kops m' cs) (map ?s xs) L0"
       using frz_absorb_kops[OF that(1) fin] by (simp add: frz_unions_kops)
     then show ?thesis
-      by (simp only:) (rule frz_tab_unions[OF that(2)], use assms(4) in blast)
+      by (simp only:) (rule frz_tab_unions[OF that(2)], use xs in blast)
   qed
   have emp: "fo_emp (frz_kops m' cs) = {}"
     by (simp add: frz_kops_def)
   have abA: "frz_tab \<sigma> V m \<phi> L1"
-    if "frz_absorb (frz_kops m' cs) xs (frz_unions (frz_kops m' cs) rs {}, 0, 0) = (L1, n1, f1)" for L1 n1 f1
+    if "frz_absorb (frz_kops m' cs) (map ?s xs) (frz_unions (frz_kops m' cs) (map ?s rs) {}, 0, 0) = (L1, n1, f1)"
+    for L1 n1 f1
     by (rule ab[OF that t0])
-  have abB: "frz_tab \<sigma> V m \<phi> L1" if "frz_absorb (frz_kops m' cs) xs (Lm, 0, 0) = (L1, n1, f1)" for L1 n1 f1
+  have abB: "frz_tab \<sigma> V m \<phi> L1" if "frz_absorb (frz_kops m' cs) (map ?s xs) (Lm, 0, 0) = (L1, n1, f1)" for L1 n1 f1
     by (rule ab[OF that assms(2)])
   show ?thesis
     using assms(1,2)
