@@ -15,16 +15,18 @@
     <link rel="stylesheet" href="verimon.css">
     <style>
       h1 { white-space: normal; }
-      h2 { border-bottom: 1px solid #ddd; padding-bottom: 0.2em; }
+      h2 { font-size: 1.25em; margin-top: 1.6em; }
+      h3 { font-size: 1.05em; margin-top: 1.4em; }
       pre, code { font-family: monospace; font-size: 14px; }
-      pre { background: #f6f8f8; border: 1px solid #e0e4e4; padding: 0.8em 1em; overflow-x: auto; line-height: 1.45em; }
-      code { background: #f6f8f8; padding: 0 0.2em; }
-      pre code { background: none; padding: 0; }
-      table.ops { border-collapse: collapse; width: 100%; margin: 0.5em 0 1em; }
-      table.ops th, table.ops td { text-align: left; vertical-align: top; padding: 0.3em 0.6em; border-bottom: 1px solid #e6e9e9; }
-      table.ops th { color: #222; font-weight: 600; }
-      .nt { font-style: italic; color: #0b5d8f; }
-      .back { margin: 0; font-size: 15px; }
+      pre { border: 2px solid #e6e9e9; padding: 4px 6px; overflow-x: auto; line-height: normal; }
+      table.ops { width: 100%; padding: 0; border: 0; }
+      table.ops th, table.ops td { text-align: left; vertical-align: top; padding: 0.15em 0.8em 0.15em 0; }
+      table.ops th { color: #545454; font-weight: 600; }
+      table.ops td:first-child { white-space: nowrap; }
+      .nt { font-style: italic; }
+      /* Greek letters for formulas: in the text font also inside code, so that they look alike */
+      .mv { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 16px; font-style: italic; }
+      .back { margin: 0; }
       @media (max-width: 600px) { body { padding: 1em 16px 3em; } }
     </style>
   </head>
@@ -64,7 +66,7 @@
       parts, <code>{ }</code> parts that may repeat, and <code>|</code> separates alternatives.
       Keywords are in capitals.</p>
 <pre><code><span class="nt">formula</span> ::= TRUE | FALSE
-          | <span class="nt">pred</span> ( [<span class="nt">arg</span> {, <span class="nt">arg</span>}] )                  an event; <span class="nt">arg</span> ::= <span class="nt">term</span> | _
+          | <span class="nt">pred</span> ( [<span class="nt">arg</span> {, <span class="nt">arg</span>}] )
           | <span class="nt">term</span> = <span class="nt">term</span> | <span class="nt">term</span> &lt; <span class="nt">term</span> | <span class="nt">term</span> &lt;= <span class="nt">term</span> | <span class="nt">term</span> &gt; <span class="nt">term</span> | <span class="nt">term</span> &gt;= <span class="nt">term</span>
           | NOT <span class="nt">formula</span>
           | <span class="nt">formula</span> AND <span class="nt">formula</span> | <span class="nt">formula</span> OR <span class="nt">formula</span>
@@ -81,6 +83,7 @@
           | LETPAST <span class="nt">pred</span> ( [<span class="nt">var</span> {, <span class="nt">var</span>}] ) = <span class="nt">formula</span> IN <span class="nt">formula</span>
           | FRZ <span class="nt">pred</span> ( [<span class="nt">var</span> {, <span class="nt">var</span>}] ) = <span class="nt">formula</span> IN <span class="nt">formula</span>
           | ( <span class="nt">formula</span> )
+<span class="nt">arg</span>      ::= <span class="nt">term</span> | _
 
 <span class="nt">term</span>     ::= <span class="nt">var</span> | <span class="nt">constant</span>
           | <span class="nt">term</span> + <span class="nt">term</span> | <span class="nt">term</span> - <span class="nt">term</span> | <span class="nt">term</span> * <span class="nt">term</span> | <span class="nt">term</span> / <span class="nt">term</span> | <span class="nt">term</span> MOD <span class="nt">term</span> | - <span class="nt">term</span>
@@ -129,29 +132,31 @@
       everything to their right. When in doubt, add parentheses.</p>
 
     <h3>Meaning</h3>
+    <p>For a formula <span class="mv">φ</span> with subformulas <span class="mv">α</span> and <span class="mv">β</span>, an interval <i>I</i> and a
+      regular expression <i>r</i>:</p>
     <table class="ops">
-      <tr><th>formula</th><th>holds at time point <i>i</i> if</th></tr>
-      <tr><td><code>PREV I φ</code></td><td>φ holds at <i>i</i>&minus;1, and the distance of their timestamps is in <i>I</i></td></tr>
-      <tr><td><code>NEXT I φ</code></td><td>φ holds at <i>i</i>+1, within distance <i>I</i></td></tr>
-      <tr><td><code>ONCE I φ</code></td><td>φ holds at some earlier or the same time point within distance <i>I</i></td></tr>
-      <tr><td><code>EVENTUALLY I φ</code></td><td>φ holds at some later or the same time point within distance <i>I</i></td></tr>
-      <tr><td><code>PAST_ALWAYS I φ</code></td><td>φ holds at all earlier and the same time points within distance <i>I</i></td></tr>
-      <tr><td><code>ALWAYS I φ</code></td><td>φ holds at all later and the same time points within distance <i>I</i></td></tr>
-      <tr><td><code>φ SINCE I ψ</code></td><td>ψ holds at some time point <i>j</i> &le; <i>i</i> within distance <i>I</i>, and φ at all time points after <i>j</i> up to <i>i</i></td></tr>
-      <tr><td><code>φ UNTIL I ψ</code></td><td>ψ holds at some time point <i>j</i> &ge; <i>i</i> within distance <i>I</i>, and φ at all time points from <i>i</i> before <i>j</i></td></tr>
-      <tr><td><code>φ TRIGGER I ψ</code></td><td>at every earlier or the same time point <i>j</i> within distance <i>I</i>, ψ holds or φ held at some time point after <i>j</i> (the dual of <code>SINCE</code>)</td></tr>
-      <tr><td><code>φ RELEASE I ψ</code></td><td>the future dual of <code>TRIGGER</code></td></tr>
-      <tr><td><code>MATCHP I r</code></td><td>some stretch of time points ending at <i>i</i> and starting within distance <i>I</i> matches <i>r</i></td></tr>
-      <tr><td><code>MATCHF I r</code></td><td>some stretch of time points starting at <i>i</i> and ending within distance <i>I</i> matches <i>r</i></td></tr>
-      <tr><td><code>y &lt;- SUM x; g φ</code></td><td><i>y</i> is the sum of <i>x</i> over the satisfactions of φ, grouped by the values of <i>g</i></td></tr>
-      <tr><td><code>LET p(x) = φ IN ψ</code></td><td>ψ holds, where <code>p</code> stands for φ</td></tr>
-      <tr><td><code>LETPAST p(x) = φ IN ψ</code></td><td>as <code>LET</code>, but φ may refer to <code>p</code> at earlier time points (recursion through <code>PREV</code>, <code>ONCE</code>, ...)</td></tr>
-      <tr><td><code>FRZ p(x) = φ IN ψ</code></td><td>ψ holds, where <code>p</code> stands for φ's satisfactions at <i>i</i>, at every time point ψ refers to</td></tr>
+      <tr><th><span class="mv">φ</span></th><th><span class="mv">φ</span> holds at time point <i>i</i> if</th></tr>
+      <tr><td><code>PREV <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <i>i</i>&minus;1, and the distance of their timestamps is in <i>I</i></td></tr>
+      <tr><td><code>NEXT <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <i>i</i>+1, within distance <i>I</i></td></tr>
+      <tr><td><code>ONCE <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some earlier or the same time point within distance <i>I</i></td></tr>
+      <tr><td><code>EVENTUALLY <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some later or the same time point within distance <i>I</i></td></tr>
+      <tr><td><code>PAST_ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all earlier and the same time points within distance <i>I</i></td></tr>
+      <tr><td><code>ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all later and the same time points within distance <i>I</i></td></tr>
+      <tr><td><code><span class="mv">α</span> SINCE <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <i>j</i> &le; <i>i</i> within distance <i>I</i>, and <span class="mv">α</span> at all time points after <i>j</i> up to <i>i</i></td></tr>
+      <tr><td><code><span class="mv">α</span> UNTIL <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <i>j</i> &ge; <i>i</i> within distance <i>I</i>, and <span class="mv">α</span> at all time points from <i>i</i> before <i>j</i></td></tr>
+      <tr><td><code><span class="mv">α</span> TRIGGER <span class="mv">I</span> <span class="mv">β</span></code></td><td>at every earlier or the same time point <i>j</i> within distance <i>I</i>, <span class="mv">β</span> holds or <span class="mv">α</span> held at some time point after <i>j</i> (the dual of <code>SINCE</code>)</td></tr>
+      <tr><td><code><span class="mv">α</span> RELEASE <span class="mv">I</span> <span class="mv">β</span></code></td><td>the future dual of <code>TRIGGER</code></td></tr>
+      <tr><td><code>MATCHP <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points ending at <i>i</i> and starting within distance <i>I</i> matches <i>r</i></td></tr>
+      <tr><td><code>MATCHF <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points starting at <i>i</i> and ending within distance <i>I</i> matches <i>r</i></td></tr>
+      <tr><td><code><span class="mv">y</span> &lt;- SUM <span class="mv">x</span>; <span class="mv">g</span> <span class="mv">α</span></code></td><td><i>y</i> is the sum of <i>x</i> over the satisfactions of <span class="mv">α</span>, grouped by the values of <i>g</i></td></tr>
+      <tr><td><code>LET p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for <span class="mv">α</span></td></tr>
+      <tr><td><code>LETPAST p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td>as <code>LET</code>, but <span class="mv">α</span> may refer to <code>p</code> at earlier time points (recursion through <code>PREV</code>, <code>ONCE</code>, ...)</td></tr>
+      <tr><td><code>FRZ p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for the satisfactions of <span class="mv">α</span> at <i>i</i>, at every time point <span class="mv">β</span> refers to</td></tr>
     </table>
     <p>The distance is the difference of the timestamps; an interval without bound is
-      <code>[0,*)</code>. In a regular expression, <code>φ?</code> tests φ without moving and
-      <code>.</code> moves one time point. A bare formula φ is a test and a step:
-      <code>φ? .</code> in <code>MATCHF</code>, <code>. φ?</code> in <code>MATCHP</code>.
+      <code>[0,*)</code>. In a regular expression, <code><span class="mv">α</span>?</code> tests <span class="mv">α</span> without moving and
+      <code>.</code> moves one time point. A bare formula <span class="mv">α</span> is a test and a step:
+      <code><span class="mv">α</span>? .</code> in <code>MATCHF</code>, <code>. <span class="mv">α</span>?</code> in <code>MATCHP</code>.
       Some keywords have synonyms: <code>PREVIOUS</code>, <code>SOMETIMES</code> (for
       <code>EVENTUALLY</code>), <code>HISTORICALLY</code> (for <code>PAST_ALWAYS</code>), and
       <code>|&gt;</code> or <code>FORWARD</code> (for <code>MATCHF</code>), <code>&lt;|</code>
