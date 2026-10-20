@@ -1,0 +1,3 @@
+EXISTS u. att(u,c1) AND
+  ONCE[1,30] (att(u,c2) AND
+    ONCE[1,30] att(u,c3))

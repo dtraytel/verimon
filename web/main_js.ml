@@ -13,13 +13,29 @@ let ( >>= ) = Lwt.bind
 module Html = Dom_html
 module V = Verimon_code.Verimon
 
-let examples =
-  [ "until", ("ex", false)
-  ; "publish/approve", ("rv11", true)
-  ; "publish/approve/manager", ("rv11b", true)
-  ; "aggregations", ("agg", false)
-  ; "recursive let", ("letpast", false)
+(* The examples in groups: name, file name in examples/ and whether the formula is negated. *)
+let example_groups =
+  [ "Operators",
+    [ "until", ("ex", false)
+    ; "since", ("since", false)
+    ; "aggregations", ("agg", false)
+    ; "recursive let", ("letpast", false)
+    ]
+  ; "Policies",
+    [ "publish/approve", ("rv11", true)
+    ; "publish/approve/manager", ("rv11b", true)
+    ; "three attempts", ("attempts", false)
+    ; "failed logins (regular expression)", ("logins", false)
+    ; "unprotected access (let)", ("locks", false)
+    ]
+  ; "Case studies",
+    [ "Nokia: propagation of deletions", ("nokia", false)
+    ; "GDPR: consent to use data", ("gdpr", false)
+    ]
   ]
+
+let examples = List.concat_map snd example_groups
+let default_example = "publish/approve"
 
 let negate = ref false
 
@@ -116,10 +132,16 @@ let onload _ =
   let append_opt e s = Dom.appendChild e (d##createTextNode (Js.string s)) in
   append_opt ex "Select example ";
   let select = Html.createSelect d in
-  List.iter (fun text ->
-      let option = Html.createOption d in
-      append_opt option text;
-      Dom.appendChild select option) (ed_name :: ex_names);
+  let option parent text =
+    let option = Html.createOption d in
+    append_opt option text;
+    Dom.appendChild parent option in
+  option select ed_name;
+  List.iter (fun (label, exs) ->
+      let group = Html.createOptgroup d in
+      group##.label := Js.string label;
+      List.iter (fun (text, _) -> option group text) exs;
+      Dom.appendChild select group) example_groups;
   Dom.appendChild ex select;
   append_opt ex " or edit";
 
@@ -264,8 +286,8 @@ let onload _ =
       let i = select##.selectedIndex - 1 in
       if i >= 0 && i < List.length ex_names then load_ex (List.nth ex_names i);
       Js._false);
-  select##.value := Js.string (List.nth ex_names 1);
-  load_ex (List.nth ex_names 1);
+  select##.value := Js.string default_example;
+  load_ex default_example;
   Js._false
 
 let () = Html.window##.onload := Html.handler onload

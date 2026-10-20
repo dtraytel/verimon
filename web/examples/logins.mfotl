@@ -1,0 +1,4 @@
+ok(u) AND
+MATCHP[0,5m] (fail(u)? . (NOT ok(u)? .)*
+              fail(u)? . (NOT ok(u)? .)*
+              fail(u)? . (NOT ok(u)? .)*)

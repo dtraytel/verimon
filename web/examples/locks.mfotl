@@ -1,0 +1,2 @@
+LET held(t,l) = (NOT rel(t,l)) SINCE acq(t,l) IN
+(read(t,v) OR write(t,v)) AND NOT (EXISTS l. held(t,l))
