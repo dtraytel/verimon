@@ -168,6 +168,7 @@
       <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">t</i><sub>1</sub> <code>=</code> <i class="m">t</i><sub>2</sub></td><td>if <i class="m">v</i>(<i class="m">t</i><sub>1</sub>) = <i class="m">v</i>(<i class="m">t</i><sub>2</sub>), and likewise for <code>&lt;</code> and <code>&lt;=</code></td></tr>
       <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>NOT</code> <i class="m">α</i></td><td>if not <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i></td></tr>
       <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>OR</code> <i class="m">β</i></td><td>if <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> or <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">β</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>AND</code> <i class="m">β</i></td><td>if <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">β</i></td></tr>
       <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>EXISTS</code> <i class="m">x</i>. <i class="m">α</i></td><td>if <i class="m">σ</i>, <i class="m">v</i>[<i class="m">x</i> ↦ <i class="m">d</i>], <i class="m">i</i> ⊨ <i class="m">α</i> for some value <i class="m">d</i></td></tr>
       <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>PREV</code> <i class="m">I</i> <i class="m">α</i></td><td>if <i class="m">i</i> &gt; 0, <i class="m">τ</i><sub><i class="m">i</i></sub> − <i class="m">τ</i><sub><i class="m">i</i>−1</sub> ∈ <i class="m">I</i>, and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i>−1 ⊨ <i class="m">α</i></td></tr>
       <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>NEXT</code> <i class="m">I</i> <i class="m">α</i></td><td>if <i class="m">τ</i><sub><i class="m">i</i>+1</sub> − <i class="m">τ</i><sub><i class="m">i</i></sub> ∈ <i class="m">I</i> and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i>+1 ⊨ <i class="m">α</i></td></tr>
@@ -195,16 +196,15 @@
     <p>The other operators are abbreviations:</p>
     <table class="sem abbr">
       <tr><td><code>TRUE</code></td><td>:=</td><td>0 <code>=</code> 0</td></tr>
-      <tr><td><code>FALSE</code></td><td>:=</td><td><code>NOT</code> <code>TRUE</code></td></tr>
+      <tr><td><code>FALSE</code></td><td>:=</td><td>0 <code>=</code> 1</td></tr>
       <tr><td><i class="m">t</i><sub>1</sub> <code>&gt;</code> <i class="m">t</i><sub>2</sub>, &nbsp;<i class="m">t</i><sub>1</sub> <code>&gt;=</code> <i class="m">t</i><sub>2</sub></td><td>:=</td><td><i class="m">t</i><sub>2</sub> <code>&lt;</code> <i class="m">t</i><sub>1</sub>, &nbsp;<i class="m">t</i><sub>2</sub> <code>&lt;=</code> <i class="m">t</i><sub>1</sub></td></tr>
-      <tr><td><i class="m">α</i> <code>AND</code> <i class="m">β</i></td><td>:=</td><td><code>NOT</code> (<code>NOT</code> <i class="m">α</i> <code>OR</code> <code>NOT</code> <i class="m">β</i>)</td></tr>
       <tr><td><i class="m">α</i> <code>IMPLIES</code> <i class="m">β</i></td><td>:=</td><td><code>NOT</code> <i class="m">α</i> <code>OR</code> <i class="m">β</i></td></tr>
-      <tr><td><i class="m">α</i> <code>EQUIV</code> <i class="m">β</i></td><td>:=</td><td>(<i class="m">α</i> <code>IMPLIES</code> <i class="m">β</i>) <code>AND</code> (<i class="m">β</i> <code>IMPLIES</code> <i class="m">α</i>)</td></tr>
+      <tr><td><i class="m">α</i> <code>EQUIV</code> <i class="m">β</i></td><td>:=</td><td>(<code>NOT</code> <i class="m">α</i> <code>OR</code> <i class="m">β</i>) <code>AND</code> (<i class="m">α</i> <code>OR</code> <code>NOT</code> <i class="m">β</i>)</td></tr>
       <tr><td><code>FORALL</code> <i class="m">x</i>. <i class="m">α</i></td><td>:=</td><td><code>NOT</code> <code>EXISTS</code> <i class="m">x</i>. <code>NOT</code> <i class="m">α</i></td></tr>
       <tr><td><code>ONCE</code> <i class="m">I</i> <i class="m">α</i></td><td>:=</td><td><code>TRUE</code> <code>SINCE</code> <i class="m">I</i> <i class="m">α</i></td></tr>
       <tr><td><code>EVENTUALLY</code> <i class="m">I</i> <i class="m">α</i></td><td>:=</td><td><code>TRUE</code> <code>UNTIL</code> <i class="m">I</i> <i class="m">α</i></td></tr>
-      <tr><td><code>PAST_ALWAYS</code> <i class="m">I</i> <i class="m">α</i></td><td>:=</td><td><code>NOT</code> <code>ONCE</code> <i class="m">I</i> <code>NOT</code> <i class="m">α</i></td></tr>
-      <tr><td><code>ALWAYS</code> <i class="m">I</i> <i class="m">α</i></td><td>:=</td><td><code>NOT</code> <code>EVENTUALLY</code> <i class="m">I</i> <code>NOT</code> <i class="m">α</i></td></tr>
+      <tr><td><code>PAST_ALWAYS</code> <i class="m">I</i> <i class="m">α</i></td><td>:=</td><td><code>FALSE</code> <code>TRIGGER</code> <i class="m">I</i> <i class="m">α</i></td></tr>
+      <tr><td><code>ALWAYS</code> <i class="m">I</i> <i class="m">α</i></td><td>:=</td><td><code>FALSE</code> <code>RELEASE</code> <i class="m">I</i> <i class="m">α</i></td></tr>
     </table>
     <p>An interval without bound is <code>[0,*)</code>. In a regular expression, a bare formula
       <i class="m">α</i> abbreviates <i class="m">α</i>? . in <code>MATCHF</code> and . <i class="m">α</i>? in <code>MATCHP</code>.
@@ -216,14 +216,50 @@
       <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">φ</i> for every trace <i class="m">σ</i> that the log begins.</p>
 
     <h3>Monitorability</h3>
-    <p>VeriMon computes the finite set of satisfying values at each time point. This requires the
-      formula to be <i>monitorable</i>: roughly, every free variable must be bound by an event or an
-      equation, a negation may only follow a conjunct that binds its variables
-      (<code>p(x) AND NOT q(x)</code>, not <code>NOT q(x)</code> alone), the two sides of
-      <code>OR</code> must have the same free variables, and future operators need bounded
-      intervals. VeriMon rewrites a formula that is not monitorable as it stands, for example by
-      pushing negations inwards; if that does not help, the formula is marked with the telescope.
-      A policy <code>p(x) IMPLIES ONCE q(x)</code> is not monitorable, but its negation is: tick
+    <p>VeriMon computes the finite set of satisfying valuations at each time point. This requires
+      the formula to be <i>monitorable</i>, that is, in the set <span class="mv" style="font-style:normal">ℳ</span> defined as follows (after the
+      abbreviations are expanded; <i class="m">V</i>(<i class="m">α</i>) are the free variables of <i class="m">α</i>, and an interval is bounded if
+      its upper bound is not <code>*</code>):</p>
+    <table class="sem">
+      <tr><td><code>p</code>(<span class="vec"><i class="m">t</i></span>) ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if every term in <span class="vec"><i class="m">t</i></span> is a variable or a constant</td></tr>
+      <tr><td><code>tp</code>(<i class="m">t</i>), <code>ts</code>(<i class="m">t</i>) ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">t</i> is a variable or a constant</td></tr>
+      <tr><td><i class="m">t</i><sub>1</sub> <code>=</code> <i class="m">t</i><sub>2</sub> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if one of <i class="m">t</i><sub>1</sub>, <i class="m">t</i><sub>2</sub> is a constant and the other a constant or a variable</td></tr>
+      <tr><td><code>NOT</code> <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span> and <i class="m">V</i>(<i class="m">α</i>) = ∅</td></tr>
+      <tr><td><i class="m">α</i> <code>OR</code> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, and <i class="m">V</i>(<i class="m">α</i>) = <i class="m">V</i>(<i class="m">β</i>)</td></tr>
+      <tr><td><i class="m">α</i> <code>AND</code> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, and <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">β</i> is <i class="m">x</i> <code>=</code> <i class="m">t</i> or <i class="m">t</i> <code>=</code> <i class="m">x</i>, <i class="m">x</i> ∉ <i class="m">V</i>(<i class="m">α</i>), and <i class="m">V</i>(<i class="m">t</i>) ⊆ <i class="m">V</i>(<i class="m">α</i>)</td></tr>
+      <tr><td></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">β</i>) ⊆ <i class="m">V</i>(<i class="m">α</i>), and <i class="m">β</i> is a comparison <i class="m">t</i><sub>1</sub> <code>=</code> <i class="m">t</i><sub>2</sub>, <i class="m">t</i><sub>1</sub> <code>&lt;</code> <i class="m">t</i><sub>2</sub>, or <i class="m">t</i><sub>1</sub> <code>&lt;=</code> <i class="m">t</i><sub>2</sub>, or its negation</td></tr>
+      <tr><td></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">β</i>) ⊆ <i class="m">V</i>(<i class="m">α</i>), and <i class="m">β</i> = <code>NOT</code> <i class="m">γ</i> with <i class="m">γ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">β</i>) ⊆ <i class="m">V</i>(<i class="m">α</i>), and <i class="m">β</i> = <i class="m">γ</i> <code>TRIGGER</code> <i class="m">I</i> <i class="m">δ</i> with 0 ∉ <i class="m">I</i>, <i class="m">γ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">δ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, and <i class="m">V</i>(<i class="m">γ</i>) = <i class="m">V</i>(<i class="m">δ</i>)</td></tr>
+      <tr><td></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">β</i>) ⊆ <i class="m">V</i>(<i class="m">α</i>), and <i class="m">β</i> = <i class="m">γ</i> <code>RELEASE</code> <i class="m">I</i> <i class="m">δ</i> with <i class="m">I</i> bounded, 0 ∉ <i class="m">I</i>, <i class="m">γ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">δ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, and <i class="m">V</i>(<i class="m">γ</i>) = <i class="m">V</i>(<i class="m">δ</i>)</td></tr>
+      <tr><td><code>EXISTS</code> <i class="m">x</i>. <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span> and <i class="m">x</i> ∈ <i class="m">V</i>(<i class="m">α</i>)</td></tr>
+      <tr><td><i class="m">y</i> <code>&lt;-</code> Ω <i class="m">x</i>; <span class="vec"><i class="m">g</i></span> <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">x</i> ∈ <i class="m">V</i>(<i class="m">α</i>), and <i class="m">y</i> ∉ <i class="m">V</i>(<i class="m">α</i>)</td></tr>
+      <tr><td><code>PREV</code> <i class="m">I</i> <i class="m">α</i>, <code>NEXT</code> <i class="m">I</i> <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td><i class="m">α</i> <code>SINCE</code> <i class="m">I</i> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">α</i>) ⊆ <i class="m">V</i>(<i class="m">β</i>), and <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span> or <i class="m">α</i> = <code>NOT</code> <i class="m">γ</i> with <i class="m">γ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td><i class="m">α</i> <code>UNTIL</code> <i class="m">I</i> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>as for <code>SINCE</code>, and <i class="m">I</i> is bounded</td></tr>
+      <tr><td><i class="m">α</i> <code>TRIGGER</code> <i class="m">I</i> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if 0 ∈ <i class="m">I</i>, <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">α</i>) ⊆ <i class="m">V</i>(<i class="m">β</i>), and <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span> or <i class="m">α</i> = <code>NOT</code> <i class="m">γ</i> with <i class="m">γ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td><i class="m">α</i> <code>RELEASE</code> <i class="m">I</i> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if 0 ∈ <i class="m">I</i>, <i class="m">I</i> is bounded, <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">V</i>(<i class="m">α</i>) ⊆ <i class="m">V</i>(<i class="m">β</i>), and <i class="m">β</i> <code>AND</code> <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td><code>MATCHP</code> <i class="m">I</i> <i class="m">r</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">r</i> is strictly safe</td></tr>
+      <tr><td><code>MATCHF</code> <i class="m">I</i> <i class="m">r</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">r</i> is strictly safe and <i class="m">I</i> is bounded</td></tr>
+      <tr><td><code>LET</code> <code>p</code>(<span class="vec"><i class="m">x</i></span>) = <i class="m">α</i> <code>IN</code> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, and every variable of <span class="vec"><i class="m">x</i></span> is free in <i class="m">α</i></td></tr>
+      <tr><td><code>FRZ</code> <code>p</code>(<span class="vec"><i class="m">x</i></span>) = <i class="m">α</i> <code>IN</code> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>as for <code>LET</code></td></tr>
+      <tr><td><code>LETPAST</code> <code>p</code>(<span class="vec"><i class="m">x</i></span>) = <i class="m">α</i> <code>IN</code> <i class="m">β</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td><td>as for <code>LET</code>, and <i class="m">α</i> refers to <code>p</code> only at earlier time points</td></tr>
+    </table>
+    <p>A regular expression is strictly or laxly safe as follows (strict also means lax):</p>
+    <table class="sem abbr">
+      <tr><td>.</td><td>always</td></tr>
+      <tr><td><i class="m">α</i>?</td><td>if <i class="m">α</i> ∈ <span class="mv" style="font-style:normal">ℳ</span>, or, if lax, <i class="m">α</i> = <code>NOT</code> <i class="m">γ</i> with <i class="m">γ</i> ∈ <span class="mv" style="font-style:normal">ℳ</span></td></tr>
+      <tr><td><i class="m">r</i> + <i class="m">s</i></td><td>if <i class="m">r</i> and <i class="m">s</i> are, and, if strict, <i class="m">V</i>(<i class="m">r</i>) = <i class="m">V</i>(<i class="m">s</i>)</td></tr>
+      <tr><td><i class="m">r</i>*</td><td>if <i class="m">r</i> is, and, if strict, <i class="m">V</i>(<i class="m">r</i>) = ∅</td></tr>
+      <tr><td><i class="m">r</i> <i class="m">s</i></td><td>in <code>MATCHF</code>: if <i class="m">s</i> is and <i class="m">r</i> is laxly safe, and, if strict, <i class="m">V</i>(<i class="m">r</i>) ⊆ <i class="m">V</i>(<i class="m">s</i>); in <code>MATCHP</code> symmetrically: if <i class="m">r</i> is and <i class="m">s</i> is laxly safe, and, if strict, <i class="m">V</i>(<i class="m">s</i>) ⊆ <i class="m">V</i>(<i class="m">r</i>)</td></tr>
+    </table>
+    <p>For example, <code>p</code>(<i class="m">x</i>) <code>AND</code> <code>NOT</code> <code>q</code>(<i class="m">x</i>) is monitorable, but
+      <code>NOT</code> <code>q</code>(<i class="m">x</i>) alone and <code>p</code>(<i class="m">x</i>) <code>OR</code> <code>q</code>(<i class="m">y</i>) are not. A formula
+      that is not in <span class="mv" style="font-style:normal">ℳ</span> is rewritten into an equivalent one: negations are pushed inwards,
+      conjunctions nested to the left, temporal operators with negated operands replaced by their
+      duals, and conjuncts that bind variables propagated into temporal operators (using
+      <code>FRZ</code>). If none of these is in <span class="mv" style="font-style:normal">ℳ</span>, the formula is marked with the telescope. A
+      policy <code>p</code>(<i class="m">x</i>) <code>IMPLIES</code> <code>ONCE</code> <code>q</code>(<i class="m">x</i>) is not monitorable, but its negation is: tick
       <b>negate</b> to see its violations.</p>
     <p>MonPoly's <code>SUBSTRING</code>, <code>MATCHES</code>, regular expression constants
       <code>r"..."</code> and its other term functions (<code>i2s</code>, <code>YEAR</code>,
