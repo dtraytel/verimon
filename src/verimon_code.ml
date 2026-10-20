@@ -8443,7 +8443,7 @@ type 'a emstate_ext =
   Emstate_ext of
     nat * nat *
       ((event_data itab mbuf_t * event_data itab mbuf_t),
-        ((event_data list) set mbuf_t list),
+        (event_data itab mbuf_t list),
         ((event_data list) set mbuf_t * ((event_data list) set option) mbuf_t),
         iudsaux_x)
         geformula *
@@ -8853,11 +8853,15 @@ let rec itab
 
 let rec eb2 x = map_prod (mbuf_t_map itab) (mbuf_t_map itab) x;;
 
+let rec ebn x = mapa (mbuf_t_map itab) x;;
+
 let rec rep_itab (Abs_itab x) = x;;
 
 let rec iset a = fst (rep_itab a);;
 
 let rec ib2 x = map_prod (mbuf_t_map iset) (mbuf_t_map iset) x;;
+
+let rec ibn x = mapa (mbuf_t_map iset) x;;
 
 let rec drop
   n x1 = match n, x1 with n, [] -> []
@@ -15069,7 +15073,7 @@ let rec isw_abs
 let rec riu = function IUDSX_u d -> d
               | IUDSX_win w -> UDSX_win (isw_abs w);;
 
-let rec eabs x = map_geformula ib2 id id riu x;;
+let rec eabs x = map_geformula ib2 ibn id riu x;;
 
 let rec isw_emb
   aux = (let (t, (pend, (win, (c, s)))) = aux in
@@ -15079,7 +15083,29 @@ let rec iudsx_emb = function UDSX_win w -> IUDSX_win (isw_emb w)
                     | UDSX_gen v -> IUDSX_u (UDSX_gen v)
                     | UDSX_wagg (v, va, vb) -> IUDSX_u (UDSX_wagg (v, va, vb));;
 
-let rec eemb x = map_geformula eb2 id id iudsx_emb x;;
+let rec eemb x = map_geformula eb2 ebn id iudsx_emb x;;
+
+let rec jreq_r uu uv = match uu, uv with EJGen (p, lk, rk), true -> [rk]
+                 | EJSup msk, true -> [msk]
+                 | EJEq, uv -> []
+                 | EJEmp, uv -> []
+                 | EJSub v, uv -> []
+                 | EJSup v, false -> []
+                 | uu, false -> [];;
+
+let rec jreq_l uu uv = match uu, uv with EJGen (p, lk, rk), true -> [lk]
+                 | EJSub msk, true -> [msk]
+                 | EJEq, uv -> []
+                 | EJEmp, uv -> []
+                 | EJSub v, false -> []
+                 | EJSup v, uv -> []
+                 | uu, false -> [];;
+
+let rec eands_req
+  ps n =
+    take n
+      ((match ps with [] -> [[]] | p :: _ -> [jreq_l p true]) @
+        mapa (fun p -> jreq_r p true) ps @ replicate n []);;
 
 let rec is_pred
   pm x1 = match pm, x1 with
@@ -15112,22 +15138,6 @@ let rec is_pred
     | pm, EMatchP (v, va, vb, vc, vd, ve, vf, vg, vh) -> false
     | pm, EMatchF (v, va, vb, vc, vd, ve, vf, vg, vh, vi) -> false;;
 
-let rec jreq_r uu uv = match uu, uv with EJGen (p, lk, rk), true -> [rk]
-                 | EJSup msk, true -> [msk]
-                 | EJEq, uv -> []
-                 | EJEmp, uv -> []
-                 | EJSub v, uv -> []
-                 | EJSup v, false -> []
-                 | uu, false -> [];;
-
-let rec jreq_l uu uv = match uu, uv with EJGen (p, lk, rk), true -> [lk]
-                 | EJSub msk, true -> [msk]
-                 | EJEq, uv -> []
-                 | EJEmp, uv -> []
-                 | EJSub v, false -> []
-                 | EJSup v, uv -> []
-                 | uu, false -> [];;
-
 let rec preq
   pm x1 = match pm, x1 with
     pm, EAnd (pl, phi, pos, psi, buf) ->
@@ -15144,6 +15154,9 @@ let rec preq
     | pm, ESince (dags, phi, psi, buf, aux) -> preq pm phi @ preq pm psi
     | pm, EUntil (dags, msk, phi, psi, buf, nts, t, aux) ->
         preq pm phi @ preq pm psi
+    | pm, EAnds (ps, ns, ld, b) ->
+        maps (fun (q, phi) -> (if is_pred pm phi then q else preq pm phi))
+          (zip (eands_req ps (size_lista ld)) ld)
     | pm, ELet (p, m, phi, psi) ->
         preq pm phi @
           (if equal_proda equal_string8 equal_nat (p, m) pm then []
@@ -15152,7 +15165,6 @@ let rec preq
     | pm, ERel v -> []
     | pm, EPredS (v, va) -> []
     | pm, EPredM (v, va, vb, vc) -> []
-    | pm, EAnds (v, va, vb, vc) -> []
     | pm, ETP (v, va) -> []
     | pm, ETS v -> []
     | pm, EFrz (v, va, vb, vc, vd, ve, vf, vg, vh, vi, vj, vk, vl, vm, vn, vo,
@@ -16545,64 +16557,11 @@ let rec iudsx_ensure
     msks, IUDSX_win w -> IUDSX_win (isw_ensure msks w)
     | msks, IUDSX_u v -> IUDSX_u v;;
 
-let rec rbt_split_comp
-  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
-    | c, Branch (uu, l, a, b, r), x ->
-        (match c x a with Eqa -> (l, (Some b, r))
-          | Lt ->
-            (let (l1, (beta, l2)) = rbt_split_comp c l x in
-              (l1, (beta, rbt_join l2 a b r)))
-          | Gt ->
-            (let (r1, (beta, r2)) = rbt_split_comp c r x in
-              (rbt_join l a b r1, (beta, r2))));;
-
-let rec rbt_comp_union_swap_rec
-  c f gamma t1 t2 =
-    (let (gammaa, (t2a, t1a)) =
-       (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
-     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if small_rbt t2a then folda (rbt_comp_insert_with_key c fa) t2a t1a
-        else (match t1a with Empty -> t2a
-               | Branch (_, l1, a, b, r1) ->
-                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
-                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
-                     (match beta with None -> b | Some ca -> fa a b ca)
-                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
-
-let rec rbt_comp_union_with_key
-  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
-
-let rec join _A
-  xc xd xe =
-    Mapping_RBTa
-      (rbt_comp_union_with_key (the (ccompare _A)) xc (impl_ofa _A xd)
-        (impl_ofa _A xe));;
-
-let rec combine _B
-  f (RBT_Mapping t) (RBT_Mapping u) =
-    (match ccompare _B
-      with None ->
-        failwith "combine RBT_Mapping: ccompare = None"
-          (fun _ -> combine _B f (RBT_Mapping t) (RBT_Mapping u))
-      | Some _ -> RBT_Mapping (join _B (fun _ -> f) t u));;
-
-let rec eidx_union (_A1, _A2)
-  = combine (ccompare_list _A2)
-      (sup_seta ((ceq_list _A1), (ccompare_list _A2)));;
-
-let rec iindex (_A1, _A2)
-  msk a =
-    (match
-      lookupa ((ccompare_list ccompare_bool), (equal_list equal_bool)) (iidxs a)
-        msk
-      with None -> eidx (_A1, _A2) msk (iset a) | Some m -> m);;
-
-let rec iunion (_A1, _A2)
-  a b = Abs_itab
-          (sup_seta ((ceq_list _A1), (ccompare_list _A2)) (iset a) (iset b),
-            map_values (ccompare_list ccompare_bool)
-              (fun msk m -> eidx_union (_A1, _A2) m (iindex (_A1, _A2) msk b))
-              (iidxs a));;
+let rec imebufn_take
+  f z buf =
+    (if null buf || list_ex mbuf_t_is_empty buf then (z, buf)
+      else imebufn_take f (f (mapa (comp (comp the fst) mbuf_t_cases) buf) z)
+             (mapa (comp snd mbuf_t_cases) buf));;
 
 let rec gprobe_step_l (_A1, _A2, _A3)
   p rk m y acc =
@@ -16883,6 +16842,81 @@ let rec ijoin (_A1, _A2, _A3)
                     else iset a)
              else ijoin0 (_A1, _A2, _A3) pl a pos b));;
 
+let rec igands_pos
+  x0 t us = match x0, t, us with [], t, us -> t
+    | p :: ps, t, [] -> t
+    | p :: ps, t, u :: us ->
+        igands_pos ps
+          (itab (ijoin (ceq_event_data, ccompare_event_data, equal_event_data) p
+                  t true u))
+          us;;
+
+let rec igmulti_join
+  ps ns us =
+    (match us with [] -> ed_bot
+      | t :: r ->
+        de_gands_neg ns (iset (igands_pos ps t (take (size_lista ps) r)))
+          (mapa iset (drop (size_lista ps) r)));;
+
+let rec rbt_split_comp
+  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
+    | c, Branch (uu, l, a, b, r), x ->
+        (match c x a with Eqa -> (l, (Some b, r))
+          | Lt ->
+            (let (l1, (beta, l2)) = rbt_split_comp c l x in
+              (l1, (beta, rbt_join l2 a b r)))
+          | Gt ->
+            (let (r1, (beta, r2)) = rbt_split_comp c r x in
+              (rbt_join l a b r1, (beta, r2))));;
+
+let rec rbt_comp_union_swap_rec
+  c f gamma t1 t2 =
+    (let (gammaa, (t2a, t1a)) =
+       (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
+     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
+      (if small_rbt t2a then folda (rbt_comp_insert_with_key c fa) t2a t1a
+        else (match t1a with Empty -> t2a
+               | Branch (_, l1, a, b, r1) ->
+                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
+                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
+                     (match beta with None -> b | Some ca -> fa a b ca)
+                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
+
+let rec rbt_comp_union_with_key
+  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
+
+let rec join _A
+  xc xd xe =
+    Mapping_RBTa
+      (rbt_comp_union_with_key (the (ccompare _A)) xc (impl_ofa _A xd)
+        (impl_ofa _A xe));;
+
+let rec combine _B
+  f (RBT_Mapping t) (RBT_Mapping u) =
+    (match ccompare _B
+      with None ->
+        failwith "combine RBT_Mapping: ccompare = None"
+          (fun _ -> combine _B f (RBT_Mapping t) (RBT_Mapping u))
+      | Some _ -> RBT_Mapping (join _B (fun _ -> f) t u));;
+
+let rec eidx_union (_A1, _A2)
+  = combine (ccompare_list _A2)
+      (sup_seta ((ceq_list _A1), (ccompare_list _A2)));;
+
+let rec iindex (_A1, _A2)
+  msk a =
+    (match
+      lookupa ((ccompare_list ccompare_bool), (equal_list equal_bool)) (iidxs a)
+        msk
+      with None -> eidx (_A1, _A2) msk (iset a) | Some m -> m);;
+
+let rec iunion (_A1, _A2)
+  a b = Abs_itab
+          (sup_seta ((ceq_list _A1), (ccompare_list _A2)) (iset a) (iset b),
+            map_values (ccompare_list ccompare_bool)
+              (fun msk m -> eidx_union (_A1, _A2) m (iindex (_A1, _A2) msk b))
+              (iidxs a));;
+
 let rec ieval
   rq j ts db x4 = match rq, j, ts, db, x4 with
     rq, j, ts, db, EFail -> ([], EFail)
@@ -16972,11 +17006,15 @@ let rec ieval
            in
           (mapa itab zs, ENext (i, phia, firsta, ntsa)))
     | rq, j, ts, db, EAnds (ps, ns, ld, dbuf) ->
-        (let r = mapa (ieval [] j ts db) ld in
+        (let r =
+           mapa (fun (q, a) -> ieval q j ts db a)
+             (zip (eands_req ps (size_lista ld)) ld)
+           in
          let (zs, dbufa) =
-           mebufn_take
-             (fun asa zs -> mbuf_t_append zs [de_gmulti_join ps ns asa])
-             mbuf_t_empty (mebufn_add (mapa (comp (mapa iset) fst) r) dbuf)
+           imebufn_take
+             (fun asa zs -> mbuf_t_append zs [igmulti_join ps ns asa])
+             mbuf_t_empty
+             (mapa (fun (a, b) -> mbuf_t_append a b) (zip dbuf (mapa fst r)))
            in
           (mapa itab (rep_mbuf_t zs), EAnds (ps, ns, mapa snd r, dbufa)))
     | rq, j, ts, db, ESince (dags, phi, psi, buf, aux) ->
