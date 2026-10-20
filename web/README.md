@@ -36,5 +36,5 @@ The workflow `.github/workflows/pages.yml` builds the web version and deploys it
 `verimon-logo.svg` is the VeriMon logo (with the Isabelle/HOL cubes as the dot of the i),
 converted from its PDF with its background removed and its view box cropped to the drawing;
 its letters' baseline is 6.82 units above its bottom, which `verimon.css` uses to align it with
-the text of the headings. `favicon-32.png` and `apple-touch-icon.png` show the i with the cubes,
+the text of the headings. `favicon-32.png` and `apple-touch-icon.png` show the logo on two lines (Veri over Mon),
 `og-image.png` is the preview image for links to the page.

@@ -24,6 +24,16 @@
       table.ops th, table.ops td { text-align: left; vertical-align: top; padding: 0.15em 0.8em 0.15em 0; }
       table.ops th { color: #545454; font-weight: 600; }
       table.ops td:first-child { white-space: nowrap; }
+      table.sem { width: 100%; padding: 0; border: 0; border-spacing: 0;
+                  font-family: math, "STIX Two Math", "Cambria Math", "Latin Modern Math", "STIX Two Text",
+                    "Times New Roman", Times, serif; font-size: 17px; }
+      table.sem td { vertical-align: top; padding: 0.1em 0.8em 0.1em 0; }
+      table.sem td:first-child { white-space: nowrap; }
+      table.sem code { font-size: 14px; }
+      table.sem .note { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 15px; }
+      .vec { text-decoration: overline; }
+      i.m { font-family: math, "STIX Two Math", "Cambria Math", "Latin Modern Math", "STIX Two Text",
+              "Times New Roman", Times, serif; font-size: 17px; }
       .nt { font-style: italic; color: #0b5d8f; }
       /* Meta-variables (formulas, intervals, variables), also inside code: in a math font, whose
          phi (U+03C6) is the loopy varphi of TeX; text fonts such as Helvetica draw a straight phi */
@@ -42,7 +52,7 @@
       values of the formula's free variables the formula is satisfied. VeriMon 2.0 is formally verified
       end to end in Isabelle/HOL: the parsers of formulas, signatures and logs, the preparation of the
       formula and the monitor are code generated from the formalization. This page runs that code,
-      compiled to JavaScript, in your browser; nothing is sent anywhere.</p>
+      compiled to JavaScript, in your browser.</p>
 
     <p>The sources, the formalization, the command-line tool and its documentation are at
       <a href="https://github.com/dtraytel/verimon">github.com/dtraytel/verimon</a>.</p>
@@ -134,36 +144,61 @@
       <code>LET</code>, <code>LETPAST</code>, <code>FRZ</code> and aggregations include
       everything to their right. When in doubt, add parentheses.</p>
 
-    <h3>Meaning</h3>
-    <p>For a formula <span class="mv">φ</span> with subformulas <span class="mv">α</span> and <span class="mv">β</span>, an interval <span class="mv">I</span> and a
-      regular expression <span class="mv">r</span>:</p>
-    <table class="ops">
-      <tr><th><span class="mv">φ</span></th><th><span class="mv">φ</span> holds at time point <span class="mv">i</span> if</th></tr>
-      <tr><td><code>PREV <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <span class="mv">i</span>&minus;1, and the distance of their timestamps is in <span class="mv">I</span></td></tr>
-      <tr><td><code>NEXT <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at <span class="mv">i</span>+1, within distance <span class="mv">I</span></td></tr>
-      <tr><td><code>ONCE <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some earlier or the same time point within distance <span class="mv">I</span></td></tr>
-      <tr><td><code>EVENTUALLY <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at some later or the same time point within distance <span class="mv">I</span></td></tr>
-      <tr><td><code>PAST_ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all earlier and the same time points within distance <span class="mv">I</span></td></tr>
-      <tr><td><code>ALWAYS <span class="mv">I</span> <span class="mv">α</span></code></td><td><span class="mv">α</span> holds at all later and the same time points within distance <span class="mv">I</span></td></tr>
-      <tr><td><code><span class="mv">α</span> SINCE <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <span class="mv">j</span> &le; <span class="mv">i</span> within distance <span class="mv">I</span>, and <span class="mv">α</span> at all time points after <span class="mv">j</span> up to <span class="mv">i</span></td></tr>
-      <tr><td><code><span class="mv">α</span> UNTIL <span class="mv">I</span> <span class="mv">β</span></code></td><td><span class="mv">β</span> holds at some time point <span class="mv">j</span> &ge; <span class="mv">i</span> within distance <span class="mv">I</span>, and <span class="mv">α</span> at all time points from <span class="mv">i</span> before <span class="mv">j</span></td></tr>
-      <tr><td><code><span class="mv">α</span> TRIGGER <span class="mv">I</span> <span class="mv">β</span></code></td><td>at every earlier or the same time point <span class="mv">j</span> within distance <span class="mv">I</span>, <span class="mv">β</span> holds or <span class="mv">α</span> held at some time point after <span class="mv">j</span> (the dual of <code>SINCE</code>)</td></tr>
-      <tr><td><code><span class="mv">α</span> RELEASE <span class="mv">I</span> <span class="mv">β</span></code></td><td>the future dual of <code>TRIGGER</code></td></tr>
-      <tr><td><code>MATCHP <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points ending at <span class="mv">i</span> and starting within distance <span class="mv">I</span> matches <span class="mv">r</span></td></tr>
-      <tr><td><code>MATCHF <span class="mv">I</span> <span class="mv">r</span></code></td><td>some stretch of time points starting at <span class="mv">i</span> and ending within distance <span class="mv">I</span> matches <span class="mv">r</span></td></tr>
-      <tr><td><code><span class="mv">y</span> &lt;- SUM <span class="mv">x</span>; <span class="mv">g</span> <span class="mv">α</span></code></td><td><span class="mv">y</span> is the sum of <span class="mv">x</span> over the satisfactions of <span class="mv">α</span>, grouped by the values of <span class="mv">g</span></td></tr>
-      <tr><td><code>LET p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for <span class="mv">α</span></td></tr>
-      <tr><td><code>LETPAST p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td>as <code>LET</code>, but <span class="mv">α</span> may refer to <code>p</code> at earlier time points (recursion through <code>PREV</code>, <code>ONCE</code>, ...)</td></tr>
-      <tr><td><code>FRZ p(<span class="mv">x</span>) = <span class="mv">α</span> IN <span class="mv">β</span></code></td><td><span class="mv">β</span> holds, where <code>p</code> stands for the satisfactions of <span class="mv">α</span> at <span class="mv">i</span>, at every time point <span class="mv">β</span> refers to</td></tr>
+    <h3>Semantics</h3>
+    <p>A log denotes a trace <i class="m">σ</i>: a sequence of time points <i class="m">i</i> = 0, 1, 2, …, each with a
+      timestamp <i class="m">τ</i><sub><i class="m">i</i></sub> and the finite set <i class="m">D</i><sub><i class="m">i</i></sub> of its events, where <i class="m">τ</i><sub><i class="m">i</i></sub> ≤ <i class="m">τ</i><sub><i class="m">i</i>+1</sub>. A
+      valuation <i class="m">v</i> assigns values to variables; <i class="m">v</i>(<i class="m">t</i>) is the value of the term <i class="m">t</i> and
+      <i class="m">v</i>[<i class="m">x</i> ↦ <i class="m">d</i>] is <i class="m">v</i> with <i class="m">x</i> set to <i class="m">d</i>. An interval <i class="m">I</i> is a set of distances, and
+      <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">φ</i> states that the formula <i class="m">φ</i> holds at time point <i class="m">i</i> under <i class="m">v</i> (after
+      <a href="https://www21.in.tum.de/~traytel/papers/atva23-retrospective/">Basin et al., ATVA 2023</a>,
+      and as in VeriMon's formalization):</p>
+    <table class="sem">
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>p</code>(<span class="vec"><i class="m">t</i></span>)</td><td>if <code>p</code>(<i class="m">v</i>(<span class="vec"><i class="m">t</i></span>)) ∈ <i class="m">D</i><sub><i class="m">i</i></sub></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>tp</code>(<i class="m">t</i>)</td><td>if <i class="m">v</i>(<i class="m">t</i>) = <i class="m">i</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>ts</code>(<i class="m">t</i>)</td><td>if <i class="m">v</i>(<i class="m">t</i>) = <i class="m">τ</i><sub><i class="m">i</i></sub></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">t</i><sub>1</sub> <code>=</code> <i class="m">t</i><sub>2</sub></td><td>if <i class="m">v</i>(<i class="m">t</i><sub>1</sub>) = <i class="m">v</i>(<i class="m">t</i><sub>2</sub>), and likewise for <code>&lt;</code> and <code>&lt;=</code></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>NOT</code> <i class="m">α</i></td><td>if not <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>OR</code> <i class="m">β</i></td><td>if <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> or <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">β</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>EXISTS</code> <i class="m">x</i>. <i class="m">α</i></td><td>if <i class="m">σ</i>, <i class="m">v</i>[<i class="m">x</i> ↦ <i class="m">d</i>], <i class="m">i</i> ⊨ <i class="m">α</i> for some value <i class="m">d</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>PREV</code> <i class="m">I</i> <i class="m">α</i></td><td>if <i class="m">i</i> &gt; 0, <i class="m">τ</i><sub><i class="m">i</i></sub> − <i class="m">τ</i><sub><i class="m">i</i>−1</sub> ∈ <i class="m">I</i>, and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i>−1 ⊨ <i class="m">α</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>NEXT</code> <i class="m">I</i> <i class="m">α</i></td><td>if <i class="m">τ</i><sub><i class="m">i</i>+1</sub> − <i class="m">τ</i><sub><i class="m">i</i></sub> ∈ <i class="m">I</i> and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i>+1 ⊨ <i class="m">α</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>SINCE</code> <i class="m">I</i> <i class="m">β</i></td><td>if ∃<i class="m">j</i> ≤ <i class="m">i</i>. <i class="m">τ</i><sub><i class="m">i</i></sub> − <i class="m">τ</i><sub><i class="m">j</i></sub> ∈ <i class="m">I</i>, <i class="m">σ</i>, <i class="m">v</i>, <i class="m">j</i> ⊨ <i class="m">β</i>, and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">k</i> ⊨ <i class="m">α</i> for all <i class="m">j</i> &lt; <i class="m">k</i> ≤ <i class="m">i</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>UNTIL</code> <i class="m">I</i> <i class="m">β</i></td><td>if ∃<i class="m">j</i> ≥ <i class="m">i</i>. <i class="m">τ</i><sub><i class="m">j</i></sub> − <i class="m">τ</i><sub><i class="m">i</i></sub> ∈ <i class="m">I</i>, <i class="m">σ</i>, <i class="m">v</i>, <i class="m">j</i> ⊨ <i class="m">β</i>, and <i class="m">σ</i>, <i class="m">v</i>, <i class="m">k</i> ⊨ <i class="m">α</i> for all <i class="m">i</i> ≤ <i class="m">k</i> &lt; <i class="m">j</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>TRIGGER</code> <i class="m">I</i> <i class="m">β</i></td><td>if ∀<i class="m">j</i> ≤ <i class="m">i</i>. if <i class="m">τ</i><sub><i class="m">i</i></sub> − <i class="m">τ</i><sub><i class="m">j</i></sub> ∈ <i class="m">I</i> then <i class="m">σ</i>, <i class="m">v</i>, <i class="m">j</i> ⊨ <i class="m">β</i> or <i class="m">σ</i>, <i class="m">v</i>, <i class="m">k</i> ⊨ <i class="m">α</i> for some <i class="m">j</i> &lt; <i class="m">k</i> ≤ <i class="m">i</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> <code>RELEASE</code> <i class="m">I</i> <i class="m">β</i></td><td>if ∀<i class="m">j</i> ≥ <i class="m">i</i>. if <i class="m">τ</i><sub><i class="m">j</i></sub> − <i class="m">τ</i><sub><i class="m">i</i></sub> ∈ <i class="m">I</i> then <i class="m">σ</i>, <i class="m">v</i>, <i class="m">j</i> ⊨ <i class="m">β</i> or <i class="m">σ</i>, <i class="m">v</i>, <i class="m">k</i> ⊨ <i class="m">α</i> for some <i class="m">i</i> ≤ <i class="m">k</i> &lt; <i class="m">j</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>MATCHP</code> <i class="m">I</i> <i class="m">r</i></td><td>if ∃<i class="m">j</i> ≤ <i class="m">i</i>. <i class="m">τ</i><sub><i class="m">i</i></sub> − <i class="m">τ</i><sub><i class="m">j</i></sub> ∈ <i class="m">I</i> and (<i class="m">j</i>, <i class="m">i</i>) ∈ ⦇<i class="m">r</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>MATCHF</code> <i class="m">I</i> <i class="m">r</i></td><td>if ∃<i class="m">j</i> ≥ <i class="m">i</i>. <i class="m">τ</i><sub><i class="m">j</i></sub> − <i class="m">τ</i><sub><i class="m">i</i></sub> ∈ <i class="m">I</i> and (<i class="m">i</i>, <i class="m">j</i>) ∈ ⦇<i class="m">r</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">y</i> <code>&lt;-</code> Ω <i class="m">x</i>; <span class="vec"><i class="m">g</i></span> <i class="m">α</i></td><td>if <i class="m">v</i>(<i class="m">y</i>) = Ω(<i class="m">M</i>) and, if <i class="m">M</i> = ⦃⦄, then <span class="vec"><i class="m">g</i></span> is empty, where Ω is <code>CNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code> or <code>MED</code>, and <i class="m">M</i> = ⦃ <i class="m">u</i>(<i class="m">x</i>) | <i class="m">σ</i>, <i class="m">u</i>, <i class="m">i</i> ⊨ <i class="m">α</i>, <i class="m">u</i> = <i class="m">v</i> on <span class="vec"><i class="m">g</i></span> ⦄ has one element for each such <i class="m">u</i> on the free variables of <i class="m">α</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>LET</code> <code>p</code>(<span class="vec"><i class="m">x</i></span>) = <i class="m">α</i> <code>IN</code> <i class="m">β</i></td><td>if <i class="m">σ</i>[<code>p</code> ⇛ λ<i class="m">j</i>. ⟦<i class="m">α</i>; <span class="vec"><i class="m">x</i></span>⟧<sup><i class="m">σ</i></sup><sub><i class="m">j</i></sub>], <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">β</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>LETPAST</code> <code>p</code>(<span class="vec"><i class="m">x</i></span>) = <i class="m">α</i> <code>IN</code> <i class="m">β</i></td><td>if <i class="m">σ</i>[<code>p</code> ⇛ λ<i class="m">j</i>. fp<sub><i class="m">j</i></sub>(λ<i class="m">S</i> <i class="m">k</i>. ⟦<i class="m">α</i>; <span class="vec"><i class="m">x</i></span>⟧<sup><i class="m">σ</i>[<code>p</code> ⇛ <i class="m">S</i>]</sup><sub><i class="m">k</i></sub>)], <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">β</i></td></tr>
+      <tr><td><i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <code>FRZ</code> <code>p</code>(<span class="vec"><i class="m">x</i></span>) = <i class="m">α</i> <code>IN</code> <i class="m">β</i></td><td>if <i class="m">σ</i>[<code>p</code> ⇛ λ<i class="m">j</i>. ⟦<i class="m">α</i>; <span class="vec"><i class="m">x</i></span>⟧<sup><i class="m">σ</i></sup><sub><i class="m">i</i></sub>], <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">β</i></td></tr>
     </table>
-    <p>The distance is the difference of the timestamps; an interval without bound is
-      <code>[0,*)</code>. In a regular expression, <code><span class="mv">α</span>?</code> tests <span class="mv">α</span> without moving and
-      <code>.</code> moves one time point. A bare formula <span class="mv">α</span> is a test and a step:
-      <code><span class="mv">α</span>? .</code> in <code>MATCHF</code>, <code>. <span class="mv">α</span>?</code> in <code>MATCHP</code>.
+    <p>where</p>
+    <table class="sem">
+      <tr><td>⟦<i class="m">α</i>; <span class="vec"><i class="m">x</i></span>⟧<sup><i class="m">σ</i></sup><sub><i class="m">j</i></sub></td><td>= { <i class="m">v</i>(<span class="vec"><i class="m">x</i></span>) | <i class="m">σ</i>, <i class="m">v</i>, <i class="m">j</i> ⊨ <i class="m">α</i> } &nbsp; <span class="note">the satisfactions of <i class="m">α</i> at <i class="m">j</i>, as tuples of the values of <span class="vec"><i class="m">x</i></span></span></td></tr>
+      <tr><td><i class="m">σ</i>[<code>p</code> ⇛ <i class="m">X</i>]</td><td> &nbsp; <span class="note"><i class="m">σ</i> with the events of <code>p</code> at each time point <i class="m">j</i> replaced by <i class="m">X</i>(<i class="m">j</i>)</span></td></tr>
+      <tr><td>fp<sub><i class="m">j</i></sub>(<i class="m">F</i>)</td><td>= <i class="m">F</i>(λ<i class="m">k</i>. if <i class="m">k</i> &lt; <i class="m">j</i> then fp<sub><i class="m">k</i></sub>(<i class="m">F</i>) else ∅, <i class="m">j</i>) &nbsp; <span class="note">recursion through earlier time points</span></td></tr>
+      <tr><td>⦇.⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub></td><td>= { (<i class="m">i</i>, <i class="m">i</i>+1) | <i class="m">i</i> ∈ ℕ }</td></tr>
+      <tr><td>⦇<i class="m">α</i>?⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub></td><td>= { (<i class="m">i</i>, <i class="m">i</i>) | <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">α</i> }</td></tr>
+      <tr><td>⦇<i class="m">r</i> <i class="m">s</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub></td><td>= { (<i class="m">i</i>, <i class="m">k</i>) | (<i class="m">i</i>, <i class="m">j</i>) ∈ ⦇<i class="m">r</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub> and (<i class="m">j</i>, <i class="m">k</i>) ∈ ⦇<i class="m">s</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub> for some <i class="m">j</i> }</td></tr>
+      <tr><td>⦇<i class="m">r</i> + <i class="m">s</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub></td><td>= ⦇<i class="m">r</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub> ∪ ⦇<i class="m">s</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub>, &nbsp; ⦇<i class="m">r</i>*⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub> = (⦇<i class="m">r</i>⦈<sup><i class="m">σ</i></sup><sub><i class="m">v</i></sub>)*</td></tr>
+    </table>
+    <p>The other operators abbreviate: <code>TRUE</code> is 0 <code>=</code> 0, <code>FALSE</code> is
+      <code>NOT</code> <code>TRUE</code>, <i class="m">α</i> <code>AND</code> <i class="m">β</i> is <code>NOT</code> (<code>NOT</code> <i class="m">α</i> <code>OR</code> <code>NOT</code> <i class="m">β</i>),
+      <i class="m">α</i> <code>IMPLIES</code> <i class="m">β</i> is <code>NOT</code> <i class="m">α</i> <code>OR</code> <i class="m">β</i>,
+      <code>FORALL</code> <i class="m">x</i>. <i class="m">α</i> is <code>NOT</code> <code>EXISTS</code> <i class="m">x</i>. <code>NOT</code> <i class="m">α</i>,
+      <code>ONCE</code> <i class="m">I</i> <i class="m">α</i> is <code>TRUE</code> <code>SINCE</code> <i class="m">I</i> <i class="m">α</i>,
+      <code>EVENTUALLY</code> <i class="m">I</i> <i class="m">α</i> is <code>TRUE</code> <code>UNTIL</code> <i class="m">I</i> <i class="m">α</i>,
+      <code>PAST_ALWAYS</code> <i class="m">I</i> <i class="m">α</i> is <code>NOT</code> <code>ONCE</code> <i class="m">I</i> <code>NOT</code> <i class="m">α</i>, and
+      <code>ALWAYS</code> <i class="m">I</i> <i class="m">α</i> is <code>NOT</code> <code>EVENTUALLY</code> <i class="m">I</i> <code>NOT</code> <i class="m">α</i>.
+      An interval without bound is <code>[0,*)</code>. In a regular expression, a bare formula
+      <i class="m">α</i> abbreviates <i class="m">α</i>? . in <code>MATCHF</code> and . <i class="m">α</i>? in <code>MATCHP</code>.
       Some keywords have synonyms: <code>PREVIOUS</code>, <code>SOMETIMES</code> (for
       <code>EVENTUALLY</code>), <code>HISTORICALLY</code> (for <code>PAST_ALWAYS</code>), and
       <code>|&gt;</code> or <code>FORWARD</code> (for <code>MATCHF</code>), <code>&lt;|</code>
       or <code>BACKWARD</code> (for <code>MATCHP</code>).</p>
+    <p>On a log, the verdicts at time point <i class="m">i</i> are the valuations <i class="m">v</i> of the free variables with
+      <i class="m">σ</i>, <i class="m">v</i>, <i class="m">i</i> ⊨ <i class="m">φ</i> for every trace <i class="m">σ</i> that the log begins.</p>
 
     <h3>Monitorability</h3>
     <p>VeriMon computes the finite set of satisfying values at each time point. This requires the
