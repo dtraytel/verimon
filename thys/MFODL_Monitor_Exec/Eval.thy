@@ -45,44 +45,46 @@ text \<open>
   makes the executable evaluator exportable on its own.
 \<close>
 
-datatype 't geformula =
+datatype ('b2, 'bn, 'ba) geformula =
     EFail
   | ERel "event_data table"
   | EPredS Formula.name nat
   | EPredM Formula.name nat "Formula.trm list" cols
-  | EAndRel "'t geformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
-  | ENeg "'t geformula"
-  | EExists "'t geformula" bool
-  | EAgg bool "ty Formula.agg_op" Formula.trm nat nat "'t geformula"
-  | EOr "'t geformula" "'t geformula" "'t mbuf_t \<times> 't mbuf_t"
-  | EAnd ejoin_plan "'t geformula" bool "'t geformula" "'t mbuf_t \<times> 't mbuf_t"
-  | EPrev \<I> "'t geformula" bool "event_data table mbuf_t" "ts mbuf_t"
-  | ENext \<I> "'t geformula" bool "ts mbuf_t"
-  | EAnds "ejoin_plan list" "ejoin_plan list" "'t geformula list" "'t mbuf_t list"
-  | ESince args "'t geformula" "'t geformula" uebuf2S udsaux_x
-  | EUntil args "bool list" "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" ts uduaux_x
-  | EAndAssign nat Formula.trm "'t geformula"
+  | EAndRel "('b2, 'bn, 'ba) geformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
+  | ENeg "('b2, 'bn, 'ba) geformula"
+  | EExists "('b2, 'bn, 'ba) geformula" bool
+  | EAgg bool "ty Formula.agg_op" Formula.trm nat nat "('b2, 'bn, 'ba) geformula"
+  | EOr "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" 'b2
+  | EAnd ejoin_plan "('b2, 'bn, 'ba) geformula" bool "('b2, 'bn, 'ba) geformula" 'b2
+  | EPrev \<I> "('b2, 'bn, 'ba) geformula" bool "event_data table mbuf_t" "ts mbuf_t"
+  | ENext \<I> "('b2, 'bn, 'ba) geformula" bool "ts mbuf_t"
+  | EAnds "ejoin_plan list" "ejoin_plan list" "('b2, 'bn, 'ba) geformula list" 'bn
+  | ESince args "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" uebuf2S udsaux_x
+  | EUntil args "bool list" "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" uebuf2 "ts mbuf_t" ts uduaux_x
+  | EAndAssign nat Formula.trm "('b2, 'bn, 'ba) geformula"
   | ETP mtrm nat
   | ETS mtrm
-  | ELet Formula.name nat "'t geformula" "'t geformula"
-  | EFrz Formula.name nat "'t geformula" "'t geformula" nat nat nat "event_data table list"
-      "'t geformula" nat nat "ts list" "event_data table list" enat bool bool "nat option" "'t geformula"
-      "(event_data list set, event_data table) frz_sep" "nat list" "'t geformula" "'t geformula"
-  | ELetPast Formula.name nat "'t geformula" "'t geformula" nat "event_data table option"
-  | ETrigger args "nat option list" "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" "event_data twaux"
-  | ERelease args "bool list" "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" ts "event_data eraux"
-  | EAndTrigger ejoin_plan "'t geformula" "'t mbuf_t \<times> event_data table option mbuf_t"
-      args "'t geformula" "'t geformula" uebuf2 "ts mbuf_t" "event_data twaux"
-  | EMatchP nat \<I> mregex "mregex list" "nat option list list" "'t geformula list"
+  | ELet Formula.name nat "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula"
+  | EFrz Formula.name nat "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" nat nat nat "event_data table list"
+      "('b2, 'bn, 'ba) geformula" nat nat "ts list" "event_data table list" enat bool bool "nat option" "('b2, 'bn, 'ba) geformula"
+      "(event_data list set, event_data table) frz_sep" "nat list" "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula"
+  | ELetPast Formula.name nat "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" nat "event_data table option"
+  | ETrigger args "nat option list" "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" uebuf2 "ts mbuf_t" "event_data twaux"
+  | ERelease args "bool list" "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" uebuf2 "ts mbuf_t" ts "event_data eraux"
+  | EAndTrigger ejoin_plan "('b2, 'bn, 'ba) geformula" 'ba
+      args "('b2, 'bn, 'ba) geformula" "('b2, 'bn, 'ba) geformula" uebuf2 "ts mbuf_t" "event_data twaux"
+  | EMatchP nat \<I> mregex "mregex list" "nat option list list" "('b2, 'bn, 'ba) geformula list"
       uebufn "ts mbuf_t" "event_data mr\<delta>aux"
-  | EMatchF nat \<I> mregex "mregex list" "nat option list list" "'t geformula list"
+  | EMatchF nat \<I> mregex "mregex list" "nat option list list" "('b2, 'bn, 'ba) geformula list"
       uebufn "ts mbuf_t" ts "event_data ml\<delta>aux"
 
-text \<open>The executable formula of the plain tables; the indexed tables of
-  @{theory MFODL_Monitor_Exec.ITable} instantiate the type of the tables that the buffers of the
-  joins and unions hold.\<close>
+text \<open>The executable formula over plain tables.  The buffers of the unions and the joins, whose
+  tables a consumer may want with indices, have the types @{typ 'b2}, @{typ 'bn} and @{typ 'ba};
+  as type variables they do not count towards the size of a formula, which the evaluation of
+  @{text "LET PAST"} compares before and after a step.\<close>
 
-type_synonym eformula = "event_data table geformula"
+type_synonym eformula = "(uebuf2, uebufn, event_data table mbuf_t \<times> event_data table option mbuf_t) geformula"
+
 text \<open>The compiler is total on the kernel's formulas, so it answers @{const EFail} at a node it
   does not cover rather than failing.  Its caller checks that the compiled formula has none: this
   counts them.\<close>
