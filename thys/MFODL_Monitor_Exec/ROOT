@@ -29,6 +29,7 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Eval
     Idx_Code
     ITable
+    IWindow
     IEval
     Correct
     Compile

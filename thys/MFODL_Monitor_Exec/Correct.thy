@@ -83,7 +83,7 @@ qed simp
 definition emstep :: "database \<times> ts \<Rightarrow> emstate \<Rightarrow>
     (nat \<times> ts \<times> event_data table) list \<times> emstate" where
   "emstep tdb st =
-    (case ieval (emstate_j st + 1) [snd tdb] (fst tdb) (emstate_m st) of
+    (case ieval [] (emstate_j st + 1) [snd tdb] (fst tdb) (emstate_m st) of
       (xs, m) \<Rightarrow>
       (case eannotate (emstate_i st) (emstate_t st @@ [snd tdb]) (map iset xs) [] of
         (i', tq, vs) \<Rightarrow> (vs,
@@ -148,8 +148,8 @@ proof -
       = (map (etabc ks cs) xs, dm)"
     and sim': "esim n ks cs (enext tw [snd tdb]) dm m"
     using esim_deval[OF sim _ e] le kg by auto
-  obtain ixs im where iev: "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst) = (ixs, im)"
-    by (cases "ieval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)")
+  obtain ixs im where iev: "ieval [] (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst) = (ixs, im)"
+    by (cases "ieval [] (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)")
   have ixs: "map iset ixs = map (etabc ks cs) xs" and dm: "dm = eabs im"
     using ieval_eeval[OF iev] d by simp_all
   have tb: "list_all (ftable ks) xs"

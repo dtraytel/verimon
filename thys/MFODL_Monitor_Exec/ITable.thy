@@ -109,6 +109,36 @@ lemma iidxs_iupd_None: "Mapping.lookup (iidxs (iupd X D A)) msk = None \<longlef
     Mapping.lookup (iidxs A) msk = None"
   by (simp add: iidxs_def Rep_itab_iupd Mapping.lookup_map_values)
 
+
+text \<open>Inserting and removing one tuple visits one bucket of each index.\<close>
+
+lemma eidx_insert: "eidx msk (Set.insert x T) = eidx_add1 msk x (eidx msk T)"
+  by (rule mapping_eqI) (auto simp: lookup_eidx lookup_eidx_add1 ebucket_def image_iff)
+
+lemma eidx_remove: "eidx msk (T - {x}) = eidx_del1 msk x (eidx msk T)"
+  by (rule mapping_eqI) (auto simp: lookup_eidx lookup_eidx_del1 ebucket_def image_iff; fastforce)
+
+definition iins :: "'b list \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "iins x A = Abs_itab (Set.insert x (iset A), Mapping.map_values (\<lambda>msk m. eidx_add1 msk x m) (iidxs A))"
+
+lemma Rep_itab_iins[code abstract]:
+  "Rep_itab (iins x A) = (Set.insert x (iset A), Mapping.map_values (\<lambda>msk m. eidx_add1 msk x m) (iidxs A))"
+  unfolding iins_def
+  by (rule Rep_itab_inverse') (auto simp: iinv_def Mapping.lookup_map_values eidx_insert dest: iidxs_eidx)
+
+lemma iset_iins[simp]: "iset (iins x A) = Set.insert x (iset A)"
+  by (simp add: iset_def Rep_itab_iins)
+
+definition idel :: "'b list \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "idel x A = Abs_itab (Set.remove x (iset A), Mapping.map_values (\<lambda>msk m. eidx_del1 msk x m) (iidxs A))"
+
+lemma Rep_itab_idel[code abstract]:
+  "Rep_itab (idel x A) = (Set.remove x (iset A), Mapping.map_values (\<lambda>msk m. eidx_del1 msk x m) (iidxs A))"
+  unfolding idel_def
+  by (rule Rep_itab_inverse') (auto simp: iinv_def Mapping.lookup_map_values eidx_remove dest: iidxs_eidx)
+
+lemma iset_idel[simp]: "iset (idel x A) = Set.remove x (iset A)"
+  by (simp add: iset_def Rep_itab_idel)
 subsection \<open>Union\<close>
 
 text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>
