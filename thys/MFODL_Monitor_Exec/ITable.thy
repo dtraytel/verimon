@@ -175,15 +175,19 @@ fun ijoin0 :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \
 | "ijoin0 (EJSup msk) A pos B = (case (pos, Mapping.lookup (iidxs B) msk) of
        (True, Some m) \<Rightarrow> esemi_idx msk True m (iset A)
      | _ \<Rightarrow> gbin_join0 (EJSup msk) (iset A) pos (iset B))"
-| "ijoin0 (EJGen p lk rk) A pos B = (case (pos, Mapping.lookup (iidxs B) rk, Mapping.lookup (iidxs A) lk) of
-       (True, Some m, _) \<Rightarrow> iprobe p lk m (iset A)
-     | (True, None, Some m) \<Rightarrow> iprobe_l p rk m (iset B)
-     | _ \<Rightarrow> gbin_join0 (EJGen p lk rk) (iset A) pos (iset B))"
+| "ijoin0 (EJGen p lk rk) A pos B = (if pos \<and> finite (iset A) \<and> finite (iset B) then
+       (case (Mapping.lookup (iidxs B) rk, Mapping.lookup (iidxs A) lk) of
+         (Some m, _) \<Rightarrow> iprobe p lk m (iset A)
+       | (None, Some m) \<Rightarrow> iprobe_l p rk m (iset B)
+       | _ \<Rightarrow> gbin_join0 (EJGen p lk rk) (iset A) pos (iset B))
+     else gbin_join0 (EJGen p lk rk) (iset A) pos (iset B))"
 | "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
+
+text \<open>The test of finiteness costs nothing on the tree-based sets of the Containers framework,
+  which are finite by construction.\<close>
 
 theorem ijoin0_eq:
   fixes A B :: "event_data itab"
-  assumes "finite (iset A)" "finite (iset B)"
   shows "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
 proof (cases pl)
   case (EJSub msk)
@@ -197,14 +201,22 @@ next
       (auto simp: esemi_idx_dsemi esemi_def dest!: iidxs_eidx)
 next
   case (EJGen p lk rk)
-  have cA: "set (csl (iset A)) = iset A" and cB: "set (csl (iset B)) = iset B"
-    using assms by (simp_all add: set_csl_ed)
   show ?thesis
-    using EJGen
-    apply (cases pos; cases "Mapping.lookup (iidxs B) rk"; cases "Mapping.lookup (iidxs A) lk")
-            apply (auto simp: iprobe_eq[OF cA] iprobe_l_eq[OF cB] ggen_join_eq[OF cA cB] dest!: iidxs_eidx)
-    apply blast+
-    done
+  proof (cases "pos \<and> finite (iset A) \<and> finite (iset B)")
+    case True
+    then have cA: "set (csl (iset A)) = iset A" and cB: "set (csl (iset B)) = iset B"
+      by (simp_all add: set_csl_ed)
+    show ?thesis
+      using EJGen True
+      apply (cases "Mapping.lookup (iidxs B) rk"; cases "Mapping.lookup (iidxs A) lk")
+         apply (auto simp: iprobe_eq[OF cA] iprobe_l_eq[OF cB] ggen_join_eq[OF cA cB] dest!: iidxs_eidx)
+      apply blast+
+      done
+  next
+    case False
+    then show ?thesis
+      using EJGen by (simp only: ijoin0.simps if_not_P[OF False] if_False)
+  qed
 qed simp_all
 
 definition ijoin :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \<Rightarrow> 'b itab \<Rightarrow> 'b list set" where
@@ -214,10 +226,8 @@ definition ijoin :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> 
 
 theorem ijoin_eq:
   fixes A B :: "event_data itab"
-  assumes "finite (iset A)" "finite (iset B)"
   shows "ijoin pl A pos B = gbin_join pl (iset A) pos (iset B)"
-  using ijoin0_eq[OF assms] by (simp add: ijoin_def gbin_join_def)
-
+  using ijoin0_eq by (simp add: ijoin_def gbin_join_def)
 (*<*)
 end
 (*>*)
