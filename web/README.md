@@ -23,3 +23,10 @@ Run `dune build --profile=release web/verimon_js.zip` from the project root.
 This builds a ZIP archive `_build/default/web/verimon_js.zip` which contains all files needed to
 run the web version (`index.html`, `verimon.js`, `verimon.css` and two images; the examples are
 embedded in `verimon.js`). The archive's contents can be deployed to a web server, for example.
+
+## Deployment
+
+The workflow `.github/workflows/pages.yml` builds the web version and deploys it to GitHub Pages
+(<https://dtraytel.github.io/verimon/>) on every push to `main` that changes `web/`, `src/` or
+`dune-project`, and on demand from the Actions tab. It needs Pages to be enabled with
+"GitHub Actions" as its source (Settings → Pages).

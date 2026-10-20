@@ -1,0 +1,56 @@
+# Builds the web version of VeriMon (web/, js_of_ocaml) and deploys it to GitHub Pages.
+name: Deploy the web version to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "src/**"
+      - "dune-project"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14"
+
+      - name: Install the dependencies of the web version
+        run: opam install -y dune zarith js_of_ocaml js_of_ocaml-lwt js_of_ocaml-ppx zarith_stubs_js
+
+      - name: Build the web version
+        run: |
+          opam exec -- dune build --profile=release web/verimon.js
+          mkdir _site
+          cp web/index.html web/verimon.css web/check.png web/tel.png _build/default/web/verimon.js _site/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
