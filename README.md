@@ -238,7 +238,12 @@ References
     "Verified First-Order Monitoring with Recursive Rules".
     In: Tools and Algorithms for the Construction and Analysis of Systems (TACAS 2022).
 
-[4] D. Basin, F. Klaedtke, E. Zalinescu:
+[4] D. Basin, T. Dardinier, N. Hauser, L. Heimes, J. J. Huerta y Munive, N. Kaletsch,
+    S. Krstić, E. Marsicano, M. Raszyk, J. Schneider, D. L. Tirore, D. Traytel, S. Zingg:
+    "VeriMon: A Formally Verified Monitoring Tool".
+    In: Theoretical Aspects of Computing (ICTAC 2022).
+
+[5] D. Basin, F. Klaedtke, E. Zalinescu:
     "The MonPoly Monitoring Tool".
     In: International Workshop on Competitions, Usability, Benchmarks, Evaluation, and
     Standardisation for Runtime Verification Tools (RV-CuBES 2017).
