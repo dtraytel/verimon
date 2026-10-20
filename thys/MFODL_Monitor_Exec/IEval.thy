@@ -129,14 +129,14 @@ function (sequential) ieval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             in (zs @ [tw_result ax], ax)) ([], daux)
             (mebuf2_add (map iset xs) (map iset ys) dbuf) (nts @@ ts)
       in (map itab zs, ETrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
-| "ieval j ts db (EAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> ebuf2 nts daux) =
+| "ieval j ts db (EAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> xbuf2 nts daux) =
      (let (as, \<alpha>') = ieval j ts db \<alpha>; (xs, \<phi>') = ieval j ts db \<phi>;
           (ys, \<psi>') = ieval j ts db \<psi>;
           ((ws, daux'), dbuf2', nts') = mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
             let ax = tw_update dags t r1 r2 ax
             in (ws @ [if tw_empty ax then None
                       else Some (tw_result ax)], ax)) ([], daux)
-            (mebuf2_add (map iset xs) (map iset ys) ebuf2) (nts @@ ts);
+            (mebuf2_add (map iset xs) (map iset ys) xbuf2) (nts @@ ts);
           (zs, dbuf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
             | Some z \<Rightarrow> gbin_join pl r1 True z) (mebuf2_add (map iset as) ws dbuf1)
       in (map itab zs, EAndTrigger pl \<alpha>' dbuf1' dags \<phi>' \<psi>' dbuf2' nts' daux'))"
