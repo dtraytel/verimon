@@ -29,8 +29,8 @@ let example_groups =
     ; "unprotected access (let)", ("locks", false)
     ]
   ; "Case studies",
-    [ "Nokia: propagation of deletions", ("nokia", false)
-    ; "GDPR: consent to use data", ("gdpr", false)
+    [ "Nokia: propagation of deletions", ("nokia", true)
+    ; "GDPR: consent to use data", ("gdpr", true)
     ]
   ]
 
