@@ -15094,58 +15094,72 @@ let rec eabs
             aux12)
     | EPlain x -> x;;
 
-let rec iudux_emb d = IUDUX_u d;;
+let rec de_iensure1
+  t msk i =
+    (match
+      lookupa ((ccompare_list ccompare_bool), (equal_list equal_bool)) i msk
+      with None ->
+        updateb ((ccompare_list ccompare_bool), (equal_list equal_bool)) msk
+          (de_eidx msk t) i
+      | Some _ -> i);;
 
-let rec iudsx_emb d = IUDSX_u d;;
+let rec de_iidxs a = snd (rep_itab a);;
 
-let rec eemb
-  = function EFail -> EFail
-    | ERel rel -> ERel rel
-    | EPredS (e1, a1) -> EPredS (e1, a1)
-    | EPredM (e2, a2, tms, cs) -> EPredM (e2, a2, tms, cs)
-    | EAndRel (phi, conf) -> EAndRel (eemb phi, conf)
-    | ENeg phi -> ENeg (eemb phi)
-    | EExists (phi, b) -> EExists (eemb phi, b)
-    | EAgg (g0, omega, f, k, n, phi) -> EAgg (g0, omega, f, k, n, eemb phi)
-    | EOr (phi, psi, buf) -> EOr (eemb phi, eemb psi, eb2 buf)
-    | EAnd (pl, phi, pos, psi, buf) ->
-        EAnd (pl, eemb phi, pos, eemb psi, eb2 buf)
-    | EPrev (i1, phi, fst1, pbuf, nts1) ->
-        EPrev (i1, eemb phi, fst1, pbuf, nts1)
-    | ENext (i2, phi, fst2, nts2) -> ENext (i2, eemb phi, fst2, nts2)
-    | EAnds (ps, ns, ld, dbuf) -> EAnds (ps, ns, mapa eemb ld, ebn dbuf)
-    | ESince (dags1, phi, psi, sbuf, aux1) ->
-        ESince (dags1, eemb phi, eemb psi, sbuf, iudsx_emb aux1)
-    | EUntil (dags2, msk2, phi, psi, ubuf, nts3, t3, aux3) ->
-        EUntil (dags2, msk2, eemb phi, eemb psi, ubuf, nts3, t3, iudux_emb aux3)
-    | EAndAssign (p4, trm, phi) -> EAndAssign (p4, trm, eemb phi)
-    | ETP (mt5, i5) -> ETP (mt5, i5)
-    | ETS mt6 -> ETS mt6
-    | ELet (p7, m7, phi, psi) -> ELet (p7, m7, eemb phi, eemb psi)
-    | EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13, g13, h13,
-             i13, j13, k13, l13, chi_2, n13, o13, chi_3, chi_4)
-        -> EPlain
-             (EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13,
-                     g13, h13, i13, j13, k13, l13, chi_2, n13, o13, chi_3,
-                     chi_4))
-    | ELetPast (p14, m14, phi, psi, i14, buf14) ->
-        EPlain (ELetPast (p14, m14, phi, psi, i14, buf14))
-    | ETrigger (dags8, pls8, phi, psi, tbuf8, nts8, aux8) ->
-        ETrigger (dags8, pls8, eemb phi, eemb psi, tbuf8, nts8, aux8)
-    | ERelease (dags9, msk9, phi, psi, rbuf, nts9, t9, aux9) ->
-        ERelease (dags9, msk9, eemb phi, eemb psi, rbuf, nts9, t9, aux9)
-    | EAndTrigger (pl10, alpha, abuf, dags10, phi, psi, tbuf10, nts10, aux10) ->
-        EAndTrigger
-          (pl10, eemb alpha, abuf, dags10, eemb phi, eemb psi, tbuf10, nts10,
-            aux10)
-    | EMatchP (m11, i11, mr11, mrs11, pls11, ld11, nbuf11, nts11, aux11) ->
-        EMatchP
-          (m11, i11, mr11, mrs11, pls11, mapa eemb ld11, nbuf11, nts11, aux11)
-    | EMatchF (m12, i12, mr12, mrs12, pls12, ld12, nbuf12, nts12, t12, aux12) ->
-        EMatchF
-          (m12, i12, mr12, mrs12, pls12, mapa eemb ld12, nbuf12, nts12, t12,
-            aux12)
-    | EPlain u -> EPlain (EPlain u);;
+let rec de_iensure
+  msks a =
+    Abs_itab (de_iset a, fold (de_iensure1 (de_iset a)) msks (de_iidxs a));;
+
+let rec de_iuw_ensure
+  msks aux =
+    (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
+      (nts, (win, (rest,
+                    (len, (bend,
+                            ((fst cc, de_iensure msks (snd cc)), dn)))))));;
+
+let rec de_itab
+  t = Abs_itab
+        (t, mapping_empty (ccompare_list ccompare_bool)
+              (of_phantom mapping_impl_list));;
+
+let rec iuw_emb
+  aux = (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
+          (nts, (win, (rest,
+                        (len, (bend,
+                                ((fst cc, de_itab (snd cc)),
+                                  mapa itab dn)))))));;
+
+let rec iudux_emb
+  msks d =
+    (if null msks then IUDUX_u d
+      else (match d with UDUX_gen _ -> IUDUX_u d
+             | UDUX_win w -> IUDUX_win (de_iuw_ensure msks (iuw_emb w))
+             | UDUX_wagg (_, _) -> IUDUX_u d));;
+
+let rec de_iems_ensure
+  msks (nt, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
+    (nt, (gc, (msk, (dp, (di, (de_iensure msks ti,
+                                (ii, (tui, (is, tus)))))))));;
+
+let rec de_isw_ensure
+  msks aux =
+    (let (t, (pend, (win, (c, s)))) = aux in
+      (t, (pend, (win, (c, de_iensure msks s)))));;
+
+let rec isw_emb
+  aux = (let (t, (pend, (win, (c, s)))) = aux in
+          (t, (pend, (win, (c, de_itab s)))));;
+
+let rec ims_emb
+  (t, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
+    (t, (gc, (msk, (dp, (di, (de_itab ti, (ii, (tui, (is, tus)))))))));;
+
+let rec iudsx_emb
+  msks d =
+    (if null msks then IUDSX_u d
+      else (match d
+             with UDSX_gen g -> IUDSX_gen (de_iems_ensure msks (ims_emb g))
+             | UDSX_win w -> IUDSX_win (de_isw_ensure msks (isw_emb w))
+             | UDSX_wagg (_, _, _) -> IUDSX_u d));;
 
 let rec jreq_r uu uv = match uu, uv with EJGen (p, lk, rk), true -> [rk]
                  | EJSup msk, true -> [msk]
@@ -15240,6 +15254,73 @@ let rec preq
     | pm, EMatchP (v, va, vb, vc, vd, ve, vf, vg, vh) -> []
     | pm, EMatchF (v, va, vb, vc, vd, ve, vf, vg, vh, vi) -> []
     | pm, EPlain v -> [];;
+
+let rec bounded x = snd (snd (rep_I x));;
+
+let rec ireq args rq = (if bounded (args_ivl args) then [] else rq);;
+
+let rec eemb
+  rq x1 = match rq, x1 with rq, EFail -> EFail
+    | rq, ERel rel -> ERel rel
+    | rq, EPredS (e1, a1) -> EPredS (e1, a1)
+    | rq, EPredM (e2, a2, tms, cs) -> EPredM (e2, a2, tms, cs)
+    | rq, EAndRel (phi, conf) -> EAndRel (eemb [] phi, conf)
+    | rq, ENeg phi -> ENeg (eemb [] phi)
+    | rq, EExists (phi, b) -> EExists (eemb [] phi, b)
+    | rq, EAgg (g0, omega, f, k, n, phi) ->
+        EAgg (g0, omega, f, k, n, eemb [] phi)
+    | rq, EOr (phi, psi, buf) -> EOr (eemb [] phi, eemb [] psi, eb2 buf)
+    | rq, EAnd (pl, phi, pos, psi, buf) ->
+        EAnd (pl, eemb (jreq_l pl pos) phi, pos, eemb (jreq_r pl pos) psi,
+               eb2 buf)
+    | rq, EPrev (i1, phi, fst1, pbuf, nts1) ->
+        EPrev (i1, eemb [] phi, fst1, pbuf, nts1)
+    | rq, ENext (i2, phi, fst2, nts2) -> ENext (i2, eemb [] phi, fst2, nts2)
+    | rq, EAnds (ps, ns, ld, dbuf) ->
+        EAnds (ps, ns,
+                mapa (fun (a, b) -> eemb a b)
+                  (zip (eands_req ps (size_lista ld)) ld),
+                ebn dbuf)
+    | rq, ESince (dags1, phi, psi, sbuf, aux1) ->
+        ESince
+          (dags1, eemb [] phi, eemb [] psi, sbuf,
+            iudsx_emb (ireq dags1 rq) aux1)
+    | rq, EUntil (dags2, msk2, phi, psi, ubuf, nts3, t3, aux3) ->
+        EUntil
+          (dags2, msk2, eemb [] phi, eemb [] psi, ubuf, nts3, t3,
+            iudux_emb (ireq dags2 rq) aux3)
+    | rq, EAndAssign (p4, trm, phi) -> EAndAssign (p4, trm, eemb [] phi)
+    | rq, ETP (mt5, i5) -> ETP (mt5, i5)
+    | rq, ETS mt6 -> ETS mt6
+    | rq, ELet (p7, m7, phi, psi) ->
+        ELet (p7, m7, eemb (preq (p7, m7) psi) phi, eemb [] psi)
+    | rq, EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13, g13,
+                 h13, i13, j13, k13, l13, chi_2, n13, o13, chi_3, chi_4)
+        -> EPlain
+             (EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13,
+                     g13, h13, i13, j13, k13, l13, chi_2, n13, o13, chi_3,
+                     chi_4))
+    | rq, ELetPast (p14, m14, phi, psi, i14, buf14) ->
+        EPlain (ELetPast (p14, m14, phi, psi, i14, buf14))
+    | rq, ETrigger (dags8, pls8, phi, psi, tbuf8, nts8, aux8) ->
+        ETrigger (dags8, pls8, eemb [] phi, eemb [] psi, tbuf8, nts8, aux8)
+    | rq, ERelease (dags9, msk9, phi, psi, rbuf, nts9, t9, aux9) ->
+        ERelease (dags9, msk9, eemb [] phi, eemb [] psi, rbuf, nts9, t9, aux9)
+    | rq, EAndTrigger
+            (pl10, alpha, abuf, dags10, phi, psi, tbuf10, nts10, aux10)
+        -> EAndTrigger
+             (pl10, eemb [] alpha, abuf, dags10, eemb [] phi, eemb [] psi,
+               tbuf10, nts10, aux10)
+    | rq, EMatchP (m11, i11, mr11, mrs11, pls11, ld11, nbuf11, nts11, aux11) ->
+        EMatchP
+          (m11, i11, mr11, mrs11, pls11, mapa (eemb []) ld11, nbuf11, nts11,
+            aux11)
+    | rq, EMatchF
+            (m12, i12, mr12, mrs12, pls12, ld12, nbuf12, nts12, t12, aux12)
+        -> EMatchF
+             (m12, i12, mr12, mrs12, pls12, mapa (eemb []) ld12, nbuf12, nts12,
+               t12, aux12)
+    | rq, EPlain u -> EPlain (EPlain u);;
 
 let rec funpow
   n f = (if equal_nata n zero_nata then id
@@ -16385,8 +16466,6 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
               equal_lista equal_nat cs ks
           then ETS mt else EFail);;
 
-let rec de_iidxs a = snd (rep_itab a);;
-
 let rec de_iadd
   x a = Abs_itab
           (ed_union (de_iset a) x,
@@ -16610,11 +16689,6 @@ let rec de_ieresult_msaux
     = table_in;;
 
 let rec de_isw_result aux = (let (_, (_, (_, a))) = aux in snd a);;
-
-let rec de_itab
-  t = Abs_itab
-        (t, mapping_empty (ccompare_list ccompare_bool)
-              (of_phantom mapping_impl_list));;
 
 let rec iudsx_result
   args x1 = match args, x1 with args, IUDSX_u d -> de_itab (udsx_result args d)
@@ -16921,72 +16995,16 @@ let rec iudux_add_new
     | args, msk, rel1, rel2, nt, IUDUX_win w ->
         IUDUX_win (de_iuw_add_new args rel1 rel2 nt w);;
 
-let rec de_iensure1
-  t msk i =
-    (match
-      lookupa ((ccompare_list ccompare_bool), (equal_list equal_bool)) i msk
-      with None ->
-        updateb ((ccompare_list ccompare_bool), (equal_list equal_bool)) msk
-          (de_eidx msk t) i
-      | Some _ -> i);;
-
-let rec de_iensure
-  msks a =
-    Abs_itab (de_iset a, fold (de_iensure1 (de_iset a)) msks (de_iidxs a));;
-
-let rec de_iuw_ensure
-  msks aux =
-    (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
-      (nts, (win, (rest,
-                    (len, (bend,
-                            ((fst cc, de_iensure msks (snd cc)), dn)))))));;
-
-let rec iuw_emb
-  aux = (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
-          (nts, (win, (rest,
-                        (len, (bend,
-                                ((fst cc, de_itab (snd cc)),
-                                  mapa itab dn)))))));;
-
 let rec iudux_ensure
   msks x1 = match msks, x1 with
     msks, IUDUX_win w -> IUDUX_win (de_iuw_ensure msks w)
-    | msks, IUDUX_u (UDUX_win w) ->
-        (if null msks then IUDUX_u (UDUX_win w)
-          else IUDUX_win (de_iuw_ensure msks (iuw_emb w)))
-    | msks, IUDUX_u (UDUX_gen va) -> IUDUX_u (UDUX_gen va)
-    | msks, IUDUX_u (UDUX_wagg (va, vb)) -> IUDUX_u (UDUX_wagg (va, vb));;
-
-let rec de_iems_ensure
-  msks (nt, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
-    (nt, (gc, (msk, (dp, (di, (de_iensure msks ti,
-                                (ii, (tui, (is, tus)))))))));;
-
-let rec de_isw_ensure
-  msks aux =
-    (let (t, (pend, (win, (c, s)))) = aux in
-      (t, (pend, (win, (c, de_iensure msks s)))));;
-
-let rec isw_emb
-  aux = (let (t, (pend, (win, (c, s)))) = aux in
-          (t, (pend, (win, (c, de_itab s)))));;
-
-let rec ims_emb
-  (t, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
-    (t, (gc, (msk, (dp, (di, (de_itab ti, (ii, (tui, (is, tus)))))))));;
+    | msks, IUDUX_u v -> IUDUX_u v;;
 
 let rec iudsx_ensure
   msks x1 = match msks, x1 with
     msks, IUDSX_win w -> IUDSX_win (de_isw_ensure msks w)
     | msks, IUDSX_gen g -> IUDSX_gen (de_iems_ensure msks g)
-    | msks, IUDSX_u (UDSX_win w) ->
-        (if null msks then IUDSX_u (UDSX_win w)
-          else IUDSX_win (de_isw_ensure msks (isw_emb w)))
-    | msks, IUDSX_u (UDSX_gen g) ->
-        (if null msks then IUDSX_u (UDSX_gen g)
-          else IUDSX_gen (de_iems_ensure msks (ims_emb g)))
-    | msks, IUDSX_u (UDSX_wagg (va, vb, vc)) ->
-        IUDSX_u (UDSX_wagg (va, vb, vc));;
+    | msks, IUDSX_u v -> IUDSX_u v;;
 
 let rec de_esemi_idx
   msk pos idx x =
@@ -17288,13 +17306,13 @@ let rec ieval
     | rq, j, ts, db,
         EFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
                po, ng, lv, rho_L, sx, cS, rho_S, rho_E)
-        -> map_prod (mapa itab) eemb
+        -> map_prod (mapa itab) (eemb [])
              (eeval j ts (dabs db)
                (eabs (EFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w,
                              pR, tq, rb, d, po, ng, lv, rho_L, sx, cS, rho_S,
                              rho_E))))
     | rq, j, ts, db, ELetPast (p, m, phi, psi, i, buf) ->
-        map_prod (mapa itab) eemb
+        map_prod (mapa itab) (eemb [])
           (eeval j ts (dabs db) (eabs (ELetPast (p, m, phi, psi, i, buf))))
     | rq, j, ts, db, ETrigger (dags, pl, phi, psi, dbuf, nts, daux) ->
         (let (xs, phia) = ieval [] j ts db phi in
@@ -58774,8 +58792,6 @@ let rec equal_safety x0 x1 = match x0, x1 with Strict, Lax -> false
                        | Lax, Lax -> true
                        | Strict, Strict -> true;;
 
-let rec bounded x = snd (snd (rep_I x));;
-
 let rec int_remove_lower_bound
   xa = Abs_I ((fun _ -> true), (memR xa, bounded xa));;
 
@@ -60435,7 +60451,7 @@ let rec mstate_i
 let rec eof_state
   n ks cs st =
     Emstate_ext
-      (mstate_i st, mstate_j st, eemb (eof n ks cs (mstate_m st)), n, cs,
+      (mstate_i st, mstate_j st, eemb [] (eof n ks cs (mstate_m st)), n, cs,
         mbuf_t_append mbuf_t_empty (mstate_t st), ());;
 
 let rec eminit_safe
