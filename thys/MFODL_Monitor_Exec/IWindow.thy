@@ -563,8 +563,8 @@ lemma iuw_abs_ensure[simp]: "iuw_abs (iuw_ensure msks aux) = iuw_abs aux"
 subsection \<open>The dispatched Since structures\<close>
 
 text \<open>The aggregating structures are kept as they are; their result is a table without
-  indices.  The other two start out as they are too, and become the indexed ones when their
-  consumer first asks for an index: until then, indexing their tables would only cost.\<close>
+  indices.  The other two are embedded indexed if they are to keep indices at all, and kept as
+  they are otherwise (@{text iudsx_emb}); the evaluator's embedding decides which, once.\<close>
 
 datatype iudsaux_x = IUDSX_u udsaux_x | IUDSX_win iswaux | IUDSX_gen iemsaux
 
@@ -573,11 +573,14 @@ fun riu :: "iudsaux_x \<Rightarrow> udsaux_x" where
 | "riu (IUDSX_win w) = UDSX_win (isw_abs w)"
 | "riu (IUDSX_gen g) = UDSX_gen (ims_abs g)"
 
-definition iudsx_emb :: "udsaux_x \<Rightarrow> iudsaux_x" where
-  "iudsx_emb d = IUDSX_u d"
+definition iudsx_emb :: "bool list list \<Rightarrow> udsaux_x \<Rightarrow> iudsaux_x" where
+  "iudsx_emb msks d = (if msks = [] then IUDSX_u d else (case d of
+       UDSX_win w \<Rightarrow> IUDSX_win (isw_ensure msks (isw_emb w))
+     | UDSX_gen g \<Rightarrow> IUDSX_gen (iems_ensure msks (ims_emb g))
+     | _ \<Rightarrow> IUDSX_u d))"
 
-lemma riu_iudsx_emb[simp]: "riu (iudsx_emb d) = d"
-  by (simp add: iudsx_emb_def)
+lemma riu_iudsx_emb[simp]: "riu (iudsx_emb msks d) = d"
+  by (cases d) (simp_all add: iudsx_emb_def)
 
 fun iudsx_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> iudsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_add_new_ts args nt (IUDSX_u d) = IUDSX_u (udsx_add_new_ts args nt d)"
@@ -602,10 +605,6 @@ fun iudsx_result :: "args \<Rightarrow> iudsaux_x \<Rightarrow> event_data itab"
 fun iudsx_ensure :: "bool list list \<Rightarrow> iudsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_ensure msks (IUDSX_win w) = IUDSX_win (isw_ensure msks w)"
 | "iudsx_ensure msks (IUDSX_gen g) = IUDSX_gen (iems_ensure msks g)"
-| "iudsx_ensure msks (IUDSX_u (UDSX_win w)) =
-     (if msks = [] then IUDSX_u (UDSX_win w) else IUDSX_win (isw_ensure msks (isw_emb w)))"
-| "iudsx_ensure msks (IUDSX_u (UDSX_gen g)) =
-     (if msks = [] then IUDSX_u (UDSX_gen g) else IUDSX_gen (iems_ensure msks (ims_emb g)))"
 | "iudsx_ensure msks d = d"
 
 lemma riu_add_new_ts[simp]: "riu (iudsx_add_new_ts args nt d) = udsx_add_new_ts args nt (riu d)"
@@ -625,8 +624,8 @@ lemma riu_ensure[simp]: "riu (iudsx_ensure msks d) = riu d"
 
 subsection \<open>The dispatched Until structures\<close>
 
-text \<open>Likewise, only the window of a closed left operand has indexed answers, and it becomes
-  indexed when its consumer first asks for an index.\<close>
+text \<open>Likewise, only the window of a closed left operand has indexed answers, if it is embedded
+  indexed.\<close>
 
 datatype iuduaux_x = IUDUX_u uduaux_x | IUDUX_win iuwaux
 
@@ -634,11 +633,13 @@ fun riud :: "iuduaux_x \<Rightarrow> uduaux_x" where
   "riud (IUDUX_u d) = d"
 | "riud (IUDUX_win w) = UDUX_win (iuw_abs w)"
 
-definition iudux_emb :: "uduaux_x \<Rightarrow> iuduaux_x" where
-  "iudux_emb d = IUDUX_u d"
+definition iudux_emb :: "bool list list \<Rightarrow> uduaux_x \<Rightarrow> iuduaux_x" where
+  "iudux_emb msks d = (if msks = [] then IUDUX_u d else (case d of
+       UDUX_win w \<Rightarrow> IUDUX_win (iuw_ensure msks (iuw_emb w))
+     | _ \<Rightarrow> IUDUX_u d))"
 
-lemma riud_iudux_emb[simp]: "riud (iudux_emb d) = d"
-  by (simp add: iudux_emb_def)
+lemma riud_iudux_emb[simp]: "riud (iudux_emb msks d) = d"
+  by (cases d) (simp_all add: iudux_emb_def)
 
 fun iudux_add_new :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> iuduaux_x \<Rightarrow> iuduaux_x" where
   "iudux_add_new args msk rel1 rel2 nt (IUDUX_u d) = IUDUX_u (udux_add_new args msk rel1 rel2 nt d)"
@@ -650,8 +651,6 @@ fun iudux_eval :: "args \<Rightarrow> ts \<Rightarrow> iuduaux_x \<Rightarrow> e
 
 fun iudux_ensure :: "bool list list \<Rightarrow> iuduaux_x \<Rightarrow> iuduaux_x" where
   "iudux_ensure msks (IUDUX_win w) = IUDUX_win (iuw_ensure msks w)"
-| "iudux_ensure msks (IUDUX_u (UDUX_win w)) =
-     (if msks = [] then IUDUX_u (UDUX_win w) else IUDUX_win (iuw_ensure msks (iuw_emb w)))"
 | "iudux_ensure msks d = d"
 
 lemma riud_add_new: "udux_add_new args msk rel1 rel2 nt (riud d) = riud (iudux_add_new args msk rel1 rel2 nt d)"

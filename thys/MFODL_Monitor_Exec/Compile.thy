@@ -1392,7 +1392,7 @@ definition eof_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow> emstate" where
   "eof_state n ks cs st =
      \<lparr> emstate_i = mstate_i st, emstate_j = mstate_j st,
-       emstate_m = eemb (eof n ks cs (mstate_m st)),
+       emstate_m = eemb [] (eof n ks cs (mstate_m st)),
        emstate_n = n, emstate_cs = cs, emstate_t = mbuf_t_empty @@ mstate_t st \<rparr>"
 
 lemma emsim_state_eof_state:
