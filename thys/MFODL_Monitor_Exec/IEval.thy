@@ -20,7 +20,7 @@ type_synonym itable = "event_data itab"
 type_synonym iebuf2 = "itable mbuf_t \<times> itable mbuf_t"
 type_synonym iebufn = "itable mbuf_t list"
 type_synonym ieformula =
-  "(iebuf2, iebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, iudsaux_x, eformula) geformula"
+  "(iebuf2, iebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, iudsaux_x, iuduaux_x, eformula) geformula"
 
 lift_definition mbuf_t_map :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a mbuf_t \<Rightarrow> 'b mbuf_t" is map .
 
@@ -69,7 +69,7 @@ fun eabs :: "ieformula \<Rightarrow> eformula" where
 | "eabs (ENext I2 \<phi> fst2 nts2) = ENext I2 (eabs \<phi>) fst2 nts2"
 | "eabs (EAnds ps ns Ld dbuf) = EAnds ps ns (map eabs Ld) (ibn dbuf)"
 | "eabs (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eabs \<phi>) (eabs \<psi>) sbuf (riu aux1)"
-| "eabs (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eabs \<phi>) (eabs \<psi>) ubuf nts3 t3 aux3"
+| "eabs (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eabs \<phi>) (eabs \<psi>) ubuf nts3 t3 (riud aux3)"
 | "eabs (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eabs \<phi>)"
 | "eabs (ETP mt5 i5) = ETP mt5 i5"
 | "eabs (ETS mt6) = ETS mt6"
@@ -98,7 +98,7 @@ fun eemb :: "eformula \<Rightarrow> ieformula" where
 | "eemb (ENext I2 \<phi> fst2 nts2) = ENext I2 (eemb \<phi>) fst2 nts2"
 | "eemb (EAnds ps ns Ld dbuf) = EAnds ps ns (map eemb Ld) (ebn dbuf)"
 | "eemb (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eemb \<phi>) (eemb \<psi>) sbuf (iudsx_emb aux1)"
-| "eemb (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eemb \<phi>) (eemb \<psi>) ubuf nts3 t3 aux3"
+| "eemb (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eemb \<phi>) (eemb \<psi>) ubuf nts3 t3 (iudux_emb aux3)"
 | "eemb (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eemb \<phi>)"
 | "eemb (ETP mt5 i5) = ETP mt5 i5"
 | "eemb (ETS mt6) = ETS mt6"
@@ -195,11 +195,11 @@ lemma dabs_demb[simp]: "dabs (demb db) = db"
   by (rule mapping_eqI) (simp add: lookup_dabs demb_def Mapping.lookup_map_values option.map_comp
       comp_def option.map_ident)
 
-fun is_pred :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'p) geformula \<Rightarrow> bool" where
+fun is_pred :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'bu, 'p) geformula \<Rightarrow> bool" where
   "is_pred pm (EPredS e ar) = ((e, ar) = pm)"
 | "is_pred pm _ = False"
 
-function (sequential) preq :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'p) geformula \<Rightarrow> bool list list" where
+function (sequential) preq :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'bu, 'p) geformula \<Rightarrow> bool list list" where
   "preq pm (EAnd pl \<phi> pos \<psi> buf) =
      (if is_pred pm \<phi> then jreq_l pl pos else preq pm \<phi>) @
      (if is_pred pm \<psi> then jreq_r pl pos else preq pm \<psi>)"
@@ -275,10 +275,10 @@ function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> t
       in (zs, ESince dags \<phi>' \<psi>' buf' aux'))"
 | "ieval rq j ts db (EUntil dags msk \<phi> \<psi> buf nts t aux) =
      (let (xs, \<phi>') = ieval [] j ts db \<phi>; (ys, \<psi>') = ieval [] j ts db \<psi>;
-          (aux', buf', nt, nts') = mebuf2t_take (udux_add_new dags msk) aux
+          (aux', buf', nt, nts') = mebuf2t_take (iudux_add_new dags msk) (iudux_ensure rq aux)
             (mebuf2_add (map iset xs) (map iset ys) buf) t (nts @@ ts);
-          (zs, aux'') = udux_eval dags nt aux'
-      in (map itab zs, EUntil dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
+          (zs, aux'') = iudux_eval dags nt aux'
+      in (zs, EUntil dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
 | "ieval rq j ts db (EAndAssign p t \<phi>) =
      (let (xs, \<phi>') = ieval [] j ts db \<phi> in (map (\<lambda>r. itab (uassign p t (iset r))) xs, EAndAssign p t \<phi>'))"
 | "ieval rq j ts db (ETP mt i) =
@@ -512,6 +512,22 @@ next
       "iudsx_ensure rq aux"] 3 by simp
   show ?case
     using 14(3) 14(1)[OF 1] 14(2)[OF refl 1[symmetric] 2] t by (auto simp: 1 2 3)
+next
+  case (15 rq j ts db dags msk \<phi> \<psi> buf nts t aux)
+  obtain xs1 \<phi>1 where 1: "ieval [] j ts db \<phi> = (xs1, \<phi>1)" by fastforce
+  obtain ys1 \<psi>1 where 2: "ieval [] j ts db \<psi> = (ys1, \<psi>1)" by fastforce
+  let ?B = "mebuf2_add (map iset xs1) (map iset ys1) buf"
+  obtain ua ub nt un where 3: "mebuf2t_take (iudux_add_new dags msk) (iudux_ensure rq aux) ?B t (nts @@ ts)
+      = (ua, ub, nt, un)"
+    by (cases "mebuf2t_take (iudux_add_new dags msk) (iudux_ensure rq aux) ?B t (nts @@ ts)") auto
+  obtain zs ua2 where 4: "iudux_eval dags nt ua = (zs, ua2)" by fastforce
+  have t: "mebuf2t_take (udux_add_new dags msk) (riud aux) ?B t (nts @@ ts) = (riud ua, ub, nt, un)"
+    using mebuf2t_take_nat[of "udux_add_new dags msk" riud "iudux_add_new dags msk" "iudux_ensure rq aux"
+        ?B t "nts @@ ts", OF riud_add_new] 3 by simp
+  have u: "udux_eval dags nt (riud ua) = (map iset zs, riud ua2)"
+    using riud_eval[of dags nt ua] 4 by simp
+  show ?case
+    using 15(3) 15(1)[OF 1] 15(2)[OF refl 1[symmetric] 2] t u by (auto simp: 1 2 3 4)
 next
   case (13 rq j ts db ps ns Ld dbuf)
   let ?Q = "eands_req ps (length Ld)"

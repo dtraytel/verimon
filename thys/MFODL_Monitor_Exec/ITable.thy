@@ -173,6 +173,42 @@ lemma Rep_itab_idel_code[code abstract]:
   "Rep_itab (idel x A) = (Set.remove x (iset A), if Mapping.keys (iidxs A) = {} then iidxs A
      else Mapping.map_values (\<lambda>msk m. eidx_del1 msk x m) (iidxs A))"
   by (simp add: Rep_itab_idel map_values_no_keys)
+
+text \<open>Adding and removing a set of tuples at once updates each index by the tuples' index.\<close>
+
+definition iadd :: "'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "iadd X A = Abs_itab (iset A \<union> X, Mapping.map_values (\<lambda>msk m. eidx_union m (eidx msk X)) (iidxs A))"
+
+lemma Rep_itab_iadd: "Rep_itab (iadd X A) =
+    (iset A \<union> X, Mapping.map_values (\<lambda>msk m. eidx_union m (eidx msk X)) (iidxs A))"
+  unfolding iadd_def
+  by (rule Rep_itab_inverse')
+    (auto simp: iinv_def Mapping.lookup_map_values eidx_union_eq dest: iidxs_eidx)
+
+lemma Rep_itab_iadd_code[code abstract]: "Rep_itab (iadd X A) =
+    (iset A \<union> X, if Mapping.keys (iidxs A) = {} then iidxs A
+      else Mapping.map_values (\<lambda>msk m. eidx_union m (eidx msk X)) (iidxs A))"
+  by (simp add: Rep_itab_iadd map_values_no_keys)
+
+lemma iset_iadd[simp]: "iset (iadd X A) = iset A \<union> X"
+  by (simp add: iset_def Rep_itab_iadd)
+
+definition isub :: "'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
+  "isub D A = Abs_itab (iset A - D, Mapping.map_values (\<lambda>msk m. eidx_minus m (eidx msk D)) (iidxs A))"
+
+lemma Rep_itab_isub: "Rep_itab (isub D A) =
+    (iset A - D, Mapping.map_values (\<lambda>msk m. eidx_minus m (eidx msk D)) (iidxs A))"
+  unfolding isub_def
+  by (rule Rep_itab_inverse')
+    (auto simp: iinv_def Mapping.lookup_map_values eidx_minus_eq dest: iidxs_eidx)
+
+lemma Rep_itab_isub_code[code abstract]: "Rep_itab (isub D A) =
+    (iset A - D, if Mapping.keys (iidxs A) = {} then iidxs A
+      else Mapping.map_values (\<lambda>msk m. eidx_minus m (eidx msk D)) (iidxs A))"
+  by (simp add: Rep_itab_isub map_values_no_keys)
+
+lemma iset_isub[simp]: "iset (isub D A) = iset A - D"
+  by (simp add: iset_def Rep_itab_isub)
 subsection \<open>Union\<close>
 
 text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>
