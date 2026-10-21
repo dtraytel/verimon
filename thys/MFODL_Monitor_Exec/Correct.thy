@@ -134,7 +134,7 @@ proof -
   have "map iset xs1 = map iset xs2 \<and> eabs m1 = eabs m2"
     using ieval_eeval[OF e1] ieval_eeval[OF e2] assms by (simp add: eforget_def)
   then show ?thesis
-    using assms by (auto simp: emstep_def e1 e2 eforget_def split: prod.splits)
+    using assms by (simp only: emstep_def e1 e2 prod.case) (auto simp: eforget_def split: prod.splits)
 qed
 
 lemma emsteps0_stateless_eforget:
@@ -148,7 +148,7 @@ proof (induct \<pi> arbitrary: s1 s2)
 qed simp
 
 lemma emonitor_eindex[simp]: "emonitor (eindex ix st) \<pi> = emonitor st \<pi>"
-  by (simp add: emonitor_def emsteps_stateless.rep_eq emsteps0_stateless_eforget)
+  unfolding emonitor_def emsteps_stateless.rep_eq by (rule emsteps0_stateless_eforget) simp
 
 
 subsection \<open>The state relation\<close>
