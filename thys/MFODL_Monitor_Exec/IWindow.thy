@@ -204,7 +204,7 @@ fun ieshift_end :: "args \<Rightarrow> ts \<Rightarrow> iemsaux \<Rightarrow> ie
     (let I = args_ivl args;
      data_prev' = dropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_prev;
      (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
-     (tuple_in, del) = fold filter_set discard (tuple_in, {}) in
+     (tuple_in, del) = fold_filter_set discard (tuple_in, {}) in
      (t, gc, msk, data_prev', data_in, isub del table_in,
       eidx_upd args (\<lambda>_. eidx_minus idx_in (eidx msk del)), tuple_in, idx_since, tuple_since))"
 
@@ -308,7 +308,7 @@ lemma iemsaux_cases:
   by (metis prod.collapse)
 
 lemma ims_abs_shift_end: "ims_abs (ieshift_end args nt a) = eshift_end args nt (ims_abs a)"
-  by (cases a rule: iemsaux_cases) (simp add: Let_def split: prod.splits)
+  by (cases a rule: iemsaux_cases) (simp add: Let_def fold_filter_set_def split: prod.splits)
 
 lemma ims_abs_add_new_ts': "ims_abs (ieadd_new_ts_msaux' args nt a) = eadd_new_ts_msaux' args nt (ims_abs a)"
   by (cases a rule: iemsaux_cases) (simp add: Let_def split: prod.splits)
@@ -496,7 +496,8 @@ lemma iuw_abs_ensure[simp]: "iuw_abs (iuw_ensure msks aux) = iuw_abs aux"
 subsection \<open>The dispatched Since structures\<close>
 
 text \<open>The aggregating structures are kept as they are; their result is a table without
-  indices.\<close>
+  indices.  The general structure also starts out as it is, and becomes the indexed one when its
+  consumer first asks for an index: until then, indexing its table would only cost.\<close>
 
 datatype iudsaux_x = IUDSX_u udsaux_x | IUDSX_win iswaux | IUDSX_gen iemsaux
 
@@ -507,7 +508,6 @@ fun riu :: "iudsaux_x \<Rightarrow> udsaux_x" where
 
 fun iudsx_emb :: "udsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_emb (UDSX_win w) = IUDSX_win (isw_emb w)"
-| "iudsx_emb (UDSX_gen g) = IUDSX_gen (ims_emb g)"
 | "iudsx_emb d = IUDSX_u d"
 
 lemma riu_iudsx_emb[simp]: "riu (iudsx_emb d) = d"
@@ -536,6 +536,8 @@ fun iudsx_result :: "args \<Rightarrow> iudsaux_x \<Rightarrow> event_data itab"
 fun iudsx_ensure :: "bool list list \<Rightarrow> iudsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_ensure msks (IUDSX_win w) = IUDSX_win (isw_ensure msks w)"
 | "iudsx_ensure msks (IUDSX_gen g) = IUDSX_gen (iems_ensure msks g)"
+| "iudsx_ensure msks (IUDSX_u (UDSX_gen g)) =
+     (if msks = [] then IUDSX_u (UDSX_gen g) else IUDSX_gen (iems_ensure msks (ims_emb g)))"
 | "iudsx_ensure msks d = d"
 
 lemma riu_add_new_ts[simp]: "riu (iudsx_add_new_ts args nt d) = udsx_add_new_ts args nt (riu d)"
@@ -551,11 +553,12 @@ lemma iset_iudsx_result[simp]: "iset (iudsx_result args d) = udsx_result args (r
   by (cases d) (simp_all add: iset_isw_result iset_ieresult)
 
 lemma riu_ensure[simp]: "riu (iudsx_ensure msks d) = riu d"
-  by (cases d) simp_all
+  by (induct msks d rule: iudsx_ensure.induct) simp_all
 
 subsection \<open>The dispatched Until structures\<close>
 
-text \<open>Likewise, only the window of a closed left operand has indexed answers.\<close>
+text \<open>Likewise, only the window of a closed left operand has indexed answers, and it becomes
+  indexed when its consumer first asks for an index.\<close>
 
 datatype iuduaux_x = IUDUX_u uduaux_x | IUDUX_win iuwaux
 
@@ -563,12 +566,11 @@ fun riud :: "iuduaux_x \<Rightarrow> uduaux_x" where
   "riud (IUDUX_u d) = d"
 | "riud (IUDUX_win w) = UDUX_win (iuw_abs w)"
 
-fun iudux_emb :: "uduaux_x \<Rightarrow> iuduaux_x" where
-  "iudux_emb (UDUX_win w) = IUDUX_win (iuw_emb w)"
-| "iudux_emb d = IUDUX_u d"
+definition iudux_emb :: "uduaux_x \<Rightarrow> iuduaux_x" where
+  "iudux_emb d = IUDUX_u d"
 
 lemma riud_iudux_emb[simp]: "riud (iudux_emb d) = d"
-  by (cases d) simp_all
+  by (simp add: iudux_emb_def)
 
 fun iudux_add_new :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> iuduaux_x \<Rightarrow> iuduaux_x" where
   "iudux_add_new args msk rel1 rel2 nt (IUDUX_u d) = IUDUX_u (udux_add_new args msk rel1 rel2 nt d)"
@@ -580,6 +582,8 @@ fun iudux_eval :: "args \<Rightarrow> ts \<Rightarrow> iuduaux_x \<Rightarrow> e
 
 fun iudux_ensure :: "bool list list \<Rightarrow> iuduaux_x \<Rightarrow> iuduaux_x" where
   "iudux_ensure msks (IUDUX_win w) = IUDUX_win (iuw_ensure msks w)"
+| "iudux_ensure msks (IUDUX_u (UDUX_win w)) =
+     (if msks = [] then IUDUX_u (UDUX_win w) else IUDUX_win (iuw_ensure msks (iuw_emb w)))"
 | "iudux_ensure msks d = d"
 
 lemma riud_add_new: "udux_add_new args msk rel1 rel2 nt (riud d) = riud (iudux_add_new args msk rel1 rel2 nt d)"
@@ -594,7 +598,7 @@ proof (cases d)
 qed (simp add: comp_def split: prod.splits)
 
 lemma riud_ensure[simp]: "riud (iudux_ensure msks d) = riud d"
-  by (cases d) simp_all
+  by (induct msks d rule: iudux_ensure.induct) simp_all
 
 subsection \<open>The Since buffer's traversal\<close>
 
