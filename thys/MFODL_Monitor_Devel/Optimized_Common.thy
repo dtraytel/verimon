@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Common
-  imports Queue Monitor Wf_Table
+  imports "VeriMon_Base.Queue" Monitor "VeriMon_Base.Wf_Table"
 begin
 (*>*)
 

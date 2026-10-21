@@ -171,14 +171,19 @@ The formalization
 
 | Directory | Sessions | Content |
 |---|---|---|
-| `thys/MFOTL_Monitor_Devel` | `MFOTL_Monitor_Devel` | Traces, intervals, tables, the abstract monitor |
-| `thys/MFODL_Monitor_Devel` | `MFODL_Monitor_Devel` | MFODL, its semantics, type checking, rewriting, the monitoring algorithm and its correctness |
-| `thys/Generic_Join_Devel` | `Generic_Join_Devel` | Multi-way joins |
-| `thys/MFODL_Monitor_Exec` | `MFODL_Monitor_Exec` | The executable monitor and its refinement, and the monitor on the bytes of a log |
-| `thys/Log_Parser` | `Log_Parser` | The log format and its verified parser |
 | `thys/grammar` | `Grammar_Command`, `LR_Parser` | Grammars and verified LR parsers generated from them (a submodule) |
 | `thys/MFODL_Parser` | `MFODL_Grammar`, `MFODL_Parser`, `MFODL_Parser_Code` | MonPoly's formula syntax and its verified parser |
+| `thys/Log_Parser` | `Log_Parser` | The log format and its verified parser |
+| `thys/VeriMon_Parsers` | `VeriMon_Parsers` | The two parsers, collected into one heap |
+| `thys/VeriMon_Base` | `VeriMon_Base` | Traces, intervals, tables, the abstract monitor, multi-way joins, event data, regular expressions, data structures |
+| `thys/MFODL_Monitor_Devel` | `MFODL_Monitor_Devel` | MFODL, its semantics, type checking, rewriting, the monitoring algorithm and its correctness |
+| `thys/MFODL_Monitor_Exec` | `MFODL_Monitor_Exec` | The executable monitor and its refinement, and the monitor on the bytes of a log |
 | `thys/VeriMon_CLI` | `VeriMon_CLI` | The command line, signatures, the conversion of formulas, the outputs, the end-to-end theorems, and the code export |
+
+The heaps form one chain, `Containers`, `VeriMon_Parsers`, `VeriMon_Base`,
+`MFODL_Monitor_Devel`, `MFODL_Monitor_Exec`, `VeriMon_CLI`: what does not depend on the
+monitoring algorithm comes first, so that a change to the monitor checks only the sessions from
+`MFODL_Monitor_Devel` on.
 
 The theories are checked with Isabelle2025-2 and the
 [Archive of Formal Proofs](https://www.isa-afp.org). After `git submodule update --init`,

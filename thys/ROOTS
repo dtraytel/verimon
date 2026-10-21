@@ -1,8 +1,8 @@
-MFOTL_Monitor_Devel
-Generic_Join_Devel
+grammar
+Log_Parser
+MFODL_Parser
+VeriMon_Parsers
+VeriMon_Base
 MFODL_Monitor_Devel
 MFODL_Monitor_Exec
-Log_Parser
-grammar
-MFODL_Parser
 VeriMon_CLI

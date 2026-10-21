@@ -1,23 +1,7 @@
 chapter AFP
 
-session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
-  sessions
-    IEEE_Floating_Point
-    Generic_Join_Devel
-    "HOL-Data_Structures"
+session MFODL_Monitor_Devel (AFP) = VeriMon_Base +
   theories
-    Cluster
-    Mapping_Code
-    Optimized_Join
-    Order_Statistic_Tree
-    Tree_List
-    Wf_Table
-    RBT_set_opt
-    Code_Double
-    Event_Data
-    Preliminaries
-    Queue
-    Regex
     Formula
     Frz_Locality
     Rewriting
@@ -25,7 +9,6 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Progress
     Safety_Proofs
     Typing
-    Optimized_Join
     Monitor
     Correct_Un_Ops
     Correct_Bin_Ops

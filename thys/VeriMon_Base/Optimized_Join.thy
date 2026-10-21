@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Join
-  imports "Generic_Join_Devel.Generic_Join_Correctness"
+  imports Generic_Join_Correctness
 begin
 (*>*)
 

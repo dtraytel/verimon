@@ -5,7 +5,7 @@ theory Correctness
     Correct_Regex
     Correct_Since
     Correct_Release
-    "MFOTL_Monitor_Devel.Abstract_Monitor"
+    "VeriMon_Base.Abstract_Monitor"
 begin
 (*>*)
 

@@ -1,10 +1,10 @@
 (*<*)
 theory Formula
   imports
-    Event_Data
-    Preliminaries
-    Regex
-    "MFOTL_Monitor_Devel.Abstract_Monitor"
+    "VeriMon_Base.Event_Data"
+    "VeriMon_Base.Preliminaries"
+    "VeriMon_Base.Regex"
+    "VeriMon_Base.Abstract_Monitor"
     Containers.Set_Impl
 begin
 (*>*)
