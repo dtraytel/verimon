@@ -12,8 +12,8 @@ sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
   valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux
     add_new_table_mmasaux result_mmasaux
   valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq length_muaux_dq eval_muaux_dq
-  valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
-  by unfold_locales
+  valid_mmtaux init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join
+  by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
 
 subsection \<open>The executable state machine\<close>
