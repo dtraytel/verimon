@@ -1,6 +1,9 @@
 chapter AFP
 
-session MFODL_Monitor_Devel (AFP) = MFODL_Logic +
+session Monitor_Impl (AFP) = MFODL_Monitor +
+  description
+    "The concrete auxiliary structures and joins of the monitoring algorithm, and its instance
+     default_maux; the code-generator setup the instance needs."
   sessions
     Generic_Join_Devel
     Monitor_DS
@@ -8,19 +11,6 @@ session MFODL_Monitor_Devel (AFP) = MFODL_Logic +
   theories
     Optimized_Join
     Wf_Table
-    Progress
-    Safety_Proofs
-    Monitor
-    Correct_Un_Ops
-    Correct_Bin_Ops
-    Correct_Since
-    Correct_Until
-    Correct_Trigger
-    Correct_Release
-    Correct_Regex
-    Correct_Agg
-    Correctness
-    VeriMon
     Optimized_Agg
     Optimized_Common
     Optimized_Since
@@ -31,6 +21,3 @@ session MFODL_Monitor_Devel (AFP) = MFODL_Logic +
     Monitor_Impl
     Code_Opt
     Monomorphic_Code
-  document_files
-    "root.tex"
-    "root.bib"

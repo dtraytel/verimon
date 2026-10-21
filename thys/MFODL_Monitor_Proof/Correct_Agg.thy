@@ -1,7 +1,7 @@
 (*<*)
 theory Correct_Agg
   imports
-    Monitor 
+    "MFODL_Monitor.Monitor" 
     Progress
 begin
 (*>*)

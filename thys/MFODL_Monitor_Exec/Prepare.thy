@@ -1,6 +1,6 @@
 (*<*)
 theory Prepare
-  imports Push_Rewrite "MFODL_Monitor_Devel.VeriMon"
+  imports Push_Rewrite "MFODL_Monitor_Proof.VeriMon"
 begin
 (*>*)
 

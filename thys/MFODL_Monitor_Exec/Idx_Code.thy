@@ -1,6 +1,6 @@
 (*<*)
 theory Idx_Code
-  imports Until_Gen "MFODL_Monitor_Devel.Monomorphic_Code"
+  imports Until_Gen "Monitor_Impl.Monomorphic_Code"
 begin
 (*>*)
 

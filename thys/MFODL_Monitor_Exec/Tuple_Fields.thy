@@ -1,6 +1,6 @@
 (*<*)
 theory Tuple_Fields
-  imports "MFODL_Monitor_Devel.Code_Opt"
+  imports "Monitor_Impl.Code_Opt"
 begin
 (*>*)
 

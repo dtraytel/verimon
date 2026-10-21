@@ -45,7 +45,7 @@ setup \<open>Monomorphize.monomorphize_cmd
   ["etuple_dict_simps"]\<close>
 
 text \<open>The grouped aggregation's folds, initial state and results.  Their empty maps are those
-  of @{theory MFODL_Monitor_Devel.Monomorphic_Code}.\<close>
+  of @{theory Monitor_Impl.Monomorphic_Code}.\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("gins", "edl_gins", ["event_data"]),

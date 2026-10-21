@@ -1,7 +1,7 @@
 (*<*)
 theory Push_Rewrite
   imports Compile Frz_Rewrite
-    Share_Rewrite "MFODL_Monitor_Devel.VeriMon"
+    Share_Rewrite "MFODL_Monitor_Proof.VeriMon"
 begin
 (*>*)
 

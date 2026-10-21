@@ -2,7 +2,7 @@
 theory Correct_Regex
   imports
     Progress
-    Monitor
+    "MFODL_Monitor.Monitor"
     Correct_Bin_Ops
 begin
 (*>*)

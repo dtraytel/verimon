@@ -7,7 +7,7 @@ begin
 section \<open>The Until structure, over a bare element type\<close>
 
 text \<open>
-  The deque structure of @{theory MFODL_Monitor_Devel.Optimized_Until_Deque} is monomorphised at
+  The deque structure of @{theory Monitor_Impl.Optimized_Until_Deque} is monomorphised at
   @{typ event_data} for code generation, so it is restated here over a bare element type
   \<open>'b\<close>.  Three things change.
 

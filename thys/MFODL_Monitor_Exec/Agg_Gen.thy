@@ -9,7 +9,7 @@ section \<open>The aggregation structure, over a bare element type\<close>
 text \<open>
   The kernel keeps a fused aggregation's aggregate in @{typ aggaux}: a mapping from the group to
   a count, to a count and a sum, or to the sorted multiset of the values, for tuples of the
-  kernel's wide frame (@{theory MFODL_Monitor_Devel.Optimized_Agg}).  The executable window fed it the
+  kernel's wide frame (@{theory Monitor_Impl.Optimized_Agg}).  The executable window fed it the
   window's tuples widened by a slot for the result column, and the unboxed window widened its
   short tuples to the same frame, only for the kernel to cut the group back off them and compare
   it as a list of options.

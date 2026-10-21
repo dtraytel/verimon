@@ -1,7 +1,7 @@
 (*<*)
 theory Correct_Bin_Ops
   imports
-    Monitor 
+    "MFODL_Monitor.Monitor" 
     Progress
 begin
 (*>*)

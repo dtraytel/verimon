@@ -1,6 +1,6 @@
 (*<*)
 theory Frz_Rewrite
-  imports "MFODL_Monitor_Devel.Monitor" "MFODL_Monitor_Devel.Progress" "MFODL_Logic.Typing"
+  imports "MFODL_Monitor.Monitor" "MFODL_Monitor_Proof.Progress" "MFODL_Logic.Typing"
 begin
 (*>*)
 

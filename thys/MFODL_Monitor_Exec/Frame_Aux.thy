@@ -1,6 +1,6 @@
 (*<*)
 theory Frame_Aux
-  imports Frame "MFODL_Monitor_Devel.Correctness"
+  imports Frame "MFODL_Monitor_Proof.Correctness"
 begin
 (*>*)
 

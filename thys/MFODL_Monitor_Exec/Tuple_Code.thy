@@ -1,6 +1,6 @@
 (*<*)
 theory Tuple_Code
-  imports Compile Idx_Code "MFODL_Monitor_Devel.Monomorphic_Code"
+  imports Compile Idx_Code "Monitor_Impl.Monomorphic_Code"
 begin
 (*>*)
 
@@ -10,7 +10,7 @@ text \<open>
   The front end builds the tables of a time point itself, sorted, and hands them to
   @{text utable_of_list}, which checks the sortedness in linear time and builds the tree in one
   pass.  The kernel's tuples are the short tuples, so the three entry points are those of
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Devel.Monitor_Impl},
+  @{theory Monitor_Impl.Monomorphic_Code} and @{theory Monitor_Impl.Monitor_Impl},
   named for the executable monitor.
 \<close>
 
@@ -35,7 +35,7 @@ definition uinsert_table_into_db :: "string8 \<times> nat \<Rightarrow> utable \
 section \<open>The dictionaries and the comparator of the executable inner loops\<close>
 
 text \<open>
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} removed the per-call construction of the
+  @{theory Monitor_Impl.Monomorphic_Code} removed the per-call construction of the
   composite type class dictionaries for @{typ "event_data tuple"} from the kernel's inner loops.
   Its list of mapping value types -- @{typ nat}, the timestamp sum, @{typ "event_data table"},
   the aggregation sum and rank -- does not contain the one the executable join index uses, which is
@@ -55,7 +55,7 @@ setup \<open>Monomorphize.monomorphize_cmd
 
 text \<open>
   The projection out of a mapping's tree ignores the comparator its caller builds for it, so it
-  is boxed at every value type in @{theory MFODL_Monitor_Devel.Monomorphic_Code} -- and has to be
+  is boxed at every value type in @{theory Monitor_Impl.Monomorphic_Code} -- and has to be
   at this one too, or the monomorphised lookup above simply moves the per-call dictionary build
   one frame down into @{text impl_of}.
 \<close>
@@ -202,7 +202,7 @@ section \<open>The set operations, monomorphised rather than boxed\<close>
 text \<open>
   The set operations -- @{term "(\<union>)"}, @{term "(\<inter>)"}, @{term "(-)"},
   @{const Set.filter}, @{const image} -- are monomorphised like membership and lookup in
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code}, not boxed.  A box builds the dictionary once, when the program starts, which
+  @{theory Monitor_Impl.Monomorphic_Code}, not boxed.  A box builds the dictionary once, when the program starts, which
   removes the construction cost; but it still *passes* the dictionary, so the comparator that
   reaches the red-black tree inside is the composite one on lists, reached through a closure for
   every element.
@@ -242,7 +242,7 @@ section \<open>The remaining set and mapping operations of the executable evalua
 text \<open>
   The kernel's tuples are the executable evaluator's short tuples, @{typ "event_data list"}, so the
   comparator, the dictionaries, the empty table and most of the specialised set and mapping
-  operations are those of @{theory MFODL_Monitor_Devel.Monomorphic_Code} and of the sections
+  operations are those of @{theory Monitor_Impl.Monomorphic_Code} and of the sections
   above.  What the evaluator needs beyond them: the removal of an element, monomorphised rather
   than boxed, and the mapping operations at the value types the kernel does not use -- the join
   index's tuple lists, and the count sets with a count or a sum of the grouped aggregations.
@@ -399,7 +399,7 @@ text \<open>
   Monomorphising the executable operations fixes the type but does not by itself remove every
   dictionary: the operations they call that are not themselves specialised -- the emptiness tests,
   the folds, the mapping projections -- still take one, and a monomorphic caller builds it on the
-  spot rather than receiving it.  @{theory MFODL_Monitor_Devel.Monomorphic_Code} boxes those at
+  spot rather than receiving it.  @{theory Monitor_Impl.Monomorphic_Code} boxes those at
   the kernel's value types; the same at the executable evaluator's own.
 \<close>
 

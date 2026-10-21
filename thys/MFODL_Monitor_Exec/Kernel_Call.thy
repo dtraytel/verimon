@@ -1,6 +1,6 @@
 (*<*)
 theory Kernel_Call
-  imports "MFODL_Monitor_Devel.Monitor_Impl" "MFODL_Monitor_Devel.Correctness"
+  imports "Monitor_Impl.Monitor_Impl" "MFODL_Monitor_Proof.Correctness"
 begin
 (*>*)
 

@@ -1,6 +1,6 @@
 chapter AFP
 
-session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
+session MFODL_Monitor_Exec = Monitor_Impl_Proof +
   description
     "The verified executable monitor: the evaluator emstep/eeval, which refines the kernel's
      evaluation function over short tuples with executable window structures, its compiler from

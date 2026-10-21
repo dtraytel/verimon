@@ -4,7 +4,10 @@ MFODL_Logic
 MFODL_Frontend
 Monitor_DS
 Generic_Join_Devel
-MFODL_Monitor_Devel
+MFODL_Monitor
+MFODL_Monitor_Proof
+Monitor_Impl
+Monitor_Impl_Proof
 MFODL_Monitor_Exec
 Log_Parser
 grammar

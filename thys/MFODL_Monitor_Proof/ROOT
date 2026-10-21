@@ -1,0 +1,22 @@
+chapter AFP
+
+session MFODL_Monitor_Proof (AFP) = MFODL_Monitor +
+  description
+    "The progress of the monitoring algorithm and its correctness: the invariant wf_mformula, its
+     preservation by meval, and the correctness of VeriMon's preparation for the algorithm."
+  theories
+    Progress
+    Safety_Proofs
+    Correct_Un_Ops
+    Correct_Bin_Ops
+    Correct_Since
+    Correct_Until
+    Correct_Trigger
+    Correct_Release
+    Correct_Regex
+    Correct_Agg
+    Correctness
+    VeriMon
+  document_files
+    "root.tex"
+    "root.bib"

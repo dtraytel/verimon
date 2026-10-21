@@ -7,7 +7,7 @@ begin
 section \<open>The remaining generic operations of the generated code\<close>
 
 text \<open>
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Exec.Tuple_Code}
+  @{theory Monitor_Impl.Monomorphic_Code} and @{theory MFODL_Monitor_Exec.Tuple_Code}
   monomorphise the operations of the inner loops -- the containers at @{typ "event_data list"}
   -- because those were what the profiles charged for.  What is left over is everything else:
   operations the generated code still reaches with a type class dictionary in hand, at types
@@ -86,7 +86,7 @@ subsection \<open>The operations over time points\<close>
 text \<open>The time points are @{typ nat}: the buffers, the interval arithmetic of the time-stamp
   bookkeeping and the free-variable sets of the compiler all work at that type.  The order on
   @{typ event_data}, which the extremum aggregations fold with, is monomorphised in
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} already.\<close>
+  @{theory Monitor_Impl.Monomorphic_Code} already.\<close>
 
 setup \<open>mono
   [("Set.member", "nat_member", ["nat"]),
@@ -171,7 +171,7 @@ setup \<open>mono
 text \<open>Three more are recorded as not done for the same reason as @{text all_interval}:
   @{text these}, @{text gadd_new_ts_msaux_add} and @{text safe_regex} are resolved to constants
   whose type variable is fixed rather than schematic, so @{text monomorphize} has nothing to
-  instantiate.  Lifting that restriction is a change to \<^file>\<open>../MFODL_Monitor_Devel/monomorphize.ML\<close>
+  instantiate.  Lifting that restriction is a change to \<^file>\<open>../Monitor_Impl/monomorphize.ML\<close>
   rather than a new spec.\<close>
 
 (*<*)

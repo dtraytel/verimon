@@ -7,7 +7,7 @@ begin
 section \<open>Until with deques instead of time-point-indexed mappings\<close>
 
 text \<open>
-  The Until structure of @{theory MFODL_Monitor_Devel.Optimized_Until} keeps two mappings indexed
+  The Until structure of @{theory Monitor_Impl.Optimized_Until} keeps two mappings indexed
   by the time points of the window, @{text a2_map} (one mapping of tuples per time point) and
   @{text tstp_map} (the time stamp of every time point). Their keys always form the contiguous
   ranges @{term "{tp - len..tp}"} and @{term "{tp - len..<tp}"}: entries are removed at the

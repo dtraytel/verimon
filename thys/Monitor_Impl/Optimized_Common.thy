@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Common
-  imports "Monitor_DS.Queue" Monitor Wf_Table
+  imports "Monitor_DS.Queue" "MFODL_Monitor.Monitor" Wf_Table
 begin
 (*>*)
 
