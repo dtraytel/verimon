@@ -1,7 +1,7 @@
 (*<*)
 theory Regex
   imports
-    Trace
+    "MFOTL_Monitor_Devel.Trace"
     "HOL-Library.Extended_Nat"
 begin
 (*>*)

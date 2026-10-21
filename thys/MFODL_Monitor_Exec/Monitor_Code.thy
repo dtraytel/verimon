@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code
-  imports "MFODL_Monitor_Devel.Monomorphic_Code" "VeriMon_Base.RBT_set_opt" Mono_Hot Push_Rewrite Prepare "Log_Parser.Log_Code"
+  imports "MFODL_Monitor_Devel.Monomorphic_Code" "MFODL_Monitor_Devel.RBT_set_opt" Mono_Hot Push_Rewrite Prepare "Log_Parser.Log_Code"
     Log_Monitor
 begin
 (*>*)

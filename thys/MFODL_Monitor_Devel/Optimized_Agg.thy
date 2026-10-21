@@ -1,7 +1,7 @@
 theory Optimized_Agg
   imports Monitor
-  "VeriMon_Base.Order_Statistic_Tree"
-  "VeriMon_Base.Tree_List"
+  Order_Statistic_Tree
+  Tree_List
 begin
 
 

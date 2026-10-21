@@ -8,6 +8,8 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
      verified log parser of session Log_Parser, from the bytes of the log to the verdicts, and
      Log_Monitor_Online states its correctness for the online interface; Monitor_Code holds the
      code-generator setup that VeriMon's code export (session VeriMon_CLI) relies on."
+  sessions
+    Log_Parser
   theories
     Tuple_Fields
     Frame

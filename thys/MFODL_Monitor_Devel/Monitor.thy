@@ -3,7 +3,7 @@ theory Monitor
   imports
     Typing
     Frz_Locality
-    "VeriMon_Base.Optimized_Join"
+    Optimized_Join
     "HOL-Library.While_Combinator"
     "HOL-Library.Mapping"
 begin

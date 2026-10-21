@@ -6,7 +6,7 @@ theory Monitor_Impl
     Optimized_Until_Deque
     "HOL-Library.Code_Target_Nat"
     Containers.Containers
-    "VeriMon_Base.Proj_Code"
+    "Generic_Join_Devel.Proj_Code"
 begin
 (*>*)
 

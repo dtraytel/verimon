@@ -1,7 +1,7 @@
 section \<open>The algorithm\<close>
 
 theory Generic_Join
-  imports Table
+  imports MFOTL_Monitor_Devel.Table
 begin
 
 text \<open>A table of a query comes with the list of its columns, without duplicates and in any

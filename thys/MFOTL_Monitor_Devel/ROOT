@@ -1,0 +1,12 @@
+chapter AFP
+
+session MFOTL_Monitor_Devel (AFP) = "Containers" +
+  options [timeout = 1200]
+  theories
+    Trace
+    Table
+    Abstract_Monitor
+    Interval
+  document_files
+    "root.tex"
+    "root.bib"
