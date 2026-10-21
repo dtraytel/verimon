@@ -1,6 +1,6 @@
 (*<*)
 theory CLI_Options
-  imports "Log_Parser.Signature"
+  imports "MFODL_Monitor_Exec.Log_Monitor" "Log_Parser.Signature"
 begin
 (*>*)
 
