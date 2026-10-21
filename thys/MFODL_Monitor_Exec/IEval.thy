@@ -195,7 +195,7 @@ text \<open>
   Which nodes keep indexed tables is decided once, when the executable state is embedded, not
   while the monitor runs.  The embedding passes down the masks each node's consumer will ask for,
   exactly as the evaluator does (a join's plan, the multi-way join, the predicates of a LET), and
-  a Since or Until structure is embedded indexed at those masks when @{const ireq} lets it.  Keeping
+  a Since or Until structure is embedded indexed at those masks when @{text ireq} lets it.  Keeping
   an index costs at every insertion and deletion, which pays off only for a table that lives long
   compared to the rate at which it changes; by default, that is the window of a past operator whose
   interval is unbounded.  The choice affects only the speed: the embedding forgets to the same
