@@ -8,9 +8,9 @@ session VeriMon_CLI = MFODL_Monitor_Exec +
      decisions of MonPoly's front end; CLI_Code is the code export of the program verimon
      (src/verimon_code.ml)."
   options [document = false, timeout = 0]
+  sessions
+    MFODL_Frontend
   theories
-    Signature
-    Formula_Conv
     CLI_Options
     CLI_Output
     CLI

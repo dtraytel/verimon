@@ -1,7 +1,7 @@
 theory Optimized_Agg
   imports Monitor
-  Order_Statistic_Tree
-  Tree_List
+  "Monitor_DS.Order_Statistic_Tree"
+  "Monitor_DS.Tree_List"
 begin
 
 

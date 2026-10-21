@@ -1,8 +1,23 @@
 (*<*)
 theory Formula_Conv
-  imports Signature "MFODL_Parser.MFODL_Post"
+  imports "Log_Parser.Signature" "MFODL_Parser.MFODL_Post" "MFODL_Logic.Typing"
 begin
 (*>*)
+
+section \<open>Strings\<close>
+
+text \<open>The monitor's strings are @{typ string8}; @{text str8_of_string} converts the
+  characters of the formula and of the signature into one. The code implements it by OCaml's
+  strings of bytes (theory @{text CLI_Code}).\<close>
+
+definition str8_of_string :: "string \<Rightarrow> string8" where
+  "str8_of_string = Abs_string8"
+
+lemma Rep_str8_of_string[simp]: "Rep_string8 (str8_of_string s) = s"
+  by (simp add: str8_of_string_def Abs_string8_inverse)
+
+lemma str8_of_string_inject[simp]: "str8_of_string s = str8_of_string t \<longleftrightarrow> s = t"
+  by (metis Rep_str8_of_string)
 
 section \<open>From the parsed formula to the monitor's formula\<close>
 

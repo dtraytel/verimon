@@ -1,6 +1,6 @@
 (*<*)
 theory Release_Window
-  imports Frame_Aux Sliding_Window_Agg
+  imports Frame_Aux "Monitor_DS.Sliding_Window_Agg"
 begin
 (*>*)
 

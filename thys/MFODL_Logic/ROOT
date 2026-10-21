@@ -1,0 +1,20 @@
+chapter AFP
+
+session MFODL_Logic = MFOTL_Monitor_Devel +
+  description
+    "Metric first-order dynamic logic, independent of any monitoring algorithm: syntax and
+     semantics, typing, safety and monitorability, the rewritings that preserve the semantics,
+     VeriMon's preparation of a formula, and the specification a monitor has to meet."
+  theories
+    Regex
+    Formula
+    Frz_Locality
+    Error_Syntax
+    Error_Monad
+    Safety
+    Typing
+    Rewriting
+    Monitorable
+    Multiway
+    Specification
+    Preparation

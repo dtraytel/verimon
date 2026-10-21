@@ -16,3 +16,4 @@ session Log_Parser = "HOL-Library" +
     Log_Exec
     Log_Values
     Log_Code
+    Signature

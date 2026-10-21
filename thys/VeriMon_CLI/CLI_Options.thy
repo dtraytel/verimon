@@ -1,6 +1,6 @@
 (*<*)
 theory CLI_Options
-  imports Signature
+  imports "Log_Parser.Signature"
 begin
 (*>*)
 

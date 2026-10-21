@@ -1,0 +1,11 @@
+chapter AFP
+
+session MFODL_Frontend = MFODL_Logic +
+  description
+    "From the parsed formula and signature (sessions MFODL_Parser and Log_Parser) to the
+     logic's typed formulas."
+  sessions
+    Log_Parser
+    MFODL_Parser
+  theories
+    Formula_Conv

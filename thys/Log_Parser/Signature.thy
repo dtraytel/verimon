@@ -1,6 +1,6 @@
 (*<*)
 theory Signature
-  imports "MFODL_Monitor_Exec.Log_Monitor"
+  imports Log_Code
 begin
 (*>*)
 
@@ -22,19 +22,6 @@ text \<open>
 \<close>
 
 subsection \<open>Strings\<close>
-
-text \<open>The monitor's strings are @{typ string8}; @{text str8_of_string} converts the
-  characters of the formula and of the signature into one. The code implements it by OCaml's
-  strings of bytes (theory @{text CLI_Code}).\<close>
-
-definition str8_of_string :: "string \<Rightarrow> string8" where
-  "str8_of_string = Abs_string8"
-
-lemma Rep_str8_of_string[simp]: "Rep_string8 (str8_of_string s) = s"
-  by (simp add: str8_of_string_def Abs_string8_inverse)
-
-lemma str8_of_string_inject[simp]: "str8_of_string s = str8_of_string t \<longleftrightarrow> s = t"
-  by (metis Rep_str8_of_string)
 
 text \<open>The characters of a byte string, by the operations on byte strings that the code
   implements by OCaml's (@{theory Log_Parser.Log_Code}).\<close>

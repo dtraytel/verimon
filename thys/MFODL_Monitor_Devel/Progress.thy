@@ -1,6 +1,6 @@
 (*<*)
 theory Progress
-  imports Safety
+  imports "MFODL_Logic.Safety"
 begin
 (*>*)
 

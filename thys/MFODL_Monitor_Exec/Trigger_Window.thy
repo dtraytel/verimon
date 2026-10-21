@@ -1,6 +1,6 @@
 (*<*)
 theory Trigger_Window
-  imports Until_Gen Sliding_Window_Agg Release_Window
+  imports Until_Gen "Monitor_DS.Sliding_Window_Agg" Release_Window
 begin
 (*>*)
 

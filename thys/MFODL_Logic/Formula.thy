@@ -1,8 +1,8 @@
 (*<*)
 theory Formula
   imports
-    Event_Data
-    Preliminaries
+    "MFOTL_Monitor_Devel.Event_Data"
+    "MFOTL_Monitor_Devel.Preliminaries"
     Regex
     "MFOTL_Monitor_Devel.Abstract_Monitor"
     Containers.Set_Impl

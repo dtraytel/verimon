@@ -1,6 +1,6 @@
 (*<*)
 theory CLI
-  imports Formula_Conv CLI_Output "MFODL_Parser.MFODL_Parser"
+  imports "MFODL_Frontend.Formula_Conv" CLI_Output "MFODL_Parser.MFODL_Parser"
     "MFODL_Monitor_Exec.Log_Monitor_Online"
 begin
 (*>*)
@@ -14,9 +14,9 @@ text \<open>
   \<^enum> the arguments are parsed (@{const parse_command});
   \<^enum> the formula file is parsed by the verified parser (@{const parse_formula}, session
     @{text MFODL_Parser}), and negated with @{text "-negate"};
-  \<^enum> the signature file is read (@{const read_sig}, theory @{theory VeriMon_CLI.Signature});
+  \<^enum> the signature file is read (@{const read_sig}, theory @{theory Log_Parser.Signature});
   \<^enum> the formula is converted into the monitor's (@{const conv_formula}, theory
-    @{theory VeriMon_CLI.Formula_Conv}), and the signature into the monitor's (@{text lsig_of});
+    @{theory MFODL_Frontend.Formula_Conv}), and the signature into the monitor's (@{text lsig_of});
   \<^enum> the monitor is started (@{const vinit}, theory @{theory MFODL_Monitor_Exec.Log_Monitor}),
     which type checks the formula and prepares it as VeriMon does;
   \<^enum> the log is read in chunks (@{const vfeed_chunk} and @{const vfinish}), and the verdicts are

@@ -1,5 +1,5 @@
 theory Wf_Table
-  imports "Containers.Containers" "HOL-Library.Code_Target_Nat" "Optimized_Join" Cluster Mapping_Code
+  imports "Containers.Containers" "HOL-Library.Code_Target_Nat" Optimized_Join "Monitor_DS.Cluster" "Monitor_DS.Mapping_Code"
 begin
 
 section \<open>Tables that carry their columns\<close>
