@@ -1,6 +1,6 @@
 (*<*)
 theory Formula_Conv
-  imports "Log_Parser.Signature" "MFODL_Parser.MFODL_Post" "MFODL_Logic.Typing"
+  imports "MFODL_Logic.Typing" "Log_Parser.Signature" "MFODL_Parser.MFODL_Post"
 begin
 (*>*)
 
