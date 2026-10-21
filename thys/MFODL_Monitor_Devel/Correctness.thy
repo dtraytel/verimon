@@ -4566,7 +4566,7 @@ next
         list.rel_mono_strong[OF wf_l] wf_mbufn_add[OF wf_buf]
         list.rel_flip[THEN iffD1, OF list.rel_mono_strong, OF wf_l]
         list.rel_refl join_ok[unfolded Formula.sat.simps list.pred_set]
-        dest!: MAnds.IH[where E4=E, OF _ _ MAnds.prems(2), rotated]
+        dest!: MAnds.IH[where E6=E, OF _ _ MAnds.prems(2), rotated]
         elim!: wf_mbufn_take list_all2_appendI
         elim: mbufn_take_induct[OF _ wf_mbufn_add[OF wf_buf]])
 next
