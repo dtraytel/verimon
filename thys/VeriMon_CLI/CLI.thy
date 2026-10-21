@@ -546,7 +546,7 @@ proof -
     show ?thesis
       using O(1,4)[unfolded Mt_pnil[OF init'], unfolded M] by (simp add: v)
   qed
-  have wfss: "wf_vstate (c_mw conf) (c_filter conf) pf cf (concat (map Rep_bytes ss))
+  have wfss: "wf_vstate (c_index conf) (c_mw conf) (c_filter conf) pf cf (concat (map Rep_bytes ss))
       (pmap_\<Gamma> (\<lambda>D. D \<inter> {e. keep_spec (c_filter conf) \<phi> L (Rep_string8 (fst e))}) \<pi>)
       (snd (vfeed_chunks cf ss z))"
     if p: "stream_prefix (\<lambda>_. True) (sf pf) L (concat (map Rep_bytes ss)) = Some \<pi>" for ss \<pi>
@@ -578,7 +578,7 @@ proof -
       and p': "log_prefix (\<lambda>_. True) (sf pf) L fin (concat (map Rep_bytes ss)) = Some \<pi>'"
     for ss \<pi> \<pi>'
     using vfinish_online_log[OF wfss[OF p] p p', unfolded M] by simp
-  have wfk: "\<exists>\<pi>. wf_vstate (c_mw conf) (c_filter conf) pf cf (concat (map Rep_bytes ss)) \<pi>
+  have wfk: "\<exists>\<pi>. wf_vstate (c_index conf) (c_mw conf) (c_filter conf) pf cf (concat (map Rep_bytes ss)) \<pi>
       (snd (vfeed_chunks cf ss z))"
     if p: "stream_prefix (keep_spec (c_filter conf) \<phi> L) (sf pf) L (concat (map Rep_bytes ss)) \<noteq> None" for ss
   proof -
@@ -594,7 +594,7 @@ proof -
       and p': "stream_prefix (keep_spec (c_filter conf) \<phi> L) (sf pf) L (concat (map Rep_bytes ss) @ Rep_bytes c) = None"
     for ss c
   proof -
-    obtain \<pi> where wf: "wf_vstate (c_mw conf) (c_filter conf) pf cf (concat (map Rep_bytes ss)) \<pi>
+    obtain \<pi> where wf: "wf_vstate (c_index conf) (c_mw conf) (c_filter conf) pf cf (concat (map Rep_bytes ss)) \<pi>
         (snd (vfeed_chunks cf ss z))"
       using wfk[OF p] by blast
     obtain outs z' where s: "vfeed_chunk cf c (snd (vfeed_chunks cf ss z)) = (outs, z')"
