@@ -3,10 +3,10 @@ chapter AFP
 session VeriMon_CLI = MFODL_Monitor_Exec +
   description
     "The verified monitor with MonPoly's command line: the verified formula parser (session
-     MFODL_Parser), a verified reader of the signature, the conversion of the parsed formula into
-     the monitor's, and the monitor on the log (session MFODL_Monitor_Exec), composed with the
-     decisions of MonPoly's front end; CLI_Code is the code export of the program verimon
-     (src/verimon_code.ml)."
+     MFODL_Parser), the signature reader (session Log_Parser) and the conversion of the parsed
+     formula (session MFODL_Frontend), and the monitor on the log (session MFODL_Monitor_Exec),
+     composed with the decisions of MonPoly's front end; CLI_Code is the code export of the
+     program verimon (src/verimon_code.ml)."
   options [document = false, timeout = 0]
   sessions
     MFODL_Frontend
