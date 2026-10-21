@@ -15094,32 +15094,19 @@ let rec eabs
             aux12)
     | EPlain x -> x;;
 
+let rec iudux_emb d = IUDUX_u d;;
+
 let rec de_itab
   t = Abs_itab
         (t, mapping_empty (ccompare_list ccompare_bool)
               (of_phantom mapping_impl_list));;
 
-let rec iuw_emb
-  aux = (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
-          (nts, (win, (rest,
-                        (len, (bend,
-                                ((fst cc, de_itab (snd cc)),
-                                  mapa itab dn)))))));;
-
-let rec iudux_emb = function UDUX_win w -> IUDUX_win (iuw_emb w)
-                    | UDUX_gen v -> IUDUX_u (UDUX_gen v)
-                    | UDUX_wagg (v, va) -> IUDUX_u (UDUX_wagg (v, va));;
-
 let rec isw_emb
   aux = (let (t, (pend, (win, (c, s)))) = aux in
           (t, (pend, (win, (c, de_itab s)))));;
 
-let rec ims_emb
-  (t, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
-    (t, (gc, (msk, (dp, (di, (de_itab ti, (ii, (tui, (is, tus)))))))));;
-
 let rec iudsx_emb = function UDSX_win w -> IUDSX_win (isw_emb w)
-                    | UDSX_gen g -> IUDSX_gen (ims_emb g)
+                    | UDSX_gen v -> IUDSX_u (UDSX_gen v)
                     | UDSX_wagg (v, va, vb) -> IUDSX_u (UDSX_wagg (v, va, vb));;
 
 let rec eemb
@@ -16532,25 +16519,6 @@ let rec de_ieadd_new_ts_msauxa
                                  (fun _ -> de_eidx_add msk add idx_in),
                                 (tuple_ina, (idx_since, tuple_since))))))))));;
 
-let rec filter_cfi _B (_A1, _A2, _A3, _A4)
-  xa = Abs_comp_fun_idem
-         (fun a (m, y) ->
-           (match lookupa (_A2, _A3) m a with None -> (m, y)
-             | Some u ->
-               (if eq _B xa u
-                 then (delete (_A2, _A3) a m,
-                        sup_seta (_A1, _A2) y
-                          (insert (_A1, _A2) a (bot_set (_A1, _A2, _A4))))
-                 else (m, y))));;
-
-let rec filter_set _A (_B1, _B2, _B3, _B4, _B5)
-  (t, a) (m, y) =
-    (if finite (_B1, _B2, _B3) a
-      then set_fold_cfi (_B2, _B3) (filter_cfi _A (_B2, _B3, _B4, _B5) t) (m, y)
-             a
-      else failwith "upd_set: infinite"
-             (fun _ -> filter_set _A (_B1, _B2, _B3, _B4, _B5) (t, a) (m, y)));;
-
 let rec de_isub
   d a = Abs_itab
           (ed_minus (de_iset a) d,
@@ -16579,13 +16547,7 @@ let rec de_ieshift_end
          takedropWhile_queue (fun (ta, _) -> not (memR i (minus_nata nt ta)))
            data_in
          in
-       let (tuple_ina, del) =
-         fold (filter_set equal_nat
-                (finite_UNIV_list, (ceq_list ceq_event_data),
-                  (ccompare_list ccompare_event_data),
-                  (equal_list equal_event_data), set_impl_list))
-           discard (tuple_in, ed_bot)
-         in
+       let (tuple_ina, del) = de_fold_filter_set discard (tuple_in, ed_bot) in
         (t, (gc, (msk, (data_preva,
                          (data_ina,
                            (de_isub del table_in,
@@ -16984,10 +16946,21 @@ let rec de_iuw_ensure
                     (len, (bend,
                             ((fst cc, de_iensure msks (snd cc)), dn)))))));;
 
+let rec iuw_emb
+  aux = (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
+          (nts, (win, (rest,
+                        (len, (bend,
+                                ((fst cc, de_itab (snd cc)),
+                                  mapa itab dn)))))));;
+
 let rec iudux_ensure
   msks x1 = match msks, x1 with
     msks, IUDUX_win w -> IUDUX_win (de_iuw_ensure msks w)
-    | msks, IUDUX_u v -> IUDUX_u v;;
+    | msks, IUDUX_u (UDUX_win w) ->
+        (if null msks then IUDUX_u (UDUX_win w)
+          else IUDUX_win (de_iuw_ensure msks (iuw_emb w)))
+    | msks, IUDUX_u (UDUX_gen va) -> IUDUX_u (UDUX_gen va)
+    | msks, IUDUX_u (UDUX_wagg (va, vb)) -> IUDUX_u (UDUX_wagg (va, vb));;
 
 let rec de_iems_ensure
   msks (nt, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
@@ -16999,11 +16972,20 @@ let rec de_isw_ensure
     (let (t, (pend, (win, (c, s)))) = aux in
       (t, (pend, (win, (c, de_iensure msks s)))));;
 
+let rec ims_emb
+  (t, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
+    (t, (gc, (msk, (dp, (di, (de_itab ti, (ii, (tui, (is, tus)))))))));;
+
 let rec iudsx_ensure
   msks x1 = match msks, x1 with
     msks, IUDSX_win w -> IUDSX_win (de_isw_ensure msks w)
     | msks, IUDSX_gen g -> IUDSX_gen (de_iems_ensure msks g)
-    | msks, IUDSX_u v -> IUDSX_u v;;
+    | msks, IUDSX_u (UDSX_gen g) ->
+        (if null msks then IUDSX_u (UDSX_gen g)
+          else IUDSX_gen (de_iems_ensure msks (ims_emb g)))
+    | msks, IUDSX_u (UDSX_win va) -> IUDSX_u (UDSX_win va)
+    | msks, IUDSX_u (UDSX_wagg (va, vb, vc)) ->
+        IUDSX_u (UDSX_wagg (va, vb, vc));;
 
 let rec de_iprobe_l
   p rk m b =
