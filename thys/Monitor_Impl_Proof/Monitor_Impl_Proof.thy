@@ -4,6 +4,11 @@ theory Monitor_Impl_Proof
 begin
 (*>*)
 
+text \<open>The proof theories of the structures do not see @{text Monitor_Impl}'s deletion of
+  @{thm [source] Let_def} from the simplifier; merging them with it would bring it back.\<close>
+
+declare Let_def[simp del]
+
 
 lemma meprev_next: "meprev_next I xs ts = (zs, xs', ts') \<Longrightarrow> mprev_next I (Rep_mbuf_t xs) (Rep_mbuf_t ts) =
   (zs, Rep_mbuf_t xs', Rep_mbuf_t ts')"
