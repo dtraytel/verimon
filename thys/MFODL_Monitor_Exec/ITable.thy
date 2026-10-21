@@ -161,19 +161,18 @@ lemma iset_idel[simp]: "iset (idel x A) = Set.remove x (iset A)"
 text \<open>A table without indices, which is most tables, is updated without visiting its (empty)
   map of indices.\<close>
 
-lemma map_values_is_empty: "Mapping.is_empty m \<Longrightarrow> Mapping.map_values f m = m"
-  by (rule mapping_eqI)
-    (auto simp: Mapping.lookup_map_values Mapping.is_empty_def Mapping.keys_dom_lookup split: option.splits)
+lemma map_values_no_keys: "Mapping.keys m = {} \<Longrightarrow> Mapping.map_values f m = m"
+  by (rule mapping_eqI) (auto simp: Mapping.lookup_map_values Mapping.keys_dom_lookup split: option.splits)
 
 lemma Rep_itab_iins_code[code abstract]:
-  "Rep_itab (iins x A) = (Set.insert x (iset A), if Mapping.is_empty (iidxs A) then iidxs A
+  "Rep_itab (iins x A) = (Set.insert x (iset A), if Mapping.keys (iidxs A) = {} then iidxs A
      else Mapping.map_values (\<lambda>msk m. eidx_add1 msk x m) (iidxs A))"
-  by (simp add: Rep_itab_iins map_values_is_empty)
+  by (simp add: Rep_itab_iins map_values_no_keys)
 
 lemma Rep_itab_idel_code[code abstract]:
-  "Rep_itab (idel x A) = (Set.remove x (iset A), if Mapping.is_empty (iidxs A) then iidxs A
+  "Rep_itab (idel x A) = (Set.remove x (iset A), if Mapping.keys (iidxs A) = {} then iidxs A
      else Mapping.map_values (\<lambda>msk m. eidx_del1 msk x m) (iidxs A))"
-  by (simp add: Rep_itab_idel map_values_is_empty)
+  by (simp add: Rep_itab_idel map_values_no_keys)
 subsection \<open>Union\<close>
 
 text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>
