@@ -535,6 +535,9 @@ next
   show ?case
     unfolding e xs \<phi>' by (simp add: comp_def)
 next
+  case (27 rq j ts db x)
+  then show ?case by (cases "eeval j ts (dabs db) x") (auto simp: comp_def)
+next
   case 20
   then show ?case by (intro ieval_fallback) (simp only: ieval.simps)
 next
