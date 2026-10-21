@@ -137,6 +137,7 @@ module Verimon : sig
   type event_data
   type sty
   type int = Int_of_integer of Z.t
+  type ipolicy
   type 'a config_ext
   type ('a, 'b) sum
   type 'a emstate_ext
@@ -8356,10 +8357,13 @@ let equal_irel = ({equal = equal_irela} : irel equal);;
 
 type int = Int_of_integer of Z.t;;
 
+type ipolicy = IxNone | IxUnbounded | IxAll;;
+
 type 'a config_ext =
   Config_ext of
     char list * char list * char list * bool * bool * bool * bool * bool *
-      bool * bool * bool * bool * bool * bool * bool * bool * int * int * 'a;;
+      ipolicy * bool * bool * bool * bool * bool * bool * bool * bool * int *
+      int * 'a;;
 
 type 'a dq = Dq of 'a list * 'a list * nat * nat;;
 
@@ -15257,70 +15261,78 @@ let rec preq
 
 let rec bounded x = snd (snd (rep_I x));;
 
-let rec ireq args rq = (if bounded (args_ivl args) then [] else rq);;
+let rec ireq
+  x0 args rq = match x0, args, rq with IxNone, args, rq -> []
+    | IxUnbounded, args, rq -> (if bounded (args_ivl args) then [] else rq)
+    | IxAll, args, rq -> rq;;
 
 let rec eemb
-  rq x1 = match rq, x1 with rq, EFail -> EFail
-    | rq, ERel rel -> ERel rel
-    | rq, EPredS (e1, a1) -> EPredS (e1, a1)
-    | rq, EPredM (e2, a2, tms, cs) -> EPredM (e2, a2, tms, cs)
-    | rq, EAndRel (phi, conf) -> EAndRel (eemb [] phi, conf)
-    | rq, ENeg phi -> ENeg (eemb [] phi)
-    | rq, EExists (phi, b) -> EExists (eemb [] phi, b)
-    | rq, EAgg (g0, omega, f, k, n, phi) ->
-        EAgg (g0, omega, f, k, n, eemb [] phi)
-    | rq, EOr (phi, psi, buf) -> EOr (eemb [] phi, eemb [] psi, eb2 buf)
-    | rq, EAnd (pl, phi, pos, psi, buf) ->
-        EAnd (pl, eemb (jreq_l pl pos) phi, pos, eemb (jreq_r pl pos) psi,
+  ix rq x2 = match ix, rq, x2 with ix, rq, EFail -> EFail
+    | ix, rq, ERel rel -> ERel rel
+    | ix, rq, EPredS (e1, a1) -> EPredS (e1, a1)
+    | ix, rq, EPredM (e2, a2, tms, cs) -> EPredM (e2, a2, tms, cs)
+    | ix, rq, EAndRel (phi, conf) -> EAndRel (eemb ix [] phi, conf)
+    | ix, rq, ENeg phi -> ENeg (eemb ix [] phi)
+    | ix, rq, EExists (phi, b) -> EExists (eemb ix [] phi, b)
+    | ix, rq, EAgg (g0, omega, f, k, n, phi) ->
+        EAgg (g0, omega, f, k, n, eemb ix [] phi)
+    | ix, rq, EOr (phi, psi, buf) ->
+        EOr (eemb ix [] phi, eemb ix [] psi, eb2 buf)
+    | ix, rq, EAnd (pl, phi, pos, psi, buf) ->
+        EAnd (pl, eemb ix (jreq_l pl pos) phi, pos, eemb ix (jreq_r pl pos) psi,
                eb2 buf)
-    | rq, EPrev (i1, phi, fst1, pbuf, nts1) ->
-        EPrev (i1, eemb [] phi, fst1, pbuf, nts1)
-    | rq, ENext (i2, phi, fst2, nts2) -> ENext (i2, eemb [] phi, fst2, nts2)
-    | rq, EAnds (ps, ns, ld, dbuf) ->
+    | ix, rq, EPrev (i1, phi, fst1, pbuf, nts1) ->
+        EPrev (i1, eemb ix [] phi, fst1, pbuf, nts1)
+    | ix, rq, ENext (i2, phi, fst2, nts2) ->
+        ENext (i2, eemb ix [] phi, fst2, nts2)
+    | ix, rq, EAnds (ps, ns, ld, dbuf) ->
         EAnds (ps, ns,
-                mapa (fun (a, b) -> eemb a b)
+                mapa (fun (a, b) -> eemb ix a b)
                   (zip (eands_req ps (size_lista ld)) ld),
                 ebn dbuf)
-    | rq, ESince (dags1, phi, psi, sbuf, aux1) ->
+    | ix, rq, ESince (dags1, phi, psi, sbuf, aux1) ->
         ESince
-          (dags1, eemb [] phi, eemb [] psi, sbuf,
-            iudsx_emb (ireq dags1 rq) aux1)
-    | rq, EUntil (dags2, msk2, phi, psi, ubuf, nts3, t3, aux3) ->
+          (dags1, eemb ix [] phi, eemb ix [] psi, sbuf,
+            iudsx_emb (ireq ix dags1 rq) aux1)
+    | ix, rq, EUntil (dags2, msk2, phi, psi, ubuf, nts3, t3, aux3) ->
         EUntil
-          (dags2, msk2, eemb [] phi, eemb [] psi, ubuf, nts3, t3,
-            iudux_emb (ireq dags2 rq) aux3)
-    | rq, EAndAssign (p4, trm, phi) -> EAndAssign (p4, trm, eemb [] phi)
-    | rq, ETP (mt5, i5) -> ETP (mt5, i5)
-    | rq, ETS mt6 -> ETS mt6
-    | rq, ELet (p7, m7, phi, psi) ->
-        ELet (p7, m7, eemb (preq (p7, m7) psi) phi, eemb [] psi)
-    | rq, EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13, g13,
-                 h13, i13, j13, k13, l13, chi_2, n13, o13, chi_3, chi_4)
+          (dags2, msk2, eemb ix [] phi, eemb ix [] psi, ubuf, nts3, t3,
+            iudux_emb (ireq ix dags2 rq) aux3)
+    | ix, rq, EAndAssign (p4, trm, phi) -> EAndAssign (p4, trm, eemb ix [] phi)
+    | ix, rq, ETP (mt5, i5) -> ETP (mt5, i5)
+    | ix, rq, ETS mt6 -> ETS mt6
+    | ix, rq, ELet (p7, m7, phi, psi) ->
+        ELet (p7, m7, eemb ix (preq (p7, m7) psi) phi, eemb ix [] psi)
+    | ix, rq,
+        EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13, g13, h13,
+               i13, j13, k13, l13, chi_2, n13, o13, chi_3, chi_4)
         -> EPlain
              (EFrz (p13, m13, phi, psi, a13, b13, c13, d13, chi_1, e13, f13,
                      g13, h13, i13, j13, k13, l13, chi_2, n13, o13, chi_3,
                      chi_4))
-    | rq, ELetPast (p14, m14, phi, psi, i14, buf14) ->
+    | ix, rq, ELetPast (p14, m14, phi, psi, i14, buf14) ->
         EPlain (ELetPast (p14, m14, phi, psi, i14, buf14))
-    | rq, ETrigger (dags8, pls8, phi, psi, tbuf8, nts8, aux8) ->
-        ETrigger (dags8, pls8, eemb [] phi, eemb [] psi, tbuf8, nts8, aux8)
-    | rq, ERelease (dags9, msk9, phi, psi, rbuf, nts9, t9, aux9) ->
-        ERelease (dags9, msk9, eemb [] phi, eemb [] psi, rbuf, nts9, t9, aux9)
-    | rq, EAndTrigger
-            (pl10, alpha, abuf, dags10, phi, psi, tbuf10, nts10, aux10)
+    | ix, rq, ETrigger (dags8, pls8, phi, psi, tbuf8, nts8, aux8) ->
+        ETrigger
+          (dags8, pls8, eemb ix [] phi, eemb ix [] psi, tbuf8, nts8, aux8)
+    | ix, rq, ERelease (dags9, msk9, phi, psi, rbuf, nts9, t9, aux9) ->
+        ERelease
+          (dags9, msk9, eemb ix [] phi, eemb ix [] psi, rbuf, nts9, t9, aux9)
+    | ix, rq,
+        EAndTrigger (pl10, alpha, abuf, dags10, phi, psi, tbuf10, nts10, aux10)
         -> EAndTrigger
-             (pl10, eemb [] alpha, abuf, dags10, eemb [] phi, eemb [] psi,
-               tbuf10, nts10, aux10)
-    | rq, EMatchP (m11, i11, mr11, mrs11, pls11, ld11, nbuf11, nts11, aux11) ->
-        EMatchP
-          (m11, i11, mr11, mrs11, pls11, mapa (eemb []) ld11, nbuf11, nts11,
-            aux11)
-    | rq, EMatchF
-            (m12, i12, mr12, mrs12, pls12, ld12, nbuf12, nts12, t12, aux12)
+             (pl10, eemb ix [] alpha, abuf, dags10, eemb ix [] phi,
+               eemb ix [] psi, tbuf10, nts10, aux10)
+    | ix, rq, EMatchP (m11, i11, mr11, mrs11, pls11, ld11, nbuf11, nts11, aux11)
+        -> EMatchP
+             (m11, i11, mr11, mrs11, pls11, mapa (eemb ix []) ld11, nbuf11,
+               nts11, aux11)
+    | ix, rq,
+        EMatchF (m12, i12, mr12, mrs12, pls12, ld12, nbuf12, nts12, t12, aux12)
         -> EMatchF
-             (m12, i12, mr12, mrs12, pls12, mapa (eemb []) ld12, nbuf12, nts12,
-               t12, aux12)
-    | rq, EPlain u -> EPlain (EPlain u);;
+             (m12, i12, mr12, mrs12, pls12, mapa (eemb ix []) ld12, nbuf12,
+               nts12, t12, aux12)
+    | ix, rq, EPlain u -> EPlain (EPlain u);;
 
 let rec funpow
   n f = (if equal_nata n zero_nata then id
@@ -17306,13 +17318,13 @@ let rec ieval
     | rq, j, ts, db,
         EFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
                po, ng, lv, rho_L, sx, cS, rho_S, rho_E)
-        -> map_prod (mapa itab) (eemb [])
+        -> map_prod (mapa itab) (eemb IxNone [])
              (eeval j ts (dabs db)
                (eabs (EFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w,
                              pR, tq, rb, d, po, ng, lv, rho_L, sx, cS, rho_S,
                              rho_E))))
     | rq, j, ts, db, ELetPast (p, m, phi, psi, i, buf) ->
-        map_prod (mapa itab) (eemb [])
+        map_prod (mapa itab) (eemb IxNone [])
           (eeval j ts (dabs db) (eabs (ELetPast (p, m, phi, psi, i, buf))))
     | rq, j, ts, db, ETrigger (dags, pl, phi, psi, dbuf, nts, daux) ->
         (let (xs, phia) = ieval [] j ts db phi in
@@ -17453,14 +17465,14 @@ let rec bind x0 f = match x0, f with None, f -> None
 
 let rec c_version
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_version;;
 
 let rec c_formula
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_formula;;
@@ -56735,6 +56747,26 @@ let opt_table : (char list * (okind * char list)) list
           tab @ ['\078'; '\111'; '\032'; '\109'; '\117'; '\108'; '\116'; '\105';
                   '\045'; '\119'; '\097'; '\121'; '\032'; '\106'; '\111';
                   '\105'; '\110']));
+      (['\045'; '\105'; '\110'; '\100'; '\101'; '\120'],
+        (OSym [['\110'; '\111'; '\110'; '\101'];
+                ['\117'; '\110'; '\098'; '\111'; '\117'; '\110'; '\100'; '\101';
+                  '\100'];
+                ['\097'; '\108'; '\108']],
+          tab @ ['\087'; '\104'; '\105'; '\099'; '\104'; '\032'; '\083'; '\105';
+                  '\110'; '\099'; '\101'; '\032'; '\097'; '\110'; '\100';
+                  '\032'; '\085'; '\110'; '\116'; '\105'; '\108'; '\032';
+                  '\119'; '\105'; '\110'; '\100'; '\111'; '\119'; '\115';
+                  '\032'; '\107'; '\101'; '\101'; '\112'; '\032'; '\105';
+                  '\110'; '\100'; '\101'; '\120'; '\101'; '\100'; '\032';
+                  '\116'; '\097'; '\098'; '\108'; '\101'; '\115'; '\032';
+                  '\102'; '\111'; '\114'; '\032'; '\116'; '\104'; '\101';
+                  '\032'; '\106'; '\111'; '\105'; '\110'; '\115'; '\032';
+                  '\116'; '\104'; '\097'; '\116'; '\032'; '\112'; '\114';
+                  '\111'; '\098'; '\101'; '\032'; '\116'; '\104'; '\101';
+                  '\109'; '\032'; '\040'; '\100'; '\101'; '\102'; '\097';
+                  '\117'; '\108'; '\116'; '\058'; '\032'; '\117'; '\110';
+                  '\098'; '\111'; '\117'; '\110'; '\100'; '\101'; '\100';
+                  '\041']));
       (['\045'; '\103'; '\101'; '\110'; '\101'; '\114'; '\105'; '\099'; '\095';
          '\106'; '\111'; '\105'; '\110'],
         (OFlag,
@@ -57065,6 +57097,17 @@ b @ '\039' ::
                   '\058'; '\032'] @
                   concat (between ['\032'] l)))))));;
 
+let rec oindex
+  os = (match
+         map_of (equal_list equal_char) os
+           ['\045'; '\105'; '\110'; '\100'; '\101'; '\120']
+         with None -> IxUnbounded
+         | Some s ->
+           (if equal_lista equal_char s ['\110'; '\111'; '\110'; '\101']
+             then IxNone
+             else (if equal_lista equal_char s ['\097'; '\108'; '\108']
+                    then IxAll else IxUnbounded)));;
+
 let rec oflag
   os k =
     member ((ceq_list ceq_char), (ccompare_list ccompare_char)) k
@@ -57286,6 +57329,7 @@ let rec config_of
            oflag os ['\045'; '\099'; '\104'; '\101'; '\099'; '\107'],
            not (oflag os ['\045'; '\110'; '\111'; '\095'; '\114'; '\119']),
            not (oflag os ['\045'; '\110'; '\111'; '\095'; '\109'; '\119']),
+           oindex os,
            oflag os ['\045'; '\115'; '\105'; '\103'; '\111'; '\117'; '\116'],
            oflag os ['\045'; '\117'; '\110'; '\105'; '\120'],
            oflag os ['\045'; '\109'; '\101'; '\109'],
@@ -57339,7 +57383,7 @@ let rec parse_command
 
 let rec c_sig
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_sig;;
@@ -57800,35 +57844,42 @@ let rec read_sig s = sig_decls (sig_tokens s) base_schema;;
 
 let rec c_newlastts
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_newlastts;;
 
 let rec c_verbose
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_verbose;;
 
 let rec c_sigout
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_sigout;;
 
 let rec c_filter
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_filter;;
 
+let rec c_index
+  (Config_ext
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
+      c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
+      c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
+    = c_index;;
+
 let rec c_check
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_check;;
@@ -58715,14 +58766,14 @@ let rec conv_formula
 
 let rec c_rw
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_rw;;
 
 let rec c_mw
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_mw;;
@@ -60451,8 +60502,8 @@ let rec mstate_i
 let rec eof_state
   n ks cs st =
     Emstate_ext
-      (mstate_i st, mstate_j st, eemb [] (eof n ks cs (mstate_m st)), n, cs,
-        mbuf_t_append mbuf_t_empty (mstate_t st), ());;
+      (mstate_i st, mstate_j st, eemb IxNone [] (eof n ks cs (mstate_m st)), n,
+        cs, mbuf_t_append mbuf_t_empty (mstate_t st), ());;
 
 let rec eminit_safe
   phi = eof_state (nfv phi) (fvi_list zero_nata phi)
@@ -62958,11 +63009,23 @@ let rec convert_multiway
     | TP t -> TP t
     | TS t -> TS t;;
 
+let rec emstate_m_update
+  emstate_ma
+    (Emstate_ext
+      (emstate_i, emstate_j, emstate_m, emstate_n, emstate_cs, emstate_t, more))
+    = Emstate_ext
+        (emstate_i, emstate_j, emstate_ma emstate_m, emstate_n, emstate_cs,
+          emstate_t, more);;
+
+let rec eindex
+  ix st = emstate_m_update (fun _ -> eemb ix [] (eabs (emstate_m st))) st;;
+
 let rec eminit_verimon
-  mw rw siga phi =
+  ix mw rw siga phi =
     map_sum id
       (fun psi ->
-        eminit_push (if mw then convert_multiway (share_opt psi) else psi))
+        eindex ix
+          (eminit_push (if mw then convert_multiway (share_opt psi) else psi)))
       (prepare_verimon rw siga phi);;
 
 let rec vskip_fun
@@ -63070,9 +63133,9 @@ let einit : Z.t * (elstate * (string fpstate option * Z.t))
   = (Z.zero, (E_INIT, (Some F_INIT, Z.zero)));;
 
 let rec vinit
-  mw rw filt s pf phi =
+  ix mw rw filt s pf phi =
     (if not (wf_formula phi) then Inl VI_WF
-      else (match eminit_verimon mw rw (lsig_tsig s) phi
+      else (match eminit_verimon ix mw rw (lsig_tsig s) phi
              with Inl e -> Inl (VI_PREPARE e)
              | Inr ust ->
                (let n = efail_nodes (eabs (emstate_m ust)) in
@@ -63332,7 +63395,8 @@ let rec start_monitor
                     with Inl e -> Done ([], prep_msg e, Nat (Z.of_int 2))
                     | Inr f ->
                       (match
-                        vinit (c_mw conf) (c_rw conf) (c_filter conf) l pf phi
+                        vinit (c_index conf) (c_mw conf) (c_rw conf)
+                          (c_filter conf) l pf phi
                         with Inl VI_WF ->
                           Done ([], prep_msg "the formula is not well-formed",
                                  Nat (Z.of_int 2))
@@ -63401,7 +63465,7 @@ id e; id "\010"]
 
 let rec c_negate
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_negate;;
@@ -65332,14 +65396,14 @@ let rec tuple_fold
 
 let rec c_stop_first
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_stop_first;;
 
 let rec c_unix
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_unix;;
@@ -65404,35 +65468,35 @@ let rec vfeed_chunk
 
 let rec c_log
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_log;;
 
 let rec c_mem
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_mem;;
 
 let rec c_gc_minor_heap
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_gc_minor_heap;;
 
 let rec c_ignore_errors
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_ignore_errors;;
 
 let rec c_gc_space_overhead
   (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw, c_index,
       c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
       c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
     = c_gc_space_overhead;;
