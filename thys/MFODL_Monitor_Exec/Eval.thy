@@ -45,45 +45,46 @@ text \<open>
   makes the executable evaluator exportable on its own.
 \<close>
 
-datatype ('b2, 'bn, 'ba, 'bs) geformula =
+datatype ('b2, 'bn, 'ba, 'bs, 'p) geformula =
     EFail
   | ERel "event_data table"
   | EPredS Formula.name nat
   | EPredM Formula.name nat "Formula.trm list" cols
-  | EAndRel "('b2, 'bn, 'ba, 'bs) geformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
-  | ENeg "('b2, 'bn, 'ba, 'bs) geformula"
-  | EExists "('b2, 'bn, 'ba, 'bs) geformula" bool
-  | EAgg bool "ty Formula.agg_op" Formula.trm nat nat "('b2, 'bn, 'ba, 'bs) geformula"
-  | EOr "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" 'b2
-  | EAnd ejoin_plan "('b2, 'bn, 'ba, 'bs) geformula" bool "('b2, 'bn, 'ba, 'bs) geformula" 'b2
-  | EPrev \<I> "('b2, 'bn, 'ba, 'bs) geformula" bool "event_data table mbuf_t" "ts mbuf_t"
-  | ENext \<I> "('b2, 'bn, 'ba, 'bs) geformula" bool "ts mbuf_t"
-  | EAnds "ejoin_plan list" "ejoin_plan list" "('b2, 'bn, 'ba, 'bs) geformula list" 'bn
-  | ESince args "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" uebuf2S 'bs
-  | EUntil args "bool list" "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" uebuf2 "ts mbuf_t" ts uduaux_x
-  | EAndAssign nat Formula.trm "('b2, 'bn, 'ba, 'bs) geformula"
+  | EAndRel "('b2, 'bn, 'ba, 'bs, 'p) geformula" "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
+  | ENeg "('b2, 'bn, 'ba, 'bs, 'p) geformula"
+  | EExists "('b2, 'bn, 'ba, 'bs, 'p) geformula" bool
+  | EAgg bool "ty Formula.agg_op" Formula.trm nat nat "('b2, 'bn, 'ba, 'bs, 'p) geformula"
+  | EOr "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" 'b2
+  | EAnd ejoin_plan "('b2, 'bn, 'ba, 'bs, 'p) geformula" bool "('b2, 'bn, 'ba, 'bs, 'p) geformula" 'b2
+  | EPrev \<I> "('b2, 'bn, 'ba, 'bs, 'p) geformula" bool "event_data table mbuf_t" "ts mbuf_t"
+  | ENext \<I> "('b2, 'bn, 'ba, 'bs, 'p) geformula" bool "ts mbuf_t"
+  | EAnds "ejoin_plan list" "ejoin_plan list" "('b2, 'bn, 'ba, 'bs, 'p) geformula list" 'bn
+  | ESince args "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" uebuf2S 'bs
+  | EUntil args "bool list" "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" uebuf2 "ts mbuf_t" ts uduaux_x
+  | EAndAssign nat Formula.trm "('b2, 'bn, 'ba, 'bs, 'p) geformula"
   | ETP mtrm nat
   | ETS mtrm
-  | ELet Formula.name nat "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula"
-  | EFrz Formula.name nat "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" nat nat nat "event_data table list"
-      "('b2, 'bn, 'ba, 'bs) geformula" nat nat "ts list" "event_data table list" enat bool bool "nat option" "('b2, 'bn, 'ba, 'bs) geformula"
-      "(event_data list set, event_data table) frz_sep" "nat list" "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula"
-  | ELetPast Formula.name nat "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" nat "event_data table option"
-  | ETrigger args "nat option list" "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" uebuf2 "ts mbuf_t" "event_data twaux"
-  | ERelease args "bool list" "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" uebuf2 "ts mbuf_t" ts "event_data eraux"
-  | EAndTrigger ejoin_plan "('b2, 'bn, 'ba, 'bs) geformula" 'ba
-      args "('b2, 'bn, 'ba, 'bs) geformula" "('b2, 'bn, 'ba, 'bs) geformula" uebuf2 "ts mbuf_t" "event_data twaux"
-  | EMatchP nat \<I> mregex "mregex list" "nat option list list" "('b2, 'bn, 'ba, 'bs) geformula list"
+  | ELet Formula.name nat "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula"
+  | EFrz Formula.name nat "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" nat nat nat "event_data table list"
+      "('b2, 'bn, 'ba, 'bs, 'p) geformula" nat nat "ts list" "event_data table list" enat bool bool "nat option" "('b2, 'bn, 'ba, 'bs, 'p) geformula"
+      "(event_data list set, event_data table) frz_sep" "nat list" "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula"
+  | ELetPast Formula.name nat "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" nat "event_data table option"
+  | ETrigger args "nat option list" "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" uebuf2 "ts mbuf_t" "event_data twaux"
+  | ERelease args "bool list" "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" uebuf2 "ts mbuf_t" ts "event_data eraux"
+  | EAndTrigger ejoin_plan "('b2, 'bn, 'ba, 'bs, 'p) geformula" 'ba
+      args "('b2, 'bn, 'ba, 'bs, 'p) geformula" "('b2, 'bn, 'ba, 'bs, 'p) geformula" uebuf2 "ts mbuf_t" "event_data twaux"
+  | EMatchP nat \<I> mregex "mregex list" "nat option list list" "('b2, 'bn, 'ba, 'bs, 'p) geformula list"
       uebufn "ts mbuf_t" "event_data mr\<delta>aux"
-  | EMatchF nat \<I> mregex "mregex list" "nat option list list" "('b2, 'bn, 'ba, 'bs) geformula list"
+  | EMatchF nat \<I> mregex "mregex list" "nat option list list" "('b2, 'bn, 'ba, 'bs, 'p) geformula list"
       uebufn "ts mbuf_t" ts "event_data ml\<delta>aux"
+  | EPlain 'p
 
 text \<open>The executable formula over plain tables.  The buffers of the unions and the joins, whose
   tables a consumer may want with indices, have the types @{typ 'b2}, @{typ 'bn} and @{typ 'ba};
   as type variables they do not count towards the size of a formula, which the evaluation of
   @{text "LET PAST"} compares before and after a step.\<close>
 
-type_synonym eformula = "(uebuf2, uebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, udsaux_x) geformula"
+type_synonym eformula = "(uebuf2, uebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, udsaux_x, unit) geformula"
 
 text \<open>The compiler is total on the kernel's formulas, so it answers @{const EFail} at a node it
   does not cover rather than failing.  Its caller checks that the compiled formula has none: this
@@ -246,6 +247,7 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             (mebuf2_add xs ys buf) t (nts @@ ts);
           (zs, aux'') = eraux_eval (args_ivl dags) nt aux'
       in (zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
+| "eeval j ts db (EPlain x) = ([], EPlain x)"
   by pat_completeness (simp_all only: prod.inject geformula.inject geformula.distinct simp_thms)
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is

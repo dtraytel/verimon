@@ -20,7 +20,7 @@ type_synonym itable = "event_data itab"
 type_synonym iebuf2 = "itable mbuf_t \<times> itable mbuf_t"
 type_synonym iebufn = "itable mbuf_t list"
 type_synonym ieformula =
-  "(iebuf2, iebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, iudsaux_x) geformula"
+  "(iebuf2, iebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, iudsaux_x, eformula) geformula"
 
 lift_definition mbuf_t_map :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a mbuf_t \<Rightarrow> 'b mbuf_t" is map .
 
@@ -51,14 +51,69 @@ definition ebn :: "uebufn \<Rightarrow> iebufn" where
 lemma ibn_ebn[simp]: "ibn (ebn b) = b"
   by (simp add: ibn_def ebn_def comp_def map_idI)
 
-definition eabs :: "ieformula \<Rightarrow> eformula" where
-  "eabs = map_geformula ib2 ibn id riu"
+text \<open>Forgetting the indices, and adding none.  A subformula the indexed evaluator does not
+  run itself is kept in the plain form (@{text EPlain}): the freeze and the recursive let.\<close>
 
-definition eemb :: "eformula \<Rightarrow> ieformula" where
-  "eemb = map_geformula eb2 ebn id iudsx_emb"
+fun eabs :: "ieformula \<Rightarrow> eformula" where
+  "eabs EFail = EFail"
+| "eabs (ERel rel) = ERel rel"
+| "eabs (EPredS e1 a1) = EPredS e1 a1"
+| "eabs (EPredM e2 a2 tms cs) = EPredM e2 a2 tms cs"
+| "eabs (EAndRel \<phi> conf) = EAndRel (eabs \<phi>) conf"
+| "eabs (ENeg \<phi>) = ENeg (eabs \<phi>)"
+| "eabs (EExists \<phi> b) = EExists (eabs \<phi>) b"
+| "eabs (EAgg g0 \<omega> f k n \<phi>) = EAgg g0 \<omega> f k n (eabs \<phi>)"
+| "eabs (EOr \<phi> \<psi> buf) = EOr (eabs \<phi>) (eabs \<psi>) (ib2 buf)"
+| "eabs (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eabs \<phi>) pos (eabs \<psi>) (ib2 buf)"
+| "eabs (EPrev I1 \<phi> fst1 pbuf nts1) = EPrev I1 (eabs \<phi>) fst1 pbuf nts1"
+| "eabs (ENext I2 \<phi> fst2 nts2) = ENext I2 (eabs \<phi>) fst2 nts2"
+| "eabs (EAnds ps ns Ld dbuf) = EAnds ps ns (map eabs Ld) (ibn dbuf)"
+| "eabs (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eabs \<phi>) (eabs \<psi>) sbuf (riu aux1)"
+| "eabs (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eabs \<phi>) (eabs \<psi>) ubuf nts3 t3 aux3"
+| "eabs (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eabs \<phi>)"
+| "eabs (ETP mt5 i5) = ETP mt5 i5"
+| "eabs (ETS mt6) = ETS mt6"
+| "eabs (ELet p7 m7 \<phi> \<psi>) = ELet p7 m7 (eabs \<phi>) (eabs \<psi>)"
+| "eabs (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4) = EFrz p13 m13 (eabs \<phi>) (eabs \<psi>) a13 b13 c13 d13 (eabs \<chi>1) e13 f13 g13 h13 i13 j13 k13 l13 (eabs \<chi>2) n13 o13 (eabs \<chi>3) (eabs \<chi>4)"
+| "eabs (ELetPast p14 m14 \<phi> \<psi> i14 buf14) = ELetPast p14 m14 (eabs \<phi>) (eabs \<psi>) i14 buf14"
+| "eabs (ETrigger dags8 pls8 \<phi> \<psi> tbuf8 nts8 aux8) = ETrigger dags8 pls8 (eabs \<phi>) (eabs \<psi>) tbuf8 nts8 aux8"
+| "eabs (ERelease dags9 msk9 \<phi> \<psi> rbuf nts9 t9 aux9) = ERelease dags9 msk9 (eabs \<phi>) (eabs \<psi>) rbuf nts9 t9 aux9"
+| "eabs (EAndTrigger pl10 \<alpha> abuf dags10 \<phi> \<psi> tbuf10 nts10 aux10) = EAndTrigger pl10 (eabs \<alpha>) abuf dags10 (eabs \<phi>) (eabs \<psi>) tbuf10 nts10 aux10"
+| "eabs (EMatchP m11 I11 mr11 mrs11 pls11 Ld11 nbuf11 nts11 aux11) = EMatchP m11 I11 mr11 mrs11 pls11 (map eabs Ld11) nbuf11 nts11 aux11"
+| "eabs (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) = EMatchF m12 I12 mr12 mrs12 pls12 (map eabs Ld12) nbuf12 nts12 t12 aux12"
+| "eabs (EPlain x) = x"
+
+fun eemb :: "eformula \<Rightarrow> ieformula" where
+  "eemb EFail = EFail"
+| "eemb (ERel rel) = ERel rel"
+| "eemb (EPredS e1 a1) = EPredS e1 a1"
+| "eemb (EPredM e2 a2 tms cs) = EPredM e2 a2 tms cs"
+| "eemb (EAndRel \<phi> conf) = EAndRel (eemb \<phi>) conf"
+| "eemb (ENeg \<phi>) = ENeg (eemb \<phi>)"
+| "eemb (EExists \<phi> b) = EExists (eemb \<phi>) b"
+| "eemb (EAgg g0 \<omega> f k n \<phi>) = EAgg g0 \<omega> f k n (eemb \<phi>)"
+| "eemb (EOr \<phi> \<psi> buf) = EOr (eemb \<phi>) (eemb \<psi>) (eb2 buf)"
+| "eemb (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eemb \<phi>) pos (eemb \<psi>) (eb2 buf)"
+| "eemb (EPrev I1 \<phi> fst1 pbuf nts1) = EPrev I1 (eemb \<phi>) fst1 pbuf nts1"
+| "eemb (ENext I2 \<phi> fst2 nts2) = ENext I2 (eemb \<phi>) fst2 nts2"
+| "eemb (EAnds ps ns Ld dbuf) = EAnds ps ns (map eemb Ld) (ebn dbuf)"
+| "eemb (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eemb \<phi>) (eemb \<psi>) sbuf (iudsx_emb aux1)"
+| "eemb (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eemb \<phi>) (eemb \<psi>) ubuf nts3 t3 aux3"
+| "eemb (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eemb \<phi>)"
+| "eemb (ETP mt5 i5) = ETP mt5 i5"
+| "eemb (ETS mt6) = ETS mt6"
+| "eemb (ELet p7 m7 \<phi> \<psi>) = ELet p7 m7 (eemb \<phi>) (eemb \<psi>)"
+| "eemb (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4) = EPlain (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4)"
+| "eemb (ELetPast p14 m14 \<phi> \<psi> i14 buf14) = EPlain (ELetPast p14 m14 \<phi> \<psi> i14 buf14)"
+| "eemb (ETrigger dags8 pls8 \<phi> \<psi> tbuf8 nts8 aux8) = ETrigger dags8 pls8 (eemb \<phi>) (eemb \<psi>) tbuf8 nts8 aux8"
+| "eemb (ERelease dags9 msk9 \<phi> \<psi> rbuf nts9 t9 aux9) = ERelease dags9 msk9 (eemb \<phi>) (eemb \<psi>) rbuf nts9 t9 aux9"
+| "eemb (EAndTrigger pl10 \<alpha> abuf dags10 \<phi> \<psi> tbuf10 nts10 aux10) = EAndTrigger pl10 (eemb \<alpha>) abuf dags10 (eemb \<phi>) (eemb \<psi>) tbuf10 nts10 aux10"
+| "eemb (EMatchP m11 I11 mr11 mrs11 pls11 Ld11 nbuf11 nts11 aux11) = EMatchP m11 I11 mr11 mrs11 pls11 (map eemb Ld11) nbuf11 nts11 aux11"
+| "eemb (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) = EMatchF m12 I12 mr12 mrs12 pls12 (map eemb Ld12) nbuf12 nts12 t12 aux12"
+| "eemb (EPlain u) = EPlain (EPlain u)"
 
 lemma eabs_eemb[simp]: "eabs (eemb \<phi>) = \<phi>"
-  by (simp add: eabs_def eemb_def geformula.map_comp comp_def geformula.map_ident)
+  by (induct \<phi> rule: eemb.induct) (auto simp: comp_def intro!: map_idI)
 
 subsection \<open>The evaluator\<close>
 
@@ -140,11 +195,11 @@ lemma dabs_demb[simp]: "dabs (demb db) = db"
   by (rule mapping_eqI) (simp add: lookup_dabs demb_def Mapping.lookup_map_values option.map_comp
       comp_def option.map_ident)
 
-fun is_pred :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs) geformula \<Rightarrow> bool" where
+fun is_pred :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'p) geformula \<Rightarrow> bool" where
   "is_pred pm (EPredS e ar) = ((e, ar) = pm)"
 | "is_pred pm _ = False"
 
-function (sequential) preq :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs) geformula \<Rightarrow> bool list list" where
+function (sequential) preq :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'p) geformula \<Rightarrow> bool list list" where
   "preq pm (EAnd pl \<phi> pos \<psi> buf) =
      (if is_pred pm \<phi> then jreq_l pl pos else preq pm \<phi>) @
      (if is_pred pm \<psi> then jreq_r pl pos else preq pm \<psi>)"
@@ -276,6 +331,7 @@ function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> t
             (mebuf2_add (map iset xs) (map iset ys) buf) t (nts @@ ts);
           (zs, aux'') = eraux_eval (args_ivl dags) nt aux'
       in (map itab zs, ERelease dags msk \<phi>' \<psi>' buf' nts' nt aux''))"
+| "ieval rq j ts db (EPlain x) = map_prod (map itab) EPlain (eeval j ts (dabs db) x)"
   by pat_completeness (simp_all only: prod.inject geformula.inject geformula.distinct simp_thms)
 termination
   by (relation "measure (\<lambda>(_, _, _, _, \<phi>). size \<phi>)")
@@ -375,42 +431,6 @@ proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
   qed
 qed
 
-lemma eabs_simps[simp]:
-  "eabs EFail = EFail"
-  "eabs (ERel rel) = ERel rel"
-  "eabs (EPredS e1 a1) = EPredS e1 a1"
-  "eabs (EPredM e2 a2 tms cs) = EPredM e2 a2 tms cs"
-  "eabs (EAndRel \<phi> conf) = EAndRel (eabs \<phi>) conf"
-  "eabs (ENeg \<phi>) = ENeg (eabs \<phi>)"
-  "eabs (EExists \<phi> b) = EExists (eabs \<phi>) b"
-  "eabs (EAgg g0 \<omega> f k n \<phi>) = EAgg g0 \<omega> f k n (eabs \<phi>)"
-  "eabs (EOr \<phi> \<psi> buf) = EOr (eabs \<phi>) (eabs \<psi>) (ib2 buf)"
-  "eabs (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eabs \<phi>) pos (eabs \<psi>) (ib2 buf)"
-  "eabs (EPrev I1 \<phi> fst1 pbuf nts1) = EPrev I1 (eabs \<phi>) fst1 pbuf nts1"
-  "eabs (ENext I2 \<phi> fst2 nts2) = ENext I2 (eabs \<phi>) fst2 nts2"
-  "eabs (EAnds ps ns Ld dbuf) = EAnds ps ns (map eabs Ld) (ibn dbuf)"
-  "eabs (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eabs \<phi>) (eabs \<psi>) sbuf (riu aux1)"
-  "eabs (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) =
-     EUntil dags2 msk2 (eabs \<phi>) (eabs \<psi>) ubuf nts3 t3 aux3"
-  "eabs (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eabs \<phi>)"
-  "eabs (ETP mt5 i5) = ETP mt5 i5"
-  "eabs (ETS mt6) = ETS mt6"
-  "eabs (ELet p7 m7 \<phi> \<psi>) = ELet p7 m7 (eabs \<phi>) (eabs \<psi>)"
-  "eabs (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4) =
-     EFrz p13 m13 (eabs \<phi>) (eabs \<psi>) a13 b13 c13 d13 (eabs \<chi>1) e13 f13 g13 h13 i13 j13 k13 l13
-       (eabs \<chi>2) n13 o13 (eabs \<chi>3) (eabs \<chi>4)"
-  "eabs (ELetPast p14 m14 \<phi> \<psi> i14 buf14) = ELetPast p14 m14 (eabs \<phi>) (eabs \<psi>) i14 buf14"
-  "eabs (ETrigger dags8 pls8 \<phi> \<psi> tbuf8 nts8 aux8) =
-     ETrigger dags8 pls8 (eabs \<phi>) (eabs \<psi>) tbuf8 nts8 aux8"
-  "eabs (ERelease dags9 msk9 \<phi> \<psi> rbuf nts9 t9 aux9) =
-     ERelease dags9 msk9 (eabs \<phi>) (eabs \<psi>) rbuf nts9 t9 aux9"
-  "eabs (EAndTrigger pl10 \<alpha> abuf dags10 \<phi> \<psi> tbuf10 nts10 aux10) =
-     EAndTrigger pl10 (eabs \<alpha>) abuf dags10 (eabs \<phi>) (eabs \<psi>) tbuf10 nts10 aux10"
-  "eabs (EMatchP m11 I11 mr11 mrs11 pls11 Ld11 nbuf11 nts11 aux11) =
-     EMatchP m11 I11 mr11 mrs11 pls11 (map eabs Ld11) nbuf11 nts11 aux11"
-  "eabs (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) =
-     EMatchF m12 I12 mr12 mrs12 pls12 (map eabs Ld12) nbuf12 nts12 t12 aux12"
-  by (simp_all add: eabs_def)
 
 lemma map_eabs[simp]: "map eabs (map snd R) = map (eabs \<circ> snd) R"
   by simp
