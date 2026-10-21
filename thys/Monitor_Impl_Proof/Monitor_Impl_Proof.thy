@@ -227,27 +227,6 @@ lemma upd_set'_insert: "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Lon
   | Some v \<Rightarrow> Mapping.update x (f v) m')"
   by (rule mapping_eqI) (auto simp: upd_set'_lookup Mapping.lookup_update' split: option.splits)
 
-lemma upd_set'_aux2: "Mapping.lookup m k = None \<Longrightarrow> upd_set' m d f {b. b = k \<or> (a, b) \<in> A} =
-  Mapping.update k d (upd_set' m d f {b. (a, b) \<in> A})"
-  by (rule mapping_eqI) (auto simp add: upd_set'_lookup Mapping.lookup_update' split: option.splits)
-
-lemma upd_set'_aux3: "Mapping.lookup m k = Some v \<Longrightarrow> upd_set' m d f {b. b = k \<or> (a, b) \<in> A} =
-  Mapping.update k (f v) (upd_set' m d f {b. (a, b) \<in> A})"
-  by (rule mapping_eqI) (auto simp add: upd_set'_lookup Mapping.lookup_update' split: option.splits)
-
-lemma upd_set'_aux4: "k \<notin> fst ` A \<Longrightarrow> upd_set' Mapping.empty d f {b. (k, b) \<in> A} = Mapping.empty"
-  by (rule mapping_eqI) (auto simp add: upd_set'_lookup Mapping.lookup_update' Domain.DomainI fst_eq_Domain
-      split: option.splits)
-
-lemma upd_nested_insert:
-  "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_nested m d f (Set.insert x A) =
-  upd_nested_step d f x (upd_nested m d f A)"
-  unfolding upd_nested_step_def
-  using upd_set'_aux1[of d f _ _ A] upd_set'_aux2[of _ _ d f _ A] upd_set'_aux3[of _ _ _ d f _ A]
-    upd_set'_aux4[of _ A d f]
-  by (auto simp add: Let_def upd_nested_lookup upd_set'_lookup Mapping.lookup_update'
-      split: option.splits prod.splits if_splits intro!: mapping_eqI)
-
 lemma filter_join_False_empty: "filter_join False {} m = m"
   unfolding filter_join_def
   by transfer (auto split: option.splits)
@@ -264,20 +243,6 @@ proof -
   }
   then show ?thesis
     by (simp add: mapping_eqI)
-qed
-
-lemma mapping_delete_set_empty: "mapping_delete_set m {} = m"
-  unfolding mapping_delete_set_def
-  by (auto simp: Mapping_lookup_filter_Some intro!: mapping_eqI)
-
-lemma mapping_delete_set_insert: "mapping_delete_set m (Set.insert a X) = Mapping.delete a (mapping_delete_set m X)"
-proof(rule mapping_eqI)
-  fix x
-  show "Mapping.lookup (mapping_delete_set m (Set.insert a X)) x =
-        Mapping.lookup (Mapping.delete a (mapping_delete_set m X)) x"
-    unfolding Mapping_lookup_delete mapping_delete_set_def
-    by (auto simp add: Mapping_lookup_filter_None)
-       (metis (mono_tags, lifting) Mapping_lookup_filter_None Mapping_lookup_filter_Some)
 qed
 
 lemma tabulate_remdups: "Mapping.tabulate xs f = Mapping.tabulate (remdups xs) f"
@@ -317,9 +282,6 @@ lemma insert_rank_code[code_unfold]: "Finite_Set.fold (insert_rank args type) (v
 
 lemma set_diff_code[code_unfold]: "X - Mapping.keys tuple_in = Set.filter (\<lambda>k. Mapping.lookup tuple_in k = None) X"
   by(transfer) auto
-
-lemma to_add_set_empty: "to_add_set a m {} = {}"
-  unfolding to_add_set_def by auto
 
 lemma to_add_set_insert: "to_add_set a m (Set.insert x X) = to_add_set_fun a m x (to_add_set a m X) "
   unfolding to_add_set_def to_add_set_fun_def

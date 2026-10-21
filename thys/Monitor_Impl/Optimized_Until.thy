@@ -143,6 +143,11 @@ lift_definition upd_nested :: "('a, ('b, 'c) mapping) mapping \<Rightarrow>
   "\<lambda>m d f X a. case Mapping.lookup m a of Some m' \<Rightarrow> Some (upd_set' m' d f {b. (a, b) \<in> X})
   | None \<Rightarrow> if a \<in> fst ` X then Some (upd_set' Mapping.empty d f {b. (a, b) \<in> X}) else None" .
 
+lemma upd_nested_lookup: "Mapping.lookup (upd_nested m d f X) a =
+  (case Mapping.lookup m a of Some m' \<Rightarrow> Some (upd_set' m' d f {b. (a, b) \<in> X})
+  | None \<Rightarrow> if a \<in> fst ` X then Some (upd_set' Mapping.empty d f {b. (a, b) \<in> X}) else None)"
+  by (simp add: Mapping.lookup.abs_eq upd_nested.abs_eq)
+
 definition add_new_mmuaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rightarrow> event_data mmuaux" where
   "add_new_mmuaux args rel1 rel2 nt aux =
     (let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =

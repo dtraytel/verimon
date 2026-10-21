@@ -32,6 +32,10 @@ declare upd_set_keys.simps[simp del]
 abbreviation "filter_cond X' ts t' \<equiv> (\<lambda>as _. \<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t'))"
 abbreviation "filter_cond' X' ts t' \<equiv> (\<lambda>as. \<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t'))"
 
+lemma Mapping_lookup_filter_None: "(\<And>v. \<not>P k v) \<Longrightarrow>
+  Mapping.lookup (Mapping.filter P m) k = None"
+  by (auto simp add: Mapping.lookup_filter split: option.splits)
+
 lemma Mapping_lookup_filter_Some: "(\<And>v. P k v) \<Longrightarrow>
   Mapping.lookup (Mapping.filter P m) k = Mapping.lookup m k"
   by (auto simp add: Mapping.lookup_filter split: option.splits)

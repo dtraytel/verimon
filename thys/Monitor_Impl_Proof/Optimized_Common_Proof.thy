@@ -125,10 +125,6 @@ lemma fold_Mapping_filter_None: "Mapping.lookup ts as = None \<Longrightarrow>
 lemma Mapping_lookup_filter_Some_P: "Mapping.lookup (Mapping.filter P m) k = Some v \<Longrightarrow> P k v"
   by (auto simp add: Mapping.lookup_filter split: option.splits if_splits)
 
-lemma Mapping_lookup_filter_None: "(\<And>v. \<not>P k v) \<Longrightarrow>
-  Mapping.lookup (Mapping.filter P m) k = None"
-  by (auto simp add: Mapping.lookup_filter split: option.splits)
-
 lemma Mapping_lookup_filter_not_None: "Mapping.lookup (Mapping.filter P m) k \<noteq> None \<Longrightarrow>
   Mapping.lookup (Mapping.filter P m) k = Mapping.lookup m k"
   by (auto simp add: Mapping.lookup_filter split: option.splits)

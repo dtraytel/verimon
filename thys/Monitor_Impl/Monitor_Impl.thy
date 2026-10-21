@@ -476,6 +476,18 @@ lemma upd_set'_aux1: "upd_set' Mapping.empty d f {b. b = k \<or> (a, b) \<in> A}
   by (rule mapping_eqI) (auto simp add: Let_def upd_set'_lookup Mapping.lookup_update'
       split: option.splits)
 
+lemma upd_set'_aux2: "Mapping.lookup m k = None \<Longrightarrow> upd_set' m d f {b. b = k \<or> (a, b) \<in> A} =
+  Mapping.update k d (upd_set' m d f {b. (a, b) \<in> A})"
+  by (rule mapping_eqI) (auto simp add: upd_set'_lookup Mapping.lookup_update' split: option.splits)
+
+lemma upd_set'_aux3: "Mapping.lookup m k = Some v \<Longrightarrow> upd_set' m d f {b. b = k \<or> (a, b) \<in> A} =
+  Mapping.update k (f v) (upd_set' m d f {b. (a, b) \<in> A})"
+  by (rule mapping_eqI) (auto simp add: upd_set'_lookup Mapping.lookup_update' split: option.splits)
+
+lemma upd_set'_aux4: "k \<notin> fst ` A \<Longrightarrow> upd_set' Mapping.empty d f {b. (k, b) \<in> A} = Mapping.empty"
+  by (rule mapping_eqI) (auto simp add: upd_set'_lookup Mapping.lookup_update' Domain.DomainI fst_eq_Domain
+      split: option.splits)
+
 lemma filter_set_empty[simp]: "filter_set (t, {}) (m, Y) = (m, Y)"
   unfolding filter_set.simps
   by transfer (auto simp: Let_def fun_eq_iff split: option.splits)
@@ -491,6 +503,15 @@ definition upd_nested_step :: "'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarr
 lemma upd_nested_empty[simp]: "upd_nested m d f {} = m"
   by (rule mapping_eqI)
     (clarsimp simp: upd_nested_def Mapping.lookup.abs_eq split: option.splits)
+
+lemma upd_nested_insert:
+  "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_nested m d f (Set.insert x A) =
+  upd_nested_step d f x (upd_nested m d f A)"
+  unfolding upd_nested_step_def
+  using upd_set'_aux1[of d f _ _ A] upd_set'_aux2[of _ _ d f _ A] upd_set'_aux3[of _ _ _ d f _ A]
+    upd_set'_aux4[of _ A d f]
+  by (auto simp add: Let_def upd_nested_lookup upd_set'_lookup Mapping.lookup_update'
+      split: option.splits prod.splits if_splits intro!: mapping_eqI)
 
 definition upd_nested_max_tstp where
   "upd_nested_max_tstp m d X = upd_nested m d (max_tstp d) X"
@@ -551,6 +572,20 @@ lift_definition filter_cfi :: "'b \<Rightarrow> ('a, ('a, 'b) mapping \<times> '
 lemma filter_set_code[code]:
   "filter_set (t, A) (m, Y) = (if finite A then set_fold_cfi (filter_cfi t) (m, Y) A else Code.abort (STR ''upd_set: infinite'') (\<lambda>_. filter_set (t, A) (m, Y)))"
   by (transfer fixing: m) (auto simp: filter_set_fold)
+
+lemma mapping_delete_set_empty: "mapping_delete_set m {} = m"
+  unfolding mapping_delete_set_def
+  by (auto simp: Mapping_lookup_filter_Some intro!: mapping_eqI)
+
+lemma mapping_delete_set_insert: "mapping_delete_set m (Set.insert a X) = Mapping.delete a (mapping_delete_set m X)"
+proof(rule mapping_eqI)
+  fix x
+  show "Mapping.lookup (mapping_delete_set m (Set.insert a X)) x =
+        Mapping.lookup (Mapping.delete a (mapping_delete_set m X)) x"
+    unfolding Mapping_lookup_delete mapping_delete_set_def
+    by (auto simp add: Mapping_lookup_filter_None)
+       (metis (mono_tags, lifting) Mapping_lookup_filter_None Mapping_lookup_filter_Some)
+qed
 
 lemma mapping_delete_fold:
   assumes "finite A"
@@ -733,6 +768,9 @@ definition to_add_set where
 
 definition to_add_set_fun :: "'b \<Rightarrow> ('a, 'c) mapping \<Rightarrow> 'b \<times> 'a \<Rightarrow> 'a set \<Rightarrow> 'a set" where
   "to_add_set_fun a m elem s = (if a = fst elem \<and> Mapping.lookup m (snd elem) = None then Set.insert (snd elem) s else s)"
+
+lemma to_add_set_empty: "to_add_set a m {} = {}"
+  unfolding to_add_set_def by auto
 
 lemma to_add_set_fold:
   assumes "finite tmp"
