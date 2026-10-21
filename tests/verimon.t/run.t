@@ -144,6 +144,7 @@ The command line:
     -gc_space_overhead 	OCaml GC space_overhead in percent (default: 500); larger values trade memory for speed
     -gc_minor_heap 	OCaml GC minor_heap_size in words (default: 768k under OCaml 4, 4M under OCaml 5)
     -no_mw 	No multi-way join
+    -index {none|unbounded|all}	Which Since and Until windows keep indexed tables for the joins that probe them (default: unbounded)
     -generic_join 	Deprecated, accepted and ignored
     -imperative_join 	Deprecated, accepted and ignored
     -unfold_let {no|full|smart}	Accepted and ignored by the verified monitor

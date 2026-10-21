@@ -68,6 +68,7 @@ definition opt_table :: "(string \<times> okind \<times> string) list" where
     (''-gc_space_overhead'', OInt, tab @ ''OCaml GC space_overhead in percent (default: 500); larger values trade memory for speed''),
     (''-gc_minor_heap'', OInt, tab @ ''OCaml GC minor_heap_size in words (default: 768k under OCaml 4, 4M under OCaml 5)''),
     (''-no_mw'', OFlag, tab @ ''No multi-way join''),
+    (''-index'', OSym [''none'', ''unbounded'', ''all''], tab @ ''Which Since and Until windows keep indexed tables for the joins that probe them (default: unbounded)''),
     (''-generic_join'', OFlag, tab @ ''Deprecated, accepted and ignored''),
     (''-imperative_join'', OFlag, tab @ ''Deprecated, accepted and ignored''),
     (''-unfold_let'', OSym [''no'', ''full'', ''smart''], tab @ ''Accepted and ignored by the verified monitor''),
@@ -171,6 +172,7 @@ record config =
   c_check :: bool
   c_rw :: bool
   c_mw :: bool
+  c_index :: ipolicy
   c_sigout :: bool
   c_unix :: bool
   c_mem :: bool
@@ -182,10 +184,19 @@ record config =
   c_gc_space_overhead :: int
   c_gc_minor_heap :: int
 
+text \<open>The index policy (@{const ireq}): unbounded past windows unless @{text "-index"} says
+  otherwise.\<close>
+
+definition oindex :: "opts \<Rightarrow> ipolicy" where
+  "oindex os = (case map_of os ''-index'' of
+     Some s \<Rightarrow> if s = ''none'' then IxNone else if s = ''all'' then IxAll else IxUnbounded
+   | None \<Rightarrow> IxUnbounded)"
+
 definition config_of :: "opts \<Rightarrow> config" where
   "config_of os = \<lparr>c_sig = ostr os ''-sig'', c_formula = ostr os ''-formula'', c_log = ostr os ''-log'',
      c_negate = oflag os ''-negate'', c_verbose = oflag os ''-verbose'', c_check = oflag os ''-check'',
-     c_rw = \<not> oflag os ''-no_rw'', c_mw = \<not> oflag os ''-no_mw'', c_sigout = oflag os ''-sigout'',
+     c_rw = \<not> oflag os ''-no_rw'', c_mw = \<not> oflag os ''-no_mw'', c_index = oindex os,
+     c_sigout = oflag os ''-sigout'',
      c_unix = oflag os ''-unix'', c_mem = oflag os ''-mem'', c_newlastts = \<not> oflag os ''-nonewlastts'',
      c_filter = \<not> oflag os ''-nofilterrel'', c_ignore_errors = oflag os ''-ignore_parse_errors'',
      c_stop_first = oflag os ''-stop_at_first_viol'', c_version = oflag os ''-version'',

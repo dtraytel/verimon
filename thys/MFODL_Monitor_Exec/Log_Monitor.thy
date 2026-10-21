@@ -1025,10 +1025,10 @@ definition vfinish :: "vconf \<Rightarrow> nat option \<Rightarrow> vstate \<Rig
 
 datatype vinit_error = VI_WF | VI_PREPARE String.literal | VI_FRAGMENT nat
 
-definition vinit :: "bool \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> lsig \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> tysym Formula.formula \<Rightarrow>
+definition vinit :: "ipolicy \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> lsig \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> tysym Formula.formula \<Rightarrow>
     vinit_error + vconf \<times> vstate" where
-  "vinit mw rw filt S pf \<phi> = (if \<not> wf_formula \<phi> then Inl VI_WF else
-     (case eminit_verimon mw rw (lsig_tsig S) \<phi> of
+  "vinit ix mw rw filt S pf \<phi> = (if \<not> wf_formula \<phi> then Inl VI_WF else
+     (case eminit_verimon ix mw rw (lsig_tsig S) \<phi> of
        Inl e \<Rightarrow> Inl (VI_PREPARE e)
      | Inr ust \<Rightarrow> (let n = efail_nodes (eabs (emstate_m ust)) in
          if n = 0 then Inr (VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf, (einit, ust, 0))
@@ -1373,9 +1373,9 @@ definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times>
   "vwiden \<phi> = map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))"
 
 lemma vinit_Inr:
-  assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
   obtains ust where "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" "z = (einit, ust, 0)"
-    "wf_formula \<phi>" "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "efail_nodes (eabs (emstate_m ust)) = 0"
+    "wf_formula \<phi>" "eminit_verimon ix mw rw (lsig_tsig S) \<phi> = Inr ust" "efail_nodes (eabs (emstate_m ust)) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
@@ -1476,10 +1476,10 @@ end
 text \<open>The monitor starts only if the assumptions of the locale hold.\<close>
 
 lemma vinit_verimon_log:
-  assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
   shows "verimon_log rw S \<phi>"
 proof -
-  obtain ust where "wf_formula \<phi>" "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust"
+  obtain ust where "wf_formula \<phi>" "eminit_verimon ix mw rw (lsig_tsig S) \<phi> = Inr ust"
     using vinit_Inr[OF assms] by metis
   then show ?thesis
     by (cases "prepare_verimon rw (lsig_tsig S) \<phi>")

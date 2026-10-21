@@ -288,7 +288,7 @@ definition start_monitor :: "config \<Rightarrow> (bytes \<Rightarrow> double op
        (case check (lsig_tsig L) TAny \<phi> of
          Inl e \<Rightarrow> Done [] (prep_msg e) 2
        | Inr f \<Rightarrow>
-         (case vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> of
+         (case vinit (c_index conf) (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> of
            Inl VI_WF \<Rightarrow> Done [] (prep_msg STR ''the formula is not well-formed'') 2
          | Inl (VI_FRAGMENT n) \<Rightarrow> Done [] (otxt (fatal_failure ''the formula is outside the verified dense fragment'' @ nl)) 2
          | Inl (VI_PREPARE e) \<Rightarrow>
@@ -339,7 +339,7 @@ lemma cli_main_Run:
     and "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
     and "lsig_of S \<phi> = Inr L"
     and "check (lsig_tsig L) TAny \<phi> = Inr f"
-    and "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
+    and "vinit (c_index conf) (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
   using assms unfolding cli_main_def start_monitor_def Let_def
   by (auto split: command.splits if_splits option.splits sum.splits vinit_error.splits prod.splits)
 
@@ -357,7 +357,7 @@ theorem cli_run:
     and "read_sig (Rep_bytes stext) = Inr S"
     and "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
     and "lsig_of S \<phi> = Inr L"
-    and "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
+    and "vinit (c_index conf) (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
     and "verimon_log (c_rw conf) L \<phi>"
   using cli_main_Run[OF assms] vinit_verimon_log by metis
 
@@ -447,7 +447,7 @@ proof -
     and C: "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
     and Ls: "lsig_of S \<phi> = Inr L"
     and ch: "check (lsig_tsig L) TAny \<phi> = Inr f"
-    and init: "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
+    and init: "vinit (c_index conf) (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
     using cli_main_Run[OF run] by metis
   obtain w \<psi> where W: "lex (Rep_bytes ftext) = Some w" "mfodl_Formula w \<psi>" "postprocess \<psi> = Some \<psi>0"
     using P unfolding parse_formula_Some_iff by blast
@@ -517,7 +517,7 @@ proof -
     and C: "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
     and Ls: "lsig_of S \<phi> = Inr L"
     and ch: "check (lsig_tsig L) TAny \<phi> = Inr f"
-    and init: "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
+    and init: "vinit (c_index conf) (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
     using cli_main_Run[OF run] by metis
   obtain w \<psi> where W: "lex (Rep_bytes ftext) = Some w" "mfodl_Formula w \<psi>" "postprocess \<psi> = Some \<psi>0"
     using P unfolding parse_formula_Some_iff by blast
@@ -527,7 +527,7 @@ proof -
     using vinit_verimon_log[OF init] .
   note M = Mt_verdict_spec[OF ch]
   note wf0 = wf_vstate_vinit[OF init]
-  obtain ust0 where init': "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  obtain ust0 where init': "vinit (c_index conf) (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, (einit, ust0, 0))"
     using wf0 unfolding wf_vstate_def by blast
   have p0: "stream_prefix (\<lambda>_. True) (sf pf) L [] = Some pnil"
     by (simp add: stream_prefix_def prefix_of_items_Nil)

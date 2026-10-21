@@ -274,9 +274,9 @@ definition stream_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \
   "stream_prefix K pf S s = Option.bind (fstream_run K s fstream_init) (\<lambda>(es, _). prefix_of_items pf S None es)"
 
 lemma vinit_Inr_state:
-  assumes "vinit mw rw filt S pf \<phi> = Inr (cf, (e, ust, n))"
+  assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, (e, ust, n))"
   shows "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and "e = einit" and "n = 0"
-    and "eminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and "efail_nodes (eabs (emstate_m ust)) = 0"
+    and "eminit_verimon ix mw rw (lsig_tsig S) \<phi> = Inr ust" and "efail_nodes (eabs (emstate_m ust)) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma emsteps_state_Rep: "emsteps_state \<pi> ds = emsteps0_state (Rep_prefix \<pi>) ds"
@@ -383,7 +383,7 @@ context verimon_log
 begin
 
 context
-  fixes mw :: bool
+  fixes ix :: ipolicy and mw :: bool
 begin
 
 interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
@@ -397,7 +397,7 @@ text \<open>The state @{text z} is the one after the bytes @{text s} are read, w
 
 definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> vconf \<Rightarrow> string \<Rightarrow> Formula.prefix \<Rightarrow> vstate \<Rightarrow> bool" where
   "wf_vstate filt pf cf s \<pi> z \<longleftrightarrow> (\<exists>ust0 b l ps sp ust es.
-     vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0)) \<and>
+     vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0)) \<and>
      z = ((b, l, Some ps, sp), (ust, last_ts \<pi>)) \<and> wf0 l \<and>
      fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps) \<and>
      prefix_of_items (sf pf) S None es = Some \<pi> \<and>
@@ -407,7 +407,7 @@ text \<open>The verdicts of the executable monitor on a prefix that items denote
   specification prescribes (@{thm [source] eminit_verimon_mverdicts}).\<close>
 
 lemma emonitor_Mt:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S fin es = Some \<rho>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))
     (emonitor (ust0) \<rho>)) = monitor_\<phi>.Mt \<rho>"
@@ -422,7 +422,7 @@ qed
 text \<open>The verdicts are monotone in the prefix.\<close>
 
 lemma Mt_mono_items:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S fin es = Some \<pi>" and p': "prefix_of_items (sf pf) S fin' es' = Some \<pi>'"
     and le: "\<pi> \<le> \<pi>'"
   shows "monitor_\<phi>.Mt \<pi> \<subseteq> monitor_\<phi>.Mt \<pi>'"
@@ -438,7 +438,7 @@ text \<open>The verdicts of the time points that follow a prefix are those that 
   prescribes for the longer prefix and not for the shorter one.\<close>
 
 lemma usteps_mverdicts:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
     and p': "prefix_of_items (sf pf) S fin es' = Some \<pi>'"
     and R: "Rep_prefix \<pi>' = Rep_prefix \<pi> @ map (apfst set) tps"
@@ -462,12 +462,12 @@ qed
 text \<open>The initial state is the one after no bytes, which denote the empty prefix.\<close>
 
 theorem wf_vstate_vinit:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
   shows "wf_vstate filt pf cf [] pnil z"
 proof -
   obtain e ust n where z: "z = (e, ust, n)"
     by (metis prod_cases3)
-  have init': "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust, 0))"
+  have init': "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust, 0))"
     using init vinit_Inr_state(2,3)[OF init[unfolded z]] by (simp add: z)
   have Z: "z = ((0, E_INIT, Some F_INIT, 0), (ust, last_ts pnil))"
     using vinit_Inr_state(2,3)[OF init[unfolded z]] by (simp add: z einit_def last_ts.rep_eq pnil.rep_eq)
@@ -490,7 +490,7 @@ theorem vfeed_chunk_online:
       \<not> has_verror outs \<and> \<pi> \<le> \<pi>' \<and> wf_vstate filt pf cf (s @ Rep_bytes c) \<pi>' z' \<and>
       flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
-  obtain ust0 b l ps sp ust es where init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  obtain ust0 b l ps sp ust es where init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and z: "z = ((b, l, Some ps, sp), (ust, last_ts \<pi>))" and w0: "wf0 l"
     and R: "fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps)"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
@@ -611,7 +611,7 @@ theorem vfinish_online:
       \<not> has_verror (vfinish cf fin z) \<and> \<pi> \<le> \<pi>' \<and>
       flatten_verdicts (vwiden \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
-  obtain ust0 b l ps sp ust es where init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  obtain ust0 b l ps sp ust es where init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and z: "z = ((b, l, Some ps, sp), (ust, last_ts \<pi>))" and w0: "wf0 l"
     and R: "fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps)"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
@@ -707,10 +707,10 @@ lemma wf_vstate_Mt_mono:
   assumes "wf_vstate filt pf cf s \<pi> z" and "wf_vstate filt pf cf s' \<pi>' z'" and "\<pi> \<le> \<pi>'"
   shows "monitor_\<phi>.Mt \<pi> \<subseteq> monitor_\<phi>.Mt \<pi>'"
 proof -
-  from assms(1) obtain ust0 es where init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  from assms(1) obtain ust0 es where init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
     unfolding wf_vstate_def by blast
-  from assms(2) obtain ust0' es' where init': "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0', 0))"
+  from assms(2) obtain ust0' es' where init': "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0', 0))"
     and p': "prefix_of_items (sf pf) S None es' = Some \<pi>'"
     unfolding wf_vstate_def by blast
   from init init' have "ust0' = ust0"
@@ -899,7 +899,7 @@ text \<open>The theorems for all of the log, or for all of it that has been read
   online ones from the initial state, which denotes the empty prefix.\<close>
 
 lemma Mt_pnil:
-  assumes "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
   shows "monitor_\<phi>.Mt pnil = {}"
   using emonitor_Mt[OF assms prefix_of_items_Nil] by (simp add: emonitor_Rep pnil.rep_eq flatten_verdicts_def)
 
@@ -908,14 +908,14 @@ text \<open>For an input that is still being read: the verdicts output so far ar
 
 theorem vfeed_chunks_online:
   fixes ss
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
   defines "L \<equiv> Option.bind (fstream_run (keep_spec filt \<phi> S) (concat (map Rep_bytes ss)) fstream_init)
       (\<lambda>(es, _). prefix_of_items (sf pf) S None es)"
   shows "\<not> has_verror (fst (vfeed_chunks cf ss z)) \<longleftrightarrow> L \<noteq> None"
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
 proof -
   note wf = wf_vstate_vinit[OF init]
-  then obtain ust0 where init': "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  then obtain ust0 where init': "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     unfolding wf_vstate_def by blast
   obtain outs z' where v: "vfeed_chunks cf ss z = (outs, z')"
     by (cases "vfeed_chunks cf ss z")
@@ -936,14 +936,14 @@ text \<open>The monitor on a log whose events of the predicates whose names occu
 
 theorem vrun_filtered:
   fixes fin ss
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
   defines "L \<equiv> log_prefix (keep_spec filt \<phi> S) (sf pf) S fin (concat (map Rep_bytes ss))"
   shows "\<not> has_verror (vrun cf fin z ss) \<longleftrightarrow> L \<noteq> None"
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
 proof -
   let ?s = "concat (map Rep_bytes ss)" and ?K = "keep_spec filt \<phi> S"
   note wf = wf_vstate_vinit[OF init]
-  then obtain ust0 where init': "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
+  then obtain ust0 where init': "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     unfolding wf_vstate_def by blast
   obtain outs z' where v: "vfeed_chunks cf ss z = (outs, z')"
     by (cases "vfeed_chunks cf ss z")
@@ -994,7 +994,7 @@ text \<open>The monitor on a log that denotes a prefix: it reports no error, and
   the events of the other predicates.\<close>
 
 theorem vrun_log:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
     and log: "log_prefix (\<lambda>_. True) (sf pf) S fin (concat (map Rep_bytes ss)) = Some \<pi>"
   shows "\<not> has_verror (vrun cf fin z ss)"
     and "flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
@@ -1012,7 +1012,7 @@ text \<open>At the level of the grammar: if the input read so far extends to a l
   so far are those of a prefix of the log's entries, if there was no error.\<close>
 
 corollary vfeed_chunks_log:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
     and log: "log_lang (concat (map Rep_bytes ss) @ s') es'"
     and ok: "\<not> has_verror (fst (vfeed_chunks cf ss z))"
   obtains es es'' \<pi> where "es' = es @ es''"
@@ -1040,7 +1040,7 @@ text \<open>In particular, the verdicts of the entries of a log are output as so
   begins, if they denote a prefix.\<close>
 
 corollary vfeed_chunks_prompt:
-  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+  assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
     and "Glex s ts" "G_parser ts es" "c = CHR ''@'' \<or> c = CHR ''>''"
     and "concat (map Rep_bytes ss) = s @ [c]"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"

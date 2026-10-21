@@ -44,8 +44,8 @@ text \<open>The multiway conversion copies the right operand of a release into i
   all occurrences of one predicate.\<close>
 
 definition eminit_verimon where
-  "eminit_verimon mw rw sig \<phi> =
-     map_sum id (\<lambda>\<psi>. eminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>))
+  "eminit_verimon ix mw rw sig \<phi> =
+     map_sum id (\<lambda>\<psi>. eindex ix (eminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>)))
        (prepare_verimon rw sig \<phi>)"
 
 lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
@@ -57,7 +57,7 @@ begin
 
 definition "\<psi>_mw mw = (if mw then convert_multiway (share_opt \<psi>) else \<psi>)"
 
-lemma eminit_verimon_\<psi>_mw: "eminit_verimon mw rw sig \<phi> = Inr (eminit_push (\<psi>_mw mw))"
+lemma eminit_verimon_\<psi>_mw: "eminit_verimon ix mw rw sig \<phi> = Inr (eindex ix (eminit_push (\<psi>_mw mw)))"
   by (simp add: eminit_verimon_def prepare_\<psi> \<psi>_mw_def)
 
 lemma verimon_spec_\<psi>_mw:
@@ -97,7 +97,7 @@ text \<open>The verdicts of the executable monitor started from the state @{cons
   are the verdicts the specification of the input formula prescribes.\<close>
 
 theorem eminit_verimon_mverdicts:
-  assumes init: "eminit_verimon mw rw sig \<phi> = Inr ust"
+  assumes init: "eminit_verimon ix mw rw sig \<phi> = Inr ust"
     and zf: "efail_nodes (eabs (emstate_m ust)) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix (map_sig (convert_tysym o check_subst) sig) \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
@@ -106,18 +106,18 @@ theorem eminit_verimon_mverdicts:
 proof -
   let ?\<psi> = "\<psi>_mw mw"
   let ?\<chi> = "eprep ?\<psi>"
-  have ust: "ust = eminit_push ?\<psi>"
+  have ust: "ust = eindex ix (eminit_push ?\<psi>)"
     using init by (simp add: eminit_verimon_\<psi>_mw)
-  have R: "ust = eof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
+  have R: "eminit_push ?\<psi> = eof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
       (ecols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>)"
-    unfolding ust by (rule eminit_push_eq)
+    by (rule eminit_push_eq)
   have zf': "efail_nodes (eabs (emstate_m (eof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
       (ecols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>)))) = 0"
-    using zf by (simp only: R)
+    using zf by (simp only: ust eabs_eindex R)
   have A: "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, etabw (Formula.fv_list ?\<psi>) (ecols (Formula.fv_list ?\<psi>)) X))
       (emonitor ust \<pi>)) = verimon_mw.Mt \<pi>"
-    using verimon_mw.emonitor_mverdicts_push[OF zf' f wty] by (simp only: R)
+    using verimon_mw.emonitor_mverdicts_push[OF zf' f wty] by (simp only: ust emonitor_eindex R)
   have Mt: "monitor_\<phi>.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict
       (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>))
       (Formula.fv_list ?\<psi>) v)) ` verimon_mw.Mt \<pi>"

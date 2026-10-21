@@ -195,47 +195,51 @@ text \<open>
   Which nodes keep indexed tables is decided once, when the executable state is embedded, not
   while the monitor runs.  The embedding passes down the masks each node's consumer will ask for,
   exactly as the evaluator does (a join's plan, the multi-way join, the predicates of a LET), and
-  a Since or Until structure is embedded indexed at those masks when @{text ireq} lets it.  Keeping
-  an index costs at every insertion and deletion, which pays off only for a table that lives long
-  compared to the rate at which it changes; by default, that is the window of a past operator whose
-  interval is unbounded.  The choice affects only the speed: the embedding forgets to the same
-  formula whatever it decides (@{text eabs_eemb}).
+  a Since or Until structure is embedded indexed at those masks when the policy lets it
+  (@{text ireq}).  Keeping an index costs at every insertion and deletion, which pays off only for
+  a table that lives long compared to the rate at which it changes; the default policy
+  (@{text IxUnbounded}) indexes the window of a past operator whose interval is unbounded.  The
+  policy affects only the speed: the embedding forgets to the same formula whatever it decides
+  (@{text eabs_eemb}).
 \<close>
 
-definition ireq :: "args \<Rightarrow> bool list list \<Rightarrow> bool list list" where
-  "ireq args rq = (if bounded (args_ivl args) then [] else rq)"
+datatype ipolicy = IxNone | IxUnbounded | IxAll
 
-function (sequential) eemb :: "bool list list \<Rightarrow> eformula \<Rightarrow> ieformula" where
-  "eemb rq EFail = EFail"
-| "eemb rq (ERel rel) = ERel rel"
-| "eemb rq (EPredS e1 a1) = EPredS e1 a1"
-| "eemb rq (EPredM e2 a2 tms cs) = EPredM e2 a2 tms cs"
-| "eemb rq (EAndRel \<phi> conf) = EAndRel (eemb [] \<phi>) conf"
-| "eemb rq (ENeg \<phi>) = ENeg (eemb [] \<phi>)"
-| "eemb rq (EExists \<phi> b) = EExists (eemb [] \<phi>) b"
-| "eemb rq (EAgg g0 \<omega> f k n \<phi>) = EAgg g0 \<omega> f k n (eemb [] \<phi>)"
-| "eemb rq (EOr \<phi> \<psi> buf) = EOr (eemb [] \<phi>) (eemb [] \<psi>) (eb2 buf)"
-| "eemb rq (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eemb (jreq_l pl pos) \<phi>) pos (eemb (jreq_r pl pos) \<psi>) (eb2 buf)"
-| "eemb rq (EPrev I1 \<phi> fst1 pbuf nts1) = EPrev I1 (eemb [] \<phi>) fst1 pbuf nts1"
-| "eemb rq (ENext I2 \<phi> fst2 nts2) = ENext I2 (eemb [] \<phi>) fst2 nts2"
-| "eemb rq (EAnds ps ns Ld dbuf) = EAnds ps ns (map (\<lambda>(q, \<phi>). eemb q \<phi>) (zip (eands_req ps (length Ld)) Ld)) (ebn dbuf)"
-| "eemb rq (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eemb [] \<phi>) (eemb [] \<psi>) sbuf (iudsx_emb (ireq dags1 rq) aux1)"
-| "eemb rq (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eemb [] \<phi>) (eemb [] \<psi>) ubuf nts3 t3 (iudux_emb (ireq dags2 rq) aux3)"
-| "eemb rq (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eemb [] \<phi>)"
-| "eemb rq (ETP mt5 i5) = ETP mt5 i5"
-| "eemb rq (ETS mt6) = ETS mt6"
-| "eemb rq (ELet p7 m7 \<phi> \<psi>) = ELet p7 m7 (eemb (preq (p7, m7) \<psi>) \<phi>) (eemb [] \<psi>)"
-| "eemb rq (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4) = EPlain (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4)"
-| "eemb rq (ELetPast p14 m14 \<phi> \<psi> i14 buf14) = EPlain (ELetPast p14 m14 \<phi> \<psi> i14 buf14)"
-| "eemb rq (ETrigger dags8 pls8 \<phi> \<psi> tbuf8 nts8 aux8) = ETrigger dags8 pls8 (eemb [] \<phi>) (eemb [] \<psi>) tbuf8 nts8 aux8"
-| "eemb rq (ERelease dags9 msk9 \<phi> \<psi> rbuf nts9 t9 aux9) = ERelease dags9 msk9 (eemb [] \<phi>) (eemb [] \<psi>) rbuf nts9 t9 aux9"
-| "eemb rq (EAndTrigger pl10 \<alpha> abuf dags10 \<phi> \<psi> tbuf10 nts10 aux10) = EAndTrigger pl10 (eemb [] \<alpha>) abuf dags10 (eemb [] \<phi>) (eemb [] \<psi>) tbuf10 nts10 aux10"
-| "eemb rq (EMatchP m11 I11 mr11 mrs11 pls11 Ld11 nbuf11 nts11 aux11) = EMatchP m11 I11 mr11 mrs11 pls11 (map (eemb []) Ld11) nbuf11 nts11 aux11"
-| "eemb rq (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) = EMatchF m12 I12 mr12 mrs12 pls12 (map (eemb []) Ld12) nbuf12 nts12 t12 aux12"
-| "eemb rq (EPlain u) = EPlain (EPlain u)"
+fun ireq :: "ipolicy \<Rightarrow> args \<Rightarrow> bool list list \<Rightarrow> bool list list" where
+  "ireq IxNone args rq = []"
+| "ireq IxUnbounded args rq = (if bounded (args_ivl args) then [] else rq)"
+| "ireq IxAll args rq = rq"
+function (sequential) eemb :: "ipolicy \<Rightarrow> bool list list \<Rightarrow> eformula \<Rightarrow> ieformula" where
+  "eemb ix rq EFail = EFail"
+| "eemb ix rq (ERel rel) = ERel rel"
+| "eemb ix rq (EPredS e1 a1) = EPredS e1 a1"
+| "eemb ix rq (EPredM e2 a2 tms cs) = EPredM e2 a2 tms cs"
+| "eemb ix rq (EAndRel \<phi> conf) = EAndRel (eemb ix [] \<phi>) conf"
+| "eemb ix rq (ENeg \<phi>) = ENeg (eemb ix [] \<phi>)"
+| "eemb ix rq (EExists \<phi> b) = EExists (eemb ix [] \<phi>) b"
+| "eemb ix rq (EAgg g0 \<omega> f k n \<phi>) = EAgg g0 \<omega> f k n (eemb ix [] \<phi>)"
+| "eemb ix rq (EOr \<phi> \<psi> buf) = EOr (eemb ix [] \<phi>) (eemb ix [] \<psi>) (eb2 buf)"
+| "eemb ix rq (EAnd pl \<phi> pos \<psi> buf) = EAnd pl (eemb ix (jreq_l pl pos) \<phi>) pos (eemb ix (jreq_r pl pos) \<psi>) (eb2 buf)"
+| "eemb ix rq (EPrev I1 \<phi> fst1 pbuf nts1) = EPrev I1 (eemb ix [] \<phi>) fst1 pbuf nts1"
+| "eemb ix rq (ENext I2 \<phi> fst2 nts2) = ENext I2 (eemb ix [] \<phi>) fst2 nts2"
+| "eemb ix rq (EAnds ps ns Ld dbuf) = EAnds ps ns (map (\<lambda>(q, \<phi>). eemb ix q \<phi>) (zip (eands_req ps (length Ld)) Ld)) (ebn dbuf)"
+| "eemb ix rq (ESince dags1 \<phi> \<psi> sbuf aux1) = ESince dags1 (eemb ix [] \<phi>) (eemb ix [] \<psi>) sbuf (iudsx_emb (ireq ix dags1 rq) aux1)"
+| "eemb ix rq (EUntil dags2 msk2 \<phi> \<psi> ubuf nts3 t3 aux3) = EUntil dags2 msk2 (eemb ix [] \<phi>) (eemb ix [] \<psi>) ubuf nts3 t3 (iudux_emb (ireq ix dags2 rq) aux3)"
+| "eemb ix rq (EAndAssign p4 trm \<phi>) = EAndAssign p4 trm (eemb ix [] \<phi>)"
+| "eemb ix rq (ETP mt5 i5) = ETP mt5 i5"
+| "eemb ix rq (ETS mt6) = ETS mt6"
+| "eemb ix rq (ELet p7 m7 \<phi> \<psi>) = ELet p7 m7 (eemb ix (preq (p7, m7) \<psi>) \<phi>) (eemb ix [] \<psi>)"
+| "eemb ix rq (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4) = EPlain (EFrz p13 m13 \<phi> \<psi> a13 b13 c13 d13 \<chi>1 e13 f13 g13 h13 i13 j13 k13 l13 \<chi>2 n13 o13 \<chi>3 \<chi>4)"
+| "eemb ix rq (ELetPast p14 m14 \<phi> \<psi> i14 buf14) = EPlain (ELetPast p14 m14 \<phi> \<psi> i14 buf14)"
+| "eemb ix rq (ETrigger dags8 pls8 \<phi> \<psi> tbuf8 nts8 aux8) = ETrigger dags8 pls8 (eemb ix [] \<phi>) (eemb ix [] \<psi>) tbuf8 nts8 aux8"
+| "eemb ix rq (ERelease dags9 msk9 \<phi> \<psi> rbuf nts9 t9 aux9) = ERelease dags9 msk9 (eemb ix [] \<phi>) (eemb ix [] \<psi>) rbuf nts9 t9 aux9"
+| "eemb ix rq (EAndTrigger pl10 \<alpha> abuf dags10 \<phi> \<psi> tbuf10 nts10 aux10) = EAndTrigger pl10 (eemb ix [] \<alpha>) abuf dags10 (eemb ix [] \<phi>) (eemb ix [] \<psi>) tbuf10 nts10 aux10"
+| "eemb ix rq (EMatchP m11 I11 mr11 mrs11 pls11 Ld11 nbuf11 nts11 aux11) = EMatchP m11 I11 mr11 mrs11 pls11 (map (eemb ix []) Ld11) nbuf11 nts11 aux11"
+| "eemb ix rq (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) = EMatchF m12 I12 mr12 mrs12 pls12 (map (eemb ix []) Ld12) nbuf12 nts12 t12 aux12"
+| "eemb ix rq (EPlain u) = EPlain (EPlain u)"
   by pat_completeness auto
 termination
-  by (relation "measure (\<lambda>(_, \<phi>). size \<phi>)")
+  by (relation "measure (\<lambda>(_, _, \<phi>). size \<phi>)")
     (auto dest!: set_zip_rightD intro: size_list_estimation' simp: less_Suc_eq_le)
 
 lemma map_zip_inv:
@@ -243,10 +247,10 @@ lemma map_zip_inv:
     map g (map (\<lambda>(q, x). f q x) (zip Q L)) = L"
   by (induct Q L rule: list_induct2) auto
 
-lemma eabs_eemb[simp]: "eabs (eemb rq \<phi>) = \<phi>"
-proof (induct rq \<phi> rule: eemb.induct)
-  case (13 rq ps ns Ld dbuf)
-  have "map eabs (map (\<lambda>(q, \<phi>). eemb q \<phi>) (zip (eands_req ps (length Ld)) Ld)) = Ld"
+lemma eabs_eemb[simp]: "eabs (eemb ix rq \<phi>) = \<phi>"
+proof (induct ix rq \<phi> rule: eemb.induct)
+  case (13 ix rq ps ns Ld dbuf)
+  have "map eabs (map (\<lambda>(q, \<phi>). eemb ix q \<phi>) (zip (eands_req ps (length Ld)) Ld)) = Ld"
     by (rule map_zip_inv) (auto intro: 13)
   then show ?case by simp
 qed (auto simp: comp_def intro!: map_idI)
@@ -318,10 +322,10 @@ function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> t
           (ys, \<psi>') = ieval [] j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, ELet p m \<phi>' \<psi>'))"
 | "ieval rq j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) =
-     map_prod (map itab) (eemb [])
+     map_prod (map itab) (eemb IxNone [])
        (eeval j ts (dabs db) (eabs (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)))"
 | "ieval rq j ts db (ELetPast p m \<phi> \<psi> i buf) =
-     map_prod (map itab) (eemb []) (eeval j ts (dabs db) (eabs (ELetPast p m \<phi> \<psi> i buf)))"
+     map_prod (map itab) (eemb IxNone []) (eeval j ts (dabs db) (eabs (ELetPast p m \<phi> \<psi> i buf)))"
 | "ieval rq j ts db (ETrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = ieval [] j ts db \<phi>; (ys, \<psi>') = ieval [] j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
@@ -503,7 +507,7 @@ proof -
   finally show ?thesis .
 qed
 
-lemma ieval_fallback: "map_prod (map itab) (eemb []) E = (xs, \<phi>') \<Longrightarrow> E = (map iset xs, eabs \<phi>')"
+lemma ieval_fallback: "map_prod (map itab) (eemb IxNone []) E = (xs, \<phi>') \<Longrightarrow> E = (map iset xs, eabs \<phi>')"
   by (cases E) (auto simp: comp_def)
 
 theorem ieval_eeval:
