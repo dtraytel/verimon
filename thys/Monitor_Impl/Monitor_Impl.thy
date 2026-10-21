@@ -220,6 +220,10 @@ begin
 qualified definition card_UNIV' :: "'a card_UNIV"
 where [code drop]: "card_UNIV' = Phantom('a) CARD('a)"
 
+lemma CARD_code [code_unfold]:
+  "CARD('a) = of_phantom (card_UNIV' :: 'a card_UNIV)"
+by(simp add: card_UNIV'_def)
+
 lemma card_UNIV'_code [code]:
   "card_UNIV' = card_UNIV"
 by(simp add: card_UNIV card_UNIV'_def)
@@ -363,6 +367,18 @@ lemma LPDs_code[code]: "LPDs r = LPDs_aux {r}"
   unfolding LPDs_aux_def LPDs_code
   by (rule saturate_commute[where C="LPDs r"])
      (auto 0 3 simp: mono_def subset_singleton_iff LPDs_refl LPDs_trans finite_LPDs)
+
+lemma is_empty_table_unfold [code_unfold]:
+  "X = empty_table \<longleftrightarrow> Set.is_empty X"
+  "empty_table = X \<longleftrightarrow> Set.is_empty X"
+  "set_eq X empty_table \<longleftrightarrow> Set.is_empty X"
+  "set_eq empty_table X \<longleftrightarrow> Set.is_empty X"
+  "X = (set_empty impl) \<longleftrightarrow> Set.is_empty X"
+  "(set_empty impl) = X \<longleftrightarrow> Set.is_empty X"
+  "set_eq (set_empty impl) X \<longleftrightarrow> Set.is_empty X"
+  "set_eq X (set_empty impl) \<longleftrightarrow> Set.is_empty X"
+  unfolding set_eq_def set_empty_def empty_table_def
+  by auto
 
 lemma tabulate_rbt_code[code]: "Monitor.mrtabulate (xs :: mregex list) f =
   (case ID CCOMPARE(mregex) of None \<Rightarrow> Code.abort (STR ''mrtabulate RBT_Mapping: ccompare = None'') (\<lambda>_. Monitor.mrtabulate (xs :: mregex list) f)
@@ -687,6 +703,10 @@ declare regex.pred_inject[code]
 
 declare regex.pred_set[THEN fun_cong, symmetric, code_unfold]
 
+lemma Bex_pred_regex[code_unfold]: "Bex (regex.atms x) P \<longleftrightarrow> \<not> regex.pred_regex (Not o P) x"
+  by (induct x) auto
+
+
 derive (eq) ceq rec_safety
 derive ccompare rec_safety
 derive (dlist) set_impl rec_safety
@@ -725,23 +745,54 @@ lemma safe_letpast_code[code]:
   "safe_letpast p (Formula.TS t) = Unused"
   by (auto simp add: regex.set_map)
 
+lemma Sup_rec_safety_set[code_unfold]:
+  "\<Squnion> (set l :: rec_safety set) = fold (\<squnion>) l Unused"
+  by (simp add: Sup_rec_safety_def comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
+
+lemma Sup_rec_safety_atms[code_unfold]:
+  "\<Squnion> (Regex.atms r :: rec_safety set) = fold (\<squnion>) (csorted_list_of_set (Regex.atms r)) Unused"
+  by (simp add: Sup_rec_safety_def csorted_list_of_set_def ccompare_rec_safety_def ID_def
+      linorder.set_sorted_list_of_set[OF comparator.linorder] comparator_rec_safety
+      flip: comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
+
 lift_definition delete_cnt_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> nat agg_map)) comp_fun_commute" is
   "\<lambda>args. delete_cnt args" using delete_cnt_comm by unfold_locales auto
+
+lemma delete_cnt_code[code_unfold]: "Finite_Set.fold (delete_cnt args) (v, m) data = set_fold_cfc (delete_cnt_cfc args) (v, m) data"
+  by(transfer) auto
 
 lift_definition delete_sum_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> ((nat \<times> integer) agg_map))) comp_fun_commute" is
   "\<lambda>args. delete_sum args" using delete_sum_comm by unfold_locales auto
 
+lemma delete_sum_code[code_unfold]: "Finite_Set.fold (delete_sum args) (v, m) data = set_fold_cfc (delete_sum_cfc args) (v, m) data"
+  by(transfer) auto
+
 lift_definition delete_rank_cfc::"aggargs \<Rightarrow> type \<Rightarrow> (event_data tuple, bool \<times> list_aux agg_map) comp_fun_commute" is
   "\<lambda>args. delete_rank args" using delete_rank_comm by unfold_locales auto
+
+lemma delete_rank_code[code_unfold]: "Finite_Set.fold (delete_rank args type) (v, m) data = set_fold_cfc (delete_rank_cfc args type) (v, m) data"
+  by(transfer) auto
 
 lift_definition insert_cnt_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> nat agg_map)) comp_fun_commute" is
   "\<lambda>args. insert_cnt args" using insert_cnt_comm by unfold_locales auto
 
+lemma insert_cnt_code[code_unfold]: "Finite_Set.fold (insert_cnt args) (v, m) data = set_fold_cfc (insert_cnt_cfc args) (v, m) data"
+  by(transfer) auto
+
 lift_definition insert_sum_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> ((nat \<times> integer) agg_map))) comp_fun_commute" is
   "\<lambda>args. insert_sum args" using insert_sum_comm by unfold_locales auto
 
+lemma insert_sum_code[code_unfold]: "Finite_Set.fold (insert_sum args) (v, m) data = set_fold_cfc (insert_sum_cfc args) (v, m) data"
+  by(transfer) auto
+
 lift_definition insert_rank_cfc::"aggargs \<Rightarrow> type \<Rightarrow> (event_data tuple, bool \<times> list_aux agg_map) comp_fun_commute" is
   "\<lambda>args. insert_rank args" using insert_rank_comm by unfold_locales auto
+
+lemma insert_rank_code[code_unfold]: "Finite_Set.fold (insert_rank args type) (v, m) data = set_fold_cfc (insert_rank_cfc args type) (v, m) data"
+  by(transfer) auto
+
+lemma set_diff_code[code_unfold]: "X - Mapping.keys tuple_in = Set.filter (\<lambda>k. Mapping.lookup tuple_in k = None) X"
+  by(transfer) auto
 
 instantiation treelist :: (equal) equal begin
 lift_definition equal_treelist :: "'a treelist \<Rightarrow> 'a treelist \<Rightarrow> bool" is "(=)" .

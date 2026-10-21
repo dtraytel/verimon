@@ -145,10 +145,6 @@ qed
 context
 begin
 
-lemma CARD_code [code_unfold]:
-  "CARD('a) = of_phantom (card_UNIV' :: 'a card_UNIV)"
-by(simp add: card_UNIV'_def)
-
 end
 
 interpretation verimon_maux: maux valid_vmsaux init_vmsaux add_new_ts_vmsaux join_vmsaux
@@ -210,18 +206,6 @@ interpretation default_maux: maux
   (* joins *) bin_join mmulti_join
   by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
-lemma is_empty_table_unfold [code_unfold]:
-  "X = empty_table \<longleftrightarrow> Set.is_empty X"
-  "empty_table = X \<longleftrightarrow> Set.is_empty X"
-  "set_eq X empty_table \<longleftrightarrow> Set.is_empty X"
-  "set_eq empty_table X \<longleftrightarrow> Set.is_empty X"
-  "X = (set_empty impl) \<longleftrightarrow> Set.is_empty X"
-  "(set_empty impl) = X \<longleftrightarrow> Set.is_empty X"
-  "set_eq (set_empty impl) X \<longleftrightarrow> Set.is_empty X"
-  "set_eq X (set_empty impl) \<longleftrightarrow> Set.is_empty X"
-  unfolding set_eq_def set_empty_def empty_table_def
-  by auto
-
 lemma upd_set'_insert: "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_set' m d f (Set.insert x A) =
   (let m' = (upd_set' m d f A) in case Mapping.lookup m' x of None \<Rightarrow> Mapping.update x d m'
   | Some v \<Rightarrow> Mapping.update x (f v) m')"
@@ -247,41 +231,6 @@ qed
 
 lemma tabulate_remdups: "Mapping.tabulate xs f = Mapping.tabulate (remdups xs) f"
   by (transfer fixing: xs f) (auto simp: map_of_map_restrict)
-
-lemma Bex_pred_regex[code_unfold]: "Bex (regex.atms x) P \<longleftrightarrow> \<not> regex.pred_regex (Not o P) x"
-  by (induct x) auto
-
-
-lemma Sup_rec_safety_set[code_unfold]:
-  "\<Squnion> (set l :: rec_safety set) = fold (\<squnion>) l Unused"
-  by (simp add: Sup_rec_safety_def comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
-
-lemma Sup_rec_safety_atms[code_unfold]:
-  "\<Squnion> (Regex.atms r :: rec_safety set) = fold (\<squnion>) (csorted_list_of_set (Regex.atms r)) Unused"
-  by (simp add: Sup_rec_safety_def csorted_list_of_set_def ccompare_rec_safety_def ID_def
-      linorder.set_sorted_list_of_set[OF comparator.linorder] comparator_rec_safety
-      flip: comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
-
-lemma delete_cnt_code[code_unfold]: "Finite_Set.fold (delete_cnt args) (v, m) data = set_fold_cfc (delete_cnt_cfc args) (v, m) data"
-  by(transfer) auto
-
-lemma delete_sum_code[code_unfold]: "Finite_Set.fold (delete_sum args) (v, m) data = set_fold_cfc (delete_sum_cfc args) (v, m) data"
-  by(transfer) auto
-
-lemma delete_rank_code[code_unfold]: "Finite_Set.fold (delete_rank args type) (v, m) data = set_fold_cfc (delete_rank_cfc args type) (v, m) data"
-  by(transfer) auto
-
-lemma insert_cnt_code[code_unfold]: "Finite_Set.fold (insert_cnt args) (v, m) data = set_fold_cfc (insert_cnt_cfc args) (v, m) data"
-  by(transfer) auto
-
-lemma insert_sum_code[code_unfold]: "Finite_Set.fold (insert_sum args) (v, m) data = set_fold_cfc (insert_sum_cfc args) (v, m) data"
-  by(transfer) auto
-
-lemma insert_rank_code[code_unfold]: "Finite_Set.fold (insert_rank args type) (v, m) data = set_fold_cfc (insert_rank_cfc args type) (v, m) data"
-  by(transfer) auto
-
-lemma set_diff_code[code_unfold]: "X - Mapping.keys tuple_in = Set.filter (\<lambda>k. Mapping.lookup tuple_in k = None) X"
-  by(transfer) auto
 
 lemma to_add_set_insert: "to_add_set a m (Set.insert x X) = to_add_set_fun a m x (to_add_set a m X) "
   unfolding to_add_set_def to_add_set_fun_def
