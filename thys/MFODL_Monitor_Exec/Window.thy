@@ -1,7 +1,7 @@
 (*<*)
 theory Window
-  imports Tuple_Fields "Monitor_Impl.Optimized_Until_Deque"
-    "Monitor_Impl.Optimized_Trigger"
+  imports Tuple_Fields "Monitor_Impl_Proof.Optimized_Until_Deque_Proof"
+    "Monitor_Impl_Proof.Optimized_Trigger_Proof"
 begin
 (*>*)
 

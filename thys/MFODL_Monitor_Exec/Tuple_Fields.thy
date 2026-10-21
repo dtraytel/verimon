@@ -1,6 +1,6 @@
 (*<*)
 theory Tuple_Fields
-  imports "Monitor_Impl.Code_Opt"
+  imports "Monitor_Impl.Code_Opt" "Monitor_Impl_Proof.Monitor_Impl_Proof"
 begin
 (*>*)
 
