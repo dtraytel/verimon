@@ -348,6 +348,18 @@ val exec_elem_consts =
    "itab", "iset", "iidxs", "iindex", "iensure1", "iensure", "iupd", "iins", "idel", "iadd", "isub", "iunion",
    "iprobe", "iprobe_l", "ijoin0", "ijoin"]
 fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
+
+(* The indexed window structures are defined at event_data already; specialising them still
+   fixes the dictionaries of the operations they call, and must happen in the same call as the
+   rest, before the operations they call are redirected to their own specialisations. *)
+val iwindow_consts =
+  ["icnt_add1", "icnt_del1", "icnt_add", "icnt_del",
+   "isw_move", "isw_expire", "isw_add_new_ts", "isw_join", "isw_add_new_table", "isw_result",
+   "isw_ensure",
+   "ieshift_end", "ieadd_new_ts_msaux'", "ieadd_new_ts_msaux", "iegc_msaux",
+   "ieadd_new_table_msaux", "ieadd_new_table_lz", "iejoin_msaux", "iegc_join_msaux",
+   "iegc_join_lz", "ieresult_msaux", "iems_ensure",
+   "iuw_extend", "iuw_step", "iuw_shift", "iuw_add_new", "iuw_eval", "iuw_ensure"]
 \<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
@@ -368,7 +380,8 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("gjoin_idx", "de_gjoin_idx_nat", ["event_data list", "event_data list", "nat"]),
       ("gjoin_idx1", "de_gjoin_idx1_nat", ["event_data list", "event_data list", "nat"]),
       ("mapping_delete_set", "de_mapping_delete_set_table",
-        ["event_data list", "event_data list set"])])
+        ["event_data list", "event_data list set"])]
+   @ map (fn c => (c, mono_name "de_" c, [])) iwindow_consts)
   ["etuple_dict_simps"]\<close>
 
 text \<open>The deletion of a key set passes the deletion to the tree's fold unapplied; at the two
