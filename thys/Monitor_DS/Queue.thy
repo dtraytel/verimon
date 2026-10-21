@@ -1,6 +1,6 @@
 (*<*)
 theory Queue
-  imports "HOL-Library.Simps_Case_Conv" "HOL-Library.Mapping"
+  imports "HOL-Library.Extended_Nat" "HOL-Library.Simps_Case_Conv" "HOL-Library.Mapping"
 begin
 (*>*)
 
