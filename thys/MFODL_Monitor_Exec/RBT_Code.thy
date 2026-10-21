@@ -236,7 +236,7 @@ text \<open>
   each height as a @{typ nat} by walking the tree's left spine -- a boxed number per level, and
   per call.  On \<^verbatim>\<open>until-nu20\<close> that was 5\% of the run.
 
-  \<^file>\<open>../MFODL_Monitor_Devel/RBT_set_opt.thy\<close> already decides these comparisons for its own
+  \<^file>\<open>../Monitor_DS/RBT_set_opt.thy\<close> already decides these comparisons for its own
   trees by descending the two spines in lockstep (@{text bh_le}), or by counting a bound down
   (@{text bh_lt}); both allocate nothing.  Those are stated for the trees of unit values; the
   library's operations are at every value type, so the two comparisons are restated here at
