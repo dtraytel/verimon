@@ -1153,10 +1153,10 @@ let rec inter_list _A
           xc)
         Empty);;
 
-let rec filtere _A
+let rec filterd _A
   xb xc = Mapping_RBTa (rbtreeify (filtera xb (entries (impl_ofa _A xc))));;
 
-let rec filterd _A xb xc = Abs_dlist (filtera xb (list_of_dlist _A xc));;
+let rec filterc _A xb xc = Abs_dlist (filtera xb (list_of_dlist _A xc));;
 
 let rec comp f g = (fun x -> f (g x));;
 
@@ -1185,7 +1185,7 @@ let rec inf_seta (_A1, _A2)
           with None ->
             failwith "inter Set_Monad DList_set: ceq = None"
               (fun _ -> inf_seta (_A1, _A2) (Set_Monad xs) (DList_set dxs2))
-          | Some eq -> DList_set (filterd _A1 (list_member eq xs) dxs2))
+          | Some eq -> DList_set (filterc _A1 (list_member eq xs) dxs2))
     | Set_Monad xs1, Set_Monad xs2 ->
         (match ceq _A1
           with None ->
@@ -1208,13 +1208,13 @@ let rec inf_seta (_A1, _A2)
           with None ->
             failwith "inter DList_set Set_Monad: ceq = None"
               (fun _ -> inf_seta (_A1, _A2) (DList_set dxs1) (Set_Monad xs))
-          | Some eq -> DList_set (filterd _A1 (list_member eq xs) dxs1))
+          | Some eq -> DList_set (filterc _A1 (list_member eq xs) dxs1))
     | DList_set dxs1, DList_set dxs2 ->
         (match ceq _A1
           with None ->
             failwith "inter DList_set DList_set: ceq = None"
               (fun _ -> inf_seta (_A1, _A2) (DList_set dxs1) (DList_set dxs2))
-          | Some _ -> DList_set (filterd _A1 (memberc _A1 dxs2) dxs1))
+          | Some _ -> DList_set (filterc _A1 (memberc _A1 dxs2) dxs1))
     | DList_set dxs, RBT_set rbt ->
         (match ccompare _A2
           with None ->
@@ -1234,7 +1234,7 @@ let rec inf_seta (_A1, _A2)
               (fun _ -> inf_seta (_A1, _A2) g (RBT_set rbt2))
           | Some _ ->
             RBT_set
-              (filtere _A2 (comp (fun x -> member (_A1, _A2) x g) fst) rbt2))
+              (filterd _A2 (comp (fun x -> member (_A1, _A2) x g) fst) rbt2))
     | RBT_set rbt1, g ->
         (match ccompare _A2
           with None ->
@@ -1242,21 +1242,21 @@ let rec inf_seta (_A1, _A2)
               (fun _ -> inf_seta (_A1, _A2) (RBT_set rbt1) g)
           | Some _ ->
             RBT_set
-              (filtere _A2 (comp (fun x -> member (_A1, _A2) x g) fst) rbt1))
+              (filterd _A2 (comp (fun x -> member (_A1, _A2) x g) fst) rbt1))
     | h, DList_set dxs2 ->
         (match ceq _A1
           with None ->
             failwith "inter DList_set2: ceq = None"
               (fun _ -> inf_seta (_A1, _A2) h (DList_set dxs2))
           | Some _ ->
-            DList_set (filterd _A1 (fun x -> member (_A1, _A2) x h) dxs2))
+            DList_set (filterc _A1 (fun x -> member (_A1, _A2) x h) dxs2))
     | DList_set dxs1, h ->
         (match ceq _A1
           with None ->
             failwith "inter DList_set1: ceq = None"
               (fun _ -> inf_seta (_A1, _A2) (DList_set dxs1) h)
           | Some _ ->
-            DList_set (filterd _A1 (fun x -> member (_A1, _A2) x h) dxs1))
+            DList_set (filterc _A1 (fun x -> member (_A1, _A2) x h) dxs1))
     | i, Set_Monad xs -> Set_Monad (filtera (fun x -> member (_A1, _A2) x i) xs)
     | Set_Monad xs, i -> Set_Monad (filtera (fun x -> member (_A1, _A2) x i) xs)
     | j, Collect_set a -> Collect_set (fun x -> a x && member (_A1, _A2) x j)
@@ -9505,7 +9505,7 @@ let rec ed_inter
     | Set_Monad xs, RBT_set rbt1 -> RBT_set (ed_rbt_inter_list rbt1 xs)
     | Set_Monad xs, DList_set dxs2 ->
         DList_set
-          (filterd (ceq_list ceq_event_data)
+          (filterc (ceq_list ceq_event_data)
             (list_member (equality_list equal_event_dataa) xs) dxs2)
     | Set_Monad xs1, Set_Monad xs2 ->
         Set_Monad
@@ -9517,11 +9517,11 @@ let rec ed_inter
         RBT_set (ed_rbt_meet_unit (fun _ _ -> id) rbt1 rbt2)
     | DList_set dxs1, Set_Monad xs ->
         DList_set
-          (filterd (ceq_list ceq_event_data)
+          (filterc (ceq_list ceq_event_data)
             (list_member (equality_list equal_event_dataa) xs) dxs1)
     | DList_set dxs1, DList_set dxs2 ->
         DList_set
-          (filterd (ceq_list ceq_event_data)
+          (filterc (ceq_list ceq_event_data)
             (memberc (ceq_list ceq_event_data) dxs2) dxs1)
     | DList_set dxs, RBT_set rbt ->
         RBT_set
@@ -9529,18 +9529,18 @@ let rec ed_inter
     | Complement ba, Complement b -> Complement (ed_union ba b)
     | g, RBT_set rbt2 ->
         RBT_set
-          (filtere (ccompare_list ccompare_event_data)
+          (filterd (ccompare_list ccompare_event_data)
             (comp (fun x -> ed_member x g) fst) rbt2)
     | RBT_set rbt1, g ->
         RBT_set
-          (filtere (ccompare_list ccompare_event_data)
+          (filterd (ccompare_list ccompare_event_data)
             (comp (fun x -> ed_member x g) fst) rbt1)
     | h, DList_set dxs2 ->
         DList_set
-          (filterd (ceq_list ceq_event_data) (fun x -> ed_member x h) dxs2)
+          (filterc (ceq_list ceq_event_data) (fun x -> ed_member x h) dxs2)
     | DList_set dxs1, h ->
         DList_set
-          (filterd (ceq_list ceq_event_data) (fun x -> ed_member x h) dxs1)
+          (filterc (ceq_list ceq_event_data) (fun x -> ed_member x h) dxs1)
     | i, Set_Monad xs -> Set_Monad (filtera (fun x -> ed_member x i) xs)
     | Set_Monad xs, i -> Set_Monad (filtera (fun x -> ed_member x i) xs)
     | j, Collect_set a -> Collect_set (fun x -> a x && ed_member x j)
@@ -15096,18 +15096,7 @@ let rec eabs
 
 let rec iudux_emb d = IUDUX_u d;;
 
-let rec de_itab
-  t = Abs_itab
-        (t, mapping_empty (ccompare_list ccompare_bool)
-              (of_phantom mapping_impl_list));;
-
-let rec isw_emb
-  aux = (let (t, (pend, (win, (c, s)))) = aux in
-          (t, (pend, (win, (c, de_itab s)))));;
-
-let rec iudsx_emb = function UDSX_win w -> IUDSX_win (isw_emb w)
-                    | UDSX_gen v -> IUDSX_u (UDSX_gen v)
-                    | UDSX_wagg (v, va, vb) -> IUDSX_u (UDSX_wagg (v, va, vb));;
+let rec iudsx_emb d = IUDSX_u d;;
 
 let rec eemb
   = function EFail -> EFail
@@ -16622,6 +16611,11 @@ let rec de_ieresult_msaux
 
 let rec de_isw_result aux = (let (_, (_, (_, a))) = aux in snd a);;
 
+let rec de_itab
+  t = Abs_itab
+        (t, mapping_empty (ccompare_list ccompare_bool)
+              (of_phantom mapping_impl_list));;
+
 let rec iudsx_result
   args x1 = match args, x1 with args, IUDSX_u d -> de_itab (udsx_result args d)
     | args, IUDSX_win w -> de_isw_result w
@@ -16648,30 +16642,38 @@ let rec set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
                        (set_impl_prod _A3 set_impl_set))
                   (entriesa _A2 t))));;
 
-let rec de_esemi_idx
-  msk pos idx x =
-    set_of_idx
-      ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
-        set_impl_list)
-      (finite_UNIV_list, cenum_list, (ceq_list ceq_event_data),
-        (cproper_interval_list ccompare_event_data), set_impl_list)
-      (de_mfilter_keys_table pos x idx);;
-
-let rec filterc _A
-  p x1 = match p, x1 with
-    p, RBT_Mapping t ->
-      (match ccompare _A
-        with None ->
-          failwith "filter RBT_Mapping: ccompare = None"
-            (fun _ -> filterc _A p (RBT_Mapping t))
-        | Some _ -> RBT_Mapping (filtere _A (fun (a, b) -> p a b) t))
-    | p, Assoc_List_Mapping al ->
-        Assoc_List_Mapping (filterb (fun (a, b) -> p a b) al)
-    | p, Mapping m ->
-        Mapping
-          (fun k ->
-            (match m k with None -> None
-              | Some v -> (if p k v then Some v else None)));;
+let rec de_igjoin_idx_nat
+  pos y (RBT_Mapping t) acc =
+    (if pos
+      then (let d =
+              foldd (ccompare_list ccompare_event_data)
+                (fun k v acca ->
+                  (if ed_member k y then acca else (k, v) :: acca))
+                t []
+              in
+             (foldr (fun p -> ed_delete_table (fst p)) d (RBT_Mapping t),
+               foldr (fun p (a, tm) ->
+                       (de_isub (snd p) a, edl_mapping_delete_set tm (snd p)))
+                 d acc))
+      else (de_mfilter_keys_table pos y (RBT_Mapping t),
+             (let (a, tm) = acc in
+               (de_isub
+                  (set_of_idx
+                    ((ceq_list ceq_event_data),
+                      (ccompare_list ccompare_event_data), set_impl_list)
+                    (finite_UNIV_list, cenum_list, (ceq_list ceq_event_data),
+                      (cproper_interval_list ccompare_event_data),
+                      set_impl_list)
+                    (de_mfilter_keys_table (not pos) y (RBT_Mapping t)))
+                  a,
+                 edl_mapping_delete_set tm
+                   (set_of_idx
+                     ((ceq_list ceq_event_data),
+                       (ccompare_list ccompare_event_data), set_impl_list)
+                     (finite_UNIV_list, cenum_list, (ceq_list ceq_event_data),
+                       (cproper_interval_list ccompare_event_data),
+                       set_impl_list)
+                     (de_mfilter_keys_table (not pos) y (RBT_Mapping t)))))));;
 
 let rec de_iejoin_msaux
   args y
@@ -16697,26 +16699,19 @@ let rec de_iejoin_msaux
                            else ed_inter (de_iset table_in) y)
                          in
                        let tuple_ina = edl_mapping_delete_set tuple_in in_del in
-                       let tuple_sincea =
-                         edl_mfilter_nat
-                           (fun asa _ -> equal_boola (ed_member asa y) pos)
-                           tuple_since
+                       let tuple_sincea = de_mfilter_keys_nat pos y tuple_since
                          in
                         (t, (gc, (msk, (data_prev,
  (data_in,
    (de_isub in_del table_in,
      (ed_mempty_table, (tuple_ina, (ed_mempty_table, tuple_sincea))))))))))
-                 else (let in_del = de_esemi_idx msk (not pos) idx_in y in
-                       let since_del = de_esemi_idx msk (not pos) idx_since y in
+                 else (let (idx_ina, (table_ina, tuple_ina)) =
+                         de_igjoin_idx_nat pos y idx_in (table_in, tuple_in) in
+                       let (idx_sincea, tuple_sincea) =
+                         de_gjoin_idx1_nat pos y idx_since tuple_since in
                         (t, (gc, (msk, (data_prev,
  (data_in,
-   (de_isub in_del table_in,
-     (filterc (ccompare_list ccompare_event_data)
-        (fun k _ -> equal_boola (ed_member k y) pos) idx_in,
-       (edl_mapping_delete_set tuple_in in_del,
-         (filterc (ccompare_list ccompare_event_data)
-            (fun k _ -> equal_boola (ed_member k y) pos) idx_since,
-           edl_mapping_delete_set tuple_since since_del)))))))))))));;
+   (table_ina, (idx_ina, (tuple_ina, (idx_sincea, tuple_sincea)))))))))))));;
 
 let rec de_iegc_msaux
   args (nt, (gc, (msk, (data_prev,
@@ -16972,6 +16967,10 @@ let rec de_isw_ensure
     (let (t, (pend, (win, (c, s)))) = aux in
       (t, (pend, (win, (c, de_iensure msks s)))));;
 
+let rec isw_emb
+  aux = (let (t, (pend, (win, (c, s)))) = aux in
+          (t, (pend, (win, (c, de_itab s)))));;
+
 let rec ims_emb
   (t, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
     (t, (gc, (msk, (dp, (di, (de_itab ti, (ii, (tui, (is, tus)))))))));;
@@ -16980,12 +16979,23 @@ let rec iudsx_ensure
   msks x1 = match msks, x1 with
     msks, IUDSX_win w -> IUDSX_win (de_isw_ensure msks w)
     | msks, IUDSX_gen g -> IUDSX_gen (de_iems_ensure msks g)
+    | msks, IUDSX_u (UDSX_win w) ->
+        (if null msks then IUDSX_u (UDSX_win w)
+          else IUDSX_win (de_isw_ensure msks (isw_emb w)))
     | msks, IUDSX_u (UDSX_gen g) ->
         (if null msks then IUDSX_u (UDSX_gen g)
           else IUDSX_gen (de_iems_ensure msks (ims_emb g)))
-    | msks, IUDSX_u (UDSX_win va) -> IUDSX_u (UDSX_win va)
     | msks, IUDSX_u (UDSX_wagg (va, vb, vc)) ->
         IUDSX_u (UDSX_wagg (va, vb, vc));;
+
+let rec de_esemi_idx
+  msk pos idx x =
+    set_of_idx
+      ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
+        set_impl_list)
+      (finite_UNIV_list, cenum_list, (ceq_list ceq_event_data),
+        (cproper_interval_list ccompare_event_data), set_impl_list)
+      (de_mfilter_keys_table pos x idx);;
 
 let rec de_iprobe_l
   p rk m b =
