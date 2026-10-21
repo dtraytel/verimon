@@ -2,10 +2,18 @@ chapter AFP
 
 session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
   description
-    "The concrete instance of the monitoring algorithm meets the specification (for now: the
-     theories of session Monitor_Impl, checked again on top of the algorithm's correctness)."
+    "The concrete auxiliary structures meet their specifications (the valid_* invariants), and
+     the concrete instance default_maux of the monitoring algorithm is an instance of maux."
   sessions
     Monitor_Impl
   theories
-    "Monitor_Impl.Monitor_Impl"
+    Wf_Table_Proof
+    Optimized_Common_Proof
+    Optimized_Since_Proof
+    Optimized_Until_Proof
+    Optimized_Trigger_Proof
+    Optimized_Agg_Proof
+    Optimized_Agg_Temporal_Proof
+    Optimized_Until_Deque_Proof
+    Monitor_Impl_Proof
     "Monitor_Impl.Monomorphic_Code"
