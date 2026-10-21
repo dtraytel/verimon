@@ -381,6 +381,7 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("gjoin_idx1", "de_gjoin_idx1_nat", ["event_data list", "event_data list", "nat"]),
       ("mapping_delete_set", "de_mapping_delete_set_table",
         ["event_data list", "event_data list set"])]
+   @ [("igjoin_idx", "de_igjoin_idx_nat", ["event_data list", "event_data", "nat"])]
    @ map (fn c => (c, mono_name "de_" c, [])) iwindow_consts)
   ["etuple_dict_simps"]\<close>
 

@@ -209,6 +209,41 @@ lemma Rep_itab_isub_code[code abstract]: "Rep_itab (isub D A) =
 
 lemma iset_isub[simp]: "iset (isub D A) = iset A - D"
   by (simp add: iset_def Rep_itab_isub)
+
+text \<open>An indexed table is determined by its set and the masks of its indices.\<close>
+
+lemma itab_eqI:
+  assumes "iset A = iset B" "Mapping.keys (iidxs A) = Mapping.keys (iidxs B)"
+  shows "A = B"
+proof -
+  have "iidxs A = iidxs B"
+  proof (rule mapping_eqI)
+    fix msk
+    show "Mapping.lookup (iidxs A) msk = Mapping.lookup (iidxs B) msk"
+    proof (cases "msk \<in> Mapping.keys (iidxs A)")
+      case True
+      then have "Mapping.lookup (iidxs A) msk \<noteq> None" "Mapping.lookup (iidxs B) msk \<noteq> None"
+        using assms(2) by (auto simp: Mapping.keys_dom_lookup)
+      then obtain m m' where a: "Mapping.lookup (iidxs A) msk = Some m"
+        and b: "Mapping.lookup (iidxs B) msk = Some m'" by blast
+      show ?thesis using a b iidxs_eidx[OF a] iidxs_eidx[OF b] assms(1) by simp
+    next
+      case False
+      then show ?thesis using assms(2) by (auto simp: Mapping.keys_dom_lookup)
+    qed
+  qed
+  then show ?thesis using assms(1)
+    by (metis Rep_itab_inject iidxs_def iset_def prod.expand)
+qed
+
+lemma keys_iidxs_isub[simp]: "Mapping.keys (iidxs (isub D A)) = Mapping.keys (iidxs A)"
+  by (simp add: iidxs_def Rep_itab_isub)
+
+lemma isub_isub: "isub D2 (isub D1 A) = isub (D1 \<union> D2) A"
+  by (rule itab_eqI) auto
+
+lemma isub_empty[simp]: "isub {} A = A"
+  by (rule itab_eqI) auto
 subsection \<open>Union\<close>
 
 text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>

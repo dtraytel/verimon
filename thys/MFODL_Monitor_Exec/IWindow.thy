@@ -343,6 +343,73 @@ lemma iset_ieresult: "iset (ieresult_msaux a) = eresult_msaux args (ims_abs a)"
 lemma ims_abs_ensure[simp]: "ims_abs (iems_ensure msks a) = ims_abs a"
   by (cases a rule: iemsaux_cases) simp
 
+text \<open>The join of the structure, restated for code as the original is
+  (@{thm [source] ejoin_msaux_code}): one pass over the index collects the entries whose keys fail
+  the probe, and only their tuples leave the table, its indices and the time stamps.\<close>
+
+definition igjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b list set) mapping \<Rightarrow>
+    'b itab \<times> ('b list, 'v) mapping \<Rightarrow> ('k, 'b list set) mapping \<times> 'b itab \<times> ('b list, 'v) mapping" where
+  "igjoin_idx pos Y M acc = (mfilter_keys pos Y M,
+     (case acc of (A, tm) \<Rightarrow> (isub (set_of_idx (mfilter_keys (\<not> pos) Y M)) A,
+        mapping_delete_set tm (set_of_idx (mfilter_keys (\<not> pos) Y M)))))"
+
+lemma fold_idel_buckets:
+  "fold (\<lambda>p (A, tm). (isub (snd p) A, mapping_delete_set tm (snd p))) xs (A, tm)
+   = (isub (\<Union>(snd ` set xs)) A, mapping_delete_set tm (\<Union>(snd ` set xs)))"
+  by (induct xs arbitrary: A tm)
+    (auto simp: isub_isub mapping_delete_set_Un[symmetric] mapping_delete_set_empty)
+
+lemma igjoin_idx_code[code]:
+  fixes t :: "('k :: ccompare, 'b list set) mapping_rbt"
+  shows "igjoin_idx pos Y (RBT_Mapping t) acc = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''igjoin_idx RBT_Mapping: ccompare = None'')
+        (\<lambda>_. igjoin_idx pos Y (RBT_Mapping t) acc)
+    | Some _ \<Rightarrow> (if pos then
+        (let D = RBT_Mapping2.fold (\<lambda>k v acc. if k \<in> Y then acc else (k, v) # acc) t [] in
+         (foldr (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
+          foldr (\<lambda>p (A, tm). (isub (snd p) A, mapping_delete_set tm (snd p))) D acc))
+      else (mfilter_keys pos Y (RBT_Mapping t),
+        (case acc of (A, tm) \<Rightarrow>
+          (isub (set_of_idx (mfilter_keys (\<not> pos) Y (RBT_Mapping t))) A,
+           mapping_delete_set tm (set_of_idx (mfilter_keys (\<not> pos) Y (RBT_Mapping t))))))))"
+proof (cases "ID CCOMPARE('k)")
+  case (Some c)
+  then have n: "ID CCOMPARE('k) \<noteq> None" by simp
+  obtain A tm where acc: "acc = (A, tm)" by (cases acc)
+  show ?thesis
+    using Some by (simp add: acc igjoin_idx_def mfilter_keys_True_RBT[OF n]
+        set_of_idx_mfilter_keys_False_RBT[OF n] fold_idel_buckets
+        Let_def entries_fails_fold foldr_conv_fold del: RBT_Mapping_def)
+qed simp
+
+declare [[code drop: iejoin_msaux]]
+
+lemma iejoin_msaux_code[code]:
+  "iejoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (let pos = args_pos args in
+     (if \<forall>i \<in> set msk. \<not> i then
+        (let take_all = (([] \<in> Y) = pos) in
+         (t, gc, msk, data_prev, data_in,
+          if take_all then table_in else itab {},
+          if take_all then idx_in else Mapping.empty,
+          if take_all then tuple_in else Mapping.empty,
+          if take_all then idx_since else Mapping.empty,
+          if take_all then tuple_since else Mapping.empty))
+      else if \<forall>i \<in> set msk. i then
+        (let in_del = (if pos then iset table_in - Y else iset table_in \<inter> Y);
+         tuple_in' = mapping_delete_set tuple_in in_del;
+         tuple_since' = mfilter_keys pos Y tuple_since in
+         (t, gc, msk, data_prev, data_in, isub in_del table_in, Mapping.empty, tuple_in',
+          Mapping.empty, tuple_since'))
+      else
+        (let (idx_in', table_in', tuple_in') = igjoin_idx pos Y idx_in (table_in, tuple_in);
+             (idx_since', tuple_since') = gjoin_idx1 pos Y idx_since tuple_since in
+         (t, gc, msk, data_prev, data_in, table_in', idx_in', tuple_in', idx_since',
+          tuple_since'))))"
+  by (simp only: iejoin_msaux.simps Let_def igjoin_idx_def gjoin_idx1_def del_buckets1_def
+      mfilter_keys_def esemi_idx_def prod.case)
+
 subsection \<open>The Until structure for a closed left operand\<close>
 
 text \<open>The window of the Until structure for a closed left operand keeps the union of its entries
@@ -496,8 +563,8 @@ lemma iuw_abs_ensure[simp]: "iuw_abs (iuw_ensure msks aux) = iuw_abs aux"
 subsection \<open>The dispatched Since structures\<close>
 
 text \<open>The aggregating structures are kept as they are; their result is a table without
-  indices.  The general structure also starts out as it is, and becomes the indexed one when its
-  consumer first asks for an index: until then, indexing its table would only cost.\<close>
+  indices.  The other two start out as they are too, and become the indexed ones when their
+  consumer first asks for an index: until then, indexing their tables would only cost.\<close>
 
 datatype iudsaux_x = IUDSX_u udsaux_x | IUDSX_win iswaux | IUDSX_gen iemsaux
 
@@ -506,12 +573,11 @@ fun riu :: "iudsaux_x \<Rightarrow> udsaux_x" where
 | "riu (IUDSX_win w) = UDSX_win (isw_abs w)"
 | "riu (IUDSX_gen g) = UDSX_gen (ims_abs g)"
 
-fun iudsx_emb :: "udsaux_x \<Rightarrow> iudsaux_x" where
-  "iudsx_emb (UDSX_win w) = IUDSX_win (isw_emb w)"
-| "iudsx_emb d = IUDSX_u d"
+definition iudsx_emb :: "udsaux_x \<Rightarrow> iudsaux_x" where
+  "iudsx_emb d = IUDSX_u d"
 
 lemma riu_iudsx_emb[simp]: "riu (iudsx_emb d) = d"
-  by (cases d) simp_all
+  by (simp add: iudsx_emb_def)
 
 fun iudsx_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> iudsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_add_new_ts args nt (IUDSX_u d) = IUDSX_u (udsx_add_new_ts args nt d)"
@@ -536,6 +602,8 @@ fun iudsx_result :: "args \<Rightarrow> iudsaux_x \<Rightarrow> event_data itab"
 fun iudsx_ensure :: "bool list list \<Rightarrow> iudsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_ensure msks (IUDSX_win w) = IUDSX_win (isw_ensure msks w)"
 | "iudsx_ensure msks (IUDSX_gen g) = IUDSX_gen (iems_ensure msks g)"
+| "iudsx_ensure msks (IUDSX_u (UDSX_win w)) =
+     (if msks = [] then IUDSX_u (UDSX_win w) else IUDSX_win (isw_ensure msks (isw_emb w)))"
 | "iudsx_ensure msks (IUDSX_u (UDSX_gen g)) =
      (if msks = [] then IUDSX_u (UDSX_gen g) else IUDSX_gen (iems_ensure msks (ims_emb g)))"
 | "iudsx_ensure msks d = d"
