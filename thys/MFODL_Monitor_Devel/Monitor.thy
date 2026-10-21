@@ -4,7 +4,7 @@ theory Monitor
     "MFODL_Logic.Typing"
     "MFODL_Logic.Frz_Locality"
     "MFODL_Logic.Monitorable"
-    Optimized_Join
+    "MFODL_Logic.Table_Join"
     "HOL-Library.While_Combinator"
     "HOL-Library.Mapping"
 begin
@@ -779,6 +779,18 @@ text \<open>The columns of the result of a temporal operator, after the aggregat
 definition args_cols :: "args \<Rightarrow> nat list" where
   "args_cols args = (case args_agg args of None \<Rightarrow> args_R args
     | Some aggargs \<Rightarrow> aggargs_y aggargs # shift_cols (length (aggargs_tys aggargs)) (args_R args))"
+text \<open>The operations of the auxiliary structures, without their specification: the algorithm is
+  defined over these, so that an implementation of the structures yields an executable monitor
+  before (and independently of) the proof that it meets the specification
+  (locales @{text msaux}, @{text muaux}, @{text mtaux}, @{text maux}).\<close>
+
+locale msaux_ops =
+  fixes init_msaux :: "args \<Rightarrow> 'msaux"
+    and add_new_ts_msaux :: "args \<Rightarrow> ts \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
+    and join_msaux :: "args \<Rightarrow> event_data table \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
+    and add_new_table_msaux :: "args \<Rightarrow> event_data table \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
+    and result_msaux :: "args \<Rightarrow> 'msaux \<Rightarrow> event_data table"
+
 locale msaux =
   fixes valid_msaux :: "args \<Rightarrow> ts \<Rightarrow> 'msaux \<Rightarrow> event_data msaux \<Rightarrow> bool"
     and init_msaux :: "args \<Rightarrow> 'msaux"
@@ -825,6 +837,13 @@ fun trigger_results :: "args \<Rightarrow> ts \<Rightarrow> event_data mtaux \<R
     ) else
     ([], unit_table)
 )"
+
+sublocale msaux \<subseteq> msaux_ops init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux .
+
+locale mtaux_ops =
+  fixes init_mtaux :: "args \<Rightarrow> 'mtaux"
+    and update_mtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux"
+    and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat list \<times> event_data table)"
 
 locale mtaux =
   fixes valid_mtaux :: "args \<Rightarrow> ts \<Rightarrow> 'mtaux \<Rightarrow> event_data mtaux \<Rightarrow> bool"
@@ -922,6 +941,14 @@ definition update_release :: "args \<Rightarrow> event_data table \<Rightarrow> 
       else (t, a1, a2)) aux @
     [(nt, join (args_R args) rel2 (\<not> args_pos args) (args_L args) rel1, rel2)]"
 
+sublocale mtaux \<subseteq> mtaux_ops init_mtaux update_mtaux result_mtaux .
+
+locale muaux_ops =
+  fixes init_muaux :: "args \<Rightarrow> 'muaux"
+    and add_new_muaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> 'muaux"
+    and length_muaux :: "args \<Rightarrow> 'muaux \<Rightarrow> nat"
+    and eval_muaux :: "args \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> event_data table list \<times> 'muaux"
+
 locale muaux =
   fixes valid_muaux :: "args \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> event_data muaux \<Rightarrow> bool"
     and init_muaux :: "args \<Rightarrow> 'muaux"
@@ -939,6 +966,8 @@ locale muaux =
   assumes valid_eval_muaux: "valid_muaux args cur aux auxlist \<Longrightarrow> nt \<ge> cur \<Longrightarrow>
     eval_muaux args nt aux = (res, aux') \<Longrightarrow> eval_until (args_ivl args) nt auxlist = (res', auxlist') \<Longrightarrow>
     valid_muaux args cur aux' auxlist' \<and> res = map (eval_args_agg args) res'"
+
+sublocale muaux \<subseteq> muaux_ops init_muaux add_new_muaux length_muaux eval_muaux .
 
 locale maux = msaux valid_msaux init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux +
   muaux valid_muaux init_muaux add_new_muaux length_muaux eval_muaux + 
@@ -960,6 +989,41 @@ locale maux = msaux valid_msaux init_msaux add_new_ts_msaux join_msaux add_new_t
     and init_mtaux :: "args \<Rightarrow> 'mtaux"
     and update_mtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux"
     and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat list \<times> event_data table)"
+  + fixes bin_join :: "nat list \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> nat list \<Rightarrow> event_data table \<Rightarrow> event_data table"
+    and mmulti_join :: "nat list \<Rightarrow> nat list list \<Rightarrow> nat list list \<Rightarrow> event_data table list \<Rightarrow> event_data table"
+  assumes bin_join_table: "distinct cs \<Longrightarrow> distinct ds \<Longrightarrow> table cs t \<Longrightarrow> table ds t' \<Longrightarrow>
+    bin_join cs t pos ds t' = join cs t pos ds t'"
+    and mmulti_join_correct: "A_pos \<noteq> [] \<Longrightarrow>
+      list_all2 (\<lambda>A X. distinct A \<and> table A X) (A_pos @ A_neg) L \<Longrightarrow>
+      (\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set A_pos. set A) \<Longrightarrow>
+      distinct cs \<Longrightarrow> set cs = (\<Union>A\<in>set A_pos. set A) \<Longrightarrow>
+      z \<in> mmulti_join cs A_pos A_neg L \<longleftrightarrow> wf_tuple cs z \<and>
+      list_all2 (\<lambda>A X. restrict A cs z \<in> X) A_pos (take (length A_pos) L) \<and>
+      list_all2 (\<lambda>A X. restrict A cs z \<notin> X) A_neg (drop (length A_pos) L)"
+
+text \<open>The algorithm's parameters: the operations of the auxiliary structures and the joins.\<close>
+
+locale maux_ops = msaux_ops init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux +
+  muaux_ops init_muaux add_new_muaux length_muaux eval_muaux +
+  mtaux_ops init_mtaux update_mtaux result_mtaux
+  for init_msaux :: "args \<Rightarrow> 'msaux"
+    and add_new_ts_msaux :: "args \<Rightarrow> ts \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
+    and join_msaux :: "args \<Rightarrow> event_data table \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
+    and add_new_table_msaux :: "args \<Rightarrow> event_data table \<Rightarrow> 'msaux \<Rightarrow> 'msaux"
+    and result_msaux :: "args \<Rightarrow> 'msaux \<Rightarrow> event_data table"
+    and init_muaux :: "args \<Rightarrow> 'muaux"
+    and add_new_muaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> 'muaux \<Rightarrow> 'muaux"
+    and length_muaux :: "args \<Rightarrow> 'muaux \<Rightarrow> nat"
+    and eval_muaux :: "args \<Rightarrow> nat \<Rightarrow> 'muaux \<Rightarrow> event_data table list \<times> 'muaux"
+    and init_mtaux :: "args \<Rightarrow> 'mtaux"
+    and update_mtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux"
+    and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat list \<times> event_data table)"
+  + fixes bin_join :: "nat list \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> nat list \<Rightarrow> event_data table \<Rightarrow> event_data table"
+    and mmulti_join :: "nat list \<Rightarrow> nat list list \<Rightarrow> nat list list \<Rightarrow> event_data table list \<Rightarrow> event_data table"
+
+sublocale maux \<subseteq> maux_ops init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux
+  init_muaux add_new_muaux length_muaux eval_muaux init_mtaux update_mtaux result_mtaux
+  bin_join mmulti_join .
 
 fun split_assignment :: "nat set \<Rightarrow> 't Formula.formula \<Rightarrow> nat \<times> Formula.trm" where
   "split_assignment X (Formula.Eq t1 t2) = (case (t1, t2) of
@@ -991,7 +1055,7 @@ definition pred_mode_of :: "nat \<Rightarrow> Formula.trm list \<Rightarrow> pre
 
 abbreviation (input) "init_mbuf2S \<equiv> ([], [], [], False)"
 
-definition (in msaux) "init_since minit0 n agg \<phi> I \<psi> =
+definition (in msaux_ops) "init_since minit0 n agg \<phi> I \<psi> =
   (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) b agg)) in
    if safe_formula \<phi>
    then MSince (args True) (minit0 n \<phi>) (minit0 n \<psi>) init_mbuf2S (init_msaux (args True))
@@ -999,13 +1063,13 @@ definition (in msaux) "init_since minit0 n agg \<phi> I \<psi> =
      Formula.Neg \<phi>' \<Rightarrow> MSince (args False) (minit0 n \<phi>') (minit0 n \<psi>) init_mbuf2S (init_msaux (args False))
    | _ \<Rightarrow> MRel empty_table))"
 
-lemma (in msaux) init_since_cong[fundef_cong]:
+lemma (in msaux_ops) init_since_cong[fundef_cong]:
   assumes "\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi> + size' \<psi> \<Longrightarrow> minit0 m \<alpha> = minit0' m \<alpha>"
   shows "init_since minit0 n agg \<phi> I \<psi> = init_since minit0' n agg \<phi> I \<psi>"
   using assms
   by (auto simp: init_since_def split: formula.splits)
 
-definition (in muaux) "init_until minit0 n agg \<phi> I \<psi> =
+definition (in muaux_ops) "init_until minit0 n agg \<phi> I \<psi> =
   (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) b agg)) in
    if safe_formula \<phi>
    then MUntil (args True) (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux (args True))
@@ -1013,13 +1077,13 @@ definition (in muaux) "init_until minit0 n agg \<phi> I \<psi> =
      Formula.Neg \<phi>' \<Rightarrow> MUntil (args False) (minit0 n \<phi>') (minit0 n \<psi>) ([], []) [] 0 (init_muaux (args False))
    | _ \<Rightarrow> MRel empty_table))"
 
-lemma (in muaux) init_until_cong[fundef_cong]:
+lemma (in muaux_ops) init_until_cong[fundef_cong]:
   assumes "\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi> + size' \<psi> \<Longrightarrow> minit0 m \<alpha> = minit0' m \<alpha>"
   shows "init_until minit0 n agg \<phi> I \<psi> = init_until minit0' n agg \<phi> I \<psi>"
   using assms
   by (auto simp: init_until_def split: formula.splits)
 
-definition (in mtaux) "init_and_trigger minit0 n agg \<phi> \<phi>' I \<psi>' =
+definition (in mtaux_ops) "init_and_trigger minit0 n agg \<phi> \<phi>' I \<psi>' =
   (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>') (Formula.fv_list \<psi>') b agg)) in
     if (safe_formula \<phi>') then
       MAndTrigger (Formula.fv_list \<phi>) (minit0 n \<phi>) ([], []) (args True) (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mtaux (args True))
@@ -1027,20 +1091,20 @@ definition (in mtaux) "init_and_trigger minit0 n agg \<phi> \<phi>' I \<psi>' =
       Formula.Neg \<phi>' \<Rightarrow> MAndTrigger (Formula.fv_list \<phi>) (minit0 n \<phi>) ([], []) (args False) (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mtaux (args False))
       | _ \<Rightarrow> MRel empty_table))"
 
-lemma (in mtaux) init_and_trigger_cong[fundef_cong]:
+lemma (in mtaux_ops) init_and_trigger_cong[fundef_cong]:
   assumes "\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi> + size' \<phi>' + size' \<psi>' \<Longrightarrow> minit0 m \<alpha> = minit0' m \<alpha>"
   shows "init_and_trigger minit0 n agg \<phi> \<phi>' I \<psi>' = init_and_trigger minit0' n agg \<phi> \<phi>' I \<psi>'"
   using assms
   by (clarsimp simp: init_and_trigger_def split: formula.splits)
 
-definition (in mtaux) "init_trigger minit0 n agg \<phi> I \<psi> =
+definition (in mtaux_ops) "init_trigger minit0 n agg \<phi> I \<psi> =
   (let args = (\<lambda>b. (init_args I n (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) b agg)) in
    if safe_formula \<phi>
     then MTrigger (args True) (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mtaux (args True))
     else (case \<phi> of
       Formula.Neg \<phi> \<Rightarrow> MTrigger (args False) (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mtaux (args False))
       | _ \<Rightarrow> MRel empty_table))"
-lemma (in mtaux) init_trigger_cong[fundef_cong]:
+lemma (in mtaux_ops) init_trigger_cong[fundef_cong]:
   assumes "\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi> + size' \<psi> \<Longrightarrow> minit0 m \<alpha> = minit0' m \<alpha>"
   shows "init_trigger minit0 n agg \<phi> I \<psi> = init_trigger minit0' n agg \<phi> I \<psi>"
   using assms
@@ -1101,7 +1165,7 @@ definition frz_sep_init :: "Formula.name \<times> nat \<Rightarrow> 't Formula.f
   "frz_sep_init pn \<psi> = (if key_sep pn \<psi> \<and> Formula.contains_pred pn \<psi> then FSStock 0 1 0 {} 0 0 0 [] else FSOff)"
 
 
-function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula" where
+function (in maux_ops) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula" where
   "minit0 n (Formula.Neg \<phi>) = (if fv \<phi> = {} then MNeg (minit0 n \<phi>) else MRel empty_table)"
 | "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel t1 t2)"
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
@@ -1163,7 +1227,7 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n _ = MRel empty_table"
   by pat_completeness auto
 
-termination (in maux) minit0
+termination (in maux_ops) minit0
 proof ((relation "measure (\<lambda>(_, \<phi>). size' \<phi>)"; clarsimp), goal_cases)
   case (1 \<phi> \<psi>)
   then show ?case
@@ -1218,17 +1282,17 @@ next
 qed
   
 
-lemma (in maux) minit0_release_bounded:
+lemma (in maux_ops) minit0_release_bounded:
   assumes mem: "\<not>mem I 0"
   shows "minit0 n (Formula.Release \<phi> I \<psi>) = minit0 n (release_safe_bounded \<phi> I \<psi>)"
   using assms
   by auto
 
-definition (in maux) minit :: "ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate" where
+definition (in maux_ops) minit :: "ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate" where
   "minit \<phi> = (let n = Formula.nfv \<phi>
               in \<lparr>mstate_i = 0, mstate_j = 0, mstate_m = minit0 n \<phi>, mstate_n = n, mstate_t = []\<rparr>)"
 
-definition (in maux) minit_safe where
+definition (in maux_ops) minit_safe where
   "minit_safe \<phi> = (if mmonitorable_exec \<phi> then minit \<phi> else undefined)"
 
 
@@ -1260,7 +1324,7 @@ fun mbuf2t_take :: "(event_data table \<Rightarrow> event_data table \<Rightarro
   "mbuf2t_take f z (x # xs, y # ys) t0 (t # ts) = mbuf2t_take f (f x y t z) (xs, ys) t ts"
 | "mbuf2t_take f z (xs, ys) t0 ts = (z, (xs, ys), (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
 
-context maux begin
+context maux_ops begin
 context fixes args :: args begin
 
 fun eval_since :: "event_data table list \<Rightarrow> event_data mbuf2S \<Rightarrow> 'msaux \<Rightarrow>
@@ -2374,7 +2438,7 @@ lemma fv_list_Pred: "Formula.fv_list (Formula.Pred e ts) = pred_cols ts"
   by (simp add: pred_cols_def)
 type_synonym database = "(Formula.name \<times> nat, event_data table list) mapping"
 
-context maux
+context maux_ops
 begin
 
 context
@@ -2837,7 +2901,7 @@ proof (induction i ys xs p ts db \<phi> arbitrary: i' buf' ys' \<phi>f rule: let
 qed
 end (* maux *)
 
-definition (in maux) mstep :: "database \<times> ts \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate \<Rightarrow>
+definition (in maux_ops) mstep :: "database \<times> ts \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate \<Rightarrow>
     (nat \<times> ts \<times> event_data table) list \<times> ('msaux, 'muaux, 'mtaux) mstate" where
   "mstep tdb st =
     (case meval (mstate_j st + 1) (mstate_n st) [snd tdb] (fst tdb) (mstate_m st) of
@@ -2853,7 +2917,7 @@ lift_definition mk_db :: "(Formula.name \<times> event_data list) set \<Rightarr
     then Some [{ts. (p, ts) \<in> X \<and> n = length ts}] 
     else None)" .
 
-context maux
+context maux_ops
 begin
 
 primrec msteps0 where

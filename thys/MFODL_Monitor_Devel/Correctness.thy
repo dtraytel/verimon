@@ -3949,7 +3949,7 @@ next
   have out: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
       [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] zs"
     unfolding prog
-    by (rule list.rel_mono_strong[OF buf_new(2)]) (auto simp del: bin_join.simps intro: step)
+    by (rule list.rel_mono_strong[OF buf_new(2)]) (auto intro: step)
   show ?case
     unfolding meval_eq prod.case using wf_new out by (rule conjI)
 next
@@ -4452,7 +4452,7 @@ next
   qed
 next
   case (MAnds cs A_pos A_neg l buf)
-  note mbufn_take.simps[simp del] mbufn_add.simps[simp del] mmulti_join.simps[simp del]
+  note mbufn_take.simps[simp del] mbufn_add.simps[simp del]
 
   from MAnds.prems obtain pos neg l' 
     where wf_l: "list_all2 (wf_mformula \<sigma> j P V n R) l (pos @ map remove_neg neg)" 

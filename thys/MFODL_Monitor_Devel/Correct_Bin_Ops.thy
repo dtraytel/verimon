@@ -68,7 +68,7 @@ lemma mbuf2_take_add':
 
 subsection \<open> Binary operators' qtable \<close>
 
-lemma qtable_bin_join:
+lemma (in maux) qtable_bin_join:
   assumes "qtable A P1 Q1 X" "qtable B P2 Q2 Y" "distinct A" "distinct B"
     "\<not> b \<Longrightarrow> set B \<subseteq> set A" "C = cols_union A B"
     "\<And>x. wf_tuple C x \<Longrightarrow> P x \<Longrightarrow> P1 (restrict A C x) \<and> P2 (restrict B C x)"
@@ -80,7 +80,7 @@ lemma qtable_bin_join:
 
 text \<open>The join of two tables restricted to a slice, in the slice.\<close>
 
-lemma qtable_bin_join_mem_restr:
+lemma (in maux) qtable_bin_join_mem_restr:
   assumes "qtable A (mem_restr R A) Q1 X" "qtable B (mem_restr R B) Q2 Y" "distinct A" "distinct B"
     "\<not> b \<Longrightarrow> set B \<subseteq> set A" "C = cols_union A B"
     "\<And>x. b \<Longrightarrow> wf_tuple C x \<Longrightarrow> mem_restr R C x \<Longrightarrow> Q x \<longleftrightarrow> Q1 (restrict A C x) \<and> Q2 (restrict B C x)"
@@ -153,7 +153,7 @@ proof -
     by (rule finite_subset) (rule finite_lists_length_eq[OF D])
 qed
 
-lemma qtable_mmulti_join:
+lemma (in maux) qtable_mmulti_join:
   assumes pos: "list_all3 (\<lambda>A Qi X. qtable A (mem_restr R A) Qi X \<and> distinct A) A_pos Q_pos L_pos"
     and neg: "list_all3 (\<lambda>A Qi X. qtable A (mem_restr R A) Qi X \<and> distinct A) A_neg Q_neg L_neg"
     and C: "distinct C" "set C = (\<Union>A\<in>set A_pos. set A)" and L_eq: "L = L_pos @ L_neg"
@@ -201,7 +201,6 @@ proof (rule qtableI)
     with q(1) show ?thesis
       by (simp add: qtable_iff)
   qed
-  note mmulti_join.simps[simp del]
   have sub: "mmulti_join C A_pos A_neg L \<subseteq> {x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) A_pos L_pos}"
     unfolding L_eq subset_iff in_join_iff take_eq by blast
   have finL: "\<forall>X \<in> set L_pos. finite X"
