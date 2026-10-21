@@ -493,7 +493,7 @@ next
   case (12 args cur aux auxlist)
   then show ?case 
     using valid_result_mmtaux by blast
-qed (simp_all add: bin_join_table mmulti_join_correct)
+qed (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
 global_interpretation default_maux: maux 
   (* msaux *) valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux 
@@ -512,7 +512,7 @@ global_interpretation default_maux: maux
   and msteps0_stateless = "maux_ops.msteps0_stateless add_new_ts_mmasaux gc_join_mmasaux add_new_table_mmasaux (result_mmasaux :: _ \<Rightarrow> mmasaux \<Rightarrow> _) add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux bin_join mmulti_join"
   and msteps_stateless = "maux_ops.msteps_stateless add_new_ts_mmasaux gc_join_mmasaux add_new_table_mmasaux (result_mmasaux :: _ \<Rightarrow> mmasaux \<Rightarrow> _) add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux bin_join mmulti_join"
   and monitor = "maux_ops.monitor init_mmasaux add_new_ts_mmasaux gc_join_mmasaux add_new_table_mmasaux (result_mmasaux :: _ \<Rightarrow> mmasaux \<Rightarrow> _) init_muaux_dq add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join"
-  by unfold_locales (simp_all add: bin_join_table mmulti_join_correct)
+  by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
 lemma saturate_commute:
   assumes "\<And>s. r \<in> g s" "\<And>s. g (Set.insert r s) = g s" "\<And>s. r \<in> s \<Longrightarrow> h s = g s"
