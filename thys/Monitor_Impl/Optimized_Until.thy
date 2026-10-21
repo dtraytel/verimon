@@ -26,6 +26,12 @@ fun max_tstp :: "ts + tp \<Rightarrow> ts + tp \<Rightarrow> ts + tp" where
 | "max_tstp (Inl ts) _ = Inl ts"
 | "max_tstp _ (Inl ts) = Inl ts"
 
+lemma max_tstp_idem': "max_tstp x (max_tstp x y) = max_tstp x y"
+  by (cases x; cases y) auto
+
+lemma max_tstp_d_d: "max_tstp d d = d"
+  by (cases d) auto
+
 definition filter_a1_map :: "bool \<Rightarrow> tp \<Rightarrow> ('a tuple, tp) mapping \<Rightarrow> 'a table" where
   "filter_a1_map pos tp a1_map =
     {xs \<in> Mapping.keys a1_map. case Mapping.lookup a1_map xs of Some tp' \<Rightarrow>
@@ -127,6 +133,10 @@ fun shift_mmuaux :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rig
 lift_definition upd_set' :: "('a, 'b) mapping \<Rightarrow> 'b \<Rightarrow> ('b \<Rightarrow> 'b) \<Rightarrow> 'a set \<Rightarrow> ('a, 'b) mapping" is
   "\<lambda>m d f X a. (if a \<in> X then (case Mapping.lookup m a of Some b \<Rightarrow> Some (f b) | None \<Rightarrow> Some d)
     else Mapping.lookup m a)" .
+
+lemma upd_set'_lookup: "Mapping.lookup (upd_set' m d f X) a = (if a \<in> X then
+  (case Mapping.lookup m a of Some b \<Rightarrow> Some (f b) | None \<Rightarrow> Some d) else Mapping.lookup m a)"
+  by (simp add: Mapping.lookup.rep_eq upd_set'.rep_eq)
 
 lift_definition upd_nested :: "('a, ('b, 'c) mapping) mapping \<Rightarrow>
   'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarrow> ('a \<times> 'b) set \<Rightarrow> ('a, ('b, 'c) mapping) mapping" is

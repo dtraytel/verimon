@@ -4,11 +4,26 @@ theory Optimized_Common
 begin
 (*>*)
 
+lemma Mapping_keys_intro: "Mapping.lookup f x \<noteq> None \<Longrightarrow> x \<in> Mapping.keys f"
+  by (simp add: domIff keys_dom_lookup)
+
 definition mapping_delete_set :: "('a, 'b) mapping \<Rightarrow> 'a set \<Rightarrow> ('a, 'b) mapping" where
   "mapping_delete_set m X = Mapping.filter (join_filter_cond False X) m"
 
+lemma delete_set_lookup: "Mapping.lookup (mapping_delete_set m X) a = (if a \<in> X then
+  None else Mapping.lookup m a)"
+  by (auto simp: mapping_delete_set_def Mapping.lookup_filter split: option.splits)
+
+lemma delete_set_keys[simp]: "Mapping.keys (mapping_delete_set m X) = Mapping.keys m - X"
+  by (auto simp add: delete_set_lookup intro!: Mapping_keys_intro
+      dest!: Mapping.in_keysD split: if_splits)
+
 lift_definition upd_set :: "('a, 'b) mapping \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> 'a set \<Rightarrow> ('a, 'b) mapping" is
   "\<lambda>m f X a. if a \<in> X then Some (f a) else m a" .
+
+lemma Mapping_lookup_upd_set: "Mapping.lookup (upd_set m f X) a =
+  (if a \<in> X then Some (f a) else Mapping.lookup m a)"
+  by (simp add: Mapping.lookup.rep_eq upd_set.rep_eq)
 
 fun upd_set_keys where "upd_set_keys Z (t, X) (m, Y) = (upd_set m (\<lambda>_. t) (Z X t), Y \<union> Z X t)"
 
@@ -16,6 +31,10 @@ declare upd_set_keys.simps[simp del]
 
 abbreviation "filter_cond X' ts t' \<equiv> (\<lambda>as _. \<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t'))"
 abbreviation "filter_cond' X' ts t' \<equiv> (\<lambda>as. \<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t'))"
+
+lemma Mapping_lookup_filter_Some: "(\<And>v. P k v) \<Longrightarrow>
+  Mapping.lookup (Mapping.filter P m) k = Mapping.lookup m k"
+  by (auto simp add: Mapping.lookup_filter split: option.splits)
 
 fun filter_set where "filter_set (t, X) (m, Y) =
   (let m' = Mapping.filter (filter_cond X m t) m in (m', Y \<union> (Mapping.keys m - Mapping.keys m')))"
@@ -54,6 +73,10 @@ definition newest_tuple_in_mapping :: "
   )"
 
 declare Map_To_Mapping.map_apply_def[simp]
+
+lemma Mapping_lookup_delete: "Mapping.lookup (Mapping.delete k m) k' =
+  (if k = k' then None else Mapping.lookup m k')"
+  by transfer auto
 
 end
 (*>*)

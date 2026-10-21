@@ -5,87 +5,11 @@ begin
 (*>*)
 
 
-lemma dq_inv_empty[simp]: "dq_inv dq_empty"
-  by (simp add: dq_inv_def dq_empty_def)
-
-lemma dq_list_empty[simp]: "dq_list dq_empty = []"
-  by (simp add: dq_list_def dq_empty_def)
-
 lemma dq_len_list: "dq_inv d \<Longrightarrow> dq_len d = length (dq_list d)"
   by (simp add: dq_inv_def dq_len_def dq_list_def)
 
-lemma dq_inv_push[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_push x d)"
-  by (auto simp add: dq_inv_def dq_push_def)
-
-lemma dq_list_push[simp]: "dq_list (dq_push x d) = dq_list d @ [x]"
-  by (auto simp add: dq_list_def dq_push_def)
-
-lemma dq_inv_norm[simp]:
-  assumes inv: "dq_inv d"
-  shows "dq_inv (dq_norm d)"
-proof (cases "dq_f d = []")
-  case True
-  have nb: "dq_nb d = length (dq_b d)" using inv unfolding dq_inv_def by simp
-  have "min (length (dq_b d) div 2) (length (dq_b d)) = length (dq_b d) div 2"
-    by (rule min_absorb1) (rule div_le_dividend)
-  then show ?thesis using True unfolding dq_norm_def dq_inv_def Let_def nb by simp
-next
-  case False
-  then show ?thesis using inv by (simp add: dq_norm_def)
-qed
-
-lemma dq_list_norm[simp]: "dq_list (dq_norm d) = dq_list d"
-proof (cases "dq_f d = []")
-  case True
-  have "rev (drop h (dq_b d)) @ rev (take h (dq_b d)) = rev (dq_b d)" for h
-    by (metis append_take_drop_id rev_append)
-  then show ?thesis using True by (simp add: dq_list_def dq_norm_def)
-qed (simp add: dq_list_def dq_norm_def)
-
-lemma dq_f_norm:
-  assumes "dq_inv d" "dq_list d \<noteq> []"
-  shows "dq_f (dq_norm d) \<noteq> []"
-proof (cases "dq_f d = []")
-  case True
-  then have "dq_b d \<noteq> []" using assms(2) by (simp add: dq_list_def)
-  then have "0 < length (dq_b d)" by simp
-  then have "length (dq_b d) div 2 < length (dq_b d)" by presburger
-  then show ?thesis using True assms(1) by (simp add: dq_norm_def dq_inv_def)
-qed (simp add: dq_norm_def)
-
-lemma dq_inv_tl[simp]:
-  assumes inv: "dq_inv d"
-  shows "dq_inv (dq_tl d)"
-proof -
-  have "dq_inv (Dq (tl (dq_f (dq_norm d))) (dq_b (dq_norm d)) (dq_nf (dq_norm d) - 1) (dq_nb (dq_norm d)))"
-    using dq_inv_norm[OF inv] unfolding dq_inv_def by simp
-  then show ?thesis unfolding dq_tl_def Let_def by (rule dq_inv_norm)
-qed
-
-lemma dq_list_tl[simp]:
-  assumes inv: "dq_inv d"
-  shows "dq_list (dq_tl d) = tl (dq_list d)"
-proof -
-  have *: "dq_list (dq_tl d) = tl (dq_f (dq_norm d)) @ rev (dq_b (dq_norm d))"
-    unfolding dq_tl_def Let_def dq_list_norm by (simp add: dq_list_def)
-  show ?thesis
-  proof (cases "dq_list d = []")
-    case True
-    then have "dq_f (dq_norm d) = []" "dq_b (dq_norm d) = []" using dq_list_norm[of d] by (auto simp: dq_list_def)
-    then show ?thesis using True * by simp
-  next
-    case False
-    have "dq_list (dq_tl d) = tl (dq_f (dq_norm d) @ rev (dq_b (dq_norm d)))"
-      using dq_f_norm[OF inv False] * by simp
-    then show ?thesis using dq_list_norm[of d] by (simp add: dq_list_def)
-  qed
-qed
-
 lemma dq_nth: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth d k = dq_list d ! k"
   by (auto simp add: dq_inv_def dq_nth_def dq_len_def dq_list_def nth_append rev_nth)
-
-lemma dq_inv_upd[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_upd d k x)"
-  by (auto simp add: dq_inv_def dq_upd_def)
 
 lemma dq_list_upd: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_list (dq_upd d k x) = (dq_list d)[k := x]"
   by (auto simp add: dq_inv_def dq_upd_def dq_len_def dq_list_def list_update_append rev_update)
@@ -98,12 +22,6 @@ lemma dq_len_upd: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_
 
 lemma dq_len_push: "dq_inv d \<Longrightarrow> dq_len (dq_push x d) = dq_len d + 1"
   by (simp add: dq_len_list)
-
-lemma dq_inv_of_list[simp]: "dq_inv (dq_of_list xs)"
-  by (simp add: dq_inv_def dq_of_list_def)
-
-lemma dq_list_of_list[simp]: "dq_list (dq_of_list xs) = xs"
-  by (simp add: dq_list_def dq_of_list_def)
 
 lemma rel_a2_lookup: "rel_a2 tp len d m \<Longrightarrow> k \<le> len \<Longrightarrow> Mapping.lookup m (tp - len + k) = Some (dq_nth d k)"
   by (simp add: rel_a2_def)
@@ -487,24 +405,10 @@ lemma length_sim: "rel_uaux d a \<Longrightarrow> length_dq args d = length_mmua
   by (cases d; cases a) auto
 
 
-subsection \<open>Nested update on the deque\<close>
-
-lemma upd_set'_empty_dq[simp]: "upd_set' m d f {} = m"
-  by (rule mapping_eqI) (auto simp add: upd_set'_lookup)
-
 lemma upd_set'_insert_dq: "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_set' m d f (Set.insert x A) =
   (let m' = (upd_set' m d f A) in case Mapping.lookup m' x of None \<Rightarrow> Mapping.update x d m'
   | Some v \<Rightarrow> Mapping.update x (f v) m')"
   by (rule mapping_eqI) (auto simp: upd_set'_lookup Mapping.lookup_update' split: option.splits)
-
-lemma upd_nested_dq_Nil[simp]: "upd_nested_dq base d f [] dq = dq"
-  by (simp add: upd_nested_dq_def)
-
-lemma upd_nested_dq_Cons: "upd_nested_dq base d f (x # xs) dq = upd_nested_step_dq base d f x (upd_nested_dq base d f xs dq)"
-  by (simp add: upd_nested_dq_def)
-
-lemma dq_inv_nested_step[simp]: "dq_inv dq \<Longrightarrow> dq_inv (upd_nested_step_dq base d f x dq)"
-  by (auto simp: upd_nested_step_dq_def split: prod.splits)
 
 lemma dq_len_nested_step: "dq_inv dq \<Longrightarrow> dq_len (upd_nested_step_dq base d f x dq) = dq_len dq"
   by (auto simp: upd_nested_step_dq_def dq_len_upd split: prod.splits)
@@ -520,9 +424,6 @@ proof -
     using assms unfolding upd_nested_step_dq_def prod.case Let_def
     by (auto simp: dq_nth dq_len_upd dq_list_upd nth_list_update len)
 qed
-
-lemma dq_inv_upd_nested_dq[simp]: "dq_inv dq \<Longrightarrow> dq_inv (upd_nested_dq base d f xs dq)"
-  by (induction xs) (auto simp: upd_nested_dq_Cons)
 
 lemma dq_len_upd_nested_dq: "dq_inv dq \<Longrightarrow> dq_len (upd_nested_dq base d f xs dq) = dq_len dq"
   by (induction xs) (auto simp: upd_nested_dq_Cons dq_len_nested_step)

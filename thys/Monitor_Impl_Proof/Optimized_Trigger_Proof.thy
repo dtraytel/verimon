@@ -6673,13 +6673,6 @@ lemma valid_update_nmtaux: "
   using valid_update_nmtaux_unfolded
   by (cases aux) (fast)
 
-lemma trigger_args_simps[simp]:
-  "args_ivl (trigger_args args) = args_ivl args"
-  "args_R (trigger_args args) = args_R args"
-  "args_pos (trigger_args args) = args_pos args"
-  "args_L (trigger_args args) = (if mem (args_ivl args) 0 then args_L args else args_R args)"
-  by (simp_all add: trigger_args_def)
-
 lemma table_trigger_lhs: "table (args_L args) l \<Longrightarrow> table (args_L (trigger_args args)) (trigger_lhs args l)"
   by (auto simp: trigger_lhs_def table_def)
 

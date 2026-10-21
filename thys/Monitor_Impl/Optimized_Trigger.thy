@@ -274,6 +274,13 @@ text \<open>If the interval does not contain 0, the monitor only guarantees that
 definition trigger_args :: "args \<Rightarrow> args" where
   "trigger_args args = (if mem (args_ivl args) 0 then args else args\<lparr>args_L := args_R args\<rparr>)"
 
+lemma trigger_args_simps[simp]:
+  "args_ivl (trigger_args args) = args_ivl args"
+  "args_R (trigger_args args) = args_R args"
+  "args_pos (trigger_args args) = args_pos args"
+  "args_L (trigger_args args) = (if mem (args_ivl args) 0 then args_L args else args_R args)"
+  by (simp_all add: trigger_args_def)
+
 definition trigger_lhs :: "args \<Rightarrow> 'a table \<Rightarrow> 'a table" where
   "trigger_lhs args l = (if mem (args_ivl args) 0 \<or> args_L args = args_R args then l
     else restrict (args_R args) (args_L args) ` l)"

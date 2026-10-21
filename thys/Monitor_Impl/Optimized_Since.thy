@@ -56,6 +56,9 @@ text \<open>
 definition wf_table_of_keys :: "nat list \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a wf_table" where
   "wf_table_of_keys cs m = wf_table_of_set cs (Mapping.keys m)"
 
+lemma wf_table_sig_of_keys[simp]: "distinct cs \<Longrightarrow> wf_table_sig (wf_table_of_keys cs m) = cs"
+  by (simp add: wf_table_of_keys_def wf_table_sig_of_set)
+
 definition wf_table_upd :: "args \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> (unit \<Rightarrow> 'a wf_table) \<Rightarrow> 'a wf_table" where
   "wf_table_upd args m w = (if args_L args = [] \<or> args_L args = args_R args
     then wf_table_of_keys (args_R args) m else w ())"

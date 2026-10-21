@@ -233,6 +233,95 @@ begin
 end
 
 
+lemma insert_sum_comm': "(insert_sum args x \<circ> insert_sum args y) (v, m)  = (insert_sum args y \<circ> insert_sum args x) (v, m)"
+  by (auto simp:lookup_update' mapping_eqI update_update split:option.splits event_data.splits)
+
+lemma insert_sum_comm: "(insert_sum args x \<circ> insert_sum args y) aux  = (insert_sum args y \<circ> insert_sum args x) aux"
+  using insert_sum_comm' by (cases aux) fastforce
+
+lemma lookup_delete: "Mapping.lookup (Mapping.delete k m) k' = (if k = k' then None else Mapping.lookup m k')"
+  by transfer auto
+
+lemma delete_sum_comm': "(delete_sum args x \<circ> delete_sum args y) (v, m)  = (delete_sum args y \<circ> delete_sum args x) (v, m)"
+  by(auto simp:lookup_update' delete_update lookup_delete update_update mapping_eqI cong:option.case_cong split:event_data.splits option.splits)
+
+lemma delete_sum_comm: "(delete_sum args x \<circ> delete_sum args y) aux  = (delete_sum args y \<circ> delete_sum args x) aux"
+  using delete_sum_comm' by (cases aux) fastforce
+
+lemma insert_cnt_comm: "(insert_cnt args x \<circ> insert_cnt args y) (v, m)  = (insert_cnt args y \<circ> insert_cnt args x) (v, m)"
+  by(auto; transfer; auto split:option.splits)
+
+lemma delete_cnt_comm:  "(delete_cnt args x \<circ> delete_cnt args y) (v, aux)  = (delete_cnt args y \<circ> delete_cnt args x) (v, aux)"
+   by(auto; transfer; auto split:option.splits)
+
+lemma insert_treelist_comm: "(insert_treelist a (insert_treelist b x)) = (insert_treelist b (insert_treelist a x))" 
+  by(transfer) (simp add: insort_eq2 insort_left_comm)
+
+lemma insert_rank_comm': "(insert_rank args type x  \<circ> insert_rank args type y) (v, m)  = (insert_rank args type y \<circ> insert_rank args type x) (v, m)"
+proof (cases v)
+  case True
+  define gx gy where "gx = agg_key (length (aggargs_tys args)) (aggargs_cols args) x" and "gy = agg_key (length (aggargs_tys args)) (aggargs_cols args) y"
+  show ?thesis
+  proof (cases "gx = gy")
+    case True
+    \<comment> \<open>Both insertions act on the same list, where they commute.\<close>
+    with \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
+        (simp_all add: gx_def gy_def lookup_update' update_update insert_treelist_comm split: option.splits list_aux.splits)
+  next
+    case False
+    \<comment> \<open>The insertions act on different keys of the mapping, where updates commute.\<close>
+    with \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
+        (simp_all add: gx_def gy_def lookup_update' update_update split: option.splits list_aux.splits)
+  qed
+qed simp
+
+lemma del_list_comm: "del_list x (del_list y xs) = del_list y (del_list x xs)"
+  by(induction xs; auto)
+
+lemma remove_comm: "remove_treelist x (remove_treelist y xs) = remove_treelist y (remove_treelist x xs)"
+  by(transfer) (simp add:del_list_comm)
+
+lemma auxa: "remove_treelist x empty_treelist \<noteq> empty_treelist \<Longrightarrow> False" by transfer auto
+
+lemma delete_rank_comm': 
+  shows "(delete_rank args type x \<circ> delete_rank args type y) (v, m) = (delete_rank args type y \<circ> delete_rank args type x) (v, m)"
+proof (cases v)
+  case True
+  define gx gy where "gx = agg_key (length (aggargs_tys args)) (aggargs_cols args) x" and "gy = agg_key (length (aggargs_tys args)) (aggargs_cols args) y"
+  show ?thesis
+  proof (cases "gx = gy")
+    case True
+    \<comment> \<open>Both deletions act on the same list: removals commute, and a list that
+      became empty stays empty under further removals.\<close>
+    have remove_empty: "remove_treelist a empty_treelist = empty_treelist" for a :: "'a::linorder"
+      using auxa by blast
+    have remove_remove_empty: "remove_treelist a (remove_treelist b l) = empty_treelist"
+      if "remove_treelist a l = empty_treelist" for a b :: "'a::linorder" and l
+      using that by (metis remove_comm remove_empty)
+    from True \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
+        (auto simp: gx_def gy_def lookup_update' lookup_delete delete_update update_update
+          remove_comm remove_empty remove_remove_empty split: option.splits list_aux.splits)
+  next
+    case False
+    \<comment> \<open>The deletions act on different keys of the mapping.\<close>
+    with \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
+        (auto simp: gx_def gy_def lookup_update' lookup_delete mapping_eqI delete_update update_update
+          split: option.splits list_aux.splits)
+  qed
+qed simp
+ 
+                     
+lemma delete_rank_comm: 
+  shows "(delete_rank args type x \<circ> delete_rank args type y) aux  = (delete_rank args type y \<circ> delete_rank args type x) aux"
+  using delete_rank_comm' by (cases aux) fastforce
+
+lemma insert_rank_comm: "(insert_rank args type x \<circ> insert_rank args type y) aux  = (insert_rank args type y \<circ> insert_rank args type x) aux"
+  using insert_rank_comm' by (cases aux) fastforce
+
 fun plus' :: "event_data \<Rightarrow> event_data \<Rightarrow> event_data" where
   "plus' (EInt x) (EInt y) = EInt (x + y)"
 | "plus' (_::event_data)  _ = EFloat nan"

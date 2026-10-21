@@ -8,12 +8,6 @@ begin
 lemma max_tstp_idem: "max_tstp (max_tstp x y) y = max_tstp x y"
   by (cases x; cases y) auto
 
-lemma max_tstp_idem': "max_tstp x (max_tstp x y) = max_tstp x y"
-  by (cases x; cases y) auto
-
-lemma max_tstp_d_d: "max_tstp d d = d"
-  by (cases d) auto
-
 lemma max_cases: "(max a b = a \<Longrightarrow> P) \<Longrightarrow> (max a b = b \<Longrightarrow> P) \<Longrightarrow> P"
   by (metis max_def)
 
@@ -965,10 +959,6 @@ proof -
     using valid_foldl(1)[unfolded shift_mmuaux_eq[symmetric]]
     unfolding valid_foldl(2)[unfolded shift_mmuaux_eq[symmetric]] by auto
 qed
-
-lemma upd_set'_lookup: "Mapping.lookup (upd_set' m d f X) a = (if a \<in> X then
-  (case Mapping.lookup m a of Some b \<Rightarrow> Some (f b) | None \<Rightarrow> Some d) else Mapping.lookup m a)"
-  by (simp add: Mapping.lookup.rep_eq upd_set'.rep_eq)
 
 lemma upd_set'_keys: "Mapping.keys (upd_set' m d f X) = Mapping.keys m \<union> X"
   by (auto simp add: upd_set'_lookup intro!: Mapping_keys_intro

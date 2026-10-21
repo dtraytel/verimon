@@ -43,6 +43,18 @@ notation mbuf_t_append (infixr "@@" 65)
 lift_definition mbuf_t_cases :: "'a mbuf_t \<Rightarrow> 'a option \<times> 'a mbuf_t" is
   "\<lambda>xs. case xs of [] \<Rightarrow> (None, xs) | y # ys \<Rightarrow> (Some y, ys)" .
 
+lemma Rep_mbuf_t_cases[simp]:
+  "mbuf_t_cases xs = (None, xs') \<Longrightarrow> Rep_mbuf_t xs = []"
+  "mbuf_t_cases xs = (None, xs') \<Longrightarrow> Rep_mbuf_t xs' = []"
+  "mbuf_t_cases xs = (Some x, xs') \<Longrightarrow> Rep_mbuf_t xs = x # Rep_mbuf_t xs'"
+  subgoal by transfer (auto split: option.splits list.splits)
+  subgoal by transfer (auto split: option.splits list.splits)
+  subgoal by transfer (auto split: option.splits list.splits)
+  done
+
+lemma mbuf_t_cases_size[termination_simp]: "(Some x, xs') = mbuf_t_cases xs \<Longrightarrow> size xs' < size xs"
+  by transfer (auto split: list.splits)
+
 lift_definition MBuf2_t :: "'a queue \<Rightarrow> 'a mbuf_t" is "linearize" .
 
 code_datatype MBuf2_t
@@ -155,6 +167,31 @@ fun mebuf2T_take :: "(event_data table \<Rightarrow> event_data table \<Rightarr
 fun mebufn_add :: "event_data table list list \<Rightarrow> event_data mebufn \<Rightarrow> event_data mebufn" 
   where "mebufn_add xs' xs = List.map2 (@@) xs xs'"
 
+lemma size_snd_mbuf_t_cases: "\<not> mbuf_t_is_empty a \<Longrightarrow> size (snd (mbuf_t_cases a)) < size a"
+  by transfer (auto split: list.splits)
+
+lemma size_list_snd_mbuf_t_cases: assumes "buf \<noteq> []" "\<And>x. x \<in> set buf \<Longrightarrow> \<not> mbuf_t_is_empty x"
+  shows "size_list (\<lambda>x. size (snd (mbuf_t_cases x))) buf < size_list size buf"
+  using assms
+proof (induction buf)
+  case IH: (Cons a buf)
+  show ?case
+  proof (cases buf)
+    case Nil
+    show ?thesis
+      using IH(3) size_snd_mbuf_t_cases
+      by (auto simp: Nil)
+  next
+    case (Cons a' buf')
+    have "size_list (\<lambda>x. size (snd (mbuf_t_cases x))) buf < size_list size buf"
+      using IH(1,3)
+      by (auto simp: Cons)
+    then show ?thesis
+      using IH(3) size_snd_mbuf_t_cases
+      by force
+  qed
+qed auto
+
 function mebufn_take :: "(event_data table list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'b \<Rightarrow> event_data mebufn \<Rightarrow> 'b \<times> event_data mebufn" where
   "mebufn_take f z buf = (if buf = [] \<or> (\<exists>x \<in> set buf. mbuf_t_is_empty x) then (z, buf)
     else mebufn_take f (f (map (the \<circ> fst \<circ> mbuf_t_cases) buf) z) (map (snd \<circ> mbuf_t_cases) buf))"
@@ -182,10 +219,6 @@ begin
 
 qualified definition card_UNIV' :: "'a card_UNIV"
 where [code drop]: "card_UNIV' = Phantom('a) CARD('a)"
-
-lemma CARD_code [code_unfold]:
-  "CARD('a) = of_phantom (card_UNIV' :: 'a card_UNIV)"
-by(simp add: card_UNIV'_def)
 
 lemma card_UNIV'_code [code]:
   "card_UNIV' = card_UNIV"
@@ -287,6 +320,24 @@ global_interpretation default_maux: maux_ops "init_mmasaux :: _ \<Rightarrow> mm
   and monitor = "maux_ops.monitor init_mmasaux add_new_ts_mmasaux gc_join_mmasaux add_new_table_mmasaux (result_mmasaux :: _ \<Rightarrow> mmasaux \<Rightarrow> _) init_muaux_dq add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join"
   .
 
+lemma saturate_commute:
+  assumes "\<And>s. r \<in> g s" "\<And>s. g (Set.insert r s) = g s" "\<And>s. r \<in> s \<Longrightarrow> h s = g s"
+  and terminates: "mono g" "\<And>X. X \<subseteq> C \<Longrightarrow> g X \<subseteq> C" "finite C"
+shows "saturate g {} = saturate h {r}"
+proof (cases "g {} = {r}")
+  case True
+  with assms have "g {r} = {r}" "h {r} = {r}" by auto
+  with True show ?thesis
+    by (subst (1 2) saturate_code; subst saturate_code) (simp add: Let_def)
+next
+  case False
+  then show ?thesis
+    unfolding saturate_def while_def
+    using while_option_finite_subset_Some[OF terminates] assms(1-3)
+    by (subst while_option_commute_invariant[of "\<lambda>S. S = {} \<or> r \<in> S" "\<lambda>S. g S \<noteq> S" g "\<lambda>S. h S \<noteq> S" "Set.insert r" h "{}", symmetric])
+      (auto 4 4 dest: while_option_stop[of "\<lambda>S. g S \<noteq> S" g "{}"])
+qed
+
 definition "RPDs_aux = saturate (\<lambda>S. S \<union> \<Union> (RPD ` S))"
 
 lemma RPDs_aux_code[code]:
@@ -313,23 +364,27 @@ lemma LPDs_code[code]: "LPDs r = LPDs_aux {r}"
   by (rule saturate_commute[where C="LPDs r"])
      (auto 0 3 simp: mono_def subset_singleton_iff LPDs_refl LPDs_trans finite_LPDs)
 
-lemma is_empty_table_unfold [code_unfold]:
-  "X = empty_table \<longleftrightarrow> Set.is_empty X"
-  "empty_table = X \<longleftrightarrow> Set.is_empty X"
-  "set_eq X empty_table \<longleftrightarrow> Set.is_empty X"
-  "set_eq empty_table X \<longleftrightarrow> Set.is_empty X"
-  "X = (set_empty impl) \<longleftrightarrow> Set.is_empty X"
-  "(set_empty impl) = X \<longleftrightarrow> Set.is_empty X"
-  "set_eq (set_empty impl) X \<longleftrightarrow> Set.is_empty X"
-  "set_eq X (set_empty impl) \<longleftrightarrow> Set.is_empty X"
-  unfolding set_eq_def set_empty_def empty_table_def
-  by auto
-
 lemma tabulate_rbt_code[code]: "Monitor.mrtabulate (xs :: mregex list) f =
   (case ID CCOMPARE(mregex) of None \<Rightarrow> Code.abort (STR ''mrtabulate RBT_Mapping: ccompare = None'') (\<lambda>_. Monitor.mrtabulate (xs :: mregex list) f)
   | _ \<Rightarrow> RBT_Mapping (RBT_Mapping2.bulkload (List.map_filter (\<lambda>k. let fk = f k in if fk = empty_table then None else Some (k, fk)) xs)))"
   unfolding mrtabulate.abs_eq RBT_Mapping_def
   by (auto split: option.splits)
+
+lemma upd_set_empty[simp]: "upd_set m f {} = m"
+  by transfer auto
+
+lemma upd_set_insert[simp]: "upd_set m f (Set.insert x A) = Mapping.update x (f x) (upd_set m f A)"
+  by (rule mapping_eqI) (auto simp: Mapping_lookup_upd_set Mapping.lookup_update')
+
+lemma upd_set_fold:
+  assumes "finite A"
+  shows "upd_set m f A = Finite_Set.fold (\<lambda>a. Mapping.update a (f a)) m A"
+proof -
+  interpret comp_fun_idem "\<lambda>a. Mapping.update a (f a)"
+    by unfold_locales (transfer; auto simp: fun_eq_iff)+
+  from assms show ?thesis
+    by (induct A arbitrary: m rule: finite.induct) auto
+qed
 
 lift_definition upd_cfi :: "('a \<Rightarrow> 'b) \<Rightarrow> ('a, ('a, 'b) mapping) comp_fun_idem"
   is "\<lambda>f a m. Mapping.update a (f a) m"
@@ -348,6 +403,28 @@ lemma lexordp_eq_code[code]: "lexordp_eq xs ys \<longleftrightarrow> (case xs of
 
 definition "filter_mapping m X t = Mapping.filter (filter_cond X m t) m"
 
+lemma filter_mapping_empty[simp]: "filter_mapping m {} t = m"
+  unfolding filter_mapping_def
+  by transfer (auto simp: fun_eq_iff split: option.splits)
+
+lemma filter_mapping_insert[simp]: "filter_mapping m (Set.insert x A) t = (let m' = filter_mapping m A t in
+  case Mapping.lookup m' x of Some u \<Rightarrow> if t = u then Mapping.delete x m' else m' | _ \<Rightarrow> m')"
+  unfolding filter_mapping_def
+  by transfer (auto simp: fun_eq_iff Let_def split: option.splits)
+
+lemma filter_mapping_fold:
+  assumes "finite A"
+  shows "filter_mapping m A t = Finite_Set.fold (\<lambda>a m.
+    case Mapping.lookup m a of Some u \<Rightarrow> if t = u then Mapping.delete a m else m | _ \<Rightarrow> m) m A"
+proof -
+  interpret comp_fun_idem "\<lambda>a m.
+    case Mapping.lookup m a of Some u \<Rightarrow> if t = u then Mapping.delete a m else m | _ \<Rightarrow> m"
+    by unfold_locales
+      (transfer; auto simp: fun_eq_iff split: option.splits)+
+  from assms show ?thesis
+    by (induct A arbitrary: m rule: finite.induct) (auto simp: Let_def)
+qed
+
 lift_definition filter_mapping_cfi :: "'b \<Rightarrow> ('a, ('a, 'b) mapping) comp_fun_idem"
   is "\<lambda>t a m.
     case Mapping.lookup m a of Some u \<Rightarrow> if t = u then Mapping.delete a m else m | _ \<Rightarrow> m"
@@ -359,6 +436,28 @@ lemma filter_mapping_code[code]:
   by (transfer fixing: m) (auto simp: filter_mapping_fold)
 
 definition "filter_set' Z m X t = {as \<in> Z. filter_cond' X m t as}"
+
+lemma filter_set'_empty[simp]: "filter_set' Z m {} t = Z"
+  unfolding filter_set'_def
+  by transfer (auto simp: fun_eq_iff split: option.splits)
+
+lemma filter_set'_insert[simp]: "filter_set' Z m (Set.insert x A) t = (let Z' = filter_set' Z m A t in
+  case Mapping.lookup m x of Some u \<Rightarrow> if t = u then Z' - {x} else Z' | _ \<Rightarrow> Z')"
+  unfolding filter_set'_def
+  by transfer (auto simp: Let_def split: option.splits)
+
+lemma filter_set'_fold:
+  assumes "finite A"
+  shows "filter_set' Z m A t = Finite_Set.fold (\<lambda>a Z'.
+    case Mapping.lookup m a of Some u \<Rightarrow> if t = u then Z' - {a} else Z' | _ \<Rightarrow> Z') Z A"
+proof -
+  interpret comp_fun_idem "\<lambda>a Z'.
+    case Mapping.lookup m a of Some u \<Rightarrow> if t = u then Z' - {a} else Z' | _ \<Rightarrow> Z'"
+    by unfold_locales
+      (transfer; auto simp: fun_eq_iff split: option.splits)+
+  from assms show ?thesis
+    by (induct A arbitrary: Z rule: finite.induct) (auto simp: Let_def)
+qed
 
 lift_definition filter_set_cfi :: "('a, 'b) mapping \<Rightarrow> 'b \<Rightarrow> ('a, 'a set) comp_fun_idem"
   is "\<lambda>m t a Z'.
@@ -372,6 +471,15 @@ lemma filter_set'_code[code]:
 declare [[code drop: shift_end]]
 declare shift_end.simps[folded filter_mapping_def filter_set'_def, code]
 
+lemma upd_set'_aux1: "upd_set' Mapping.empty d f {b. b = k \<or> (a, b) \<in> A} =
+  Mapping.update k d (upd_set' Mapping.empty d f {b. (a, b) \<in> A})"
+  by (rule mapping_eqI) (auto simp add: Let_def upd_set'_lookup Mapping.lookup_update'
+      split: option.splits)
+
+lemma filter_set_empty[simp]: "filter_set (t, {}) (m, Y) = (m, Y)"
+  unfolding filter_set.simps
+  by transfer (auto simp: Let_def fun_eq_iff split: option.splits)
+
 definition upd_nested_step :: "'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarrow> 'a \<times> 'b \<Rightarrow> ('a, ('b, 'c) mapping) mapping \<Rightarrow>
   ('a, ('b, 'c) mapping) mapping" where
   "upd_nested_step d f x m = (case x of (k, k') \<Rightarrow>
@@ -380,8 +488,28 @@ definition upd_nested_step :: "'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarr
       | None \<Rightarrow> Mapping.update k (Mapping.update k' d m') m)
     | None \<Rightarrow> Mapping.update k (Mapping.update k' d Mapping.empty) m))"
 
+lemma upd_nested_empty[simp]: "upd_nested m d f {} = m"
+  by (rule mapping_eqI)
+    (clarsimp simp: upd_nested_def Mapping.lookup.abs_eq split: option.splits)
+
 definition upd_nested_max_tstp where
   "upd_nested_max_tstp m d X = upd_nested m d (max_tstp d) X"
+
+lemma upd_nested_max_tstp_fold:
+  assumes "finite X"
+  shows "upd_nested_max_tstp m d X = Finite_Set.fold (upd_nested_step d (max_tstp d)) m X"
+proof -
+  interpret comp_fun_idem "upd_nested_step d (max_tstp d)"
+    by (unfold_locales; rule ext)
+      (auto simp add: comp_def upd_nested_step_def Mapping.lookup_update'
+       update_update max_tstp_d_d max_tstp_idem' split: option.splits)
+  note upd_nested_insert' = upd_nested_insert[of d "max_tstp d",
+    OF max_tstp_d_d[symmetric] max_tstp_idem']
+  show ?thesis
+    using assms
+    by (induct X arbitrary: m rule: finite.induct)
+      (auto simp add: upd_nested_max_tstp_def upd_nested_insert')
+qed
 
 lift_definition upd_nested_max_tstp_cfi ::
   "ts + tp \<Rightarrow> ('a \<times> 'b, ('a, ('b, ts + tp) mapping) mapping) comp_fun_idem"
@@ -397,6 +525,24 @@ lemma upd_nested_max_tstp_code[code]:
 
 definition "filter_join pos X m = Mapping.filter (join_filter_cond pos X) m"
 
+lemma filter_set_insert[simp]: "filter_set (t, Set.insert x A) (m, Y) = (let (m', Y') = filter_set (t, A) (m, Y) in
+  case Mapping.lookup m' x of Some u \<Rightarrow> if t = u then (Mapping.delete x m', Y' \<union> {x}) else (m', Y') | _ \<Rightarrow> (m', Y'))"
+  unfolding filter_set.simps
+  by transfer (auto simp: fun_eq_iff Let_def split: option.splits)
+
+lemma filter_set_fold:
+  assumes "finite A"
+  shows "filter_set (t, A) (m, Y) = Finite_Set.fold (\<lambda>a (m, Y).
+    case Mapping.lookup m a of Some u \<Rightarrow> if t = u then (Mapping.delete a m, Y \<union> {a}) else (m, Y) | _ \<Rightarrow> (m, Y)) (m, Y) A"
+proof -
+  interpret comp_fun_idem "\<lambda>a (m, Y).
+    case Mapping.lookup m a of Some u \<Rightarrow> if t = u then (Mapping.delete a m, Y \<union> {a}) else (m, Y) | _ \<Rightarrow> (m, Y)"
+    by unfold_locales
+      (transfer; auto simp: fun_eq_iff split: option.splits)+
+  from assms show ?thesis
+    by (induct A arbitrary: m rule: finite.induct) (auto simp: Let_def)
+qed
+
 lift_definition filter_cfi :: "'b \<Rightarrow> ('a, ('a, 'b) mapping \<times> 'a set) comp_fun_idem"
   is "\<lambda>t a (m, Y).
     case Mapping.lookup m a of Some u \<Rightarrow> if t = u then (Mapping.delete a m, Y \<union> {a}) else (m, Y) | _ \<Rightarrow> (m, Y)"
@@ -405,6 +551,21 @@ lift_definition filter_cfi :: "'b \<Rightarrow> ('a, ('a, 'b) mapping \<times> '
 lemma filter_set_code[code]:
   "filter_set (t, A) (m, Y) = (if finite A then set_fold_cfi (filter_cfi t) (m, Y) A else Code.abort (STR ''upd_set: infinite'') (\<lambda>_. filter_set (t, A) (m, Y)))"
   by (transfer fixing: m) (auto simp: filter_set_fold)
+
+lemma mapping_delete_fold:
+  assumes "finite A"
+  shows "mapping_delete_set m A = Finite_Set.fold Mapping.delete m A"
+proof -
+  interpret comp_fun_idem "Mapping.delete" by(unfold_locales; transfer; simp add: fun_eq_iff)
+  from assms show ?thesis
+  proof (induction A arbitrary: m)
+    case empty
+    then show ?case using mapping_delete_set_empty by auto
+  next
+    case (insert a A)
+    then show ?case using mapping_delete_set_insert[of m a A] fold_insert[OF insert(1-2), of m] by(simp)
+  qed
+qed
 
 lift_definition mapping_delete_set_cfi :: "('a, ('a, 'b) mapping) comp_fun_idem" is
   Mapping.delete by(unfold_locales; transfer; simp add:fun_eq_iff)
@@ -419,6 +580,16 @@ declare join_mmsaux.simps[folded filter_join_def, code]
 definition remove_Union where
   "remove_Union A X B = A - (\<Union>x \<in> X. B x)"
 
+lemma remove_Union_finite:
+  assumes "finite X"
+  shows "remove_Union A X B = Finite_Set.fold (\<lambda>x A. A - B x) A X"
+proof -
+  interpret comp_fun_idem "\<lambda>x A. A - B x"
+    by unfold_locales auto
+  from assms show ?thesis
+    by (induct X arbitrary: A rule: finite_induct) (auto simp: remove_Union_def)
+qed
+
 lift_definition remove_Union_cfi :: "('a \<Rightarrow> 'b set) \<Rightarrow> ('a, 'b set) comp_fun_idem" is "\<lambda>B x A. A - B x"
   by unfold_locales auto
 
@@ -429,6 +600,34 @@ lemma remove_Union_code[code]: "remove_Union A X B =
 declare [[code drop: New_max_getIJ_genericJoin New_max_getIJ_wrapperGenericJoin]]
 declare New_max.genericJoin_code[folded remove_Union_def, code]
 declare New_max.wrapperGenericJoin.simps[folded remove_Union_def, code]
+
+lemma group_images: "(\<lambda>k. let group = Set.filter (\<lambda>x. f x = k) rel in g k group) ` f ` rel =
+    (\<lambda>(k, group). g k group) ` images ((\<lambda>t. (f t, t)) ` rel)"
+proof (rule set_eqI, rule iffI)
+  fix x
+  assume "x \<in> (\<lambda>k. Let (Set.filter (\<lambda>x. f x = k) rel) (g k)) ` f ` rel"
+  then obtain t where t_def: "t \<in> rel" "x = g (f t) {x \<in> rel. f x = f t}"
+    by auto
+  have "(f t, {b. (f t, b) \<in> (\<lambda>t. (f t, t)) ` rel}) \<in>
+    (\<lambda>a. (a, {b. (a, b) \<in> (\<lambda>t. (f t, t)) ` rel})) ` fst ` (\<lambda>t. (f t, t)) ` rel"
+    using t_def(1)
+    by force
+  moreover have "{b. (f t, b) \<in> (\<lambda>t. (f t, t)) ` rel} = {x \<in> rel. f x = f t}"
+    by (auto simp add: image_def)
+  ultimately show "x \<in> (\<lambda>(k, group). g k group) ` images ((\<lambda>t. (f t, t)) ` rel)"
+    unfolding t_def(2) images_def
+    by auto
+next
+  fix x
+  assume "x \<in> (\<lambda>(k, group). g k group) ` images ((\<lambda>t. (f t, t)) ` rel)"
+  then obtain t where t_def: "t \<in> rel" "x = g (f t) {b. (f t, b) \<in> (\<lambda>t. (f t, t)) ` rel}"
+    by (auto simp: images_def)
+  have "{b. (f t, b) \<in> (\<lambda>t. (f t, t)) ` rel} = {x \<in> rel. f x = f t}"
+    by (auto simp add: image_def)
+  then show "x \<in> (\<lambda>k. Let (Set.filter (\<lambda>x. f x = k) rel) (g k)) ` f ` rel"
+    using t_def(1)
+    by (auto simp: t_def(2))
+qed
 
 lemma eval_agg_code[code]: "eval_agg cs g0 \<omega> tys f rel = (if g0 \<and> rel = empty_table
   then singleton_table (eval_agg_op \<omega> {})
@@ -452,10 +651,6 @@ qed
 declare regex.pred_inject[code]
 
 declare regex.pred_set[THEN fun_cong, symmetric, code_unfold]
-
-lemma Bex_pred_regex[code_unfold]: "Bex (regex.atms x) P \<longleftrightarrow> \<not> regex.pred_regex (Not o P) x"
-  by (induct x) auto
-
 
 derive (eq) ceq rec_safety
 derive ccompare rec_safety
@@ -495,54 +690,23 @@ lemma safe_letpast_code[code]:
   "safe_letpast p (Formula.TS t) = Unused"
   by (auto simp add: regex.set_map)
 
-lemma Sup_rec_safety_set[code_unfold]:
-  "\<Squnion> (set l :: rec_safety set) = fold (\<squnion>) l Unused"
-  by (simp add: Sup_rec_safety_def comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
-
-lemma Sup_rec_safety_atms[code_unfold]:
-  "\<Squnion> (Regex.atms r :: rec_safety set) = fold (\<squnion>) (csorted_list_of_set (Regex.atms r)) Unused"
-  by (simp add: Sup_rec_safety_def csorted_list_of_set_def ccompare_rec_safety_def ID_def
-      linorder.set_sorted_list_of_set[OF comparator.linorder] comparator_rec_safety
-      flip: comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
-
 lift_definition delete_cnt_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> nat agg_map)) comp_fun_commute" is
   "\<lambda>args. delete_cnt args" using delete_cnt_comm by unfold_locales auto
-
-lemma delete_cnt_code[code_unfold]: "Finite_Set.fold (delete_cnt args) (v, m) data = set_fold_cfc (delete_cnt_cfc args) (v, m) data"
-  by(transfer) auto
 
 lift_definition delete_sum_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> ((nat \<times> integer) agg_map))) comp_fun_commute" is
   "\<lambda>args. delete_sum args" using delete_sum_comm by unfold_locales auto
 
-lemma delete_sum_code[code_unfold]: "Finite_Set.fold (delete_sum args) (v, m) data = set_fold_cfc (delete_sum_cfc args) (v, m) data"
-  by(transfer) auto
-
 lift_definition delete_rank_cfc::"aggargs \<Rightarrow> type \<Rightarrow> (event_data tuple, bool \<times> list_aux agg_map) comp_fun_commute" is
   "\<lambda>args. delete_rank args" using delete_rank_comm by unfold_locales auto
-
-lemma delete_rank_code[code_unfold]: "Finite_Set.fold (delete_rank args type) (v, m) data = set_fold_cfc (delete_rank_cfc args type) (v, m) data"
-  by(transfer) auto
 
 lift_definition insert_cnt_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> nat agg_map)) comp_fun_commute" is
   "\<lambda>args. insert_cnt args" using insert_cnt_comm by unfold_locales auto
 
-lemma insert_cnt_code[code_unfold]: "Finite_Set.fold (insert_cnt args) (v, m) data = set_fold_cfc (insert_cnt_cfc args) (v, m) data"
-  by(transfer) auto
-
 lift_definition insert_sum_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> ((nat \<times> integer) agg_map))) comp_fun_commute" is
   "\<lambda>args. insert_sum args" using insert_sum_comm by unfold_locales auto
 
-lemma insert_sum_code[code_unfold]: "Finite_Set.fold (insert_sum args) (v, m) data = set_fold_cfc (insert_sum_cfc args) (v, m) data"
-  by(transfer) auto
-
 lift_definition insert_rank_cfc::"aggargs \<Rightarrow> type \<Rightarrow> (event_data tuple, bool \<times> list_aux agg_map) comp_fun_commute" is
   "\<lambda>args. insert_rank args" using insert_rank_comm by unfold_locales auto
-
-lemma insert_rank_code[code_unfold]: "Finite_Set.fold (insert_rank args type) (v, m) data = set_fold_cfc (insert_rank_cfc args type) (v, m) data"
-  by(transfer) auto
-
-lemma set_diff_code[code_unfold]: "X - Mapping.keys tuple_in = Set.filter (\<lambda>k. Mapping.lookup tuple_in k = None) X"
-  by(transfer) auto
 
 instantiation treelist :: (equal) equal begin
 lift_definition equal_treelist :: "'a treelist \<Rightarrow> 'a treelist \<Rightarrow> bool" is "(=)" .
@@ -569,6 +733,23 @@ definition to_add_set where
 
 definition to_add_set_fun :: "'b \<Rightarrow> ('a, 'c) mapping \<Rightarrow> 'b \<times> 'a \<Rightarrow> 'a set \<Rightarrow> 'a set" where
   "to_add_set_fun a m elem s = (if a = fst elem \<and> Mapping.lookup m (snd elem) = None then Set.insert (snd elem) s else s)"
+
+lemma to_add_set_fold:
+  assumes "finite tmp"
+  shows "to_add_set a m tmp = Finite_Set.fold (to_add_set_fun a m) {} tmp"
+proof -
+  interpret comp_fun_idem "to_add_set_fun a m"
+    by(unfold_locales) (auto simp:to_add_set_fun_def comp_def split:if_splits)
+  from assms show ?thesis
+  proof (induction tmp)
+    case empty
+    then show ?case using to_add_set_empty[of a m] by simp
+  next
+    case (insert a A)
+    show ?case unfolding fold_insert[OF insert(1-2)] insert(3)[symmetric] unfolding to_add_set_def to_add_set_fun_def
+      by transfer auto
+   qed 
+ qed
 
 lift_definition to_add_set_cfi :: "'b \<Rightarrow> ('a, 'c) mapping \<Rightarrow> (('b \<times> 'a), 'a set) comp_fun_idem" is 
   "\<lambda>a m. to_add_set_fun a m" by(unfold_locales) (auto simp:to_add_set_fun_def comp_def split:if_splits)
@@ -657,6 +838,43 @@ definition rbt_fold :: "_ \<Rightarrow> event_data tuple set_rbt \<Rightarrow> _
 
 fun finite_multiset_insert_fun :: "event_data \<times> enat \<Rightarrow> bool \<Rightarrow> bool" where
   "finite_multiset_insert_fun (_, k) v = ((if k = Extended_Nat.infinity then False else True) \<and> v)"
+
+lemma finite_mset_insert_idem: 
+  "comp_fun_idem finite_multiset_insert_fun"
+proof -
+   have *: "(finite_multiset_insert_fun (a, b) \<circ> finite_multiset_insert_fun (c, d)) e =
+       (finite_multiset_insert_fun (c, d) \<circ> finite_multiset_insert_fun (a, b)) e" for a b c d e by auto
+  then have aux1: "(finite_multiset_insert_fun (a, b) \<circ> finite_multiset_insert_fun (c, d)) =
+       (finite_multiset_insert_fun (c, d) \<circ> finite_multiset_insert_fun (a, b))" for a b c d 
+    using *[of a b c d] by presburger
+  have *: "(finite_multiset_insert_fun (a, b) \<circ> finite_multiset_insert_fun (a, b)) c =
+       (finite_multiset_insert_fun (a, b) c)" for a b c by auto
+  then have aux2: "finite_multiset_insert_fun (a, b) \<circ> finite_multiset_insert_fun (a, b) =
+       finite_multiset_insert_fun (a, b)" for a b using *[of a b] by presburger
+  show ?thesis
+    using aux1 aux2 by unfold_locales auto
+qed
+
+lemma finite_multiset_eq:
+  assumes "finite M"
+  shows "finite_multiset M = 
+         Finite_Set.fold finite_multiset_insert_fun True M"
+proof -
+  interpret comp_fun_idem finite_multiset_insert_fun
+    using finite_mset_insert_idem by auto
+  from assms show ?thesis
+  proof (induction M)
+    case empty
+    then show ?case by(auto simp:finite_multiset_def)
+  next
+    case (insert a A)
+    have fin: "finite ((\<lambda>(x, y). case_enat (\<lambda>nat. True) False y) ` A)"
+      using insert(1) by auto
+    obtain s e where a_def: "a = (s, e)" by force
+    then show ?case unfolding fold_insert[OF insert(1-2)] unfolding a_def
+      using insert(3) by(cases e) (auto simp:finite_multiset_def)
+  qed 
+qed
 
 lift_definition finite_multiset_cfi :: "(event_data \<times> enat, bool) comp_fun_idem" is 
   "finite_multiset_insert_fun"

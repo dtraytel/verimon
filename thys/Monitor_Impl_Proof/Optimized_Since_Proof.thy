@@ -25,9 +25,6 @@ lemma wf_table_of_set_args_wf_table_set: "wf_table_sig t = args_R args \<Longrig
   using distinct_wf_table_sig[of t]
   by (auto simp: wf_table_sig_args wf_table_of_set_args[OF _ wf_table_set_table] intro: wf_table_eqI)
 
-lemma wf_table_sig_of_keys[simp]: "distinct cs \<Longrightarrow> wf_table_sig (wf_table_of_keys cs m) = cs"
-  by (simp add: wf_table_of_keys_def wf_table_sig_of_set)
-
 lemma wf_table_set_of_keys: "distinct cs \<Longrightarrow> table cs (Mapping.keys m) \<Longrightarrow>
   wf_table_set (wf_table_of_keys cs m) = Mapping.keys m"
   by (auto simp: wf_table_of_keys_def wf_table_set_of_set table_def)

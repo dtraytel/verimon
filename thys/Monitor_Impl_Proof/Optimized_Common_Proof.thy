@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Common_Proof
-  imports "Monitor_Impl.Optimized_Common" Wf_Table_Proof
+  imports "Monitor_Impl.Optimized_Common"
 begin
 (*>*)
 
@@ -16,21 +16,6 @@ lemma Mapping_filter_keys: "(\<forall>k \<in> Mapping.keys m. P (Mapping.lookup 
 lemma Mapping_filter_keys_le: "(\<And>x. P x \<Longrightarrow> P' x) \<Longrightarrow>
   (\<forall>k \<in> Mapping.keys m. P (Mapping.lookup m k)) \<Longrightarrow> (\<forall>k \<in> Mapping.keys m. P' (Mapping.lookup m k))"
   by auto
-
-lemma Mapping_keys_intro: "Mapping.lookup f x \<noteq> None \<Longrightarrow> x \<in> Mapping.keys f"
-  by (simp add: domIff keys_dom_lookup)
-
-lemma delete_set_lookup: "Mapping.lookup (mapping_delete_set m X) a = (if a \<in> X then
-  None else Mapping.lookup m a)"
-  by (auto simp: mapping_delete_set_def Mapping.lookup_filter split: option.splits)
-
-lemma delete_set_keys[simp]: "Mapping.keys (mapping_delete_set m X) = Mapping.keys m - X"
-  by (auto simp add: delete_set_lookup intro!: Mapping_keys_intro
-      dest!: Mapping.in_keysD split: if_splits)
-
-lemma Mapping_lookup_upd_set: "Mapping.lookup (upd_set m f X) a =
-  (if a \<in> X then Some (f a) else Mapping.lookup m a)"
-  by (simp add: Mapping.lookup.rep_eq upd_set.rep_eq)
 
 lemma Mapping_upd_set_keys: "Mapping.keys (upd_set m f X) = Mapping.keys m \<union> X"
   by (auto simp add: Mapping_lookup_upd_set dest!: Mapping.in_keysD intro: Mapping_keys_intro)
@@ -142,10 +127,6 @@ lemma Mapping_lookup_filter_Some_P: "Mapping.lookup (Mapping.filter P m) k = Som
 
 lemma Mapping_lookup_filter_None: "(\<And>v. \<not>P k v) \<Longrightarrow>
   Mapping.lookup (Mapping.filter P m) k = None"
-  by (auto simp add: Mapping.lookup_filter split: option.splits)
-
-lemma Mapping_lookup_filter_Some: "(\<And>v. P k v) \<Longrightarrow>
-  Mapping.lookup (Mapping.filter P m) k = Mapping.lookup m k"
   by (auto simp add: Mapping.lookup_filter split: option.splits)
 
 lemma Mapping_lookup_filter_not_None: "Mapping.lookup (Mapping.filter P m) k \<noteq> None \<Longrightarrow>
@@ -469,10 +450,6 @@ lemma list_all_split: "list_all (\<lambda>(x, y). f x y \<and> g x y) xs \<longl
 lemma list_all2_weaken: "list_all2 f xs ys \<Longrightarrow>
   (\<And>x y. (x, y) \<in> set (zip xs ys) \<Longrightarrow> f x y \<Longrightarrow> f' x y) \<Longrightarrow> list_all2 f' xs ys"
   by (induction xs ys rule: list_all2_induct) auto
-
-lemma Mapping_lookup_delete: "Mapping.lookup (Mapping.delete k m) k' =
-  (if k = k' then None else Mapping.lookup m k')"
-  by transfer auto
 
 lemma hd_le_set: "sorted xs \<Longrightarrow> xs \<noteq> [] \<Longrightarrow> x \<in> set xs \<Longrightarrow> hd xs \<le> x"
   by (cases xs) auto
