@@ -80,9 +80,6 @@ lemma idx_wfI:
 lemma mem_set_of_idx: "z \<in> set_of_idx T \<longleftrightarrow> (\<exists>x Y. Mapping.lookup T x = Some Y \<and> z \<in> Y)"
   by transfer (auto simp: ran_def Map_To_Mapping.map_apply_def)
 
-lemma idx_wf_table: "idx_wf cs I T \<Longrightarrow> table cs (set_of_idx T)"
-  by (auto simp: table_def mem_set_of_idx idx_wf_def)
-
 text \<open>A tuple of the index is in the cluster of its key.\<close>
 
 lemma idx_wf_lookup:
@@ -104,48 +101,6 @@ lemma lookup_mapping_antijoin: "Mapping.lookup (mapping_antijoin m m') x =
    | Some y \<Rightarrow> (case Mapping.lookup m' x of None \<Rightarrow> Some y | Some y' \<Rightarrow> None))"
   by (simp add: Mapping.lookup_def mapping_antijoin.rep_eq split: option.splits)
 
-lemma idx_create:
-  assumes "table cs T"
-  shows "set_of_idx (idx_create cs I T) = T" "idx_wf cs I (idx_create cs I T)"
-proof -
-  show "set_of_idx (idx_create cs I T) = T"
-    by (auto simp: mem_set_of_idx idx_create_def lookup_cluster image_iff split: if_splits) blast
-  show "idx_wf cs I (idx_create cs I T)"
-    using assms by (auto simp: idx_wf_def idx_create_def lookup_cluster table_def split: if_splits)
-qed
-
-lemma idx_reindex:
-  assumes "idx_wf cs I T"
-  shows "set_of_idx (idx_reindex cs I' I T) = set_of_idx T" "idx_wf cs I' (idx_reindex cs I' I T)"
-  using assms idx_create[OF idx_wf_table[OF assms]]
-  by (auto simp: idx_reindex_def)
-
-lemma idx_union:
-  assumes "idx_wf cs I T" "idx_wf cs I T'"
-  shows "set_of_idx (idx_union T T') = set_of_idx T \<union> set_of_idx T'" "idx_wf cs I (idx_union T T')"
-proof -
-  show "set_of_idx (idx_union T T') = set_of_idx T \<union> set_of_idx T'"
-  proof (rule set_eqI, rule iffI)
-    fix z
-    assume "z \<in> set_of_idx (idx_union T T')"
-    then obtain x Y where "combine_options (\<union>) (Mapping.lookup T x) (Mapping.lookup T' x) = Some Y" "z \<in> Y"
-      by (auto simp: mem_set_of_idx idx_union_def Mapping.lookup_combine)
-    then show "z \<in> set_of_idx T \<union> set_of_idx T'"
-      by (cases "Mapping.lookup T x"; cases "Mapping.lookup T' x") (auto simp: mem_set_of_idx)
-  next
-    fix z
-    assume "z \<in> set_of_idx T \<union> set_of_idx T'"
-    then obtain x Y where "Mapping.lookup T x = Some Y \<or> Mapping.lookup T' x = Some Y" "z \<in> Y"
-      by (auto simp: mem_set_of_idx)
-    then show "z \<in> set_of_idx (idx_union T T')"
-      by (cases "Mapping.lookup T x"; cases "Mapping.lookup T' x")
-        (auto simp: mem_set_of_idx idx_union_def Mapping.lookup_combine intro!: exI[of _ x])
-  qed
-  show "idx_wf cs I (idx_union T T')"
-    using assms by (auto simp: idx_wf_def idx_union_def Mapping.lookup_combine combine_options_def
-      split: option.splits)
-qed
-
 lemma join_True_iff:
   assumes "distinct cs" "distinct ds" "table cs X" "table ds Y"
   shows "v \<in> join cs X True ds Y \<longleftrightarrow> wf_tuple (cols_union cs ds) v \<and>
@@ -158,146 +113,6 @@ lemma join_False_iff:
   using join_restrict[OF assms(1-4), of False v] assms(5) tableD[OF assms(3), of v]
     restrict_idle[OF assms(1), of v]
   by (auto simp: cols_union_subset)
-
-lemma idx_join:
-  fixes T T' :: "('a tuple, 'a table) mapping"
-  assumes "distinct cs" "distinct ds" "set I \<subseteq> set cs" "set I \<subseteq> set ds" "idx_wf cs I T" "idx_wf ds I T'"
-  shows "set_of_idx (idx_join cs T ds T') = join cs (set_of_idx T) True ds (set_of_idx T')"
-    "idx_wf (cols_union cs ds) I (idx_join cs T ds T')"
-proof -
-  let ?es = "cols_union cs ds"
-  have lookup: "Mapping.lookup (idx_join cs T ds T') x =
-    (case Mapping.lookup T x of None \<Rightarrow> None | Some Y \<Rightarrow> (case Mapping.lookup T' x of None \<Rightarrow> None
-     | Some Y' \<Rightarrow> if join cs Y True ds Y' \<noteq> {} then Some (join cs Y True ds Y') else None))" for x
-    using idx_wfD(1)[OF assms(5)] idx_wfD(1)[OF assms(6)]
-    by (auto simp: idx_join_def Mapping.lookup_filter lookup_mapping_join bin_join_table[OF assms(1,2)]
-      simp del: bin_join.simps split: option.splits)
-  have key: "restrict I cs (restrict cs ?es z) = restrict I ?es z"
-    "restrict I ds (restrict ds ?es z) = restrict I ?es z" for z :: "'a tuple"
-    using assms(3,4) by (simp_all add: restrict_restrict)
-  show "set_of_idx (idx_join cs T ds T') = join cs (set_of_idx T) True ds (set_of_idx T')"
-  proof (rule set_eqI, rule iffI)
-    fix z
-    assume "z \<in> set_of_idx (idx_join cs T ds T')"
-    then obtain x Z where xZ: "Mapping.lookup (idx_join cs T ds T') x = Some Z" "z \<in> Z"
-      by (auto simp: mem_set_of_idx)
-    then obtain Y Y' where Y: "Mapping.lookup T x = Some Y" "Mapping.lookup T' x = Some Y'"
-      and "Z = join cs Y True ds Y'"
-      by (cases "Mapping.lookup T x"; cases "Mapping.lookup T' x") (auto simp: lookup split: if_splits)
-    with xZ(2) have z: "z \<in> join cs Y True ds Y'"
-      by simp
-    have "Y \<subseteq> set_of_idx T" "Y' \<subseteq> set_of_idx T'"
-      using Y by (auto simp: mem_set_of_idx intro!: exI[of _ x])
-    with z show "z \<in> join cs (set_of_idx T) True ds (set_of_idx T')"
-      by (auto simp: join_True_iff[OF assms(1,2) idx_wfD(1)[OF assms(5) Y(1)] idx_wfD(1)[OF assms(6) Y(2)]]
-        join_True_iff[OF assms(1,2) idx_wf_table[OF assms(5)] idx_wf_table[OF assms(6)]])
-  next
-    fix z
-    assume "z \<in> join cs (set_of_idx T) True ds (set_of_idx T')"
-    then have z: "wf_tuple ?es z" "restrict cs ?es z \<in> set_of_idx T" "restrict ds ?es z \<in> set_of_idx T'"
-      by (simp_all add: join_True_iff[OF assms(1,2) idx_wf_table[OF assms(5)] idx_wf_table[OF assms(6)]])
-    obtain Y where Y: "Mapping.lookup T (restrict I ?es z) = Some Y" "restrict cs ?es z \<in> Y"
-      using idx_wf_lookup[OF assms(5) z(2)] by (auto simp: key)
-    obtain Y' where Y': "Mapping.lookup T' (restrict I ?es z) = Some Y'" "restrict ds ?es z \<in> Y'"
-      using idx_wf_lookup[OF assms(6) z(3)] by (auto simp: key)
-    have "z \<in> join cs Y True ds Y'"
-      using z(1) Y(2) Y'(2)
-      by (simp add: join_True_iff[OF assms(1,2) idx_wfD(1)[OF assms(5) Y(1)] idx_wfD(1)[OF assms(6) Y'(1)]])
-    then show "z \<in> set_of_idx (idx_join cs T ds T')"
-      using Y(1) Y'(1) by (auto simp: mem_set_of_idx lookup intro!: exI[of _ "restrict I ?es z"])
-  qed
-  show "idx_wf ?es I (idx_join cs T ds T')"
-  proof (rule idx_wfI)
-    fix x Z
-    assume "Mapping.lookup (idx_join cs T ds T') x = Some Z"
-    then obtain Y Y' where Y: "Mapping.lookup T x = Some Y" "Mapping.lookup T' x = Some Y'"
-      and Z: "Z = join cs Y True ds Y'" "Z \<noteq> {}"
-      by (auto simp: lookup split: option.splits if_splits)
-    have tabs: "table cs Y" "table ds Y'"
-      using idx_wfD(1) assms(5,6) Y by blast+
-    have "table ?es Z"
-      unfolding Z(1) by (rule join_table[OF tabs]) auto
-    moreover have "x = restrict I ?es z" if "z \<in> Z" for z
-    proof -
-      have "restrict cs ?es z \<in> Y"
-        using that by (simp add: Z(1) join_True_iff[OF assms(1,2) tabs])
-      then show ?thesis
-        using idx_wfD(3)[OF assms(5) Y(1)] key(1) by metis
-    qed
-    ultimately show "table ?es Z \<and> Z \<noteq> {} \<and> (\<forall>z \<in> Z. x = restrict I ?es z)"
-      using Z(2) by blast
-  qed
-qed
-lemma idx_antijoin:
-  fixes T T' :: "('a tuple, 'a table) mapping"
-  assumes "distinct cs" "distinct ds" "set I \<subseteq> set ds" "set ds \<subseteq> set cs" "idx_wf cs I T" "idx_wf ds I T'"
-  shows "set_of_idx (idx_antijoin cs T ds T') = join cs (set_of_idx T) False ds (set_of_idx T')"
-    "idx_wf cs I (idx_antijoin cs T ds T')"
-proof -
-  have lookup: "Mapping.lookup (idx_antijoin cs T ds T') x =
-    (case Mapping.lookup T x of None \<Rightarrow> None | Some Y \<Rightarrow> (case Mapping.lookup T' x of None \<Rightarrow> Some Y
-     | Some Y' \<Rightarrow> if join cs Y False ds Y' \<noteq> {} then Some (join cs Y False ds Y') else None))" for x
-    using idx_wfD(1)[OF assms(5)] idx_wfD(1)[OF assms(6)]
-    by (auto simp: idx_antijoin_def Mapping.lookup_combine Mapping.lookup_filter lookup_mapping_join
-      lookup_mapping_antijoin bin_join_table[OF assms(1,2)] simp del: bin_join.simps split: option.splits)
-  have key: "restrict I ds (restrict ds cs z) = restrict I cs z" for z :: "'a tuple"
-    using assms(3) by (simp add: restrict_restrict)
-  note antijoin = join_False_iff[OF assms(1,2) _ _ assms(4)]
-  \<comment> \<open>the tuples of @{term T'} that match a tuple are in the cluster of its key\<close>
-  have T'_mem: "restrict ds cs z \<in> set_of_idx T' \<longleftrightarrow>
-    (\<exists>Y'. Mapping.lookup T' (restrict I cs z) = Some Y' \<and> restrict ds cs z \<in> Y')" for z
-    using idx_wf_lookup[OF assms(6), of "restrict ds cs z"] by (auto simp: key mem_set_of_idx)
-  show "set_of_idx (idx_antijoin cs T ds T') = join cs (set_of_idx T) False ds (set_of_idx T')"
-  proof (rule set_eqI, rule iffI)
-    fix z
-    assume "z \<in> set_of_idx (idx_antijoin cs T ds T')"
-    then obtain x Z where xZ: "Mapping.lookup (idx_antijoin cs T ds T') x = Some Z" "z \<in> Z"
-      by (auto simp: mem_set_of_idx)
-    then obtain Y where Y: "Mapping.lookup T x = Some Y" "z \<in> Y"
-      and Y': "\<And>Y'. Mapping.lookup T' x = Some Y' \<Longrightarrow> restrict ds cs z \<notin> Y'"
-      using idx_wfD(1)[OF assms(5)] idx_wfD(1)[OF assms(6)]
-      by (cases "Mapping.lookup T x"; cases "Mapping.lookup T' x") (auto simp: lookup antijoin split: if_splits)
-    have "x = restrict I cs z"
-      using idx_wfD(3)[OF assms(5) Y] .
-    then have "restrict ds cs z \<notin> set_of_idx T'"
-      using Y' by (auto simp: T'_mem)
-    moreover have "z \<in> set_of_idx T"
-      using Y by (auto simp: mem_set_of_idx intro!: exI[of _ x])
-    ultimately show "z \<in> join cs (set_of_idx T) False ds (set_of_idx T')"
-      by (simp add: antijoin[OF idx_wf_table[OF assms(5)] idx_wf_table[OF assms(6)]])
-  next
-    fix z
-    assume "z \<in> join cs (set_of_idx T) False ds (set_of_idx T')"
-    then have z: "z \<in> set_of_idx T" "restrict ds cs z \<notin> set_of_idx T'"
-      by (simp_all add: antijoin[OF idx_wf_table[OF assms(5)] idx_wf_table[OF assms(6)]])
-    obtain Y where Y: "Mapping.lookup T (restrict I cs z) = Some Y" "z \<in> Y"
-      using idx_wf_lookup[OF assms(5) z(1)] .
-    show "z \<in> set_of_idx (idx_antijoin cs T ds T')"
-    proof (cases "Mapping.lookup T' (restrict I cs z)")
-      case None
-      then show ?thesis
-        using Y by (auto simp: mem_set_of_idx lookup intro!: exI[of _ "restrict I cs z"])
-    next
-      case (Some Y')
-      then have "z \<in> join cs Y False ds Y'"
-        using Y(2) z(2) idx_wfD(1)[OF assms(5) Y(1)] idx_wfD(1)[OF assms(6) Some]
-        by (auto simp: antijoin T'_mem)
-      then show ?thesis
-        using Y(1) Some by (auto simp: mem_set_of_idx lookup intro!: exI[of _ "restrict I cs z"])
-    qed
-  qed
-  show "idx_wf cs I (idx_antijoin cs T ds T')"
-  proof (rule idx_wfI)
-    fix x Z
-    assume "Mapping.lookup (idx_antijoin cs T ds T') x = Some Z"
-    then obtain Y where Y: "Mapping.lookup T x = Some Y" and Z: "Z \<subseteq> Y" "Z \<noteq> {}"
-      using idx_wfD(2)[OF assms(5)]
-      by (cases "Mapping.lookup T x"; cases "Mapping.lookup T' x")
-        (auto simp: lookup join_False_code split: if_splits)
-    then show "table cs Z \<and> Z \<noteq> {} \<and> (\<forall>z \<in> Z. x = restrict I cs z)"
-      using idx_wfD(1,3)[OF assms(5) Y] by (auto intro: table_subset)
-  qed
-qed
 
 text \<open>When the second index is keyed by all its columns, it is a set of keys.\<close>
 
@@ -372,12 +187,6 @@ lemma wf_idx_sig_of_table[simp]: "wf_idx_sig (wf_idx_of_table I t) = wf_table_si
 
 lemma wf_idx_set_of_table[simp]: "wf_idx_set (wf_idx_of_table I t) = wf_table_set t"
   by transfer (auto simp: Let_def idx_create(1))
-
-lemma wf_table_sig_of_idx[simp]: "wf_table_sig (wf_table_of_idx t) = wf_idx_sig t"
-  by transfer auto
-
-lemma wf_table_set_of_idx[simp]: "wf_table_set (wf_table_of_idx t) = wf_idx_set t"
-  by transfer auto
 
 lemma table_filter: "table cs {a \<in> T. wf_tuple cs a}"
   by (auto simp: table_def)
@@ -488,12 +297,6 @@ proof -
   show ?thesis
     using sub by (simp add: wf_idx_set.rep_eq wf_idx_sig.rep_eq wf_idx_antijoin.rep_eq t1 t2)
 qed
-lemma wf_set_sig[simp]: "wf_table_sig (wf_table_of_wf_set t) = wf_set_sig t"
-  by transfer auto
-
-lemma wf_set_set[simp]: "wf_table_set (wf_table_of_wf_set t) = wf_set_set t"
-  by transfer auto
-
 lemma wf_table_of_idx_of_wf_set[simp]: "wf_table_of_idx (wf_idx_of_wf_set I t) = wf_table_of_wf_set t"
   by (rule wf_table_eqI; transfer) (auto simp: Let_def idx_create(1))
 
@@ -501,9 +304,6 @@ lemma wf_table_of_wf_set_of_idx[simp]: "wf_table_of_wf_set (wf_set_of_idx t) = w
   by (rule wf_table_eqI; transfer) auto
 
 text \<open>The operations on the two representations.\<close>
-
-lemma wf_table_of_wf_set_of_set: "wf_table_of_set cs T = wf_table_of_wf_set (wf_set_of_set cs T)"
-  by transfer auto
 
 lemma wf_table_union_wf_set: "wf_table_union (wf_table_of_wf_set t) (wf_table_of_wf_set t') =
   wf_table_of_wf_set (wf_set_union t t')"
@@ -516,20 +316,5 @@ lemma wf_table_join_wf_set: "wf_table_join (wf_table_of_wf_set t) (wf_table_of_w
 lemma wf_table_antijoin_wf_set: "wf_table_antijoin (wf_table_of_wf_set t) (wf_table_of_wf_set t') =
   wf_table_of_wf_set (wf_set_antijoin t t')"
   by transfer auto
-
-lemma wf_table_union_idx: "wf_table_union (wf_table_of_idx i) (wf_table_of_idx i') =
-  wf_table_of_idx (wf_idx_union i i')"
-  by (rule wf_table_eqI)
-    (simp_all add: wf_table_sig_union wf_idx_sig_union wf_table_set_union' wf_idx_set_union')
-
-lemma wf_table_join_idx: "wf_table_join (wf_table_of_idx i) (wf_table_of_idx i') =
-  wf_table_of_idx (wf_idx_join i i')"
-  by (rule wf_table_eqI) (simp_all add: wf_table_sig_join wf_idx_sig_join wf_table_set_join wf_idx_set_join)
-
-lemma wf_table_antijoin_idx: "wf_table_antijoin (wf_table_of_idx i) (wf_table_of_idx i') =
-  wf_table_of_idx (wf_idx_antijoin i i')"
-  by (rule wf_table_eqI)
-    (simp_all add: wf_table_sig_antijoin wf_idx_sig_antijoin wf_table_set_antijoin' wf_idx_set_antijoin
-      wf_idx_set_antijoin_deg)
 
 end
