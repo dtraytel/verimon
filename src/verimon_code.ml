@@ -16409,51 +16409,6 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
               equal_lista equal_nat cs ks
           then ETS mt else EFail);;
 
-let rec rbt_split_comp
-  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
-    | c, Branch (uu, l, a, b, r), x ->
-        (match c x a with Eqa -> (l, (Some b, r))
-          | Lt ->
-            (let (l1, (beta, l2)) = rbt_split_comp c l x in
-              (l1, (beta, rbt_join l2 a b r)))
-          | Gt ->
-            (let (r1, (beta, r2)) = rbt_split_comp c r x in
-              (rbt_join l a b r1, (beta, r2))));;
-
-let rec rbt_comp_union_swap_rec
-  c f gamma t1 t2 =
-    (let (gammaa, (t2a, t1a)) =
-       (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
-     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if small_rbt t2a then folda (rbt_comp_insert_with_key c fa) t2a t1a
-        else (match t1a with Empty -> t2a
-               | Branch (_, l1, a, b, r1) ->
-                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
-                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
-                     (match beta with None -> b | Some ca -> fa a b ca)
-                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
-
-let rec rbt_comp_union_with_key
-  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
-
-let rec join _A
-  xc xd xe =
-    Mapping_RBTa
-      (rbt_comp_union_with_key (the (ccompare _A)) xc (impl_ofa _A xd)
-        (impl_ofa _A xe));;
-
-let rec combine _B
-  f (RBT_Mapping t) (RBT_Mapping u) =
-    (match ccompare _B
-      with None ->
-        failwith "combine RBT_Mapping: ccompare = None"
-          (fun _ -> combine _B f (RBT_Mapping t) (RBT_Mapping u))
-      | Some _ -> RBT_Mapping (join _B (fun _ -> f) t u));;
-
-let rec eidx_union (_A1, _A2)
-  = combine (ccompare_list _A2)
-      (sup_seta ((ceq_list _A1), (ccompare_list _A2)));;
-
 let rec de_iidxs a = snd (rep_itab a);;
 
 let rec de_iadd
@@ -16469,7 +16424,7 @@ let rec de_iadd
               else map_values (ccompare_list ccompare_bool)
                      (fun msk -> de_eidx_add msk x) (de_iidxs a)));;
 
-let rec ieadd_new_table_msaux
+let rec de_ieadd_new_table_msaux
   args x
     (t, (gc, (msk, (data_prev,
                      (data_in,
@@ -16477,19 +16432,14 @@ let rec ieadd_new_table_msaux
                          (idx_in, (tuple_in, (idx_since, tuple_since)))))))))
     = (let xa = de_minus_keys x tuple_since in
        let tuple_sincea = de_upd_set_nat tuple_since (fun _ -> t) xa in
-       let idx_sincea =
-         de_eidx_upd args
-           (fun _ ->
-             eidx_union (ceq_event_data, ccompare_event_data) idx_since
-               (de_eidx msk xa))
+       let idx_sincea = de_eidx_upd args (fun _ -> de_eidx_add msk xa idx_since)
          in
         (if memL (args_ivl args) zero_nata
           then (t, (gc, (msk, (data_prev,
                                 (append_queue (t, x) data_in,
                                   (de_iadd x table_in,
                                     (de_eidx_upd args
-                                       (fun _ ->
- eidx_union (ceq_event_data, ccompare_event_data) idx_in (de_eidx msk x)),
+                                       (fun _ -> de_eidx_add msk x idx_in),
                                       (de_upd_set_nat tuple_in (fun _ -> t) x,
 (idx_sincea, tuple_sincea)))))))))
           else (t, (gc, (msk, (append_queue (t, x) data_prev,
@@ -16499,7 +16449,7 @@ let rec ieadd_new_table_msaux
                                       (tuple_in,
 (idx_sincea, tuple_sincea)))))))))));;
 
-let rec ieadd_new_table_lz
+let rec de_ieadd_new_table_lz
   args x
     (t, (gc, (msk, (data_prev,
                      (data_in,
@@ -16510,12 +16460,10 @@ let rec ieadd_new_table_lz
                               (append_queue (t, x) data_in,
                                 (de_iadd x table_in,
                                   (de_eidx_upd args
-                                     (fun _ ->
-                                       eidx_union
- (ceq_event_data, ccompare_event_data) idx_in (de_eidx msk x)),
+                                     (fun _ -> de_eidx_add msk x idx_in),
                                     (de_upd_set_nat tuple_in (fun _ -> t) x,
                                       (idx_since, tuple_since)))))))))
-        else ieadd_new_table_msaux args x
+        else de_ieadd_new_table_msaux args x
                (t, (gc, (msk, (data_prev,
                                 (data_in,
                                   (table_in,
@@ -16543,22 +16491,22 @@ let rec icnt_add1
         with None -> (ed_update_nat t one_nata c, de_iins t s)
         | Some k -> (ed_update_nat t (plus_nata k one_nata) c, s)));;
 
-let rec icnt_add t cc = fold icnt_add1 (edl_csl t) cc;;
+let rec de_icnt_add t cc = fold icnt_add1 (edl_csl t) cc;;
 
-let rec isw_add_new_table
+let rec de_isw_add_new_table
   args x aux =
     (let (t, (pend, (win, cc))) = aux in
       (if memL (args_ivl args) zero_nata
-        then (t, (pend, (append_queue (t, x) win, icnt_add x cc)))
+        then (t, (pend, (append_queue (t, x) win, de_icnt_add x cc)))
         else (t, (append_queue (t, x) pend, (win, cc)))));;
 
 let rec iudsx_add_new_table
   args x xa2 = match args, x, xa2 with
     args, x, IUDSX_u d -> IUDSX_u (udsx_add_new_table args x d)
-    | args, x, IUDSX_win w -> IUDSX_win (isw_add_new_table args x w)
-    | args, x, IUDSX_gen g -> IUDSX_gen (ieadd_new_table_lz args x g);;
+    | args, x, IUDSX_win w -> IUDSX_win (de_isw_add_new_table args x w)
+    | args, x, IUDSX_gen g -> IUDSX_gen (de_ieadd_new_table_lz args x g);;
 
-let rec ieadd_new_ts_msauxa
+let rec de_ieadd_new_ts_msauxa
   args nt
     (t, (gc, (msk, (data_prev,
                      (data_in,
@@ -16581,10 +16529,7 @@ let rec ieadd_new_ts_msauxa
                           (data_ina,
                             (de_iadd add table_in,
                               (de_eidx_upd args
-                                 (fun _ ->
-                                   eidx_union
-                                     (ceq_event_data, ccompare_event_data)
-                                     idx_in (de_eidx msk add)),
+                                 (fun _ -> de_eidx_add msk add idx_in),
                                 (tuple_ina, (idx_since, tuple_since))))))))));;
 
 let rec filter_cfi _B (_A1, _A2, _A3, _A4)
@@ -16606,72 +16551,6 @@ let rec filter_set _A (_B1, _B2, _B3, _B4, _B5)
       else failwith "upd_set: infinite"
              (fun _ -> filter_set _A (_B1, _B2, _B3, _B4, _B5) (t, a) (m, y)));;
 
-let rec minus_comp
-  comp t1 t2 =
-    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
-      else (if small_rbta t1
-             then rbtreeify
-                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
-                      (entries t1))
-             else (match t2 with Empty -> t1
-                    | Branch (_, l2, a, (), r2) ->
-                      (let (l1, (_, r1)) = split_comp comp t1 a in
-                        rbt_join2a (minus_comp comp l1 l2)
-                          (minus_comp comp r1 r2)))));;
-
-let rec rbt_minus_rbt_join2 _A
-  xb xc =
-    Mapping_RBTa
-      (rbt_recolor
-        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
-
-let rec minus_set (_A1, _A2)
-  a b = match a, b with
-    RBT_set t1, RBT_set t2 ->
-      (match ccompare _A2
-        with None ->
-          failwith "minus RBT_set RBT_set: ccompare = None"
-            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
-        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
-    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
-
-let rec ebucket (_A1, _A2, _A3)
-  d k = (match lookupa ((ccompare_list _A2), (equal_list _A3)) d k
-          with None ->
-            set_empty ((ceq_list _A1), (ccompare_list _A2))
-              (of_phantom set_impl_lista)
-          | Some z -> z);;
-
-let rec filterc _A
-  p x1 = match p, x1 with
-    p, RBT_Mapping t ->
-      (match ccompare _A
-        with None ->
-          failwith "filter RBT_Mapping: ccompare = None"
-            (fun _ -> filterc _A p (RBT_Mapping t))
-        | Some _ -> RBT_Mapping (filtere _A (fun (a, b) -> p a b) t))
-    | p, Assoc_List_Mapping al ->
-        Assoc_List_Mapping (filterb (fun (a, b) -> p a b) al)
-    | p, Mapping m ->
-        Mapping
-          (fun k ->
-            (match m k with None -> None
-              | Some v -> (if p k v then Some v else None)));;
-
-let rec eidx_minus (_A1, _A2, _A3)
-  i d = filterc (ccompare_list _A2)
-          (fun k y ->
-            is_none (lookupa ((ccompare_list _A2), (equal_list _A3)) d k) ||
-              not (is_empty
-                    (card_UNIV_list, (ceq_list _A1),
-                      (cproper_interval_list _A2))
-                    y))
-          (map_values (ccompare_list _A2)
-            (fun k y ->
-              minus_set ((ceq_list _A1), (ccompare_list _A2)) y
-                (ebucket (_A1, _A2, _A3) d k))
-            i);;
-
 let rec de_isub
   d a = Abs_itab
           (ed_minus (de_iset a) d,
@@ -16685,7 +16564,7 @@ let rec de_isub
               else map_values (ccompare_list ccompare_bool)
                      (fun msk -> de_eidx_del msk d) (de_iidxs a)));;
 
-let rec ieshift_end
+let rec de_ieshift_end
   args nt
     (t, (gc, (msk, (data_prev,
                      (data_in,
@@ -16711,15 +16590,11 @@ let rec ieshift_end
                          (data_ina,
                            (de_isub del table_in,
                              (de_eidx_upd args
-                                (fun _ ->
-                                  eidx_minus
-                                    (ceq_event_data, ccompare_event_data,
-                                      equal_event_data)
-                                    idx_in (de_eidx msk del)),
+                                (fun _ -> de_eidx_del msk del idx_in),
                                (tuple_ina, (idx_since, tuple_since))))))))));;
 
-let rec ieadd_new_ts_msaux
-  args nt daux = ieadd_new_ts_msauxa args nt (ieshift_end args nt daux);;
+let rec de_ieadd_new_ts_msaux
+  args nt daux = de_ieadd_new_ts_msauxa args nt (de_ieshift_end args nt daux);;
 
 let rec de_idel
   x a = Abs_itab
@@ -16742,52 +16617,53 @@ let rec icnt_del1
           (if less_eq_nat k one_nata then (ed_delete_nat t c, de_idel t s)
             else (ed_update_nat t (minus_nata k one_nata) c, s))));;
 
-let rec icnt_del t cc = fold icnt_del1 (edl_csl t) cc;;
+let rec de_icnt_del t cc = fold icnt_del1 (edl_csl t) cc;;
 
-let rec isw_expire
+let rec de_isw_expire
   args nt win cc =
     (match safe_hd win with (None, wina) -> (wina, cc)
       | (Some e, wina) ->
         (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, cc)
-          else isw_expire args nt (tl_queue wina) (icnt_del (snd e) cc)));;
+          else de_isw_expire args nt (tl_queue wina)
+                 (de_icnt_del (snd e) cc)));;
 
-let rec isw_move
+let rec de_isw_move
   args nt pend win cc =
     (match safe_hd pend with (None, penda) -> (penda, (win, cc))
       | (Some e, penda) ->
         (if memL (args_ivl args) (minus_nata nt (fst e))
           then (if memR (args_ivl args) (minus_nata nt (fst e))
-                 then isw_move args nt (tl_queue penda) (append_queue e win)
-                        (icnt_add (snd e) cc)
-                 else isw_move args nt (tl_queue penda) win cc)
+                 then de_isw_move args nt (tl_queue penda) (append_queue e win)
+                        (de_icnt_add (snd e) cc)
+                 else de_isw_move args nt (tl_queue penda) win cc)
           else (penda, (win, cc))));;
 
-let rec isw_add_new_ts
+let rec de_isw_add_new_ts
   args nt aux =
     (let (_, (pend, (win, cc))) = aux in
-     let (penda, (wina, cca)) = isw_move args nt pend win cc in
-     let (winb, ccb) = isw_expire args nt wina cca in
+     let (penda, (wina, cca)) = de_isw_move args nt pend win cc in
+     let (winb, ccb) = de_isw_expire args nt wina cca in
       (nt, (penda, (winb, ccb))));;
 
 let rec iudsx_add_new_ts
   args nt x2 = match args, nt, x2 with
     args, nt, IUDSX_u d -> IUDSX_u (udsx_add_new_ts args nt d)
-    | args, nt, IUDSX_win w -> IUDSX_win (isw_add_new_ts args nt w)
-    | args, nt, IUDSX_gen g -> IUDSX_gen (ieadd_new_ts_msaux args nt g);;
+    | args, nt, IUDSX_win w -> IUDSX_win (de_isw_add_new_ts args nt w)
+    | args, nt, IUDSX_gen g -> IUDSX_gen (de_ieadd_new_ts_msaux args nt g);;
 
-let rec ieresult_msaux
+let rec de_ieresult_msaux
   (nt, (gc, (msk, (data_prev,
                     (data_in,
                       (table_in,
                         (idx_in, (tuple_in, (idx_since, tuple_since)))))))))
     = table_in;;
 
-let rec isw_result aux = (let (_, (_, (_, a))) = aux in snd a);;
+let rec de_isw_result aux = (let (_, (_, (_, a))) = aux in snd a);;
 
 let rec iudsx_result
   args x1 = match args, x1 with args, IUDSX_u d -> de_itab (udsx_result args d)
-    | args, IUDSX_win w -> isw_result w
-    | args, IUDSX_gen g -> ieresult_msaux g;;
+    | args, IUDSX_win w -> de_isw_result w
+    | args, IUDSX_gen g -> de_ieresult_msaux g;;
 
 let rec set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
   (RBT_Mapping t) =
@@ -16819,7 +16695,23 @@ let rec de_esemi_idx
         (cproper_interval_list ccompare_event_data), set_impl_list)
       (de_mfilter_keys_table pos x idx);;
 
-let rec iejoin_msaux
+let rec filterc _A
+  p x1 = match p, x1 with
+    p, RBT_Mapping t ->
+      (match ccompare _A
+        with None ->
+          failwith "filter RBT_Mapping: ccompare = None"
+            (fun _ -> filterc _A p (RBT_Mapping t))
+        | Some _ -> RBT_Mapping (filtere _A (fun (a, b) -> p a b) t))
+    | p, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (filterb (fun (a, b) -> p a b) al)
+    | p, Mapping m ->
+        Mapping
+          (fun k ->
+            (match m k with None -> None
+              | Some v -> (if p k v then Some v else None)));;
+
+let rec de_iejoin_msaux
   args y
     (t, (gc, (msk, (data_prev,
                      (data_in,
@@ -16864,7 +16756,7 @@ let rec iejoin_msaux
             (fun k _ -> equal_boola (ed_member k y) pos) idx_since,
            edl_mapping_delete_set tuple_since since_del)))))))))))));;
 
-let rec iegc_msaux
+let rec de_iegc_msaux
   args (nt, (gc, (msk, (data_prev,
                          (data_in,
                            (table_in,
@@ -16919,21 +16811,21 @@ let rec iegc_msaux
  (unbox ed_keys_nat_v tuple_sincea)),
                                     tuple_sincea))))))))));;
 
-let rec iegc_join_msaux
+let rec de_iegc_join_msaux
   args y
     (t, (gc, (msk, (data_prev,
                      (data_in,
                        (table_in,
                          (idx_in, (tuple_in, (idx_since, tuple_since)))))))))
     = (if not (memR (args_ivl args) (minus_nata t gc))
-        then iejoin_msaux args y
-               (iegc_msaux args
+        then de_iejoin_msaux args y
+               (de_iegc_msaux args
                  (t, (gc, (msk, (data_prev,
                                   (data_in,
                                     (table_in,
                                       (idx_in,
 (tuple_in, (idx_since, tuple_since))))))))))
-        else iejoin_msaux args y
+        else de_iejoin_msaux args y
                (t, (gc, (msk, (data_prev,
                                 (data_in,
                                   (table_in,
@@ -16941,12 +16833,12 @@ let rec iegc_join_msaux
                                       (tuple_in,
 (idx_since, tuple_since))))))))));;
 
-let rec iegc_join_lz
+let rec de_iegc_join_lz
   args y daux =
-    (if memL (args_ivl args) zero_nata then iejoin_msaux args y daux
-      else iegc_join_msaux args y daux);;
+    (if memL (args_ivl args) zero_nata then de_iejoin_msaux args y daux
+      else de_iegc_join_msaux args y daux);;
 
-let rec isw_join
+let rec de_isw_join
   args x aux =
     (let (t, (_, (_, _))) = aux in
       (if (if args_pos args then not (unbox ed_is_empty_v x)
@@ -16958,8 +16850,8 @@ let rec isw_join
 let rec iudsx_join
   args x xa2 = match args, x, xa2 with
     args, x, IUDSX_u d -> IUDSX_u (udsx_join args x d)
-    | args, x, IUDSX_win w -> IUDSX_win (isw_join args x w)
-    | args, x, IUDSX_gen g -> IUDSX_gen (iegc_join_lz args x g);;
+    | args, x, IUDSX_win w -> IUDSX_win (de_isw_join args x w)
+    | args, x, IUDSX_gen g -> IUDSX_gen (de_iegc_join_lz args x g);;
 
 let rec iuedsx_eval_since
   args rs (xs, (ys, (ts, skew))) aux =
@@ -17007,20 +16899,22 @@ let rec iuedsx_eval_since
                          iuedsx_eval_since args (iudsx_result args aux1 :: rs)
                            (xs1, (ysa, (ts1, false))) aux1)))));;
 
-let rec iuw_extend
+let rec de_iuw_extend
   args ts0 win rest bend cc =
     (if not bend then (win, (rest, (bend, cc)))
       else (match safe_hd rest with (None, resta) -> (win, (resta, (bend, cc)))
              | (Some e, resta) ->
                (if memR (args_ivl args) (minus_nata (fst e) ts0)
-                 then iuw_extend args ts0 (append_queue e win) (tl_queue resta)
-                        (snd (snd e)) (icnt_add (fst (snd e)) cc)
+                 then de_iuw_extend args ts0 (append_queue e win)
+                        (tl_queue resta) (snd (snd e))
+                        (de_icnt_add (fst (snd e)) cc)
                  else (win, (resta, (bend, cc))))));;
 
-let rec iuw_step
+let rec de_iuw_step
   args ts0 aux =
     (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
-     let (wina, (resta, (benda, cca))) = iuw_extend args ts0 win rest bend cc in
+     let (wina, (resta, (benda, cca))) = de_iuw_extend args ts0 win rest bend cc
+       in
       (match safe_hd wina
         with (None, winb) ->
           (tl_queue nts,
@@ -17030,7 +16924,7 @@ let rec iuw_step
                   (benda, (cca, de_itab ed_bot :: dn))))))
         | (Some e, winb) ->
           (let winc = tl_queue winb in
-           let ccaa = icnt_del (fst (snd e)) cca in
+           let ccaa = de_icnt_del (fst (snd e)) cca in
            let bendb = (if is_emptya winc then true else benda) in
             (tl_queue nts,
               (winc,
@@ -17038,7 +16932,7 @@ let rec iuw_step
                   (minus_nata len one_nata,
                     (bendb, (ccaa, snd cca :: dn)))))))));;
 
-let rec iuw_shift
+let rec de_iuw_shift
   args nt aux =
     (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
       (match safe_hd nts
@@ -17047,14 +16941,14 @@ let rec iuw_shift
           (if memR (args_ivl args) (minus_nata nt ts0) ||
                 equal_nata len zero_nata
             then (ntsa, (win, (rest, (len, (bend, (cc, dn))))))
-            else iuw_shift args nt
-                   (iuw_step args ts0
+            else de_iuw_shift args nt
+                   (de_iuw_step args ts0
                      (ntsa, (win, (rest, (len, (bend, (cc, dn))))))))));;
 
-let rec iuw_add_new
+let rec de_iuw_add_new
   args rel1 rel2 nt aux =
-    (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = iuw_shift args nt aux
-       in
+    (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) =
+       de_iuw_shift args nt aux in
      let b =
        (if args_pos args then not (unbox ed_is_empty_v rel1)
          else unbox ed_is_empty_v rel1)
@@ -17068,7 +16962,7 @@ let rec iudux_add_new
     args, msk, rel1, rel2, nt, IUDUX_u d ->
       IUDUX_u (udux_add_new args msk rel1 rel2 nt d)
     | args, msk, rel1, rel2, nt, IUDUX_win w ->
-        IUDUX_win (iuw_add_new args rel1 rel2 nt w);;
+        IUDUX_win (de_iuw_add_new args rel1 rel2 nt w);;
 
 let rec de_iensure1
   t msk i =
@@ -17083,7 +16977,7 @@ let rec de_iensure
   msks a =
     Abs_itab (de_iset a, fold (de_iensure1 (de_iset a)) msks (de_iidxs a));;
 
-let rec iuw_ensure
+let rec de_iuw_ensure
   msks aux =
     (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = aux in
       (nts, (win, (rest,
@@ -17092,23 +16986,23 @@ let rec iuw_ensure
 
 let rec iudux_ensure
   msks x1 = match msks, x1 with
-    msks, IUDUX_win w -> IUDUX_win (iuw_ensure msks w)
+    msks, IUDUX_win w -> IUDUX_win (de_iuw_ensure msks w)
     | msks, IUDUX_u v -> IUDUX_u v;;
 
-let rec iems_ensure
+let rec de_iems_ensure
   msks (nt, (gc, (msk, (dp, (di, (ti, (ii, (tui, (is, tus))))))))) =
     (nt, (gc, (msk, (dp, (di, (de_iensure msks ti,
                                 (ii, (tui, (is, tus)))))))));;
 
-let rec isw_ensure
+let rec de_isw_ensure
   msks aux =
     (let (t, (pend, (win, (c, s)))) = aux in
       (t, (pend, (win, (c, de_iensure msks s)))));;
 
 let rec iudsx_ensure
   msks x1 = match msks, x1 with
-    msks, IUDSX_win w -> IUDSX_win (isw_ensure msks w)
-    | msks, IUDSX_gen g -> IUDSX_gen (iems_ensure msks g)
+    msks, IUDSX_win w -> IUDSX_win (de_isw_ensure msks w)
+    | msks, IUDSX_gen g -> IUDSX_gen (de_iems_ensure msks g)
     | msks, IUDSX_u v -> IUDSX_u v;;
 
 let rec de_iprobe_l
@@ -17167,10 +17061,10 @@ let rec de_ijoin
              then (if pos then ed_bot else de_iset a)
              else de_ijoin0 pl a pos b));;
 
-let rec iuw_eval
+let rec de_iuw_eval
   args nt aux =
-    (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = iuw_shift args nt aux
-       in
+    (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) =
+       de_iuw_shift args nt aux in
       (rev dn, (nts, (win, (rest, (len, (bend, (cc, []))))))));;
 
 let rec iudux_eval
@@ -17178,7 +17072,7 @@ let rec iudux_eval
     args, nt, IUDUX_u d ->
       (let (zs, da) = udux_eval args nt d in (mapa itab zs, IUDUX_u da))
     | args, nt, IUDUX_win w ->
-        (let (zs, wa) = iuw_eval args nt w in (zs, IUDUX_win wa));;
+        (let (zs, wa) = de_iuw_eval args nt w in (zs, IUDUX_win wa));;
 
 let rec imebufn_take
   f z buf =
@@ -17197,6 +17091,51 @@ let rec igmulti_join
       | t :: r ->
         de_gands_neg ns (de_iset (igands_pos ps t (take (size_lista ps) r)))
           (mapa iset (drop (size_lista ps) r)));;
+
+let rec rbt_split_comp
+  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
+    | c, Branch (uu, l, a, b, r), x ->
+        (match c x a with Eqa -> (l, (Some b, r))
+          | Lt ->
+            (let (l1, (beta, l2)) = rbt_split_comp c l x in
+              (l1, (beta, rbt_join l2 a b r)))
+          | Gt ->
+            (let (r1, (beta, r2)) = rbt_split_comp c r x in
+              (rbt_join l a b r1, (beta, r2))));;
+
+let rec rbt_comp_union_swap_rec
+  c f gamma t1 t2 =
+    (let (gammaa, (t2a, t1a)) =
+       (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
+     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
+      (if small_rbt t2a then folda (rbt_comp_insert_with_key c fa) t2a t1a
+        else (match t1a with Empty -> t2a
+               | Branch (_, l1, a, b, r1) ->
+                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
+                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
+                     (match beta with None -> b | Some ca -> fa a b ca)
+                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
+
+let rec rbt_comp_union_with_key
+  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
+
+let rec join _A
+  xc xd xe =
+    Mapping_RBTa
+      (rbt_comp_union_with_key (the (ccompare _A)) xc (impl_ofa _A xd)
+        (impl_ofa _A xe));;
+
+let rec combine _B
+  f (RBT_Mapping t) (RBT_Mapping u) =
+    (match ccompare _B
+      with None ->
+        failwith "combine RBT_Mapping: ccompare = None"
+          (fun _ -> combine _B f (RBT_Mapping t) (RBT_Mapping u))
+      | Some _ -> RBT_Mapping (join _B (fun _ -> f) t u));;
+
+let rec eidx_union (_A1, _A2)
+  = combine (ccompare_list _A2)
+      (sup_seta ((ceq_list _A1), (ccompare_list _A2)));;
 
 let rec iidxs a = snd (rep_itab a);;
 
@@ -61367,6 +61306,35 @@ let rec equal_argpos x0 x1 = match x0, x1 with Same, Swapped -> false
                        | Swapped, Same -> false
                        | Swapped, Swapped -> true
                        | Same, Same -> true;;
+
+let rec minus_comp
+  comp t1 t2 =
+    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
+      else (if small_rbta t1
+             then rbtreeify
+                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
+                      (entries t1))
+             else (match t2 with Empty -> t1
+                    | Branch (_, l2, a, (), r2) ->
+                      (let (l1, (_, r1)) = split_comp comp t1 a in
+                        rbt_join2a (minus_comp comp l1 l2)
+                          (minus_comp comp r1 r2)))));;
+
+let rec rbt_minus_rbt_join2 _A
+  xb xc =
+    Mapping_RBTa
+      (rbt_recolor
+        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
+
+let rec minus_set (_A1, _A2)
+  a b = match a, b with
+    RBT_set t1, RBT_set t2 ->
+      (match ccompare _A2
+        with None ->
+          failwith "minus RBT_set RBT_set: ccompare = None"
+            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
+        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
+    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
 
 let rec historically i phi = Neg (once i (Neg phi));;
 
