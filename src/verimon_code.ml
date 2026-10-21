@@ -1938,6 +1938,10 @@ let top _A = _A.top;;
 
 let top_bool = ({top = top_boola} : bool top);;
 
+let ceq_boola : (bool -> bool -> bool) option = Some equal_boola;;
+
+let ceq_bool = ({ceq = ceq_boola} : bool ceq);;
+
 let rec comparator_bool x0 x1 = match x0, x1 with false, false -> Eqa
                           | false, true -> Lt
                           | true, true -> Eqa
@@ -16357,8 +16361,15 @@ let rec de_iidxs a = snd (rep_itab a);;
 let rec de_iins
   x a = Abs_itab
           (ed_insert x (de_iset a),
-            map_values (ccompare_list ccompare_bool)
-              (fun msk -> de_eidx_add1 msk x) (de_iidxs a));;
+            (if is_empty
+                  (card_UNIV_list, (ceq_list ceq_bool),
+                    (cproper_interval_list ccompare_bool))
+                  (keys (cenum_list, (ceq_list ceq_bool),
+                          (ccompare_list ccompare_bool), set_impl_list)
+                    (de_iidxs a))
+              then de_iidxs a
+              else map_values (ccompare_list ccompare_bool)
+                     (fun msk -> de_eidx_add1 msk x) (de_iidxs a)));;
 
 let rec icnt_add1
   t cc =
@@ -16384,8 +16395,15 @@ let rec iudsx_add_new_table
 let rec de_idel
   x a = Abs_itab
           (edl_remove x (de_iset a),
-            map_values (ccompare_list ccompare_bool)
-              (fun msk -> de_eidx_del1 msk x) (de_iidxs a));;
+            (if is_empty
+                  (card_UNIV_list, (ceq_list ceq_bool),
+                    (cproper_interval_list ccompare_bool))
+                  (keys (cenum_list, (ceq_list ceq_bool),
+                          (ccompare_list ccompare_bool), set_impl_list)
+                    (de_iidxs a))
+              then de_iidxs a
+              else map_values (ccompare_list ccompare_bool)
+                     (fun msk -> de_eidx_del1 msk x) (de_iidxs a)));;
 
 let rec icnt_del1
   t cc =
