@@ -202,7 +202,7 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
         qtable [0..<m] (mem_restr UNIV [0..<m]) 
           (\<lambda>v. letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) u k \<phi>') (val m [0..<m] v) i) Z)
     \<Longrightarrow> safe_letpast (p, m) \<phi>' \<le> PastRec 
-    \<Longrightarrow> \<comment> \<open>safe\<close> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>'
+    \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>'
     \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> cs = Formula.fv_list \<phi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MLetPast p m cs \<phi> \<psi> i buf) (Formula.LetPast p \<phi>' \<psi>')"
@@ -1183,7 +1183,6 @@ next
         using Trigger_0(1,3) valid_init_mtaux[of I "Formula.fv_list \<phi>" "Formula.fv_list \<psi>" True n]
         unfolding safe_dual_def wf_trigger_aux_def aux_def args_def
         by (auto simp add: Let_def Trigger_0(7) split: if_splits)
-  
       show ?thesis
         using True wf_mformula.Trigger_0[OF wf_\<psi> if_pos wf_\<phi> args(1-6) mem args(7) 
             wf_mbuf2'_0[OF Trigger_0(7)] wf_ts_0 aux]
@@ -1215,7 +1214,6 @@ next
         using Trigger_0(1,3) valid_init_mtaux[of I "Formula.fv_list \<phi>'" "Formula.fv_list \<psi>" False n] \<phi>'_props(1)
         unfolding safe_dual_def wf_trigger_aux_def aux_def args_def
         by (auto simp add: Let_def Trigger_0(7) split: if_splits)
-  
       show ?thesis
         using False \<phi>'_props(1) wf_mformula.Trigger_0[OF wf_\<psi> if_pos wf_\<phi>' args(1-6) mem args(7) 
             wf_mbuf2'_0[OF Trigger_0(7)] wf_ts_0 aux]
@@ -3915,7 +3913,6 @@ next
     (fv_z, z) = result_mtaux args aux
     in (zs @ [(fv_z, z)], aux)
   ) ([], aux) (mbuf2_add as bs buf2) (nts @ map (\<tau> \<sigma>) [j..<j + \<delta>])"
-  
   define zs' where "zs' = fst (fst tuple)"
   define aux' where "aux' = snd (fst tuple)"
   define buf2' where "buf2' = fst (snd tuple)"
@@ -4121,7 +4118,6 @@ next
 
   have zs_eq: "zs = fst tuple'"
     using meval_z' unfolding zs_def by simp
-    
   define buf1' where "buf1' = snd tuple'"
 
   have tuple'_eq: "tuple' = (zs, buf1')"
@@ -5175,7 +5171,6 @@ next
     then have non_empty: "(length (filter (\<lambda> (t, _). mem (args_ivl args) (\<tau> \<sigma> k - t)) auxlist') > 0)"
       using length_pos_if_in_set[of "(\<tau> \<sigma> k, X_tmp)"]
       by auto
-    
     have "wf_trigger_aux \<sigma> V R args \<gamma> \<beta> (snd (case acc of (zs, aux) \<Rightarrow> let aux = update_mtaux args (\<tau> \<sigma> k) X Y aux; (fv_z, z) = result_mtaux args aux in (zs @ [z], aux)))
  (Suc k)"
       using wf_trigger_aux
@@ -5265,7 +5260,6 @@ next
         {
           fix i r
           assume assm: "(i, r) \<in> set (zip [min (Progress.progress \<sigma> P \<gamma> j) (Progress.progress \<sigma> P \<beta> j)..<Suc k] zs')"
-          
           have "length [min (Progress.progress \<sigma> P \<gamma> j) (Progress.progress \<sigma> P \<beta> j)..<k] = length zs"
             using step(6) zs_def
             unfolding list_all2_iff

@@ -174,9 +174,7 @@ function (sequential) progress :: "(Formula.name \<times> nat \<rightharpoonup> 
     Inf {i. \<forall>k. k < j \<and> k \<le> min (progress P \<phi> j) (progress P \<psi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
 | "progress P (Formula.Trigger \<phi> I \<psi>) j = min (progress P \<phi> j) (progress P \<psi> j)"
 | "progress P (Formula.Release \<phi> I \<psi>) j = (
-    \<comment> \<open>with 0 in the interval, the monitor evaluates the release natively, and its progress is
-    that of the until; otherwise it evaluates its rewriting @{const release_safe_bounded}. The
-    unbounded case is not monitorable; its progress is that of the until, which is 0.\<close>
+    \<comment> \<open>without 0 in the interval: progress of the rewriting\<close>
     if mem I 0 \<or> \<not> bounded I then
       Inf {i. \<forall>k. k < j \<and> k \<le> min (progress P \<phi> j) (progress P \<psi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}
     else

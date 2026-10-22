@@ -50,7 +50,7 @@ fun frz_split :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<R
    | _ \<Rightarrow> None)"
 | "frz_split pn _ = None"
 
-subsection \<open>The rewrite\<close>
+subsection \<open>Rewrite\<close>
 
 text \<open>If the frozen formula never lags (@{text fl}), the conjunct is also taken out of Prev and
   of a Since whose interval excludes 0; otherwise this could lower the progress.\<close>

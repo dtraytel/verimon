@@ -4,7 +4,7 @@ theory Optimized_Until_Deque_Valid
 begin
 (*>*)
 
-section \<open>Correctness of the Until structure with deques\<close>
+section \<open>Correctness of the deque-based Until structure\<close>
 
 subsection \<open>Deques related to mappings\<close>
 

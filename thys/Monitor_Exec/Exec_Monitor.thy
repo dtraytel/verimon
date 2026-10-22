@@ -6,7 +6,7 @@ begin
 
 
 
-section \<open>The executable state machine\<close>
+section \<open>Executable state machine\<close>
 
 record emstate =
   emstate_i :: nat

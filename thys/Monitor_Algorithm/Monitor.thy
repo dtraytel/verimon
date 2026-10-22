@@ -627,15 +627,13 @@ fun trigger_results :: "args \<Rightarrow> ts \<Rightarrow> event_data mtaux \<R
     if (length (filter (\<lambda> (t, _, _). mem (args_ivl args) (cur - t)) auxlist) > 0) then (
       (args_R args), {
       tuple. wf_tuple (args_R args) tuple \<and>
-        \<comment> \<open>pretty much the definition of trigger\<close>
         (\<forall>i \<in> {0..<(length auxlist)}.
           let (t, l, r) = auxlist!i in
           mem (args_ivl args) (cur - t) \<longrightarrow> 
-          \<comment> \<open>either \<psi> holds or there is a later database where the same tuple satisfies \<phi>\<close>
           (
             tuple \<in> r \<or>
             (\<exists>j \<in> {i<..<(length auxlist)}.
-              join_cond (args_pos args) ((fst o snd) (auxlist!j)) (restrict (args_L args) (args_R args) tuple) \<comment> \<open>t < t' is given as the list is sorted\<close>
+              join_cond (args_pos args) ((fst o snd) (auxlist!j)) (restrict (args_L args) (args_R args) tuple)
             )
           )
         )
@@ -958,7 +956,7 @@ function (in maux_ops) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.form
       | _ \<Rightarrow> MRel empty_table))"
 | "minit0 n (Formula.Ands l) = (let (pos, neg) = partition safe_formula l in
     let mpos = map (minit0 n) pos in
-    let mneg = map (minit0 n) (map remove_neg neg) in \<comment> \<open>Trigger is passed as is\<close>
+    let mneg = map (minit0 n) (map remove_neg neg) in
     let vpos = map Formula.fv_list pos in
     let vneg = map Formula.fv_list neg in
     MAnds (Formula.fv_list (Formula.Ands l)) vpos vneg (mpos @ mneg) (replicate (length l) []))"
@@ -1049,7 +1047,6 @@ next
   then show ?case 
     by (clarsimp  dest!: to_mregex_ok[OF sym] atms_size')
 qed
-  
 
 definition (in maux_ops) minit :: "ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate" where
   "minit \<phi> = (let n = Formula.nfv \<phi>
@@ -1872,9 +1869,8 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
         let aux       = update_mtaux args t r1 r2 aux;
             (fv_z, z) = result_mtaux args aux
         in (zs @ [(fv_z, z)], aux)) ([], aux) (mbuf2_add xs ys buf2) (nts @ ts);
-     \<comment> \<open>analogous to MAnd\<close>
     (zs, buf1) = mbuf2_take (\<lambda>r1 (V_trigger, r2).
-        bin_join V_\<phi> r1 True V_trigger r2 \<comment> \<open>fix pos=True for the and join\<close>
+        bin_join V_\<phi> r1 True V_trigger r2
     ) (mbuf2_add as zs_trigger buf1)
     in
     (zs, MAndTrigger V_\<phi> \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux)

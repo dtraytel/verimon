@@ -30,8 +30,6 @@ definition newest_tuple_in_mapping :: "
   bool"
   where
   "newest_tuple_in_mapping entry_to_db data_in tuple_in P = (\<forall>tuple.
-    \<comment> \<open>iff something is present in the mapping then the value corresponds
-       to the maximum timestamp of a db containing the tuple\<close>
     Mapping.lookup tuple_in tuple =
     safe_max (
       fst ` {

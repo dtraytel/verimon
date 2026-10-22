@@ -677,9 +677,6 @@ lemma vitems_acc: "vitems_acc cf xs z acc = (case vitems cf xs z of (vs, z') \<R
 lemma vitems_code[code]: "vitems cf xs z = vitems_acc cf xs z []"
   by (simp add: vitems_acc split: prod.splits)
 
-text \<open>The initial state requires a well-formed formula whose preparation succeeds and that the
-  compiler covers.\<close>
-
 definition vfeed_chunk :: "vconf \<Rightarrow> bytes \<Rightarrow> vstate \<Rightarrow> vout list \<times> vstate" where
   "vfeed_chunk cf s z = (case efeed_chunk (vkeep cf) s (fst z) of
      (xs, est) \<Rightarrow> (case vitems cf xs (snd z) of (vs, mst) \<Rightarrow> (vs, (est, mst))))"
@@ -687,6 +684,9 @@ definition vfeed_chunk :: "vconf \<Rightarrow> bytes \<Rightarrow> vstate \<Righ
 definition vfinish :: "vconf \<Rightarrow> nat option \<Rightarrow> vstate \<Rightarrow> vout list" where
   "vfinish cf fin z = (case vitems cf (efinish (vkeep cf) (fst z)) (snd z) of
      (vs, mst) \<Rightarrow> vs @ (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [fst (vtp (fst (fst z)) [] t mst)]))"
+
+text \<open>The initial state requires a well-formed formula whose preparation succeeds and that the
+  compiler covers.\<close>
 
 datatype vinit_error = VI_WF | VI_PREPARE String.literal | VI_FRAGMENT nat
 

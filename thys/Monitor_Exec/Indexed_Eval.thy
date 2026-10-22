@@ -201,7 +201,7 @@ termination
   by (relation "measure (\<lambda>(_, _, \<phi>). size \<phi>)")
     (auto dest!: set_zip_rightD intro: size_list_estimation' simp: less_Suc_eq_le)
 
-subsection \<open>The evaluator\<close>
+subsection \<open>Evaluator\<close>
 
 function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> idatabase \<Rightarrow> ieformula \<Rightarrow> itable list \<times> ieformula" where
   "ieval rq j ts db EFail = ([], EFail)"

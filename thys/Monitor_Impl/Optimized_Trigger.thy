@@ -20,15 +20,15 @@ definition relR :: "(ts \<times> 'a table \<times> 'a table) \<Rightarrow> 'a ta
   "relR = (snd o snd)"
 
 type_synonym 'a mmtaux = "
-  ts \<times>                                 \<comment> \<open>the newest timestamp\<close>
-  nat \<times> nat \<times> nat \<times>                   \<comment> \<open>index of the first queue entry in data_prev, data_in and the last index of data_in\<close>
-  (ts \<times> 'a table \<times> 'a table) queue \<times>  \<comment> \<open>data_prev: all databases containing the tuples satisfying the lhs or the rhs where the timestamp doesn't yet satisfy memL\<close>
-  (ts \<times> 'a table) queue \<times>              \<comment> \<open>data_in: all databases containing the tuples satisfying the rhs where the ts is in the interval\<close>
-  (('a tuple, ts) mapping) \<times>           \<comment> \<open>tuple_in for once\<close>
-  'a table \<times>                            \<comment> \<open>Mapping.keys tuple_in_once, just here for performance improvements\<close>
-  (('a tuple, nat) mapping) \<times>          \<comment> \<open>tuple_since for historically. stores the index since when the rhs of the formula holds\<close>
+  ts \<times>                                 \<comment> \<open>newest timestamp\<close>
+  nat \<times> nat \<times> nat \<times>                   \<comment> \<open>first indices of data_prev and data_in, last index of data_in\<close>
+  (ts \<times> 'a table \<times> 'a table) queue \<times>  \<comment> \<open>data_prev: entries not yet in the interval\<close>
+  (ts \<times> 'a table) queue \<times>              \<comment> \<open>data_in: right tables of the entries in the interval\<close>
+  (('a tuple, ts) mapping) \<times>           \<comment> \<open>tuple_in_once\<close>
+  'a table \<times>                            \<comment> \<open>its keys\<close>
+  (('a tuple, nat) mapping) \<times>          \<comment> \<open>tuple_since_hist: index since which the right operand holds\<close>
   ('a table) \<times>
-  ('a table)                            \<comment> \<open>the set of tuples currently satisfying \<psi> S_[0, \<infinity>] (\<psi> \<and> \<phi>)\<close>
+  ('a table)                            \<comment> \<open>tuples satisfying \<psi> S_[0, \<infinity>] (\<psi> \<and> \<phi>)\<close>
 "
 
 fun mmtaux_data_prev :: "'a mmtaux \<Rightarrow> (ts \<times> 'a table \<times> 'a table) queue" where
@@ -63,8 +63,8 @@ definition proj_tuple_in_join :: "bool \<Rightarrow> nat list \<Rightarrow> nat 
   "proj_tuple_in_join pos L R as t = join_cond pos t (restrict L R as)"
 
 definition tuple_since_lhs where
-  "tuple_since_lhs tuple lin_data_in args auxlist_in = ((lin_data_in \<noteq> []) \<and> ( \<comment> \<open>with an empty data_in, all tuples satisfy trigger\<close>
-    \<exists>n \<in> {0..<length lin_data_in}. \<comment> \<open>dropping less then length guarantees length suffix > 0\<close>
+  "tuple_since_lhs tuple lin_data_in args auxlist_in = ((lin_data_in \<noteq> []) \<and> (
+    \<exists>n \<in> {0..<length lin_data_in}.
       let suffix = drop n auxlist_in in (
         (\<forall>(t, l, r) \<in> set suffix.
           tuple \<in> r
@@ -88,29 +88,24 @@ definition valid_nmtaux :: "args \<Rightarrow> ts \<Rightarrow> 'a mmtaux \<Righ
     (\<forall>as \<in> \<Union>((relR) ` (set (linearize data_prev))). wf_tuple (args_R args) as) \<and>
     (\<forall>as \<in> \<Union>((snd) ` (set (linearize data_in))). wf_tuple (args_R args) as) \<and>
     cur = mt \<and>
-    \<comment> \<open>all valid rhs/\<psi> tuples in data_in should have a valid entry in tuple_since_hist, as it is shifted\<close>
     ts_tuple_rel_binary_rhs (set (auxlist_data_in args mt auxlist)) =
     ts_tuple_rel (set (linearize data_in)) \<and>
-    \<comment> \<open>the entries stored should be the same, hence they're sorted as well\<close>
     sorted (map fst auxlist) \<and>
     auxlist_data_prev args mt auxlist = (linearize data_prev) \<and>
     auxlist_data_prev args mt auxlist = drop (length (linearize data_in)) auxlist \<and>
-    length (linearize data_prev) + idx_mid = idx_next  \<and>  \<comment> \<open>length (linearize data_prev) = idx_next - idx_mid\<close>
+    length (linearize data_prev) + idx_mid = idx_next  \<and>
     map (\<lambda> (t, l, r). (t, r)) (auxlist_data_in args mt auxlist) = (linearize data_in) \<and>
     auxlist_data_in args mt auxlist = take (length (linearize data_in)) auxlist \<and>
-    length (linearize data_in) + idx_oldest = idx_mid \<and> \<comment> \<open>length (linearize data_in) = idx_mid - idx_oldest\<close>
-    \<comment> \<open>also all tuples in auxlist (and hence data_prev/data_in) satisfy memR \<close>
+    length (linearize data_in) + idx_oldest = idx_mid \<and>
     (\<forall>db \<in> set auxlist. time db \<le> mt \<and> memR (args_ivl args) (mt - time db)) \<and>
-     \<comment> \<open>check whether tuple_in once contains the newest occurence of the tuple satisfying the lhs\<close>
     newest_tuple_in_mapping fst data_prev tuple_in_once (\<lambda>x. True) \<and>
     (\<forall>as \<in> Mapping.keys tuple_in_once. case Mapping.lookup tuple_in_once as of Some t \<Rightarrow> \<exists>l r. (t, l, r) \<in> set (linearize data_prev) \<and> join_cond (args_pos args) l as) \<and>
     (\<forall>as. (case Mapping.lookup tuple_since_hist as of
       Some idx \<Rightarrow> tuple_since_tp args as (linearize data_in) idx_oldest idx_mid idx
       | None   \<Rightarrow> \<forall>idx. \<not>tuple_since_tp args as (linearize data_in) idx_oldest idx_mid idx)
     ) \<and>
-    \<comment> \<open>conditions for sat / trigger conditions\<close>
     (\<forall>tuple. tuple \<in> hist_sat \<longleftrightarrow>
-      (\<not>Queue.is_empty data_in) \<and> ( \<comment> \<open>with an empty data_in, all tuples satisfy trigger\<close>
+      (\<not>Queue.is_empty data_in) \<and> (
         \<forall>(t, l, r) \<in> set (auxlist_data_in args mt auxlist). tuple \<in> r
     )) \<and>
     (\<forall>tuple. tuple \<in> since_sat \<longrightarrow>
@@ -130,7 +125,6 @@ definition init_mmtaux :: "args \<Rightarrow> 'a mmtaux" where
 fun result_nmtaux :: "args \<Rightarrow> event_data mmtaux \<Rightarrow> (nat list \<times> event_data table)" where
   "result_nmtaux args (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) = 
   (
-    \<comment> \<open>with an empty data_in, all tuples satisfy trigger\<close>
     if (Queue.is_empty data_in) then
       ([], unit_table)
     else
@@ -144,7 +138,6 @@ fun proj_tuple_in_join_optim :: "bool \<Rightarrow> 'a table \<Rightarrow> nat l
       if pos then r \<inter> l else r - l 
     )
     else if L = [] then (
-      \<comment> \<open>if there are no free variables then we either take all or nothing\<close>
       if pos \<longleftrightarrow> [] \<in> l then r else {}
     )
     else
@@ -166,61 +159,36 @@ fun shift_end' where "shift_end' I nt to_table (data_prev, data_in, tuple_in, tu
 
 definition update_nmtaux' :: "args \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> (ts \<times> 'a table \<times> 'a table) queue \<Rightarrow> (ts \<times> 'a table) queue \<Rightarrow> (('a tuple, ts) mapping) \<Rightarrow> 'a table \<Rightarrow> (('a tuple, nat) mapping) \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> (nat \<times> nat \<times> (ts \<times> 'a table \<times> 'a table) queue \<times> (ts \<times> 'a table) queue \<times> (('a tuple, ts) mapping) \<times> 'a table \<times> (('a tuple, nat) mapping) \<times> 'a table \<times> 'a table)" where
   "update_nmtaux' args nt idx_mid idx_oldest data_prev data_in tuple_in_once tuple_in_once_keys tuple_since_hist hist_sat since_sat = (
-    \<comment> \<open>in a first step, we update tuple_in_once by removing all tuples where currently a ts
-       is stored, that points to a db that with the new ts (nt) no longer is part of
-       [0, a-1] / data_prev\<close>
     let (_, data_prev', move, tuple_in_once', tuple_in_once_keys') = shift_end'
-      (flip_int_less_lower (args_ivl args)) \<comment> \<open>[0, a-1]\<close>
-      nt  \<comment> \<open>the new timestamp\<close>
-      fst \<comment> \<open>here we look at the lhs tuples / \<phi>\<close>
-      (empty_queue::(ts \<times> 'a list set \<times> 'a list set) queue, data_prev, tuple_in_once, tuple_in_once_keys); \<comment> \<open>add type\<close>
-    \<comment> \<open>pass empty_queue as the first argument as it would filter out all: [0, a-1] \<inter> [a, b] = {}.
-       idx_mid can be moved forward by the number of all tuples dropped from data_prev (move)\<close>
+      (flip_int_less_lower (args_ivl args))
+      nt
+      fst
+      (empty_queue::(ts \<times> 'a list set \<times> 'a list set) queue, data_prev, tuple_in_once, tuple_in_once_keys);
     move_len = length move;
     idx_mid' = idx_mid + move_len;
-    \<comment> \<open>in a next step, we drop all entries from data_in that are no longer relevant \<close>
     (data_in', drop) = takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in;
-     \<comment> \<open>instead of first appending and then filtering, we filter move separately. this saves us the append
-       operation for all entries in move\<close>
     move' = filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) move;
-    \<comment> \<open>idx_ildest has to be moved forward by the number of dbs dropped from data_in and the ones
-        dropped from data_prev because they don't satisfy memR anymore (move')\<close>
     drop_prev_len = move_len - length move';
     idx_oldest' = idx_oldest + length drop + drop_prev_len;
-    
-    \<comment> \<open>next, the right hand side of entries in move have to be appended to data_in. these all already
-       satisfy memR as we just filtered them for it\<close>
     data_in'' = fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) move' data_in';
-    
-    \<comment> \<open>we now have to update hist_since using the tables in move. in particular, for all dbs inside move,
-       we have to do some sort of join with the keys of hist_since\<close>
     (tuple_since_hist', hist_sat', idx_move, since_sat') = fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
       let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
           hist_sat         = hist_sat \<inter> r;
           since_sat        = since_sat \<inter> r
-
-      in \<comment> \<open>filter entries that are not present in the current db\<close>
+      in
       (
-        upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist), \<comment> \<open>then add entries for the ones that are present in the current db\<close>
+        upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
         hist_sat,
-        idx_move+1, \<comment> \<open>increase index by one every db\<close>
+        idx_move+1,
         since_sat \<union> proj_tuple_in_join_optim (args_pos args) r (args_R args) l (args_L args)
       ) 
-    ) move (tuple_since_hist, hist_sat, idx_mid, since_sat); \<comment> \<open>use original idx_mid, not idx_mid' where the length of move already is included\<close>
-    tuple_since_hist'' = (if (idx_mid' = idx_oldest') then Mapping.empty else tuple_since_hist'); \<comment> \<open>if data_in'' is empty, empty the mapping\<close>
+    ) move (tuple_since_hist, hist_sat, idx_mid, since_sat);
+    tuple_since_hist'' = (if (idx_mid' = idx_oldest') then Mapping.empty else tuple_since_hist');
     since_sat'' = (if (idx_mid' = idx_oldest') then {} else since_sat');
-    \<comment> \<open>in contrast to mmsaux, we don't have to look at what tuples were dropped from data_in as
-       we do not have any 'in mappings', just 'since mappings'. What has to be done though,
-       is to check whether there are now new tuples that satisfy historically.
-       In order to do this, we look at the latest db, iterate over all tuples and check,
-       whether hist_since points to an index that is older than the current oldest ts, i.e.
-       whether the rhs is satisfied in the whole interval\<close>
     hist_sat'' = (case fst (safe_hd data_in'')
       of None \<Rightarrow>
-        {} \<comment> \<open>if data_in is empty, no tuples should be in the set.
-              (mmtaux only returns results if data_in isn't empty)\<close>
+        {}
       | Some db \<Rightarrow>
-        \<comment> \<open>select all tuples where tuple_since_hist points to the smallest ts\<close>
         hist_sat' \<union> {tuple \<in> (snd db).
           case (Mapping.lookup tuple_since_hist'' tuple) of
             Some idx \<Rightarrow> idx \<le> idx_oldest'

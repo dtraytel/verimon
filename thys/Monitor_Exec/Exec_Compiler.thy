@@ -11,7 +11,7 @@ section \<open>Compilation of kernel formulas\<close>
 text \<open>The executable columns are the kernel's in ascending order.  Uncovered nodes compile to
   \<open>EFail\<close>, which the caller rules out with @{const efail_nodes}.\<close>
 
-subsection \<open>The compiler\<close>
+subsection \<open>Compiler\<close>
 
 definition ecols :: "cols \<Rightarrow> cols" where
   "ecols k = set_cols (set k)"

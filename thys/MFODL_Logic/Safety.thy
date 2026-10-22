@@ -634,7 +634,6 @@ definition safe_dual where "
   safe_dual conjoined safety_pred \<phi> I \<psi> = (if mem I 0 then
     (safety_pred \<psi> \<and> fv \<phi> \<subseteq> fv \<psi> 
         \<and> (safety_pred \<phi>
-        \<comment> \<open> \<or> is_constraint \<phi> \<close>
         \<or> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> safety_pred \<phi>' | _ \<Rightarrow> False)
         ))
     else (conjoined \<and> safety_pred \<phi> \<and> safety_pred \<psi> \<and> fv \<phi> = fv \<psi>))"

@@ -4,7 +4,7 @@ theory Window_Dispatch
 begin
 (*>*)
 
-section \<open>Choice of the Since and Until structures\<close>
+section \<open>Choice of Since and Until structures\<close>
 
 text \<open>
   A node carries the general structure or, for a closed left operand (and, for Until, an interval
