@@ -6,9 +6,9 @@ begin
 
 section \<open>Executable parser on byte strings\<close>
 
-text \<open>The streaming parser refined to byte strings read in chunks, which a token may
-  straddle. Errors are output with their offset, and parsing resumes at the next @{text "@"},
-  @{text ";"} or @{text ">"}.\<close>
+text \<open>The streaming parser refined to byte strings read in chunks, which a token may straddle.
+  Errors are output with their offset, and parsing resumes at the next @{text "@"}, @{text ";"} or
+  @{text ">"}.\<close>
 
 subsection \<open>Byte strings\<close>
 
@@ -364,8 +364,8 @@ fun expect_of :: "'s fpstate \<Rightarrow> expect" where
 | "expect_of F_CMD = X_CMD_NAME"
 | "expect_of (F_ARGS _ _) = X_CMD_ARG"
 
-text \<open>After an error, the parser skips tokens (state @{const None}) until one that begins or ends
-  an entry.\<close>
+text \<open>After an error, the parser skips tokens (state @{const None}) until one that begins or ends an
+  entry.\<close>
 
 definition resync :: "'s token \<Rightarrow> 's fpstate option" where
   "resync t = (case t of T_AT \<Rightarrow> Some F_TS | T_SEMICOLON \<Rightarrow> Some F_INIT | T_RANGLE \<Rightarrow> Some F_CMD | _ \<Rightarrow> None)"
@@ -439,8 +439,8 @@ definition efinish_p :: "integer \<Rightarrow> bytes fpstate option \<Rightarrow
        None \<Rightarrow> O_ERROR b (E_TOKEN (expect_of ps) None) # acc
      | Some es \<Rightarrow> rev (map (O_ITEM sp) es) @ acc))"
 
-text \<open>An unterminated quoted string is an error even while tokens are skipped after an error,
-  since it contains the rest of the input.\<close>
+text \<open>An unterminated quoted string is an error even while tokens are skipped after an error, since
+  it contains the rest of the input.\<close>
 
 definition efinish :: "(bytes \<Rightarrow> bool) \<Rightarrow> estate \<Rightarrow> out list" where
   "efinish k st = (case st of (b, l, p, sp) \<Rightarrow> (case l of

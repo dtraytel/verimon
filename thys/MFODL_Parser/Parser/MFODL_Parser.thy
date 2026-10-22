@@ -4,8 +4,8 @@ begin
 
 section \<open>Verified parser of formulas\<close>
 
-text \<open>\<^theory_text>\<open>parser\<close> generates an LALR(1) parser for \<^const>\<open>mfodl\<close>, sound and
-  complete for the derivations of its start symbol.\<close>
+text \<open>\<^theory_text>\<open>parser\<close> generates an LALR(1) parser for \<^const>\<open>mfodl\<close>,
+  sound and complete for the derivations of its start symbol.\<close>
 
 parser mfodl_parse for mfodl
 

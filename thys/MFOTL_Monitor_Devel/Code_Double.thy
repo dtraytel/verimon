@@ -8,7 +8,7 @@ theory Code_Double
 begin
 (*>*)
 
-section \<open>Code adaptation for IEEE double-precision floats\<close>
+section \<open>IEEE double-precision floats\<close>
 
 subsection \<open>Sign copying and NaN on floats\<close>
 

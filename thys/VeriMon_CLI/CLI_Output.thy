@@ -187,8 +187,7 @@ definition tp_out :: "nat \<Rightarrow> string8 list" where
 
 subsection \<open>Errors in the log\<close>
 
-text \<open>Errors in the log as MonPoly words them; the driver adds the position of an error at an
-  item.\<close>
+text \<open>Errors in the log as MonPoly words them; the driver adds the position of an error at an item.\<close>
 
 datatype lerr = LE_LOC string | LE_ORDER string | LE_CMD string
 

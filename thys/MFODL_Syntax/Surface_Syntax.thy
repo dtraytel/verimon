@@ -4,8 +4,8 @@ begin
 
 section \<open>Surface syntax of MFODL formulas\<close>
 
-text \<open>The abstract syntax of MonPoly's formula parser, with named variables. Floating point
-  numbers and regular expressions are kept as lexemes; interpreting them is not part of parsing.\<close>
+text \<open>The abstract syntax of MonPoly's formula parser, with named variables. Floating point numbers
+  and regular expressions are kept as lexemes; interpreting them is not part of parsing.\<close>
 
 datatype cst = CInt int | CStr string | CFloat string | CRegexp string
 

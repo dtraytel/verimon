@@ -26,8 +26,9 @@ code_printing
 definition natlit :: "integer \<Rightarrow> nat" where
   "natlit k = nat_of_integer k"
 
-text \<open>After preprocessing, a numeral of type @{typ nat} is @{term "nat_of_integer (Code_Numeral.Pos k)"};
-  printed as a constant, it makes the parser's tables static data.\<close>
+text \<open>After preprocessing, a numeral of type @{typ nat} is
+  @{term "nat_of_integer (Code_Numeral.Pos k)"}; printed as a constant, it makes the parser's tables
+  static data.\<close>
 
 lemma natlit_Pos[code_unfold]: "nat_of_integer (Code_Numeral.Pos k) = natlit (Code_Numeral.Pos k)"
   by (simp add: natlit_def)

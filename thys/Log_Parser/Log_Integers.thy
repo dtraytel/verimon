@@ -6,9 +6,9 @@ begin
 
 section \<open>Integers in the log\<close>
 
-text \<open>Integers as read by Zarith's @{text Z.of_string}, on which MonPoly relies, but with
-  at most one sign and a digit required after the sign and the base prefix. Timestamps are the
-  nonnegative ones.\<close>
+text \<open>Integers as read by Zarith's @{text Z.of_string}, on which MonPoly relies, but with at most
+  one sign and a digit required after the sign and the base prefix. Timestamps are the nonnegative
+  ones.\<close>
 
 subsection \<open>Specification on character lists\<close>
 

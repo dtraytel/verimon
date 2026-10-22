@@ -264,8 +264,8 @@ qed
 
 subsection \<open>Completeness\<close>
 
-text \<open>The states in which the database of a time point is complete so far; they behave alike on
-  the tokens that may follow.\<close>
+text \<open>The states in which the database of a time point is complete so far; they behave alike on the
+  tokens that may follow.\<close>
 
 fun db_evs :: "'s pstate \<Rightarrow> ('s \<times> ('s \<times> 's list) list) option" where
   "db_evs (P_DB ts evs) = Some (ts, evs)"

@@ -6,8 +6,8 @@ section \<open>Grammar of MFODL formulas\<close>
 
 subsection \<open>Tokens\<close>
 
-text \<open>The token classes of MonPoly's formula lexer. A token with a payload carries it as its
-  lexeme, which the semantic actions convert.\<close>
+text \<open>The token classes of MonPoly's formula lexer. A token with a payload carries it as its lexeme,
+  which the semantic actions convert.\<close>
 
 datatype mtok =
     FALSE | TRUE | LPA | RPA | LSB | RSB | COM | SC | DOT | QM | LD
@@ -37,7 +37,8 @@ definition nat_of_digits :: \<open>string \<Rightarrow> int\<close> where
 definition int_of_lexeme :: \<open>string \<Rightarrow> int\<close> where
   \<open>int_of_lexeme s = (case s of CHR ''-'' # ds \<Rightarrow> - nat_of_digits ds | ds \<Rightarrow> nat_of_digits ds)\<close>
 
-text \<open>The lexer emits \<open>TU\<close> only for the units \<open>d\<close>, \<open>h\<close>, \<open>m\<close> and \<open>s\<close>.\<close>
+text \<open>The lexer emits \<open>TU\<close> only for the units \<open>d\<close>, \<open>h\<close>,
+  \<open>m\<close> and \<open>s\<close>.\<close>
 
 definition unit_factor :: \<open>char \<Rightarrow> int\<close> where
   \<open>unit_factor c = (if c = CHR ''d'' then 24 * 60 * 60 else if c = CHR ''h'' then 60 * 60
@@ -46,7 +47,7 @@ definition unit_factor :: \<open>char \<Rightarrow> int\<close> where
 definition units_of_lexeme :: \<open>string \<Rightarrow> int\<close> where
   \<open>units_of_lexeme s = unit_factor (last s) * nat_of_digits (butlast s)\<close>
 
-text \<open>Constants lose their delimiters; escapes stay.\<close>
+text \<open>String constants and regular expressions lose their delimiters; escapes stay.\<close>
 
 definition strip_quotes :: \<open>string \<Rightarrow> string\<close> where
   \<open>strip_quotes s = butlast (tl s)\<close>
@@ -54,7 +55,8 @@ definition strip_quotes :: \<open>string \<Rightarrow> string\<close> where
 definition strip_regexp :: \<open>string \<Rightarrow> string\<close> where
   \<open>strip_regexp s = butlast (drop 2 s)\<close>
 
-text \<open>A bare formula as an atom: a test then a step for \<open>MATCHF\<close>, the reverse for \<open>MATCHP\<close>.\<close>
+text \<open>A bare formula as an atom: a test then a step for \<open>MATCHF\<close>, the reverse for
+  \<open>MATCHP\<close>.\<close>
 
 definition bare_atom :: \<open>formula \<Rightarrow> bool \<Rightarrow> regex\<close> where
   \<open>bare_atom f fut = (if fut then RConcat (RTest f) wild else RConcat wild (RTest f))\<close>
@@ -64,12 +66,13 @@ subsection \<open>Productions\<close>
 text \<open>MonPoly's ocamlyacc precedences are compiled into the productions, so that the grammar is
   unambiguous and passes the LALR(1) check of the \<^theory_text>\<open>parser\<close> command.\<close>
 
-text \<open>Each Boolean level \<open>X\<close> has variants \<open>XC\<close>, \<open>XM\<close> and \<open>XL\<close>: formulas ending in no open
-  prefix, in a unary temporal operator or quantifier, or in \<open>LET\<close>, \<open>LETPAST\<close>, \<open>FRZ\<close>
-  or an aggregation.\<close>
+text \<open>Each Boolean level \<open>X\<close> has variants \<open>XC\<close>, \<open>XM\<close> and
+  \<open>XL\<close>: formulas ending in no open prefix, in a unary temporal operator or quantifier, or in
+  \<open>LET\<close>, \<open>LETPAST\<close>, \<open>FRZ\<close> or an aggregation.\<close>
 
-text \<open>Nonterminals such as \<open>FTerm\<close>, \<open>PTerm\<close> and \<open>RAtomF\<close> separate contexts with different
-  followers, since the check pools the lookaheads of a production over its contexts.\<close>
+text \<open>Nonterminals such as \<open>FTerm\<close>, \<open>PTerm\<close> and \<open>RAtomF\<close> separate
+  contexts with different followers, since the check pools the lookaheads of a production over its
+  contexts.\<close>
 
 grammar (relation) mfodl =
   tokens \<open>mtoken\<close>

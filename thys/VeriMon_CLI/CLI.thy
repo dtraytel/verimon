@@ -13,7 +13,7 @@ text \<open>The verified parts composed into the program @{text verimon}: the dr
 subsection \<open>Signature of the monitor\<close>
 
 text \<open>The monitor has no type of regular expressions: a formula with a predicate with such an
-  argument is refused, and the other such arguments are read as strings.\<close>
+  argument is refused, and the arguments of the other such predicates are read as strings.\<close>
 
 fun ty_of_sty :: "sty \<Rightarrow> ty" where
   "ty_of_sty SInt = TInt"
@@ -43,9 +43,9 @@ definition fv_text :: "string list \<Rightarrow> string" where
 
 subsection \<open>MonPoly's checks of the input formula\<close>
 
-text \<open>MonPoly checks the intervals, the bounds of future operators and the declarations of the
-  input formula; the checks of @{text LET} and aggregations are left to the conversion and the
-  type checker.\<close>
+text \<open>MonPoly checks the intervals, the bounds of future operators and the declarations of the input
+  formula; the checks of @{text LET} and aggregations are left to the conversion and the type
+  checker.\<close>
 
 fun bnd_ok :: "bound \<Rightarrow> bool" where
   "bnd_ok (OBnd a) = (0 \<le> a)"
@@ -130,7 +130,8 @@ and bounds_ok_r :: "regex \<Rightarrow> bool" where
 | "bounds_ok_r (RStar r) = bounds_ok_r r"
 | "bounds_ok_r (RSkip _) = True"
 
-text \<open>The first predicate, in the order of MonPoly's type checker, that is neither declared nor bound.\<close>
+text \<open>The first predicate, in the order of MonPoly's type checker, that is neither declared nor
+  bound.\<close>
 
 definition oelse :: "'a option \<Rightarrow> 'a option \<Rightarrow> 'a option" where
   "oelse x y = (case x of None \<Rightarrow> y | Some _ \<Rightarrow> x)"

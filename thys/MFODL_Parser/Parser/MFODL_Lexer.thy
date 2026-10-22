@@ -5,7 +5,8 @@ begin
 section \<open>Lexer of MFODL formulas\<close>
 
 text \<open>An unverified model of MonPoly's formula lexer: longest match, ties by rule order, bytes as
-  characters. Unlike MonPoly, it rejects time units other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close> and \<open>s\<close>.\<close>
+  characters. Unlike MonPoly, it rejects time units other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close>
+  and \<open>s\<close>.\<close>
 
 definition in_range :: \<open>char \<Rightarrow> char \<Rightarrow> char \<Rightarrow> bool\<close> where
   \<open>in_range a b c = ((of_char a :: nat) \<le> of_char c \<and> (of_char c :: nat) \<le> of_char b)\<close>

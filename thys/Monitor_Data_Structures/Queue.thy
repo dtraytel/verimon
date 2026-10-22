@@ -165,7 +165,7 @@ lemma hd_queue_t_norm:
 
 declare [[code drop: safe_hd]]
 
-text \<open>On the normalised queue, the head is the first element of the front list.\<close>
+text \<open>The head is read off the normalised queue, where it is the first element of the front list.\<close>
 
 lemma safe_hd_code[code]: "safe_hd q = (let q' = norm_queue q in (hd_queue q', q'))"
   unfolding Let_def

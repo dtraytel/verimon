@@ -4,13 +4,13 @@ begin
 
 section \<open>Post-processing of parsed formulas\<close>
 
-text \<open>MonPoly's semantic actions number anonymous arguments, quantify them and reject some
-  formulas; as the grammar's actions are pure, this is a separate pass.\<close>
+text \<open>MonPoly's semantic actions number anonymous arguments, quantify them and reject some formulas;
+  as the grammar's actions are pure, this is a separate pass.\<close>
 
 subsection \<open>Numbering anonymous arguments\<close>
 
-text \<open>The placeholder \<^term>\<open>TVar ''_''\<close>, which the lexer never produces for a named
-  variable, becomes \<open>_1\<close>, \<open>_2\<close>, \<dots>, numbered left to right as in MonPoly.\<close>
+text \<open>The placeholder \<^term>\<open>TVar ''_''\<close>, which the lexer never produces for a named variable,
+  becomes \<open>_1\<close>, \<open>_2\<close>, \<dots>, numbered left to right as in MonPoly.\<close>
 
 fun digits_of_nat :: \<open>nat \<Rightarrow> string\<close> where
   \<open>digits_of_nat n = (if n < 10 then [char_of (48 + n)] else digits_of_nat (n div 10) @ [char_of (48 + n mod 10)])\<close>

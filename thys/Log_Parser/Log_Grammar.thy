@@ -7,15 +7,16 @@ begin
 section \<open>Grammar of the log format\<close>
 
 text \<open>MonPoly's log format, by a lexical grammar @{text Glex} and a grammar @{text G_parser} of
-  entries. Unlike MonPoly, a command keeps all its arguments, and the token after it is not skipped.\<close>
+  entries. Unlike MonPoly, a command keeps all its arguments, and the token after it is not
+  skipped.\<close>
 
 subsection \<open>Tokens and entries\<close>
 
 datatype 's token = T_AT | T_LPAREN | T_RPAREN | T_LANGLE | T_RANGLE | T_LBRACE | T_RBRACE
   | T_COMMA | T_SEMICOLON | T_STR 's
 
-text \<open>Strings stay uninterpreted, and their type is a parameter, so that the executable parser
-  can use byte strings.\<close>
+text \<open>Strings stay uninterpreted, and their type is a parameter, so that the executable parser can
+  use byte strings.\<close>
 
 datatype 's item = Entry 's "('s \<times> 's list) list" | Command 's "'s token list"
 
@@ -27,8 +28,8 @@ definition isWhiteSpace :: "char \<Rightarrow> bool" where
 definition isLineCommentEnd :: "char \<Rightarrow> bool" where
   "isLineCommentEnd c \<longleftrightarrow> c = CHR 0x0A \<or> c = CHR 0x0D"
 
-text \<open>A comment at the end of the input need not end with a line end; @{text lexes} adds this
-  case, since no token can follow such a comment.\<close>
+text \<open>A comment at the end of the input need not end with a line end; @{text lexes} adds this case,
+  since no token can follow such a comment.\<close>
 
 inductive isWhiteString :: "string \<Rightarrow> bool" where
   isWS_Nil: "isWhiteString []"
@@ -64,8 +65,8 @@ inductive GToken :: "string \<Rightarrow> string token \<Rightarrow> bool" where
 | GToken_quoted: "isQuoted s \<Longrightarrow> GToken (CHR 0x22 # s @ [CHR 0x22]) (T_STR s)"
 | GToken_rquoted: "isQuoted s \<Longrightarrow> GToken (CHR ''r'' # CHR 0x22 # s @ [CHR 0x22]) (T_STR s)"
 
-text \<open>Maximal munch: a simple string is never followed by a simple character, and @{text r} never
-  by a double quote, which would make it the prefix of a quoted string.\<close>
+text \<open>Maximal munch: a simple string is never followed by a simple character, and @{text r} never by
+  a double quote, which would make it the prefix of a quoted string.\<close>
 
 definition munch :: "string \<Rightarrow> string \<Rightarrow> bool" where
   "munch s1 s2 \<longleftrightarrow> (isSimpleString s1 \<longrightarrow>

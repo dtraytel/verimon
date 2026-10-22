@@ -35,9 +35,9 @@ setup \<open>
 
 subsection \<open>Byte strings and indices\<close>
 
-text \<open>The printings agree with the definitions, but @{const bytes_at} raises an exception beyond
-  the string, where it is unspecified. The index operations rely on Zarith storing machine-sized
-  integers unboxed.\<close>
+text \<open>The printings agree with the definitions, but @{const bytes_at} raises an exception beyond the
+  string, where it is unspecified. The index operations rely on Zarith representing
+  each integer that fits into a machine integer as that machine integer.\<close>
 
 definition idx_less :: "integer \<Rightarrow> integer \<Rightarrow> bool" where
   "idx_less i j \<longleftrightarrow> i < j"

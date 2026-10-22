@@ -9,8 +9,8 @@ text \<open>Code equations proved equal to the definitions. They do not depend o
 
 subsection \<open>Code for the lexer\<close>
 
-text \<open>Character codes are integers, keywords are compared character by character, and the
-  look-ahead after digits does not compute the length of the rest of the input.\<close>
+text \<open>Character codes are integers, keywords are compared character by character, and the look-ahead
+  after digits does not compute the length of the rest of the input.\<close>
 
 lemma integer_of_char_nat: \<open>integer_of_char c = integer_of_nat (of_char c)\<close>
   unfolding integer_of_char_def integer_of_nat_eq_of_nat by (rule of_nat_of_char[symmetric])
@@ -82,8 +82,8 @@ qed
 
 subsection \<open>Dispatch on the first character\<close>
 
-text \<open>Only the rules whose condition on the first character holds are tried, by a table indexed
-  by the character code.\<close>
+text \<open>Only the rules whose condition on the first character holds are tried, by a table indexed by
+  the character code.\<close>
 
 definition rule_starts :: \<open>(char \<Rightarrow> bool) list\<close> where
   \<open>rule_starts =

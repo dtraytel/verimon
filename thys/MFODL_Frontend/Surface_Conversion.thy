@@ -81,7 +81,8 @@ and mp_fv_r :: "regex \<Rightarrow> string list" where
 | "mp_fv_r (RPlus r s) = mp_union (mp_fv_r r) (mp_fv_r s)"
 | "mp_fv_r (RStar r) = mp_fv_r r"
 
-text \<open>The free variables in the order of the output, each once; MonPoly's list may repeat a variable.\<close>
+text \<open>The free variables in the order of the output, each once; MonPoly's list may repeat a
+  variable.\<close>
 
 definition out_vars :: "formula \<Rightarrow> string list" where
   "out_vars f = dedup (mp_fv f)"
@@ -300,8 +301,8 @@ definition truth :: "tysym Formula.formula" where
 definition special_preds :: "string list" where
   "special_preds = [''tp'', ''ts'', ''tpts'']"
 
-text \<open>@{text lets}: the predicates bound where the subformula occurs by @{text LET},
-  @{text LETPAST} or @{text FRZ}, with their arities.\<close>
+text \<open>@{text lets}: the predicates bound where the subformula occurs by @{text LET}, @{text LETPAST}
+  or @{text FRZ}, with their arities.\<close>
 
 fun conv_pred :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list \<Rightarrow> string list \<Rightarrow> (string \<times> nat) list \<Rightarrow>
     predicate \<Rightarrow> string + tysym Formula.formula" where
