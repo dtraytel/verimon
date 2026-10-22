@@ -47,6 +47,11 @@ lemma (in muaux) wf_until_aux_Nil: "Formula.fv \<phi>' \<subseteq> Formula.fv \<
 lemma length_update_until: "length (update_until args rel1 rel2 nt aux) = Suc (length aux)"
   unfolding update_until_def by simp
 
+lemma eval_until_length:
+  "eval_until I nt auxlist = (res, auxlist') \<Longrightarrow> length auxlist = length res + length auxlist'"
+  by (induction I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
+    (auto split: if_splits prod.splits)
+
 lemma wf_update_until_auxlist:
   assumes pre: "wf_until_auxlist \<sigma> V n R pos \<phi> I \<psi> auxlist ne"
     and qtable1: "sat_table \<sigma> V n R (Formula.fv_list \<phi>) (ne + length auxlist) \<phi> rel1"

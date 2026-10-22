@@ -2,7 +2,7 @@
 theory Typing
   imports 
     Safety
-    Error_Monad
+    "Certification_Monads.Error_Monad"
 begin
 (*>*)
 
@@ -21,6 +21,12 @@ definition "numeric_ty = {TInt, TFloat}"
 subsection \<open>Terms\<close>
 
 type_synonym 'a option_err = "String.literal + 'a"
+
+lemma bind_splits:
+  "P (m \<bind> f) \<longleftrightarrow> (\<forall>e. m = Inl e \<longrightarrow> P (Inl e)) \<and> (\<forall>x. m = Inr x \<longrightarrow> P (f x))"
+  "P (m \<bind> f) \<longleftrightarrow> (\<not> ((\<exists>e. m = Inl e \<and> \<not> P (Inl e)) \<or> (\<exists>x. m = Inr x \<and> \<not> P (f x))))"
+  by (case_tac [!] m) simp_all
+
 type_synonym tyenv = "nat \<Rightarrow> ty"
 
 inductive wty_trm :: "tyenv \<Rightarrow> Formula.trm \<Rightarrow> ty \<Rightarrow> bool" ("(_)/ \<turnstile> (_) :: _" [50,50,50] 50)
@@ -117,6 +123,48 @@ lemma wty_pnil: "wty_prefix S pnil"
 lemma wty_psnoc: "wty_prefix S \<pi> \<Longrightarrow> wty_db S (fst x) \<Longrightarrow> last_ts \<pi> \<le> snd x \<Longrightarrow>
   wty_prefix S (psnoc \<pi> x)"
   by (transfer fixing: S x) simp
+
+lemma wty_db_empty: "wty_db S {}"
+  by (simp add: wty_db_def)
+
+lemma prefix_of_wty_trace:
+  assumes "wty_trace S \<sigma>" and "prefix_of \<pi> \<sigma>"
+  shows "wty_prefix S \<pi>"
+proof -
+  from assms(1) have "\<forall>i. wty_db S (\<Gamma> \<sigma> i)"
+    by (simp add: wty_envs_def wty_db_def)
+  with assms(2) show ?thesis
+    by (transfer fixing: S) (metis in_set_conv_nth stake_nth)
+qed
+
+lemma ex_prefix_of_wty:
+  assumes "wty_prefix S p"
+  shows "\<exists>s. prefix_of p s \<and> wty_trace S s"
+proof -
+  from assms have "\<exists>s. prefix_of p s \<and> (\<forall>i. wty_db S (\<Gamma> s i))"
+    proof (transfer fixing: S, intro bexI CollectI conjI)
+    fix p :: "((string8 \<times> event_data list) set \<times> nat) list"
+    assume *: "sorted (map snd p)"
+    let ?\<sigma> = "p @- smap (Pair {}) (fromN (snd (last p)))"
+    show "stake (length p) ?\<sigma> = p" by (simp add: stake_shift)
+    assume "\<forall>x\<in>set p. wty_db S (fst x)"
+    then show "\<forall>i. wty_db S (fst (snth ?\<sigma> i))"
+      by (simp add: shift_snth wty_db_empty)
+    have le_last: "snd (p ! i) \<le> snd (last p)" if "i < length p" for i
+      using sorted_nth_mono[OF *, of i "length p - 1"] that
+      by (cases p) (auto simp: last_conv_nth nth_Cons')
+    with * show "ssorted (smap snd ?\<sigma>)"
+      by (force simp: ssorted_iff_mono sorted_iff_nth_mono shift_snth)
+    show "sincreasing (smap snd ?\<sigma>)"
+    proof (rule sincreasingI)
+      fix x
+      have "x < snth (smap snd ?\<sigma>) (Suc (length p + x))"
+        by simp (metis Suc_pred add.commute diff_Suc_Suc length_greater_0_conv less_add_Suc1 less_diff_conv)
+      then show "\<exists>i. x < snth (smap snd ?\<sigma>) i" ..
+    qed
+  qed
+  then show ?thesis by (auto simp: wty_envs_def wty_db_def)
+qed
 
 lemma wty_envs_\<Gamma>_D: "wty_envs S \<sigma> V \<Longrightarrow> (p, length xs) \<notin> dom V \<Longrightarrow> (p, xs) \<in> \<Gamma> \<sigma> i \<Longrightarrow> S (p, length xs) = Some ts \<Longrightarrow>
   wty_tuple ts xs"
@@ -3948,6 +3996,10 @@ fun check_wty_formula :: "tysym Formula.formula \<Rightarrow> bool"
 fun convert_tysym :: "tysym \<Rightarrow> ty" where
   "convert_tysym (TCst a) = a"
 | "convert_tysym _ = TFloat"
+
+lemma wf_f_TCst_convert_tysym[simp]: "wf_f (TCst o convert_tysym)"
+  unfolding wf_f_def
+  by (auto simp: numeric_ty_def)
 
 definition type_check where
   "type_check S \<phi> = 

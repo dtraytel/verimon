@@ -505,13 +505,13 @@ lemma safe_letpast_code[code]:
 
 lemma Sup_rec_safety_set[code_unfold]:
   "\<Squnion> (set l :: rec_safety set) = fold (\<squnion>) l Unused"
-  by (simp add: Sup_rec_safety_def comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
+  by (simp add: Sup_rec_safety_def comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_sup[unfolded comp_fun_idem_def']])
 
 lemma Sup_rec_safety_atms[code_unfold]:
   "\<Squnion> (Regex.atms r :: rec_safety set) = fold (\<squnion>) (csorted_list_of_set (Regex.atms r)) Unused"
   by (simp add: Sup_rec_safety_def csorted_list_of_set_def ccompare_rec_safety_def ID_def
       linorder.set_sorted_list_of_set[OF comparator.linorder] comparator_rec_safety
-      flip: comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_on_sup])
+      flip: comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_sup[unfolded comp_fun_idem_def']])
 
 lift_definition delete_cnt_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> nat agg_map)) comp_fun_commute" is
   "\<lambda>args. delete_cnt args" using delete_cnt_comm by unfold_locales auto

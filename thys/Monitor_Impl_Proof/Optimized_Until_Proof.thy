@@ -5,6 +5,27 @@ begin
 (*>*)
 
 
+lemma map_proj_thd_update_until: "map proj_thd (takeWhile (check_before (args_ivl args) nt) auxlist) =
+  map proj_thd (takeWhile (check_before (args_ivl args) nt) (update_until args rel1 rel2 nt auxlist))"
+proof (induction auxlist)
+  case Nil
+  then show ?case by (simp add: update_until_def)
+next
+  case (Cons a auxlist)
+  then show ?case
+    by (auto simp add: update_until_def split: if_splits prod.splits)
+qed
+
+lemma eval_until_res: "eval_until I nt auxlist = (res, auxlist') \<Longrightarrow>
+  res = map proj_thd (takeWhile (check_before I nt) auxlist)"
+  by (induction I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
+    (auto split: prod.splits)
+
+lemma eval_until_auxlist': "eval_until I nt auxlist = (res, auxlist') \<Longrightarrow>
+  auxlist' = drop (length res) auxlist"
+  by (induction I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
+    (auto split: if_splits prod.splits)
+
 lemma max_tstpE: "isl tstp \<longleftrightarrow> isl tstp' \<Longrightarrow> (max_tstp tstp tstp' = tstp \<Longrightarrow> P) \<Longrightarrow>
   (max_tstp tstp tstp' = tstp' \<Longrightarrow> P) \<Longrightarrow> P"
   by (cases tstp; cases tstp') (auto elim: max_cases)

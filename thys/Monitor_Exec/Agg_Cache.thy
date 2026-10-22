@@ -95,7 +95,7 @@ lemma gval_gstep_ins: "gstep_ins k ev t (Some a) = Some a' \<Longrightarrow> h \
 
 lemma gval_gstep_del: "gstep_del k ev t (Some a) = Some a' \<Longrightarrow> h \<noteq> drop k t \<Longrightarrow>
     gval \<omega> a' h = gval \<omega> a h"
-  by (cases a) (auto simp: gstep_del_def Let_def lookup_update' lookup_delete split: prod.splits
+  by (cases a) (auto simp: gstep_del_def Let_def lookup_update' Mapping_lookup_delete split: prod.splits
       option.splits if_splits event_data.splits type.splits list_aux.splits Formula.agg_type.splits)
 
 definition cupd :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> event_data list \<Rightarrow> event_data option \<Rightarrow>
@@ -172,7 +172,7 @@ lemma lookup_ucnt_add1_other: "u \<noteq> t \<Longrightarrow> Mapping.lookup (uc
   by (simp add: ucnt_add1_def lookup_update' split: option.splits)
 
 lemma lookup_ucnt_del1_other: "u \<noteq> t \<Longrightarrow> Mapping.lookup (ucnt_del1 t c) u = Mapping.lookup c u"
-  by (simp add: ucnt_del1_def lookup_update' lookup_delete split: option.splits)
+  by (simp add: ucnt_del1_def lookup_update' Mapping_lookup_delete split: option.splits)
 
 lemma fold_filter_if: "fold F (filter P xs) b = fold (\<lambda>t acc. if P t then F t acc else acc) xs b"
   by (induct xs arbitrary: b) simp_all
@@ -207,7 +207,7 @@ lemma distinct_csl_edl: "distinct (csl (X :: event_data list set))"
 proof (cases "finite X")
   case True
   then show ?thesis
-    using ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
+    using ID_ccompare_etuple_dq by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 qed (simp add: csl_infinite)
 
 subsection \<open>The aggregate with its result\<close>
@@ -313,21 +313,21 @@ proof (rule mapping_eqI)
           proof -
             have "Mapping.lookup (Mapping.delete t I) u = None"
               using True by (simp add: Mapping.is_empty_def Mapping.keys_dom_lookup)
-            with that show ?thesis by (simp add: lookup_delete)
+            with that show ?thesis by (simp add: Mapping_lookup_delete)
           qed
           then show ?thesis using \<open>Mapping.lookup M (drop k t) = Some aI\<close> aI Some \<open>m \<le> 1\<close> True
-            by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def lookup_delete lookup_update'
+            by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def Mapping_lookup_delete lookup_update'
                 split: option.splits)
         next
           case False
           then show ?thesis using \<open>Mapping.lookup M (drop k t) = Some aI\<close> aI Some \<open>m \<le> 1\<close>
-            by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def lookup_delete lookup_update'
+            by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def Mapping_lookup_delete lookup_update'
                 split: option.splits)
         qed
       next
         case False
         then show ?thesis using \<open>Mapping.lookup M (drop k t) = Some aI\<close> aI Some
-          by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def lookup_delete lookup_update'
+          by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def Mapping_lookup_delete lookup_update'
               split: option.splits)
       qed
     qed
@@ -393,7 +393,7 @@ next
       show ?thesis
         by (rule mapping_eqI)
           (use MI Some m1 e in \<open>auto simp: ndel_def lookup_nflat gdn_def lookup_nsumm Let_def
-            lookup_delete lookup_update' split: option.splits\<close>)
+            Mapping_lookup_delete lookup_update' split: option.splits\<close>)
     next
       case False
       then show ?thesis
@@ -476,7 +476,7 @@ next
   proof (cases "g = drop k t")
     case False
     then have "Mapping.lookup M g = Some (a', I')"
-      using L by (auto simp: ndel_def Let_def lookup_update' lookup_delete split: option.splits if_splits)
+      using L by (auto simp: ndel_def Let_def lookup_update' Mapping_lookup_delete split: option.splits if_splits)
     then show ?thesis using inv unfolding ninv_def by blast
   next
     case gt: True
@@ -502,14 +502,14 @@ next
         proof (cases "m \<le> 1")
           case True
           have ne: "\<not> Mapping.is_empty (Mapping.delete t I)"
-            using L gt MI Some True by (auto simp: ndel_def Let_def lookup_delete split: if_splits)
+            using L gt MI Some True by (auto simp: ndel_def Let_def Mapping_lookup_delete split: if_splits)
           then have aI': "a' = sd t a" "I' = Mapping.delete t I"
             using L gt MI Some True by (auto simp: ndel_def Let_def lookup_update')
           have ks: "Mapping.keys I' = Mapping.keys I - {t}" by (simp add: aI')
           show ?thesis
             unfolding ks
             using grp fin cnt pos tI sd[of a] aI'
-            by (auto simp: card_Diff_singleton lookup_delete split: if_splits)
+            by (auto simp: card_Diff_singleton Mapping_lookup_delete split: if_splits)
         next
           case False
           then have aI': "a' = a" "I' = Mapping.update t (m - 1) I"

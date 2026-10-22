@@ -1,6 +1,6 @@
 (*<*)
 theory Safety
-  imports Formula
+  imports Release_Rewriting
 begin
 (*>*)
 
@@ -623,6 +623,9 @@ fun remove_neg :: "'t Formula.formula \<Rightarrow> 't Formula.formula"
 lemma fvi_remove_neg[simp]: "Formula.fvi b (remove_neg \<phi>) = Formula.fvi b \<phi>"
   by (cases \<phi>) simp_all
 
+lemma fvi_list_remove_neg[simp]: "Formula.fvi_list b (remove_neg \<phi>) = Formula.fvi_list b \<phi>"
+  by (cases \<phi> rule: remove_neg.cases) simp_all
+
 lemma fv_remove_neg: "fv \<phi> = fv (remove_neg \<phi>)"
   by simp
 
@@ -865,6 +868,78 @@ lemma safe_atms_simps[simp]:
 
 lemma finite_safe_atms[simp]: "finite (safe_atms r)"
   by (induct r) (auto split: Formula.formula.splits)
+
+lemma match_safe_atms_fv:
+  assumes "Regex.safe_regex fv rgx_safe_pred temp Strict r"
+    "Regex.match P r j i"
+    "x \<in> fv (formula.MatchP I r) \<or> x \<in> fv (formula.MatchF I r)"
+  shows "\<exists>\<phi>\<in>safe_atms r. \<exists>k. P k \<phi> \<and> x \<in> fv \<phi>"
+  using assms
+proof (induction r arbitrary: i j)
+  case (Plus r1 r2)
+  from Plus.prems(1,3) have safe: "Regex.safe_regex fv rgx_safe_pred temp Strict r1"
+      "Regex.safe_regex fv rgx_safe_pred temp Strict r2"
+    and x: "x \<in> fv (formula.MatchP I r1) \<or> x \<in> fv (formula.MatchF I r1)"
+      "x \<in> fv (formula.MatchP I r2) \<or> x \<in> fv (formula.MatchF I r2)"
+    by auto
+  from Plus.prems(2) consider (r1) "Regex.match P r1 j i"
+    | (r2) "Regex.match P r2 j i"
+    by auto
+  then show ?case
+  proof cases
+    case r1
+    from Plus.IH(1)[OF safe(1) this x(1)] show ?thesis
+      by auto
+  next
+    case r2
+    from Plus.IH(2)[OF safe(2) this x(2)] show ?thesis
+      by auto
+  qed
+next
+  case (Times r1 r2)
+  from Times.prems(2) obtain k where
+    m1: "Regex.match P r1 j k" and
+    m2: "Regex.match P r2 k i"
+    by auto
+  show ?case
+  proof (cases temp)
+    case Past
+    with Times.prems(1,3) have "Regex.safe_regex fv rgx_safe_pred temp Strict r1"
+      and "x \<in> fv (formula.MatchP I r1) \<or> x \<in> fv (formula.MatchF I r1)"
+      by auto
+    from Times.IH(1)[OF this(1) m1 this(2)] show ?thesis
+      by auto
+  next
+    case Futu
+    with Times.prems(1,3) have "Regex.safe_regex fv rgx_safe_pred temp Strict r2"
+      and "x \<in> fv (formula.MatchP I r2) \<or> x \<in> fv (formula.MatchF I r2)"
+      by auto
+    from Times.IH(2)[OF this(1) m2 this(2)] show ?thesis
+      by auto
+  qed
+qed auto
+
+lemma atms_size':
+  assumes "x \<in> safe_atms r"
+  shows "size' x < Regex.size_regex size' r"
+proof -
+  { fix y assume "y \<in> regex.atms r" "case y of formula.Neg z \<Rightarrow> x = z | _ \<Rightarrow> False"
+    then have "size' x < Regex.size_regex size' r"
+      by (cases y rule: formula.exhaust) (auto dest: regex_atms_size')
+  }
+  with assms show ?thesis
+    unfolding safe_atms_def
+    by (auto split: formula.splits dest: regex_atms_size')
+qed
+
+lemma fv_regex_alt2: "Regex.safe_regex fv rgx_safe_pred m g r
+  \<Longrightarrow> Formula.fv_regex r = (\<Union>\<phi> \<in> safe_atms r. Formula.fv \<phi>)"
+  unfolding fv_regex_alt safe_atms_def
+  by (auto 0 3 dest: safe_regex_safe_formula)
+
+lemma atms_empty_safe_atms: "Regex.safe_regex fv rgx_safe_pred m g r
+  \<Longrightarrow> safe_atms r = {} \<longleftrightarrow> regex.atms r = {}"
+  by (induct r rule: safe_regex_induct) (auto split: if_splits simp: case_Neg_iff)
 
 
 subsubsection \<open> Induction principle for safety \<close>
@@ -1262,6 +1337,12 @@ lemma release_safe_0_future_bounded[simp]:
 lemma future_bounded_remove_neg: "future_bounded (remove_neg \<phi>) = future_bounded \<phi>"
   by (cases \<phi>) auto
 
+lemma safe_assignment_future_bounded: "safe_assignment X \<phi> \<Longrightarrow> future_bounded \<phi>"
+  unfolding safe_assignment_def by (auto split: formula.splits)
+
+lemma is_constraint_future_bounded: "is_constraint \<phi> \<Longrightarrow> future_bounded \<phi>"
+  by (induction rule: is_constraint.induct) simp_all
+
 
 subsection \<open>Slicing traces\<close>
 
@@ -1484,7 +1565,7 @@ next
       using Ands.prems(2,3) \<open>\<phi> \<in> set l\<close>
       by (intro Ands.IH[of \<phi> S V v V' i] Ands.prems(4)) auto
   qed
-  show ?case using \<open>\<And>\<phi>. \<phi> \<in> set l \<Longrightarrow> Formula.sat \<sigma> V v i \<phi> = Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> E) \<sigma>) V' v i \<phi>\<close> sat_Ands by blast
+  show ?case using \<open>\<And>\<phi>. \<phi> \<in> set l \<Longrightarrow> Formula.sat \<sigma> V v i \<phi> = Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> E) \<sigma>) V' v i \<phi>\<close> Formula.sat.simps(11) by blast
 next
   case (Exists t \<phi>)
   have "Formula.sat \<sigma> V (z # v) i \<phi> = Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> E) \<sigma>) V' (z # v) i \<phi>" for z

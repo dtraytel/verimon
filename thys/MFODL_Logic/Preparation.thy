@@ -1116,6 +1116,116 @@ proof -
     by unfold_locales (auto intro: wty_convert_multiway[OF well_typed] mmonitorable_convert_multiway[OF monitorable])
 qed
 
+
+subsection \<open>Correctness of the preparation\<close>
+
+text \<open>The correctness of the preparation: whatever monitor evaluates the prepared formula
+  @{text \<psi>}, it satisfies the specification of @{text \<psi>}, which coincides with that of the
+  input formula. The locale does not depend on the auxiliary data structures of any monitor.\<close>
+
+locale verimon_prepare =
+  fixes rw sig \<phi>
+  assumes wf: "wf_formula \<phi>" 
+  and prepare_Inr: "\<not> sum.isl (prepare_verimon rw sig \<phi>)"
+begin
+
+definition "\<psi> = (THE \<psi>. prepare_verimon rw sig \<phi> = Inr \<psi>)"
+definition "check_subst = (THE f. check sig TAny \<phi> = Inr f)"
+
+lemma check_Inr: "\<exists>f. check sig TAny \<phi> = Inr f"
+  using prepare_Inr unfolding prepare_verimon_def type_check_def
+  by (simp add: bind_def split: sum.splits if_splits)
+
+lemma check_check_subst: "check sig TAny \<phi> = Inr check_subst"
+  unfolding check_subst_def using check_Inr
+  by auto
+
+lemma prepare_\<psi>: "prepare_verimon rw sig \<phi> = Inr \<psi>"
+  unfolding \<psi>_def using prepare_Inr
+  by (cases "prepare_verimon rw sig \<phi>") auto
+
+lemma safe_\<psi>: "safe_formula \<psi>"
+  using prepare_\<psi> unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def mmonitorable_def
+    simp flip: monitorable_formula_code)
+
+lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))"
+  using wf_f_comp[OF wf_f_TCst_convert_tysym check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct1]]
+  by (auto simp: comp_assoc)
+
+lemma verimon_spec_\<psi>:
+  "verimon_spec \<psi> (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
+proof -
+  let ?f = "convert_tysym o check_subst"
+  let ?\<phi> = "Formula.formula.map_formula ?f \<phi>"
+  have type_check: "type_check sig \<phi> = Inr ?\<phi>"
+    using prepare_Inr check_check_subst
+    by (auto simp: prepare_verimon_def type_check_def bind_def split: if_splits)
+  have wty: "map_sig ?f sig, ?f o TAny \<turnstile> ?\<phi>"
+    using check_sound_proven[OF check_check_subst wf] wf_f_check_subst wf_f_TCst_convert_tysym
+    unfolding wty_result_fX_def by blast
+  have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = dual_since (normalize ?\<phi>) \<or> \<psi> = rrewrite (normalize ?\<phi>)"
+    using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def split: if_splits)
+  have "mmonitorable \<psi>"
+    using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def monitorable_formula_code
+      split: if_splits)
+  moreover have "map_sig ?f sig, ?f o TAny \<turnstile> \<psi>"
+    using \<psi>_cases by (elim disjE) (simp_all add: wty wty_normalize wty_dual_since wty_rrewrite)
+  ultimately show ?thesis
+    by (intro verimon_spec.intro wty_mfodl.intro verimon_spec_axioms.intro)
+qed
+
+lemma future_bounded_\<phi>:
+  "future_bounded_mfodl (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)
+    (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
+proof -
+  let ?f = "convert_tysym o check_subst"
+  let ?\<phi> = "Formula.formula.map_formula ?f \<phi>"
+  have type_check: "type_check sig \<phi> = Inr ?\<phi>"
+    using prepare_Inr check_check_subst
+    by (auto simp: prepare_verimon_def type_check_def bind_def split: if_splits)
+  have "map_sig ?f sig, ?f o TAny \<turnstile> ?\<phi>"
+    using check_sound_proven[OF check_check_subst wf] wf_f_check_subst wf_f_TCst_convert_tysym
+    unfolding wty_result_fX_def by blast
+  moreover have "Safety.future_bounded ?\<phi>"
+  proof -
+    have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = dual_since (normalize ?\<phi>) \<or> \<psi> = rrewrite (normalize ?\<phi>)"
+      using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def split: if_splits)
+    have "mmonitorable \<psi>"
+      using verimon_spec_\<psi> by (rule verimon_spec.monitorable)
+    then have "Safety.future_bounded \<psi>"
+      by (simp add: mmonitorable_def)
+    with \<psi>_cases show ?thesis
+      using future_bounded_normalize[OF future_bounded_rrewrite] future_bounded_normalize[OF future_bounded_dual_since]
+        future_bounded_normalize
+      by auto
+  qed
+  ultimately show ?thesis
+    by (intro future_bounded_mfodl.intro wty_mfodl.intro future_bounded_mfodl_axioms.intro)
+qed
+
+interpretation verimon_\<psi>: verimon_spec \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  using verimon_spec_\<psi> by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def)
+
+interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
+  "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
+
+lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
+  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi dual_since_fvi rrewrite_fvi type_check_def check_check_subst)
+
+lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
+  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv dual_since_nfv rrewrite_nfv type_check_def check_check_subst)
+
+lemma sat_\<psi>:
+  "Formula.sat \<sigma> V v i \<psi> = Formula.sat \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
+  using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def final_sat dual_since_sat normalize_sat type_check_def check_check_subst)
+
+end
+
 (*<*)
 end
 (*>*)

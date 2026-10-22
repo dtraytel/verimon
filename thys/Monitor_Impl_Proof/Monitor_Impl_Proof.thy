@@ -1,6 +1,7 @@
 (*<*)
 theory Monitor_Impl_Proof
   imports "Monitor_Impl.Monitor_Impl" Optimized_Trigger_Proof Optimized_Agg_Temporal_Proof Optimized_Until_Deque_Proof
+    Optimized_Join_Proof
 begin
 (*>*)
 
@@ -9,6 +10,14 @@ text \<open>The proof theories of the structures do not see @{text Monitor_Impl}
 
 declare Let_def[simp del]
 
+lemma Rep_mbuf_t_cases[simp]:
+  "mbuf_t_cases xs = (None, xs') \<Longrightarrow> Rep_mbuf_t xs = []"
+  "mbuf_t_cases xs = (None, xs') \<Longrightarrow> Rep_mbuf_t xs' = []"
+  "mbuf_t_cases xs = (Some x, xs') \<Longrightarrow> Rep_mbuf_t xs = x # Rep_mbuf_t xs'"
+  subgoal by transfer (auto split: option.splits list.splits)
+  subgoal by transfer (auto split: option.splits list.splits)
+  subgoal by transfer (auto split: option.splits list.splits)
+  done
 
 lemma meprev_next: "meprev_next I xs ts = (zs, xs', ts') \<Longrightarrow> mprev_next I (Rep_mbuf_t xs) (Rep_mbuf_t ts) =
   (zs, Rep_mbuf_t xs', Rep_mbuf_t ts')"

@@ -17,6 +17,16 @@ lemma these_imageI: "f x = Some y \<Longrightarrow> x \<in> X \<Longrightarrow> 
 lift_definition cluster :: "('b \<Rightarrow> 'a option) \<Rightarrow> 'b set \<Rightarrow> ('a, 'b set) mapping" is
   "\<lambda>f Y x. if Some x \<in> f ` Y then Some {y \<in> Y. f y = Some x} else None" .
 
+lemma lookup_cluster: "Mapping.lookup (cluster f Y) x =
+  (if Some x \<in> f ` Y then Some {y \<in> Y. f y = Some x} else None)"
+  by transfer simp
+
+lemma keys_cluster: "Mapping.keys (cluster (Some \<circ> g) X) = g ` X"
+  by (auto simp: Mapping.keys_dom_lookup lookup_cluster image_iff split: if_splits)
+
+lemma lookup_cluster_Some: "k \<in> g ` X \<Longrightarrow> Mapping.lookup (cluster (Some \<circ> g) X) k = Some (Set.filter (\<lambda>x. g x = k) X)"
+  by (auto simp: lookup_cluster image_iff)
+
 context ord
 begin
 

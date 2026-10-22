@@ -287,6 +287,18 @@ lemma init_sim: "rel_uaux (init_dq args) (init_mmuaux args)"
 lemma length_sim: "rel_uaux d a \<Longrightarrow> length_dq args d = length_mmuaux args a"
   by (cases d; cases a) auto
 
+lemma upd_nested_dq_Nil[simp]: "upd_nested_dq base d f [] dq = dq"
+  by (simp add: upd_nested_dq_def)
+
+lemma upd_nested_dq_Cons: "upd_nested_dq base d f (x # xs) dq = upd_nested_step_dq base d f x (upd_nested_dq base d f xs dq)"
+  by (simp add: upd_nested_dq_def)
+
+lemma dq_inv_nested_step[simp]: "dq_inv dq \<Longrightarrow> dq_inv (upd_nested_step_dq base d f x dq)"
+  by (auto simp: upd_nested_step_dq_def split: prod.splits)
+
+lemma dq_inv_upd_nested_dq[simp]: "dq_inv dq \<Longrightarrow> dq_inv (upd_nested_dq base d f xs dq)"
+  by (induction xs) (auto simp: upd_nested_dq_Cons)
+
 lemma dq_len_nested_step: "dq_inv dq \<Longrightarrow> dq_len (upd_nested_step_dq base d f x dq) = dq_len dq"
   by (auto simp: upd_nested_step_dq_def dq_len_upd split: prod.splits)
 

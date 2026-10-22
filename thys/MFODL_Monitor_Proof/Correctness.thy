@@ -386,6 +386,34 @@ definition (in maux) letpast_meval_post
         (\<lambda>v. letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) u k \<phi>') (val m [0..<m] v) i))
       [k..<letpast_progress \<sigma> P (p, m) \<phi>' j] xs)"
 
+lemma (in maux_ops) letpast_meval_induct[case_names step]:
+  assumes step:
+    "\<And>i ys xs p ts db \<phi>.
+      (\<And>ys' \<phi>'.
+          (ys', \<phi>') = apfst (map (reorder [0..<m] cs)) (meval j m ts (Mapping.update p xs db) \<phi>) \<Longrightarrow>
+          ys' \<noteq> [] \<Longrightarrow>
+          Suc (i + length xs) < j \<Longrightarrow>
+          P (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>') \<Longrightarrow>
+      P i ys xs p ts db \<phi>"
+  shows "P i ys xs p ts db \<phi>"
+proof (induction eval\<equiv>"\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval j m ts db \<phi>)" j\<equiv>j i ys xs p ts db \<phi>
+    rule: letpast_meval0.induct)
+  case (1 i ys xs p ts db \<phi>)
+  show ?case
+  proof (rule step)
+    fix ys' \<phi>'
+    assume ev: "(ys', \<phi>') = apfst (map (reorder [0..<m] cs)) (meval j m ts (Mapping.update p xs db) \<phi>)"
+      and ne: "ys' \<noteq> []" and lt: "Suc (i + length xs) < j"
+    from ne obtain y ys'' where ys': "ys' = y # ys''"
+      by (auto simp: neq_Nil_conv)
+    have "size \<phi>' = size \<phi>"
+      using size_snd_meval[of j m ts "Mapping.update p xs db" \<phi>] ev[symmetric]
+      by (cases "meval j m ts (Mapping.update p xs db) \<phi>") simp
+    then show "P (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      using 1[OF ev refl _ ys'] lt by simp
+  qed
+qed
+
 lemma (in maux) letpast_meval_invar_init:
   assumes "pred_mapping (\<lambda> x. x \<le> (j - length ts)) P"
   assumes "wf_mformula \<sigma> (j-length ts) P V n R (MLetPast p m cs \<phi> \<psi> i buf) (Formula.LetPast p \<phi>' \<psi>')"
@@ -1615,6 +1643,142 @@ proof -
   qed
 qed
 
+text \<open>The copy loop under a simulation: the states of two runs are related by @{term R}, with the
+  verdicts mapped by @{term g} (@{text frz_st_rel}); and a property of the states and the verdicts
+  that the evaluation keeps holds of the loop's results (@{text frz_st_inv}).  The evaluators of the
+  executable and of the dense layers run the same loop on their own states (theory
+  @{text Kernel_Call}).\<close>
+
+definition frz_st_rel :: "('m \<Rightarrow> 'm' \<Rightarrow> bool) \<Rightarrow> ('t \<Rightarrow> 't') \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
+    'm' \<times> nat \<times> nat \<times> ts list \<times> 't' list \<Rightarrow> bool" where
+  "frz_st_rel R g s s' \<longleftrightarrow> (case s of (\<rho>, w, pR, tq, rb) \<Rightarrow> case s' of (\<rho>', w', pR', tq', rb') \<Rightarrow>
+     R \<rho> \<rho>' \<and> w' = w \<and> pR' = pR \<and> tq' = tq \<and> rb' = map g rb)"
+
+lemma frz_st_rel_simps[simp]: "frz_st_rel R g (\<rho>, w, pR, tq, rb) (\<rho>', w', pR', tq', rb') \<longleftrightarrow>
+    R \<rho> \<rho>' \<and> w' = w \<and> pR' = pR \<and> tq' = tq \<and> rb' = map g rb"
+  by (simp add: frz_st_rel_def)
+
+definition frz_st_inv :: "('m \<Rightarrow> bool) \<Rightarrow> ('t \<Rightarrow> bool) \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow> bool" where
+  "frz_st_inv P T s \<longleftrightarrow> (case s of (\<rho>, w, pR, tq, rb) \<Rightarrow> P \<rho> \<and> list_all T rb)"
+
+lemma frz_st_inv_simps[simp]: "frz_st_inv P T (\<rho>, w, pR, tq, rb) \<longleftrightarrow> P \<rho> \<and> list_all T rb"
+  by (simp add: frz_st_inv_def)
+
+lemma frz_adv_st_inv:
+  assumes ev: "\<And>\<psi> c. sz \<psi> = sz (fst s) \<Longrightarrow> P \<psi> \<Longrightarrow>
+      list_all T (fst (ev [] (Mapping.update pm (replicate c fl) dbe) \<psi>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate c fl) dbe) \<psi>))"
+    and st: "frz_st_inv P T s"
+  shows "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+proof -
+  obtain \<rho> w pR tq rb where s: "s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  let ?a = "frz_adv d w i j tq"
+  obtain rs \<sigma> where e: "ev [] (Mapping.update pm (replicate ?a fl) dbe) \<rho> = (rs, \<sigma>)"
+    by fastforce
+  have "list_all T rs" "P \<sigma>"
+    using ev[of \<rho> ?a] st s e by simp_all
+  then show ?thesis
+    using st s e by (auto simp: frz_adv_st_def Let_def list_all_iff dest: in_set_dropD)
+qed
+
+lemma frz_loop_inv:
+  assumes ev: "\<And>\<psi> c X. sz \<psi> = sz (fst s) \<Longrightarrow> P \<psi> \<Longrightarrow> X \<in> insert fl (set \<alpha>s) \<Longrightarrow>
+      list_all T (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))"
+    and st: "frz_st_inv P T s"
+    and r: "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s1, lv, s1)"
+  shows "list_all T ys \<and> set \<alpha>s1 \<subseteq> set \<alpha>s \<and> (\<forall>k \<sigma>. lv = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s1"
+  using ev st r
+proof (induction \<alpha>s arbitrary: i s ys \<alpha>s1 lv s1)
+  case Nil
+  have "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+    by (rule frz_adv_st_inv[OF _ Nil.prems(2)]) (use Nil.prems(1) in blast)
+  then show ?case
+    using Nil.prems(3) by auto
+next
+  case (Cons \<alpha> \<alpha>s)
+  note prems = Cons.prems and IH = Cons.IH
+  have adv: "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+    by (rule frz_adv_st_inv[OF _ prems(2)]) (use prems(1) in blast)
+  obtain \<rho> w pR tq rb where s1: "frz_adv_st sz ev pm dbe fl d j i s = (\<rho>, w, pR, tq, rb)"
+    by (metis prod_cases5)
+  have sz\<rho>: "sz \<rho> = sz (fst s)"
+    using size_frz_adv_st[of sz ev pm dbe fl d j i s] s1 by simp
+  have P\<rho>: "P \<rho>" and Trb: "list_all T rb"
+    using adv s1 by simp_all
+  let ?c = "frz_cut po w i j"
+  obtain us \<sigma> where e: "ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho> = (us, \<sigma>)"
+    by fastforce
+  have "list_all T (fst (ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate ?c \<alpha>) dbe) \<rho>))"
+    by (rule prems(1)) (use sz\<rho> P\<rho> in auto)
+  then have Tus: "list_all T us" and P\<sigma>: "P \<sigma>"
+    using e by simp_all
+  show ?case
+  proof (cases "drop (i - (pR - length rb)) (rb @ us)")
+    case Nil
+    then show ?thesis
+      using prems(3) s1 e P\<sigma> adv by auto
+  next
+    case (Cons y r)
+    obtain zs bs lv0 s2 where rec: "frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) = (zs, bs, lv0, s2)"
+      by (metis prod_cases4)
+    have IH': "list_all T zs \<and> set bs \<subseteq> set \<alpha>s \<and> (\<forall>k \<sigma>. lv0 = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s2"
+      by (rule IH[OF _ _ rec]) (use prems(1) sz\<rho> P\<rho> Trb in auto)
+    have "T y"
+      using Cons Tus Trb by (metis in_set_dropD list.set_intros(1) list_all_append list_all_iff)
+    moreover have "ys = y # zs" "\<alpha>s1 = bs" "lv = lv0" "s1 = s2"
+      using prems(3) s1 e Cons rec by auto
+    ultimately show ?thesis
+      using IH' by auto
+  qed
+qed
+
+lemma frz_live_loop_inv:
+  assumes ev: "\<And>\<psi> c X. sz \<psi> = sz (fst s) \<Longrightarrow> P \<psi> \<Longrightarrow> X \<in> insert fl (set \<alpha>s) \<Longrightarrow>
+      list_all T (fst (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>)) \<and>
+      P (snd (ev [] (Mapping.update pm (replicate c X) dbe) \<psi>))"
+    and st: "frz_st_inv P T s"
+    and L: "\<And>k us \<sigma>. lr = Some (k, us, \<sigma>) \<Longrightarrow> list_all T us \<and> P \<sigma>"
+    and r: "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (ys, \<alpha>s1, lv, s1)"
+  shows "list_all T ys \<and> set \<alpha>s1 \<subseteq> set \<alpha>s \<and> (\<forall>k \<sigma>. lv = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s1"
+proof (cases lr)
+  case None
+  with r have r0: "frz_loop sz ev pm dbe fl d po j i \<alpha>s s = (ys, \<alpha>s1, lv, s1)"
+    by (simp add: frz_live_loop_def)
+  show ?thesis
+    by (rule frz_loop_inv[OF _ st r0]) (rule ev, assumption+)
+next
+  case (Some x)
+  then obtain k us \<sigma> where lr: "lr = Some (k, us, \<sigma>)"
+    by (cases x) auto
+  have Tus: "list_all T us" and P\<sigma>: "P \<sigma>"
+    using L[OF lr] by simp_all
+  show ?thesis
+  proof (cases "drop k us")
+    case Nil
+    have "frz_st_inv P T (frz_adv_st sz ev pm dbe fl d j i s)"
+      by (rule frz_adv_st_inv[OF _ st]) (use ev in blast)
+    then show ?thesis
+      using r lr Nil P\<sigma> by (auto simp: frz_live_loop_def)
+  next
+    case (Cons y r0)
+    obtain zs bs lv0 s2 where rec: "frz_loop sz ev pm dbe fl d po j (Suc i) (tl \<alpha>s) s = (zs, bs, lv0, s2)"
+      by (metis prod_cases4)
+    have IH': "list_all T zs \<and> set bs \<subseteq> set (tl \<alpha>s) \<and> (\<forall>k \<sigma>. lv0 = Some (k, \<sigma>) \<longrightarrow> P \<sigma>) \<and> frz_st_inv P T s2"
+      by (rule frz_loop_inv[OF _ st rec]) (rule ev, assumption+, cases \<alpha>s; auto)
+    have "T y"
+      using Cons Tus by (metis in_set_dropD list.set_intros(1) list_all_iff)
+    moreover have "ys = y # zs" "\<alpha>s1 = bs" "lv = lv0" "s1 = s2"
+      using r lr Cons rec by (auto simp: frz_live_loop_def)
+    moreover have "set (tl \<alpha>s) \<subseteq> set \<alpha>s"
+      by (cases \<alpha>s) auto
+    ultimately show ?thesis
+      using IH' by auto
+  qed
+qed
+
 text \<open>The windowed replay of @{const MFrz}: helper facts.\<close>
 
 lemma (in maux) wf_envs_update_frz:
@@ -1693,6 +1857,9 @@ lemma (in maux) qtable_frz_alpha:
   shows "\<alpha> = {v. length v = m \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>}"
   using \<alpha> by (rule qtable_upt_eq)
 
+lemma frz_fill_cases: "frz_fill ng \<alpha>s = {} \<or> frz_fill ng \<alpha>s \<in> set \<alpha>s"
+  by (cases \<alpha>s rule: rev_cases) (auto simp: frz_fill_def)
+
 text \<open>The table with which the replay base absorbs the time points that leave the window is the
   frozen formula's value at some time point, or empty.\<close>
 
@@ -1713,6 +1880,129 @@ next
   case False
   then show ?thesis
     by (intro that[of None]) (auto simp: frz_fill_def)
+qed
+
+lemma qtable_eval_mtrm:
+  assumes "\<forall>x\<in>fv_trm t. x < n" 
+    and "trm.is_Var t \<or> trm.is_Const t"
+  shows "qtable (Formula.fv_trm_list t) R (\<lambda>v. Formula.eval_trm (val n (Formula.fv_trm_list t) v) t = x)
+    (eval_mtrm (mtrm_of_trm t) x)"
+  using assms unfolding qtable_iff table_def Formula.is_Var_def Formula.is_Const_def
+  by (auto simp: singleton_table_def unit_table_def empty_table_def wf_tuple_def tup_get_Cons length_Suc_conv split: if_splits)
+
+lemma map_split_alt: "map_split f xs = (map (fst o f) xs, map (snd o f) xs)"
+  by (induct xs) (auto split: prod.splits)
+
+lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast 
+    MAnd MAndAssign MAndRel MAndTrigger MAnds MOr MNeg
+    MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS MRelease]:
+  "(\<And>rel. P (MRel rel)) \<Longrightarrow>
+   (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m cs \<phi> \<psi>)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
+     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P \<rho>S \<Longrightarrow> P \<rho>E \<Longrightarrow>
+     P (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)) \<Longrightarrow>
+   (\<And>p m cs \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m cs \<phi> \<psi> i buf)) \<Longrightarrow>
+   (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
+   (\<And>cs \<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign cs \<phi> conf)) \<Longrightarrow>
+   (\<And>cs \<phi> conf. P \<phi> \<Longrightarrow> P (MAndRel cs \<phi> conf)) \<Longrightarrow>
+   (\<And>args A_\<phi> \<phi> \<phi>' \<psi>' tbuf buf nts aux. P \<phi> \<Longrightarrow> P \<phi>' \<Longrightarrow> P \<psi>' \<Longrightarrow> P (MAndTrigger A_\<phi> \<phi> tbuf args \<phi>' \<psi>' buf nts aux)) \<Longrightarrow>
+   (\<And>cs A_pos A_neg L buf. (\<And>\<phi>. \<phi> \<in> set L \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MAnds cs A_pos A_neg L buf)) \<Longrightarrow>
+   (\<And>cs1 \<phi> cs2 \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MOr cs1 \<phi> cs2 \<psi> buf)) \<Longrightarrow>
+   (\<And>\<phi>. P \<phi> \<Longrightarrow> P (MNeg \<phi>)) \<Longrightarrow>
+   (\<And>cs \<phi>. P \<phi> \<Longrightarrow> P (MExists cs \<phi>)) \<Longrightarrow>
+   (\<And>args \<phi>. P \<phi> \<Longrightarrow> P (MAgg args \<phi>)) \<Longrightarrow>
+   (\<And>I \<phi> first buf nts. P \<phi> \<Longrightarrow> P (MPrev I \<phi> first buf nts)) \<Longrightarrow>
+   (\<And>I \<phi> first nts. P \<phi> \<Longrightarrow> P (MNext I \<phi> first nts)) \<Longrightarrow>
+   (\<And>args \<phi> \<psi> buf aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MSince args \<phi> \<psi> buf aux)) \<Longrightarrow>
+   (\<And>args \<phi> \<psi> buf nts t aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MUntil args \<phi> \<psi> buf nts t aux)) \<Longrightarrow>
+   (\<And>args \<phi> \<psi> buf nts aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MTrigger args \<phi> \<psi> buf nts aux)) \<Longrightarrow>
+   (\<And>I cs dss mr mrs \<phi>s buf nts aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchP I cs dss mr mrs \<phi>s buf nts aux)) \<Longrightarrow>
+   (\<And>I cs dss mr mrs \<phi>s buf nts t aux. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> P \<phi>) \<Longrightarrow> P (MMatchF I cs dss mr mrs \<phi>s buf nts t aux)) \<Longrightarrow>
+   (\<And>mt i. P (MTP mt i)) \<Longrightarrow>
+   (\<And>mt. P (MTS mt)) \<Longrightarrow>
+   (\<And>args \<phi> \<psi> buf nts t aux. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MRelease args \<phi> \<psi> buf nts t aux)) \<Longrightarrow>
+   P mf"
+proof (induct "size mf" arbitrary: mf rule: less_induct)
+  case less
+  have IH: "P \<psi>" if "size \<psi> < size mf" for \<psi>
+    using that less.prems by (rule less.hyps)
+  have IH_set: "P \<phi>" if "\<phi> \<in> set \<phi>s" "size_list size \<phi>s < size mf" for \<phi> \<phi>s
+    using size_list_estimation'[OF that(1), of "size \<phi>" size] that(2) by (intro IH) simp
+  show ?case
+  proof (cases mf)
+    case (MRel rel)
+    show ?thesis unfolding MRel by (rule less.prems(1))
+  next
+    case (MPred e ts mode)
+    show ?thesis unfolding MPred by (rule less.prems(2))
+  next
+    case (MLet p m cs \<phi> \<psi>)
+    show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
+  next
+    case (MFrz p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)
+    show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
+  next
+    case (MLetPast p m cs \<phi> \<psi> i buf)
+    show ?thesis unfolding MLetPast by (rule less.prems(5)) (rule IH, simp add: MLetPast)+
+  next
+    case (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)
+    show ?thesis unfolding MAnd by (rule less.prems(6)) (rule IH, simp add: MAnd)+
+  next
+    case (MAndAssign cs \<phi> conf)
+    show ?thesis unfolding MAndAssign by (rule less.prems(7)) (rule IH, simp add: MAndAssign)
+  next
+    case (MAndRel cs \<phi> conf)
+    show ?thesis unfolding MAndRel by (rule less.prems(8)) (rule IH, simp add: MAndRel)
+  next
+    case (MAndTrigger A_\<phi> \<phi> tbuf args \<phi>' \<psi>' buf nts aux)
+    show ?thesis unfolding MAndTrigger by (rule less.prems(9)) (rule IH, simp add: MAndTrigger)+
+  next
+    case (MAnds cs A_pos A_neg L buf)
+    show ?thesis unfolding MAnds by (rule less.prems(10)) (rule IH_set, assumption, simp add: MAnds)
+  next
+    case (MOr cs1 \<phi> cs2 \<psi> buf)
+    show ?thesis unfolding MOr by (rule less.prems(11)) (rule IH, simp add: MOr)+
+  next
+    case (MNeg \<phi>)
+    show ?thesis unfolding MNeg by (rule less.prems(12)) (rule IH, simp add: MNeg)
+  next
+    case (MExists cs \<phi>)
+    show ?thesis unfolding MExists by (rule less.prems(13)) (rule IH, simp add: MExists)
+  next
+    case (MAgg args \<phi>)
+    show ?thesis unfolding MAgg by (rule less.prems(14)) (rule IH, simp add: MAgg)
+  next
+    case (MPrev I \<phi> first buf nts)
+    show ?thesis unfolding MPrev by (rule less.prems(15)) (rule IH, simp add: MPrev)
+  next
+    case (MNext I \<phi> first nts)
+    show ?thesis unfolding MNext by (rule less.prems(16)) (rule IH, simp add: MNext)
+  next
+    case (MSince args \<phi> \<psi> buf aux)
+    show ?thesis unfolding MSince by (rule less.prems(17)) (rule IH, simp add: MSince)+
+  next
+    case (MUntil args \<phi> \<psi> buf nts t aux)
+    show ?thesis unfolding MUntil by (rule less.prems(18)) (rule IH, simp add: MUntil)+
+  next
+    case (MTrigger args \<phi> \<psi> buf nts aux)
+    show ?thesis unfolding MTrigger by (rule less.prems(19)) (rule IH, simp add: MTrigger)+
+  next
+    case (MMatchP I cs dss mr mrs \<phi>s buf nts aux)
+    show ?thesis unfolding MMatchP by (rule less.prems(20)) (rule IH_set, assumption, simp add: MMatchP)
+  next
+    case (MMatchF I cs dss mr mrs \<phi>s buf nts t aux)
+    show ?thesis unfolding MMatchF by (rule less.prems(21)) (rule IH_set, assumption, simp add: MMatchF)
+  next
+    case (MTP mt i)
+    show ?thesis unfolding MTP by (rule less.prems(22))
+  next
+    case (MTS mt)
+    show ?thesis unfolding MTS by (rule less.prems(23))
+  next
+    case (MRelease args \<phi> \<psi> buf nts t aux)
+    show ?thesis unfolding MRelease by (rule less.prems(24)) (rule IH, simp add: MRelease)+
+  qed
 qed
 
 lemma (in maux) meval_correct:
@@ -5542,6 +5832,34 @@ proof -
     by (auto simp: state_eqs meval_eq in_set_enumerate_eq table_def)
       (use nth_mem[of "i - mstate_i st" Vs] in auto)
 qed
+
+context maux_ops
+begin
+
+primrec msteps0 where
+  "msteps0 [] st = ([], st)"
+| "msteps0 (tdb # \<pi>) st =
+    (let (V', st') = mstep (apfst mk_db tdb) st; (V'', st'') = msteps0 \<pi> st' in (V' @ V'', st''))"
+
+lemma msteps0_msteps0_stateless: "fst (msteps0 w st) = msteps0_stateless w st"
+  by (induct w arbitrary: st) (auto simp: split_beta)
+
+lift_definition msteps :: "Formula.prefix \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate 
+  \<Rightarrow> (nat \<times> ts \<times> event_data table) list \<times> ('msaux, 'muaux, 'mtaux) mstate"
+  is msteps0 .
+
+lemma msteps_msteps_stateless: "fst (msteps w st) = msteps_stateless w st"
+  by transfer (rule msteps0_msteps0_stateless)
+
+lemma msteps0_snoc: "msteps0 (\<pi> @ [tdb]) st =
+   (let (V', st') = msteps0 \<pi> st; (V'', st'') = mstep (apfst mk_db tdb) st' in (V' @ V'', st''))"
+  by (induct \<pi> arbitrary: st) (auto split: prod.splits)
+
+lemma msteps_psnoc: "last_ts \<pi> \<le> snd tdb \<Longrightarrow> msteps (psnoc \<pi> tdb) st =
+   (let (V', st') = msteps \<pi> st; (V'', st'') = mstep (apfst mk_db tdb) st' in (V' @ V'', st''))"
+  by transfer' (auto simp: msteps0_snoc split: list.splits prod.splits if_splits)
+
+end
 
 section \<open> Specification \<close>
 

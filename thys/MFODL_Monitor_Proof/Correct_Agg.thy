@@ -90,6 +90,97 @@ definition "agg_tys args = (case args_agg args of None \<Rightarrow> []         
 lemma progress_packagg[simp]: "Progress.progress \<sigma> P (packagg args \<phi>) j = Progress.progress \<sigma> P \<phi> j"
   by (auto simp: packagg_def split: option.splits)
 
+text \<open>A temporal operator's table, after the aggregation if any, is over @{const args_cols}.\<close>
+
+lemma fv_list_packagg:
+  assumes valid: "valid_aggargs n (Formula.fv_list \<psi>) (args_agg args)"
+    and R: "args_R args = Formula.fv_list \<psi>"
+    and fv: "Formula.fv_list \<chi> = Formula.fv_list \<psi>"
+  shows "Formula.fv_list (packagg args \<chi>) = args_cols args"
+proof (cases "args_agg args")
+  case None
+  then show ?thesis
+    by (simp add: packagg_def args_cols_def R fv)
+next
+  case (Some aggargs)
+  let ?k = "length (aggargs_tys aggargs)"
+  let ?y = "aggargs_y aggargs"
+  from Some valid have cols: "aggargs_cols aggargs = Formula.fv_list \<psi>" and safe: "safe_aggargs aggargs"
+    by (simp_all add: valid_aggargs_def)
+  have set_cols: "set (aggargs_cols aggargs) = Formula.fv \<chi>"
+    unfolding cols fv[symmetric] by simp
+  from safe have fresh: "?y + ?k \<notin> Formula.fv \<chi>"
+    and f_fv: "Formula.fv_trm (aggargs_f aggargs) \<subseteq> Formula.fv \<chi>"
+    by (simp_all add: safe_aggargs_def set_cols)
+  have sub: "set (Formula.fvi_trm_list ?k (aggargs_f aggargs)) \<subseteq> set (Formula.fvi_list ?k \<chi>)"
+    using f_fv by (auto simp: fvi_trm_iff_fv_trm[of _ ?k] fvi_iff_fv[of _ ?k])
+  have y_notin: "?y \<notin> set (Formula.fvi_list ?k \<chi>)"
+    using fresh fvi_iff_fv[of ?y ?k \<chi>] by simp
+  have "Formula.fv_list (packagg args \<chi>) = cols_union [?y] (Formula.fvi_list ?k \<chi>)"
+    by (simp add: packagg_def Some cols_union_subset[OF sub])
+  also have "\<dots> = ?y # Formula.fvi_list ?k \<chi>"
+    using y_notin by (auto simp: cols_union_def filter_id_conv)
+  also have "\<dots> = args_cols args"
+    using fvi_list_plus[of 0 ?k \<chi>] by (simp add: args_cols_def Some R fv)
+  finally show ?thesis .
+qed
+
+lemma fv_packagg_less:
+  assumes valid: "valid_aggargs n (Formula.fv_list \<psi>) (args_agg args)"
+    and fv_sub: "Formula.fv \<chi> \<subseteq> Formula.fv \<psi>"
+    and args_n: "args_n args = n"
+    and bound: "\<forall>x\<in>Formula.fv \<psi>. x < n"
+  shows "\<forall>x\<in>Formula.fv (packagg args \<chi>). x < agg_n args"
+proof (cases "args_agg args")
+  case None
+  with args_n have pk: "packagg args \<chi> = \<chi>" and an: "agg_n args = n"
+    by (simp_all add: packagg_def agg_n_def)
+  show ?thesis
+    unfolding pk an using fv_sub bound by blast
+next
+  case (Some aggargs)
+  let ?b = "length (aggargs_tys aggargs)"
+  from Some valid have cols: "Formula.fv \<psi> = set (aggargs_cols aggargs)" and safe: "safe_aggargs aggargs"
+    by (simp_all add: valid_aggargs_def flip: set_fvi_list)
+  from safe have y_less: "aggargs_y aggargs < aggargs_n aggargs"
+    and cols_less: "\<forall>i\<in>set (aggargs_cols aggargs). i < ?b + aggargs_n aggargs"
+    and f_cols: "Formula.fv_trm (aggargs_f aggargs) \<subseteq> set (aggargs_cols aggargs)"
+    by (simp_all add: safe_aggargs_def)
+  have x_less: "x < aggargs_n aggargs" if x: "x \<in> Formula.fv (packagg args \<chi>)" for x
+  proof -
+    from Some x consider (chi) "x + ?b \<in> Formula.fv \<chi>"
+      | (f) "x + ?b \<in> Formula.fv_trm (aggargs_f aggargs)" | (y) "x = aggargs_y aggargs"
+      by (auto simp: packagg_def fvi_iff_fv[where b="length (aggargs_tys aggargs)"]
+          fvi_trm_iff_fv_trm[where b="length (aggargs_tys aggargs)"])
+    then show ?thesis
+    proof cases
+      case chi
+      with fv_sub cols have "x + ?b \<in> set (aggargs_cols aggargs)"
+        by blast
+      with cols_less have "x + ?b < ?b + aggargs_n aggargs"
+        by (rule bspec)
+      then show ?thesis
+        by simp
+    next
+      case f
+      with f_cols have "x + ?b \<in> set (aggargs_cols aggargs)"
+        by blast
+      with cols_less have "x + ?b < ?b + aggargs_n aggargs"
+        by (rule bspec)
+      then show ?thesis
+        by simp
+    next
+      case y
+      with y_less show ?thesis
+        by simp
+    qed
+  qed
+  from Some have "agg_n args = aggargs_n aggargs"
+    by (simp add: agg_n_def)
+  with x_less show ?thesis
+    by simp
+qed
+
 lemma qtable_eval_agg:
   assumes inner: "qtable cs (mem_restr (lift_envs' (length tys) R) cs)
       (\<lambda>v. Formula.sat \<sigma> V (val (length tys + n) cs v) i \<phi>) rel"

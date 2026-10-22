@@ -562,6 +562,11 @@ proof -
   then show ?thesis using dz dn1 bfs dbf1 by simp
 qed
 
+lemma join_unit_table:
+  "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join cs R True [] unit_table = R"
+  "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join [] unit_table True cs R = R"
+  by (auto simp: join_True_code unit_table_def join1.simps table_def restrict_idle)
+
 lemma etres_join:
   assumes fK: "eframe ks cs" and fR: "eframe kR cR" and sub: "set kR \<subseteq> set ks"
     and t: "ftable ks a" and r: "etres kR cR p q"

@@ -7,6 +7,27 @@ begin
 
 subsection \<open> Trigger \<close>
 
+lemma zip_map_el: "(i, x) \<in> set (zip xs (map f xs)) \<Longrightarrow> x = f i"
+  by (metis fst_conv in_set_zip nth_map snd_conv)
+
+lemma zip_P: "\<And>xs P. (\<forall>(i,x) \<in> set (zip [0..<length xs] xs). P x) = (\<forall>x \<in> set xs. P x)"
+  by (metis case_prodD case_prodI2 diff_zero in_set_impl_in_set_zip2 length_upt set_zip_rightD)
+
+lemma zip_idx: "\<And>xs P. \<forall>(i,x) \<in> set (zip [0..<length xs] xs). x = xs!i"
+  by (metis (mono_tags, lifting) case_prodI2 map_nth zip_map_el)
+
+lemma memR_impl_pred:
+  shows "memR I (\<tau> \<sigma> k - j) \<Longrightarrow> memR I (\<tau> \<sigma> (k - 1) - j)"
+proof -
+  have "\<tau> \<sigma> (k - 1) \<le> \<tau> \<sigma> k"
+    by auto
+  then have "\<tau> \<sigma> (k - 1) - j \<le> \<tau> \<sigma> k - j"
+    by linarith
+  then show memR_impl: "memR I (\<tau> \<sigma> k - j) \<Longrightarrow> memR I (\<tau> \<sigma> (k - 1) - j)"
+    using memR_antimono[of I]
+    by auto
+qed
+
 
 subsubsection \<open> Buffers \<close> (* TODO: replace these with those for until *)
 

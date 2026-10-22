@@ -10,6 +10,98 @@ begin
 section \<open> Correctness \<close>
 
 
+subsection \<open> Auxiliary list facts \<close>
+
+lemma upt_append: "a \<le> b \<Longrightarrow> b \<le> c \<Longrightarrow> [a..<b] @ [b..<c] = [a..<c]"
+  by (metis le_Suc_ex upt_add_eq_append)
+
+lemma list_all2_upt_append: "list_all2 P [a..<b] xs \<Longrightarrow> list_all2 P [b..<c] ys \<Longrightarrow>
+  a \<le> b \<Longrightarrow> b \<le> c \<Longrightarrow> list_all2 P [a..<c] (xs @ ys)"
+  by (induction xs arbitrary: a) (auto simp add: list_all2_Cons2 upt_eq_Cons_conv)
+
+lemma list_all2_hdD:
+  assumes "list_all2 P [i..<j] xs" "xs \<noteq> []"
+  shows "P i (hd xs)" "i < j"
+  using assms unfolding list_all2_conv_all_nth
+  by (auto simp: hd_conv_nth intro: zero_less_diff[THEN iffD1] dest!: spec[of _ 0])
+
+lemma list_all2_lastD:
+  assumes "list_all2 P [i..<j] xs" "xs \<noteq> []"
+  shows "P (j - 1) (last xs)"
+  using assms list_all2_hdD(2)[OF assms, THEN less_imp_add_positive] unfolding list_all2_conv_all_nth
+  by (auto dest!: spec[of _ "length xs - 1"] simp: last_conv_nth Suc_le_eq)
+
+inductive list_all3 :: "('a \<Rightarrow> 'b \<Rightarrow> 'c \<Rightarrow> bool) \<Rightarrow> 'a list \<Rightarrow> 'b list \<Rightarrow> 'c list \<Rightarrow> bool" 
+  for P :: "('a \<Rightarrow> 'b \<Rightarrow> 'c \<Rightarrow> bool)" 
+  where "list_all3 P [] [] []"
+  | "P a1 a2 a3 \<Longrightarrow> list_all3 P q1 q2 q3 \<Longrightarrow> list_all3 P (a1 # q1) (a2 # q2) (a3 # q3)"
+
+lemma list_all3_list_all2D: "list_all3 P xs ys zs \<Longrightarrow>
+  (length xs = length ys \<and> list_all2 (case_prod P) (zip xs ys) zs)"
+  by (induct xs ys zs rule: list_all3.induct) auto
+
+lemma list_all2_list_all3I: "length xs = length ys \<Longrightarrow> list_all2 (case_prod P) (zip xs ys) zs \<Longrightarrow>
+  list_all3 P xs ys zs"
+  by (induct xs ys arbitrary: zs rule: list_induct2)
+    (auto simp: list_all2_Cons1 intro: list_all3.intros)
+
+lemma list_all3_list_all2_eq: "list_all3 P xs ys zs \<longleftrightarrow>
+  (length xs = length ys \<and> list_all2 (case_prod P) (zip xs ys) zs)"
+  using list_all2_list_all3I list_all3_list_all2D by blast
+
+lemma list_all3_mapD: "list_all3 P (map f xs) (map g ys) (map h zs) \<Longrightarrow>
+  list_all3 (\<lambda>x y z. P (f x) (g y) (h z)) xs ys zs"
+  by (induct "map f xs" "map g ys" "map h zs" arbitrary: xs ys zs rule: list_all3.induct)
+    (auto intro: list_all3.intros)
+
+lemma list_all3_mapI: "list_all3 (\<lambda>x y z. P (f x) (g y) (h z)) xs ys zs \<Longrightarrow>
+  list_all3 P (map f xs) (map g ys) (map h zs)"
+  by (induct xs ys zs rule: list_all3.induct)
+    (auto intro: list_all3.intros)
+
+lemma list_all3_map_iff: "list_all3 P (map f xs) (map g ys) (map h zs) \<longleftrightarrow>
+  list_all3 (\<lambda>x y z. P (f x) (g y) (h z)) xs ys zs"
+  using list_all3_mapD list_all3_mapI by blast
+
+lemmas list_all3_map =
+  list_all3_map_iff[where g=id and h=id, unfolded list.map_id id_apply]
+  list_all3_map_iff[where f=id and h=id, unfolded list.map_id id_apply]
+  list_all3_map_iff[where f=id and g=id, unfolded list.map_id id_apply]
+
+lemma list_all3_conv_all_nth:
+  "list_all3 P xs ys zs =
+  (length xs = length ys \<and> length ys = length zs \<and> (\<forall>i < length xs. P (xs!i) (ys!i) (zs!i)))"
+  by (auto simp add: list_all3_list_all2_eq list_all2_conv_all_nth)
+
+lemma list_all3_refl [intro?]:
+  "(\<And>x. x \<in> set xs \<Longrightarrow> P x x x) \<Longrightarrow> list_all3 P xs xs xs"
+  by (simp add: list_all3_conv_all_nth)
+
+lemma list_all3_list_all2_conv: "list_all3 R xs xs ys = list_all2 (\<lambda>x. R x x) xs ys"
+  by (auto simp: list_all3_conv_all_nth list_all2_conv_all_nth)
+
+lemma list_all3_Nil[simp]:
+  "list_all3 P xs ys [] \<longleftrightarrow> xs = [] \<and> ys = []"
+  "list_all3 P xs [] zs \<longleftrightarrow> xs = [] \<and> zs = []"
+  "list_all3 P [] ys zs \<longleftrightarrow> ys = [] \<and> zs = []"
+  unfolding list_all3_conv_all_nth by auto
+
+lemma list_all3_Cons:
+  "list_all3 P xs ys (z # zs) \<longleftrightarrow> (\<exists>x xs' y ys'. xs = x # xs' \<and> ys = y # ys' \<and> P x y z \<and> list_all3 P xs' ys' zs)"
+  "list_all3 P xs (y # ys) zs \<longleftrightarrow> (\<exists>x xs' z zs'. xs = x # xs' \<and> zs = z # zs' \<and> P x y z \<and> list_all3 P xs' ys zs')"
+  "list_all3 P (x # xs) ys zs \<longleftrightarrow> (\<exists>y ys' z zs'. ys = y # ys' \<and> zs = z # zs' \<and> P x y z \<and> list_all3 P xs ys' zs')"
+  unfolding list_all3_conv_all_nth
+  by (auto simp: length_Suc_conv Suc_length_conv nth_Cons split: nat.splits)
+
+lemma list_all3_mono_strong: "list_all3 P xs ys zs \<Longrightarrow>
+  (\<And>x y z. x \<in> set xs \<Longrightarrow> y \<in> set ys \<Longrightarrow> z \<in> set zs \<Longrightarrow> P x y z \<Longrightarrow> Q x y z) \<Longrightarrow>
+  list_all3 Q xs ys zs"
+  by (induct xs ys zs rule: list_all3.induct) (auto intro: list_all3.intros)
+
+lemma list_all3_list_all2I: "list_all3 (\<lambda>x y z. Q x z) xs ys zs \<Longrightarrow> list_all2 Q xs zs"
+  by (induct xs ys zs rule: list_all3.induct) auto
+
+
 subsection \<open> Monitor's binary buffers \<close>
 
 definition wf_mbuf2 where
@@ -107,7 +199,7 @@ lemma mbuf2t_take_nt:
   shows "nt = hd (nts' @ rev nts @ [t])"
   using assms
   by (induction f z buf t nts arbitrary: z' buf' nt nts' rule: mbuf2t_take.induct)
-     (auto simp add: hd_app split: list.splits if_splits)
+     (auto simp add: hd_append split: list.splits if_splits)
 
 lemma mbuf2t_take_eqD:
   assumes "mbuf2t_take f z buf t nts = (z', buf', nt, nts')"
@@ -147,6 +239,37 @@ lemma mbuf2t_take_add':
 
 
 subsection \<open> Binary operators' qtable \<close>
+
+text \<open>A disjunction's table is over its left operand's columns; the right operand's table is
+  reordered to them.\<close>
+
+lemma sat_table_union_reorder:
+  assumes X: "sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi> X"
+    and Y: "sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi> Y"
+    and fv: "Formula.fv \<phi> = Formula.fv \<psi>"
+    and sat: "\<And>v. Formula.sat \<sigma> V v i \<chi> \<longleftrightarrow> Formula.sat \<sigma> V v i \<phi> \<or> Formula.sat \<sigma> V v i \<psi>"
+  shows "sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<chi>
+    (X \<union> reorder (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) Y)"
+proof (rule qtable_union[OF X qtable_reorder_mem_restr[OF Y,
+      where Q' = "\<lambda>v. Formula.sat \<sigma> V (val n (Formula.fv_list \<phi>) v) i \<psi>"]])
+  show "set (Formula.fv_list \<phi>) = set (Formula.fv_list \<psi>)"
+    using fv by simp
+  show "Formula.sat \<sigma> V (val n (Formula.fv_list \<phi>) v) i \<psi> \<longleftrightarrow>
+    Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) (restrict (Formula.fv_list \<psi>) (Formula.fv_list \<phi>) v)) i \<psi>" for v
+    by (simp add: sat_restrict)
+qed (use sat in simp_all)
+
+text \<open>A formula bound to a predicate has the columns @{term "[0..<m]"}, in the order of
+  @{const Formula.fv_list}; its tables are reordered to be read positionally.\<close>
+
+lemma sat_table_reorder_upt:
+  assumes X: "sat_table \<sigma> V m UNIV (Formula.fv_list \<phi>) i \<phi> X"
+    and fv: "{0..<m} \<subseteq> fv \<phi>" "m = Formula.nfv \<phi>"
+  shows "sat_table \<sigma> V m UNIV [0..<m] i \<phi> (reorder [0..<m] (Formula.fv_list \<phi>) X)"
+proof (rule qtable_reorder_mem_restr[OF X])
+  show "set [0..<m] = set (Formula.fv_list \<phi>)"
+    using set_fv_list_nfv[OF fv] by simp
+qed (simp_all add: sat_restrict)
 
 lemma (in maux) qtable_bin_join:
   assumes "qtable A P1 Q1 X" "qtable B P2 Q2 Y" "distinct A" "distinct B"

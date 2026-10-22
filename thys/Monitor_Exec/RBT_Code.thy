@@ -238,11 +238,10 @@ text \<open>
   each height as a @{typ nat} by walking the tree's left spine -- a boxed number per level, and
   per call.  On \<^verbatim>\<open>until-nu20\<close> that was 5\% of the run.
 
-  \<^file>\<open>../Monitor_DS/RBT_set_opt.thy\<close> already decides these comparisons for its own
-  trees by descending the two spines in lockstep (@{text bh_le}), or by counting a bound down
-  (@{text bh_lt}); both allocate nothing.  Those are stated for the trees of unit values; the
-  library's operations are at every value type, so the two comparisons are restated here at
-  that generality and the library's code equations are replaced by ones that use them.
+  The comparisons can be decided without computing either height: by descending the two spines
+  in lockstep (@{text bh_le_g}), or by counting a bound down one spine (@{text bh_lt_g}); both
+  allocate nothing.  They are stated below at every value type, as the library's operations are,
+  and the library's code equations are replaced by ones that use them.
 \<close>
 
 function bh_le_g :: "('a, 'b) rbt \<Rightarrow> ('c, 'd) rbt \<Rightarrow> bool" where

@@ -1097,6 +1097,18 @@ lemma valid_result_nmtaux: "valid_nmtaux args cur aux auxlist \<Longrightarrow> 
   using valid_result_nmtaux_unfolded
   by (cases aux) (fast)
 
+lemma flip_int_less_lower_memL:
+  assumes "\<not>memL I x" (* [a, b], x < a *)
+  shows "memL (flip_int_less_lower I) x" (* x \<in> [0, a-1] *)
+  using assms
+  by (transfer') (simp)
+
+lemma flip_int_less_lower_memR:
+  assumes "\<not>memL I 0" (* I = [a, b], I' = [0, a-1]. x \<le> a-1 *)
+  shows "(memR (flip_int_less_lower I) x) = (\<not>memL I x)" (* x \<notin> [a, b] *)
+  using assms
+  by (transfer') (simp)
+
 (* analogous to join_mmsaux *)
 lemma proj_tuple_in_join_optim_equiv:
   assumes "table R r" "distinct R"
@@ -6149,6 +6161,13 @@ lemma valid_update_nmtaux: "
   "
   using valid_update_nmtaux_unfolded
   by (cases aux) (fast)
+
+lemma trigger_args_simps[simp]:
+  "args_ivl (trigger_args args) = args_ivl args"
+  "args_R (trigger_args args) = args_R args"
+  "args_pos (trigger_args args) = args_pos args"
+  "args_L (trigger_args args) = (if mem (args_ivl args) 0 then args_L args else args_R args)"
+  by (simp_all add: trigger_args_def)
 
 lemma table_trigger_lhs: "table (args_L args) l \<Longrightarrow> table (args_L (trigger_args args)) (trigger_lhs args l)"
   by (auto simp: trigger_lhs_def table_def)

@@ -546,8 +546,8 @@ subsection \<open>The freeze's copies\<close>
 
 text \<open>Two runs of the copy loop that evaluate related states on the same tables agree, as long as
   an invariant @{term K} of the first run's state, which the window's moves preserve, is what the
-  copies need: unlike @{thm [source] frz_live_loop_rel}, the evaluation is only required to be
-  related at the states the loop actually reaches.\<close>
+  copies need: the evaluation is only required to be related at the states the loop actually
+  reaches, not at every pair of related states.\<close>
 
 lemma frz_loop_rel_inv:
   assumes adv: "\<And>s s' i. frz_st_rel R g s s' \<Longrightarrow> K s \<Longrightarrow>

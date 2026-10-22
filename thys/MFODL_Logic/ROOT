@@ -5,17 +5,19 @@ session MFODL_Logic = MFOTL_Monitor_Devel +
     "Metric first-order dynamic logic, independent of any monitoring algorithm: syntax and
      semantics, typing, safety and monitorability, the rewritings that preserve the semantics,
      VeriMon's preparation of a formula, and the specification a monitor has to meet."
+  sessions
+    Certification_Monads
   theories
     Regex
     Formula
+    Release_Rewriting
     Frz_Locality
-    Error_Syntax
-    Error_Monad
     Safety
     Typing
     Rewriting
     Table_Join
     Monitorable
     Multiway
+    Safe_Finite
     Specification
     Preparation

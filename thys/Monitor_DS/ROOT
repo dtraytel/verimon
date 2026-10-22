@@ -3,7 +3,7 @@ chapter AFP
 session Monitor_DS = Containers +
   description
     "Generic data structures of the monitor's refinement: queues, order-statistic trees, clusters,
-     red-black-tree sets and sliding-window aggregation."
+     deques, generic facts and operations on mappings, and sliding-window aggregation."
   sessions
     "HOL-Data_Structures"
   theories
@@ -11,6 +11,7 @@ session Monitor_DS = Containers +
     Order_Statistic_Tree
     Tree_List
     Cluster
+    Deque
+    Mapping_Facts
     Mapping_Code
-    RBT_set_opt
     Sliding_Window_Agg

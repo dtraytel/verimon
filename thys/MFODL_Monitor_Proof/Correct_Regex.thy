@@ -10,6 +10,25 @@ begin
 
 subsubsection \<open> Regex \<close>
 
+lemma from_mregex_cong: "ok m mr \<Longrightarrow> (\<forall>i < m. xs ! i = ys ! i) \<Longrightarrow> from_mregex mr xs = from_mregex mr ys"
+  by (induct mr) auto
+
+lemmas to_mregex_safe_atms =
+  to_mregex_ok[THEN conjunct1, THEN equalityD1, THEN set_mp, rotated]
+
+lemma from_mregex_shift: "from_mregex (shift r (length xs)) (xs @ ys) = from_mregex r ys"
+  by (induct r) (auto simp: nth_append)
+
+lemma from_mregex_to_mregex: "Regex.safe_regex fv rgx_safe_pred m g r 
+  \<Longrightarrow> case_prod from_mregex (to_mregex r) = r"
+  by (induct r rule: safe_regex.induct) 
+      (auto dest: to_mregex_ok intro!: from_mregex_cong simp: nth_append from_mregex_shift case_Neg_iff
+      split: prod.splits modality.splits if_splits)
+
+lemma from_mregex_eq: "Regex.safe_regex fv rgx_safe_pred m g r 
+  \<Longrightarrow> to_mregex r = (mr, \<phi>s) \<Longrightarrow> from_mregex mr \<phi>s = r"
+  using from_mregex_to_mregex[of m g r] by auto
+
 lemma fv_regex_from_mregex:
   "ok (length \<phi>s) mr \<Longrightarrow> fv_regex (from_mregex mr \<phi>s) \<subseteq> (\<Union>\<phi> \<in> set \<phi>s. fv \<phi>)"
   by (induct mr) (auto simp: Bex_def in_set_conv_nth)+
@@ -350,7 +369,7 @@ lemma mbufnt_take_nt:
   shows "nt = hd (nts' @ rev nts @ [t])"
   using assms
   by (induction f z buf t nts arbitrary: z' buf' nt nts' rule: mbufnt_take.induct)
-     (auto simp add: hd_app split: list.splits if_splits)
+     (auto simp add: hd_append split: list.splits if_splits)
 
 lemma mbufnt_take_eqD:
   assumes "mbufnt_take f z buf t nts = (z', buf', nt, nts')"
@@ -948,6 +967,12 @@ definition wf_matchF_invar where
        qtable (regex_cols r) (mem_restr R (regex_cols r)) (\<lambda>v.
          Regex.match (Formula.sat \<sigma> V (val n (regex_cols r) v)) (from_mregex ms \<phi>s) i (i + length aux - 1))
          (lookup Y ms)))"
+
+lemma lookup_tabulate:
+  "distinct xs \<Longrightarrow> lookup (mrtabulate xs f) x = (if x \<in> set xs then f x else empty_table)"
+  unfolding lookup_default_def lookup_def
+  by transfer (auto simp: Let_def map_filter_def map_of_eq_None_iff o_def image_image dest!: map_of_SomeD
+      split: if_splits option.splits)
 
 lemma update_matchP:
   assumes pre: "wf_matchP_aux \<sigma> V n R I r aux ne"

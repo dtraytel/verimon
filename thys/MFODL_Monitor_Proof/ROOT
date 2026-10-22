@@ -6,10 +6,11 @@ session MFODL_Monitor_Proof (AFP) = MFODL_Monitor +
      preservation by meval, and the correctness of VeriMon's preparation for the algorithm."
   theories
     Progress
-    Safety_Proofs
+    Progress_Rewriting
     Correct_Un_Ops
     Correct_Bin_Ops
     Correct_Since
+    Correct_Envs
     Correct_Until
     Correct_Trigger
     Correct_Release

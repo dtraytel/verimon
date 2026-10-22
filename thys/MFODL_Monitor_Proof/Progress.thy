@@ -8,6 +8,140 @@ begin
 section \<open> Verdict delay \<close>
 
 
+lemma image_eqD: "f ` A = B \<Longrightarrow> \<forall>x\<in>A. f x \<in> B"
+  by blast
+
+lemma bounded_fixpoint_ex:
+  fixes f :: "nat \<Rightarrow> nat"
+  shows "mono_on {..j} f \<Longrightarrow> (\<forall>x \<le> j. f x \<le> j) \<Longrightarrow> \<exists>y \<le> j. y = f y"
+proof (induction j)
+  case 0
+  then show ?case
+    by simp
+next
+  case (Suc j)
+  show ?case
+  proof (cases "f (Suc j) = Suc j")
+    case True
+    then show ?thesis
+      by (intro exI[of _ "Suc j"]) simp
+  next
+    case False
+    with Suc.prems(2) have fSuc: "f (Suc j) \<le> j"
+      by (simp add: le_Suc_eq)
+    have "f x \<le> j" if "x \<le> j" for x
+    proof -
+      have "f x \<le> f (Suc j)"
+        by (rule mono_onD[OF Suc.prems(1)]) (use that in auto)
+      with fSuc show ?thesis
+        by simp
+    qed
+    moreover have "mono_on {..j} f"
+      using Suc.prems(1) by (rule mono_on_subset) auto
+    ultimately obtain y where "y \<le> j" "y = f y"
+      using Suc.IH by blast
+    then show ?thesis
+      by (intro exI[of _ y]) simp
+  qed
+qed
+
+lemma bounded_fixpoint_ex_above:
+  fixes f :: "nat \<Rightarrow> nat"
+  shows "mono_on {i..j} f \<Longrightarrow> (\<forall>x \<in> {i .. j}. f x \<in> {i .. j}) \<Longrightarrow> i \<le> j \<Longrightarrow> \<exists>y \<in> {i .. j}. y = f y"
+proof (induction j)
+  case 0
+  then show ?case
+    by simp
+next
+  case (Suc j)
+  show ?case
+  proof (cases "f (Suc j) = Suc j")
+    case True
+    with Suc.prems(3) show ?thesis
+      by (intro bexI[of _ "Suc j"]) simp_all
+  next
+    case False
+    have "f (Suc j) \<in> {i..Suc j}"
+      using Suc.prems(2,3) by simp
+    with False have fSuc: "i \<le> f (Suc j)" "f (Suc j) \<le> j"
+      by (auto simp: le_Suc_eq)
+    then have "i \<le> j"
+      by simp
+    have "f x \<in> {i..j}" if "x \<in> {i..j}" for x
+    proof -
+      have "i \<le> f x"
+        using Suc.prems(2) that by auto
+      moreover have "f x \<le> f (Suc j)"
+        by (rule mono_onD[OF Suc.prems(1)]) (use that \<open>i \<le> j\<close> in auto)
+      ultimately show ?thesis
+        using fSuc by simp
+    qed
+    moreover have "mono_on {i..j} f"
+      using Suc.prems(1) by (rule mono_on_subset) auto
+    ultimately obtain y where "y \<in> {i..j}" "y = f y"
+      using Suc.IH \<open>i \<le> j\<close> by blast
+    then show ?thesis
+      by (intro bexI[of _ y]) auto
+  qed
+qed
+
+lemma min_Inf:
+  fixes X :: "nat set"
+  assumes "X \<noteq> {}" "Y \<noteq> {}"
+  shows "min (Inf X) (Inf Y) = Inf (X \<union> Y)"
+proof -
+  obtain x where x_def: "x = Inf X" "x \<in> X" "\<And>z. z \<in> X \<Longrightarrow> x \<le> z"
+    using assms(1) cInf_lower
+    by (auto simp add: Inf_nat_def1)
+  obtain y where y_def: "y = Inf Y" "y \<in> Y" "\<And>z. z \<in> Y \<Longrightarrow> y \<le> z"
+    using assms(2) cInf_lower
+    by (auto simp add: Inf_nat_def1)
+  have "min x y \<in> X \<union> Y" "\<And>z. z \<in> X \<union> Y \<Longrightarrow> min x y \<le> z"
+    using x_def(2,3) y_def(2,3)
+    by (fastforce simp: min_def)+
+  then have "Inf (X \<union> Y) = min x y"
+    unfolding Inf_nat_def
+    by (rule Least_equality)
+  then show ?thesis
+    by (auto simp: x_def(1) y_def(1))
+qed
+
+lemma cInf_restrict_nat:
+  fixes x :: nat
+  assumes "x \<in> A"
+  shows "Inf A = Inf {y \<in> A. y \<le> x}"
+  using assms by (auto intro!: antisym intro: cInf_greatest cInf_lower Inf_nat_def1)
+
+lemma Inf_UNIV_nat: "(Inf UNIV :: nat) = 0"
+  by (simp add: cInf_eq_minimum)
+
+lemma Inf_memR_conv: 
+  "\<Sqinter> {i. \<forall>k. k < j \<and> k \<le> n \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)} =
+  (case j of 0 \<Rightarrow> 0 | Suc x \<Rightarrow> Inf {i. memR I (\<tau> \<sigma> (min x n) - \<tau> \<sigma> i)})"
+  using memR_antimono[OF _ diff_le_mono[OF \<tau>_mono]]
+  by (fastforce simp: cInf_eq_minimum less_Suc_eq_le 
+      split: nat.splits intro!: arg_cong[where ?f=Inf])
+
+lemma min_x_Inf: 
+  "min x (\<Sqinter> {i. memR I (\<tau> \<sigma> (min x n) - \<tau> \<sigma> i)}) 
+  = \<Sqinter> {i. memR I (\<tau> \<sigma> (min x n) - \<tau> \<sigma> i)}"
+proof -
+  {
+    assume assm: "x < \<Sqinter> {i. memR I (\<tau> \<sigma> (min x n) - \<tau> \<sigma> i)}"
+    then have "x \<in> {i. memR I (\<tau> \<sigma> (min x n) - \<tau> \<sigma> i)}"
+      by auto
+    then have "x \<ge> \<Sqinter> {i. memR I (\<tau> \<sigma> (min x n) - \<tau> \<sigma> i)}"
+      by (simp add: cInf_lower)
+    then have "False" using assm by auto
+  }
+  then show ?thesis
+    by (meson min.absorb2 not_le_imp_less)
+qed
+
+lemma memR_flip_int_double_upper: "memR I t \<Longrightarrow> memR (flip_int_double_upper I) t"
+  by transfer auto
+
+
 subsection \<open> Progress function \<close>
 
 context fixes \<sigma> :: "'a trace" begin
@@ -102,7 +236,7 @@ proof -
   have "min (\<Sqinter> {i. \<forall>k. k < j \<and> k \<le> local.progress P \<phi> j \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)})
      (\<Sqinter> {i. \<forall>k. k < j \<and> k \<le> local.progress P \<phi> j \<and> k \<le> j - Suc 0 \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}) =
     \<Sqinter> {i. \<forall>k. k < j \<and> k \<le> local.progress P \<phi> j \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
-    using Inf_leq[OF non_empty subset]
+    using cInf_superset_mono[OF non_empty subset]
     by auto
   
   then show ?thesis
@@ -134,7 +268,7 @@ lemma progress_eventually_monos:
     and "(progress P (Formula.eventually (flip_int_less_lower I) \<phi>) j) 
         \<le> (progress P' (Formula.eventually (flip_int_less_lower I) \<psi>) j')"
   using assms 
-  by (auto simp: progress_eventually intro!: Inf_leq
+  by (auto simp: progress_eventually intro!: cInf_superset_mono
           elim!: allE[of "\<lambda>x. \<exists>k<j'. k \<le> _ \<and> \<not> memR _ (\<tau> \<sigma> k - \<tau> \<sigma> x)" j'])
 
 lemma progress_and_release_rewrite_bounded:
@@ -265,7 +399,7 @@ next
       and fact2: "progress \<sigma> P (Formula.eventually (flip_int_less_lower I) \<phi>) j
       \<le> progress \<sigma> P' (Formula.eventually (flip_int_less_lower I) \<phi>) j'"
       using 2(1) False Release(2,4)[OF 2]
-      by (auto simp: progress_eventually intro!: Inf_leq exI[of _ j'] 
+      by (auto simp: progress_eventually intro!: cInf_superset_mono exI[of _ j'] 
           elim!: allE[of "\<lambda>x. \<exists>k<j'. k \<le> _ \<and> \<not> memR _ (\<tau> \<sigma> k - \<tau> \<sigma> x)" j'])
     have fact3: "(progress \<sigma> P (Formula.eventually I \<psi>') j) 
         \<le> (progress \<sigma> P' (Formula.eventually I \<psi>') j')" 
@@ -623,6 +757,9 @@ qed (simp_all add: progress_regex_def)
 
 lemma progress_regex_le: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress_regex \<sigma> P r j \<le> j"
   by (auto intro!: progress_le_gen simp: Min_le_iff progress_regex_def)
+
+lemma progress_MatchF_le: "progress \<sigma> P (Formula.MatchF I r) j \<le> progress_regex \<sigma> P r j"
+  by (auto simp: trans_le_add1 progress_regex_def intro!: cInf_lower)
 
 lemma progress_Release_cong:
   assumes "progress \<sigma> P \<phi> j = progress \<sigma> P' \<phi>' j" "progress \<sigma> P \<psi> j = progress \<sigma> P' \<psi>' j"
@@ -2361,7 +2498,7 @@ next
   from Ands.prems have "\<forall>\<phi>\<in>set l. i < progress \<sigma> P \<phi> (plen \<pi>)"
     by (cases l) simp_all
   with Ands show ?case 
-    unfolding sat_Ands by (auto 0 4)
+    unfolding Formula.sat.simps(11) by (auto 0 4)
 next
   case (Exists \<phi>)
   then show ?case by simp

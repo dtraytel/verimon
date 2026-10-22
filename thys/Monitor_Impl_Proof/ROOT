@@ -5,6 +5,7 @@ session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
     "The concrete auxiliary structures meet their specifications (the valid_* invariants), and
      the concrete instance default_maux of the monitoring algorithm is an instance of maux."
   sessions
+    Generic_Join_Devel
     Monitor_Impl
   theories
     Optimized_Common_Proof
@@ -13,5 +14,6 @@ session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
     Optimized_Trigger_Proof
     Optimized_Agg_Temporal_Proof
     Optimized_Until_Deque_Proof
+    Optimized_Join_Proof
     Monitor_Impl_Proof
     "Monitor_Impl.Monomorphic_Code"

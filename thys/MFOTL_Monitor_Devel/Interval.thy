@@ -37,7 +37,69 @@ lemma memR_nonzeroD: "\<not> memR I t \<Longrightarrow> t > 0"
 lemma bounded_memR: "bounded I \<longleftrightarrow> (\<exists>m. \<not> memR I m)"
   by transfer auto
 
+lemma not_memL_imp_memR: "\<not> memL I t \<Longrightarrow> memR I t"
+proof -
+  assume "\<not> memL I t"
+  then have memL: "\<forall>t'\<le>t. \<not>mem I t'" using memL_mono by auto
+  have "(memL I, memR I, bounded I) \<in> {(memL, memR, bounded). (\<exists>m. memL m \<and> memR m) \<and> upclosed memL \<and> downclosed memR \<and> bounded = (\<exists>m. \<not> memR m)}"
+    using Rep_\<I>[of I]
+    by (simp add: bounded.rep_eq memL.rep_eq memR.rep_eq)
+  then obtain t_ex where t_ex_props: "mem I t_ex"
+    by auto
+  {
+    assume memR: "\<not>memR I t"
+    {
+      fix t'
+      assume t'_leq_t: "t' \<ge> t"
+      then have "\<not>memR I t'"
+        using memR memR_antimono
+        by auto
+    }
+    then have "\<forall>t'\<ge>t. \<not>mem I t'" by auto
+    then have "\<forall>t'. \<not>mem I t'"
+      using memL nat_le_linear
+      by auto
+    then have "False" using t_ex_props by auto
+  }
+  then show "memR I t" by auto
+qed
+
+lemma not_memR_imp_memL: "\<not> memR I t \<Longrightarrow> memL I t"
+proof -
+  assume "\<not> memR I t"
+  then have memR: "\<forall>t'\<ge>t. \<not>memR I t'" using memR_antimono by auto
+  have "(memL I, memR I, bounded I) \<in> {(memL, memR, bounded). (\<exists>m. memL m \<and> memR m) \<and> upclosed memL \<and> downclosed memR \<and> bounded = (\<exists>m. \<not> memR m)}"
+    using Rep_\<I>[of I]
+    by (simp add: bounded.rep_eq memL.rep_eq memR.rep_eq)
+  then obtain t_ex where t_ex_props: "mem I t_ex"
+    by auto
+  {
+    assume memL: "\<not>memL I t"
+    {
+      fix t'
+      assume t'_leq_t: "t' \<le> t"
+      then have "\<not>memL I t'"
+        using memL memL_mono
+        by auto
+    }
+    then have "\<forall>t'\<le>t. \<not>mem I t'" by auto
+    then have "\<forall>t'. \<not>mem I t'"
+      using memR nat_le_linear
+      by auto
+    then have "False" using t_ex_props by auto
+  }
+  then show "memL I t" by auto
+qed
+
+lemma mem_mt_and_memR_imp_mem:
+  assumes "nt \<ge> mt"
+  shows "(mem I (mt - t) \<and> memR I (nt - t)) = (mem I (mt - t) \<and> mem I (nt - t))"
+  using assms by auto
+
 lift_definition all :: \<I> is "(\<lambda>_. True, \<lambda>_. True, False)" by (auto simp: upclosed_def downclosed_def)
+lemma interval_all: "mem all i"
+  by transfer auto
+
 lift_definition point :: "nat \<Rightarrow> \<I>" is "\<lambda>n. ((\<le>) n, (\<ge>) n, True)"
   by (auto simp: upclosed_def downclosed_def not_le)
 lift_definition subtract :: "nat \<Rightarrow> \<I> \<Rightarrow> \<I>" is

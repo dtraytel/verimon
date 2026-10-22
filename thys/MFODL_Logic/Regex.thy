@@ -261,6 +261,10 @@ lemma safe_regex_mono:
 lemma match_map_regex: "match t (map_regex f r) = match (\<lambda>k z. t k (f z)) r"
   by (induct r) auto
 
+lemma match_map_regex_cong: "(\<And>k a. a \<in> atms r \<Longrightarrow> sat1 k (f a) \<longleftrightarrow> sat2 k a) \<Longrightarrow>
+  match sat1 (map_regex f r) = match sat2 r"
+  by (induction r) simp_all
+
 lemma match_cong_strong:
   "(\<And>k z. k \<in> {i ..< j + 1} \<Longrightarrow> z \<in> atms r \<Longrightarrow> t k z = t' k z) \<Longrightarrow> match t r i j = match t' r i j"
 proof (induction r arbitrary: i j)

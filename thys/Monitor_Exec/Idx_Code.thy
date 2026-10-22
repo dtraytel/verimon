@@ -460,7 +460,7 @@ definition gjoin_idx1 :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b set) m
 lemma lookup_fold_delete_fst:
   "Mapping.lookup (fold (\<lambda>p. Mapping.delete (fst p)) D M) k =
     (if k \<in> fst ` set D then None else Mapping.lookup M k)"
-  by (induct D arbitrary: M) (auto simp: lookup_delete)
+  by (induct D arbitrary: M) (auto simp: Mapping_lookup_delete)
 
 lemma mfilter_keys_True_RBT:
   fixes t :: "('k :: ccompare, 'v) mapping_rbt"

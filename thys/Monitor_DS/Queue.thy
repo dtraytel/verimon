@@ -293,6 +293,9 @@ lemma append_queue_list_rep:
   "linearize (append_queue_list ys q) = linearize q @ ys"
   by transfer (auto simp: linearize_def rev_prepend_eq)
 
+lemma fold_append_queue_rep: "linearize (fold (\<lambda>x q. append_queue x q) xs q) = linearize q @ xs"
+  by (induction xs arbitrary: q) (auto simp add: append_queue_rep)
+
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
   by transfer (auto simp: tl_append2[symmetric] split: prod.splits list.splits elim!: tl_queue_t.elims)
 

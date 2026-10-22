@@ -182,24 +182,6 @@ proof (induct es)
       Cons b by simp
 qed simp
 
-lemma sorted_takeWhile_filter:
-  assumes s: "List.sorted (map fst xs)" and m: "\<And>t t'. t \<le> t' \<Longrightarrow> Q t' \<Longrightarrow> Q t"
-  shows "takeWhile (\<lambda>x. Q (fst x)) xs = filter (\<lambda>x. Q (fst x)) xs \<and>
-    dropWhile (\<lambda>x. Q (fst x)) xs = filter (\<lambda>x. \<not> Q (fst x)) xs"
-  using s
-proof (induct xs)
-  case (Cons x xs)
-  have s': "List.sorted (map fst xs)" and le: "\<forall>y \<in> set xs. fst x \<le> fst y" using Cons(2) by auto
-  show ?case
-  proof (cases "Q (fst x)")
-    case True then show ?thesis using Cons(1)[OF s'] by simp
-  next
-    case False
-    have "\<forall>y \<in> set xs. \<not> Q (fst y)" using False le m by blast
-    then show ?thesis using False by (simp add: filter_id_conv)
-  qed
-qed simp
-
 lemma memL_ts_anti: "t \<le> t' \<Longrightarrow> memL I (c - t') \<Longrightarrow> memL I (c - t)"
   by (erule memL_mono) simp
 
@@ -316,7 +298,7 @@ proof -
         unfolding Pl_def filter_filter by (rule filter_cong) (auto dest: LcLn)
       also have "\<dots> = filter (\<lambda>x. \<not> Ln x) (filter Rn D)"
         unfolding filter_filter by (rule filter_cong)
-          (auto simp: Ln_def Rn_def intro: not_memL_imp_memR[of args, simplified])
+          (auto simp: Ln_def Rn_def intro: not_memL_imp_memR[of "args_ivl args", simplified])
       finally show ?thesis .
     qed
     have e2: "filter Ln (filter Rn D) = filter Rn Wl @ filter Rn (filter Ln Pl)"

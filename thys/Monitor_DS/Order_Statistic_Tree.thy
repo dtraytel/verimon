@@ -63,6 +63,10 @@ next
   then show ?case apply(auto) by(induction xs) auto
 qed
 
+lemma mset_del_list:
+  "mset (del_list x l) = mset l - {#x#}"
+  by(induction l) auto
+
 text \<open>Wbt:\<close>
 
 lemma neq_Leaf2_iff: "t \<noteq> Leaf \<longleftrightarrow> (\<exists>l a n r. t = Node l (a,n) r)"
@@ -733,6 +737,69 @@ lemma insort_del_inverse:
   shows "del_list a (linorder_class.insort a xs) = xs"
   by(induction xs) (auto)
 
+context linorder
+begin
+
+lemma bulk_insort_aux:
+  assumes "(\<forall>k. k \<in> set xs \<longrightarrow> k < e)"
+  and "(\<forall>k. k \<in> set ys \<longrightarrow> e < k)"
+  shows "linorder_class.insort e (xs @ replicate n e @ ys) = xs @ e # replicate n e @ ys"
+  using assms
+proof(induction xs)
+  case Nil
+  then show ?case using assms(2) by (induction n) (simp add: local.insort_is_Cons local.less_imp_le)+
+next
+  case (Cons a xs)
+  then show ?case using Cons by(simp add:local.less_le_not_le)
+qed
+
+lemma bulk_insort:
+  assumes "(\<forall>k. k \<in> set xs \<longrightarrow> k < e)"
+  and "(\<forall>k. k \<in> set ys \<longrightarrow> e < k)"
+  shows "((linorder.insort (\<le>) e) ^^ n) (xs @ ys) = xs @ replicate n e @ ys"
+proof(induction n)
+  case 0
+  then show ?case by auto
+next
+  case (Suc n)
+  then show ?case using assms bulk_insort_aux by(auto)
+qed
+
+lemma split_insort:
+  assumes "x \<notin> set list"
+  and "sorted_wrt (\<le>) list"
+  shows "\<exists>xs ys. (linorder.insort (\<le>) x list = xs @ x # ys \<and> list = xs @ ys \<and> (\<forall>k. k \<in> set xs \<longrightarrow> k < x) \<and> (\<forall>k. k \<in> set ys \<longrightarrow> k > x))"
+proof -
+  let ?xs = "linorder.insort (\<le>) x list"
+  have "x \<in> set ?xs"
+    using set_insort_key[of "\<lambda>x. x" x list] assms(1) by(auto)
+  show ?thesis using assms
+  proof(induction list)
+    case Nil
+    then have "linorder.insort (\<le>) x [] = [x]" by(auto simp:insort_key_def)
+    then show ?case by auto
+  next
+    case (Cons a list)
+    have neq: "x \<noteq> a" using Cons(2) by auto
+    show ?case
+    proof(cases "x <= a")
+      case True
+      then have *: "\<forall>k. k \<in> set (a # list) \<longrightarrow> k > x" using Cons(3) neq by(auto)
+      show ?thesis using True by (auto simp:insort_key_def) (metis "*" append_Nil empty_iff empty_set)
+    next
+      case False
+      then have *: "a \<le> x" by auto
+      have **: "linorder.insort (\<le>) x (a#list) = a # (linorder.insort (\<le>) x list)"
+        using False by(auto simp:insort_key_def)
+      obtain xs ys where "linorder.insort (\<le>) x list = xs @ x # ys \<and> list = xs @ ys \<and> (\<forall>k. k \<in> set xs \<longrightarrow> k < x) \<and> (\<forall>k. k \<in> set ys \<longrightarrow> k > x)"
+        using Cons(1-3) by auto
+      then show ?thesis using * ** False by(auto) (metis append_Cons insert_iff list.simps(15) local.dual_order.order_iff_strict)
+    qed
+  qed
+qed
+
+end
+
 typedef (overloaded) 'a wf_wbt = "{x::'a::linorder wbt. sorted (inorder x) \<and> wbt x}" 
   by(auto intro!: exI[of _ Leaf]) 
 
@@ -750,5 +817,10 @@ lift_definition tree_inorder:: "'a::linorder wf_wbt \<Rightarrow> 'a list" is in
 lift_definition empty_tree:: "'a::linorder wf_wbt" is Leaf by auto
 lift_definition tree_select:: "'a::linorder wf_wbt \<Rightarrow> nat \<Rightarrow> 'a" is select .
 lift_definition tree_size:: "'a::linorder wf_wbt \<Rightarrow> nat" is size_wbt .
+
+instantiation wf_wbt :: (linorder) equal begin
+lift_definition equal_wf_wbt :: "'a wf_wbt \<Rightarrow> 'a wf_wbt \<Rightarrow> bool" is "(=)" .
+instance by(standard; transfer; auto)
+end
 
 end

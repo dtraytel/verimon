@@ -26,6 +26,31 @@ proof (rule set_eqI)
     by auto
 qed
 
+text \<open>The join of two tables over the same columns is their intersection or difference.\<close>
+
+lemma join_eq:
+  assumes "table cs t1" "table cs t2" "distinct cs"
+  shows "join cs t2 pos cs t1 = (if pos then t2 \<inter> t1 else t2 - t1)"
+proof -
+  have idle: "restrict cs cs x = x" if "x \<in> t2" for x
+    using restrict_idle[OF assms(3) tableD[OF assms(2) that]] .
+  show ?thesis
+    using join_sub[OF assms(3,3,2,1) subset_refl, of pos] by (auto simp: idle)
+qed
+
+lemma join_True_iff:
+  assumes "distinct cs" "distinct ds" "table cs X" "table ds Y"
+  shows "v \<in> join cs X True ds Y \<longleftrightarrow> wf_tuple (cols_union cs ds) v \<and>
+    restrict cs (cols_union cs ds) v \<in> X \<and> restrict ds (cols_union cs ds) v \<in> Y"
+  using join_restrict[OF assms, of True v] by simp
+
+lemma join_False_iff:
+  assumes "distinct cs" "distinct ds" "table cs X" "table ds Y" "set ds \<subseteq> set cs"
+  shows "v \<in> join cs X False ds Y \<longleftrightarrow> v \<in> X \<and> restrict ds cs v \<notin> Y"
+  using join_restrict[OF assms(1-4), of False v] assms(5) tableD[OF assms(3), of v]
+    restrict_idle[OF assms(1), of v]
+  by (auto simp: cols_union_subset)
+
 lemma join_sub':
   assumes "distinct cs" "distinct ds" "table cs t" "table ds t'" "set cs \<subseteq> set ds"
   shows "join cs t True ds t' = restrict (cols_union cs ds) ds ` {as \<in> t'. restrict cs ds as \<in> t}"
@@ -88,6 +113,60 @@ next
     with z False show "z \<in> reorder cs ds t"
       by (auto simp: reorder_def intro: rev_image_eqI)
   qed
+qed
+
+lemma qtable_reorder_table:
+  assumes "qtable ds P Q X" "distinct cs" "distinct ds" "set cs = set ds"
+    "\<And>v. wf_tuple cs v \<Longrightarrow> P' v \<Longrightarrow> P (restrict ds cs v)"
+    "\<And>v. wf_tuple cs v \<Longrightarrow> P' v \<Longrightarrow> Q' v \<longleftrightarrow> Q (restrict ds cs v)"
+  shows "qtable cs P' Q' (reorder cs ds X)"
+proof -
+  have q: "qtable cs P' Q' (restrict cs ds ` X)"
+    by (rule qtable_reorder[OF assms(1,3,2,4) assms(5,6)])
+  show ?thesis
+  proof (cases "cs = ds")
+    case True
+    have "restrict ds ds x = x" if "x \<in> X" for x
+      using restrict_idle[OF assms(3) qtableD(1)[OF assms(1), THEN tableD, OF that]] .
+    then have "restrict cs ds ` X = X"
+      using True by (auto simp: image_iff)
+    with q True show ?thesis
+      by (simp add: reorder_def)
+  next
+    case False
+    with q show ?thesis
+      by (simp add: reorder_def)
+  qed
+qed
+
+lemma qtable_reorder_mem_restr:
+  assumes "qtable ds (mem_restr R ds) Q X" "distinct cs" "distinct ds" "set cs = set ds"
+    "\<And>v. wf_tuple cs v \<Longrightarrow> mem_restr R cs v \<Longrightarrow> Q' v \<longleftrightarrow> Q (restrict ds cs v)"
+  shows "qtable cs (mem_restr R cs) Q' (reorder cs ds X)"
+  using assms by (intro qtable_reorder_table[OF assms(1-4)] restrict_mem_restr) auto
+
+lemma join_cond_restrict_perm:
+  assumes "set L = set R" "distinct L" "distinct R" "table L l" "wf_tuple R x"
+  shows "join_cond pos (restrict R L ` l) x \<longleftrightarrow> join_cond pos l (restrict L R x)"
+proof -
+  have "x \<in> restrict R L ` l \<longleftrightarrow> restrict L R x \<in> l"
+  proof
+    assume "x \<in> restrict R L ` l"
+    then obtain y where y: "y \<in> l" "x = restrict R L y"
+      by auto
+    then show "restrict L R x \<in> l"
+      using restrict_restrict[of L R L y] restrict_idle[OF assms(2) tableD[OF assms(4) y(1)]] assms(1)
+      by auto
+  next
+    assume "restrict L R x \<in> l"
+    moreover have "restrict R L (restrict L R x) = x"
+      using restrict_restrict[of R L R x] restrict_idle[OF assms(3,5)] assms(1)
+      by auto
+    ultimately show "x \<in> restrict R L ` l"
+      by (metis image_eqI)
+  qed
+  then show ?thesis
+    by auto
 qed
 
 

@@ -40,11 +40,8 @@ lemma csl_finite: "finite X \<Longrightarrow> csl X = csorted_list_of_set X"
 lemma csl_infinite: "\<not> finite X \<Longrightarrow> csl X = []"
   by (simp add: csl_def)
 
-lemma ID_ccompare_ed: "ID CCOMPARE(event_data list) \<noteq> None"
-  by (simp add: ccompare_list_def ccompare_event_data_def ID_def split: option.splits)
-
 lemma set_csl_ed: "finite (X :: event_data list set) \<Longrightarrow> set (csl X) = X"
-  using ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
+  using ID_ccompare_etuple_dq by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 
 subsection \<open>Term evaluation\<close>
 

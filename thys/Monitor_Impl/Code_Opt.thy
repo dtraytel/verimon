@@ -123,6 +123,21 @@ lemma comparator_event_data_code[code]:
   "comparator_event_data (EString s) (EString t) = (if s < t then Lt else if s = t then Eq else Gt)"
   by (simp_all add: comparator_of_def cmp_integer_def)
 
+subsection \<open>Reversing a list\<close>
+
+text \<open>
+  The code equation the library gives @{const rev} states it as a fold over a function argument,
+  which the generated code passes as a closure and applies through the generic application path
+  once per element.  @{const rev_prepend} from theory @{text Queue} reverses a list onto another
+  one with a direct two-argument recursion, so it replaces that code equation for the whole
+  monitor.
+\<close>
+
+declare [[code drop: rev]]
+
+lemma rev_code[code]: "rev xs = rev_prepend xs []"
+  by (simp add: rev_prepend_eq)
+
 subsection \<open>Run-time selection of the multi-way join strategy\<close>
 
 text \<open>

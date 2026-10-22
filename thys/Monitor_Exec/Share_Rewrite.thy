@@ -1,6 +1,6 @@
 (*<*)
 theory Share_Rewrite
-  imports "MFODL_Monitor.Monitor" "MFODL_Logic.Typing"
+  imports "MFODL_Monitor.Monitor" "MFODL_Logic.Typing" "MFODL_Logic.Multiway"
 begin
 (*>*)
 

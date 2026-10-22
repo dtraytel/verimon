@@ -86,6 +86,9 @@ lemma table_empty[simp]: "table cs {}"
 lemma table_subset: "table cs X \<Longrightarrow> Y \<subseteq> X \<Longrightarrow> table cs Y"
   unfolding table_def by auto
 
+lemma table_filter: "table cs {a \<in> T. wf_tuple cs a}"
+  by (auto simp: table_def)
+
 
 subsection \<open>Reading a variable\<close>
 
@@ -159,6 +162,22 @@ lemma length_val[simp]: "length (val n cs x) = n"
 lemma nth_val[simp]: "i < n \<Longrightarrow> val n cs x ! i = tup_get cs x i"
   by (simp add: val_def)
 
+text \<open>An assignment appends its column to the tuple.\<close>
+
+lemma val_snoc:
+  assumes "wf_tuple cs y" "x \<notin> set cs" "x < n"
+  shows "val n (cs @ [x]) (y @ [a]) = (val n cs y)[x := a]"
+proof (rule nth_equalityI)
+  fix i
+  assume "i < length (val n (cs @ [x]) (y @ [a]))"
+  then have "i < n" by simp
+  have none: "tup_get cs y c = the None" if "c \<notin> set cs" for c
+    using assms(1) that unfolding tup_get_def by (metis map_of_zip_is_None wf_tuple_def)
+  show "val n (cs @ [x]) (y @ [a]) ! i = (val n cs y)[x := a] ! i"
+    unfolding nth_val[OF \<open>i < n\<close>] tup_get_append[OF assms(1)] tup_get_Cons
+    using \<open>i < n\<close> assms none[of i] by (auto simp: nth_list_update tup_get_def)
+qed simp
+
 
 subsection \<open>Restriction\<close>
 
@@ -187,6 +206,17 @@ lemma tup_get_restrict: "c \<in> set ds \<Longrightarrow> tup_get ds (restrict d
 lemma restrict_idle: "distinct cs \<Longrightarrow> wf_tuple cs x \<Longrightarrow> restrict cs cs x = x"
   by (rule nth_equalityI) (simp_all add: wf_tuple_def nth_restrict tup_get_nth)
 
+lemma restrict_Cons_notin:
+  assumes "y \<notin> set cs" "wf_tuple cs x" "distinct cs"
+  shows "restrict cs (y # cs) (a # x) = x"
+proof -
+  have "restrict cs (y # cs) (a # x) = map (tup_get cs x) cs"
+    unfolding restrict_def using assms(1) by (auto simp: tup_get_Cons intro!: map_cong)
+  also have "\<dots> = x"
+    using restrict_idle[OF assms(3,2)] by (simp add: restrict_def)
+  finally show ?thesis .
+qed
+
 lemma restrict_restrict: "set es \<subseteq> set ds \<Longrightarrow> restrict es ds (restrict ds cs x) = restrict es cs x"
   unfolding restrict_def[of es] by (auto intro!: map_cong tup_get_restrict)
 
@@ -197,9 +227,77 @@ lemma restrict_cong:
 lemma val_restrict: "i \<in> set ds \<Longrightarrow> i < n \<Longrightarrow> val n ds (restrict ds cs x) ! i = val n cs x ! i"
   by (simp add: tup_get_restrict)
 
+text \<open>Two valuations of the same length agree beyond it, so reading a restricted tuple needs no
+  bound on the variables.\<close>
+
+lemma nth_beyond_length: "length xs = length ys \<Longrightarrow> length xs \<le> i \<Longrightarrow> xs ! i = ys ! i"
+proof (induct xs arbitrary: ys i)
+  case (Cons x xs)
+  then obtain y ys' where ys: "ys = y # ys'"
+    by (cases ys) auto
+  obtain i' where i: "i = Suc i'"
+    using Cons.prems(2) by (cases i) auto
+  show ?case
+    using Cons.hyps[of ys' i'] Cons.prems by (simp add: ys i)
+qed simp
+
+lemma val_restrict_nth:
+  assumes "c \<in> set ds"
+  shows "val n ds (restrict ds cs x) ! c = val n cs x ! c"
+proof (cases "c < n")
+  case False
+  then show ?thesis
+    by (intro nth_beyond_length) simp_all
+qed (simp add: tup_get_restrict assms)
+
+lemma val_restrict_perm: "set ds = set cs \<Longrightarrow> val n ds (restrict ds cs x) = val n cs x"
+proof (rule nth_equalityI)
+  fix i
+  assume set: "set ds = set cs" and "i < length (val n ds (restrict ds cs x))"
+  have none: "map_of (zip xs ys) i = None" if "i \<notin> set xs" for xs :: "nat list" and ys :: "'a list"
+    using that by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
+  from set show "val n ds (restrict ds cs x) ! i = val n cs x ! i"
+    using \<open>i < length _\<close> by (cases "i \<in> set ds") (simp add: tup_get_restrict, simp add: tup_get_def none)
+qed simp
+
 lemma restrict_append:
   "wf_tuple cs x \<Longrightarrow> set ds \<subseteq> set cs \<Longrightarrow> restrict ds (cs @ cs') (x @ y) = restrict ds cs x"
   by (rule restrict_cong) (auto simp: tup_get_append)
+
+text \<open>A tuple whose restrictions to a cover of its columns lie in finite tables takes its values
+  from those tables, so there are finitely many.\<close>
+
+lemma finite_restrict_cover:
+  assumes "distinct C" "set C \<subseteq> (\<Union>A\<in>set As. set A)" "\<forall>X \<in> set Xs. finite X"
+  shows "finite {x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs}"
+proof -
+  let ?D = "\<Union>X \<in> set Xs. \<Union>t \<in> X. set t"
+  have D: "finite ?D"
+    using assms(3) by auto
+  have "set x \<subseteq> ?D" if x: "wf_tuple C x" "list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs" for x
+  proof
+    fix a
+    assume "a \<in> set x"
+    then obtain k where k: "k < length C" "a = x ! k"
+      using x(1) by (auto simp: wf_tuple_def in_set_conv_nth)
+    obtain A where "A \<in> set As" "C ! k \<in> set A"
+      using assms(2) nth_mem[OF k(1)] by blast
+    then obtain i where i: "i < length As" "C ! k \<in> set (As ! i)"
+      by (auto simp: in_set_conv_nth)
+    have "restrict (As ! i) C x \<in> Xs ! i" "i < length Xs"
+      using x(2) i(1) by (auto simp: list_all2_conv_all_nth)
+    moreover have "a \<in> set (restrict (As ! i) C x)"
+      using i(2) tup_get_nth[OF assms(1) x(1) k(1)] k(2) unfolding restrict_def
+      by (metis image_eqI set_map)
+    ultimately show "a \<in> ?D"
+      by (auto intro!: bexI[of _ "Xs ! i"])
+  qed
+  then have "{x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs} \<subseteq>
+    {xs. set xs \<subseteq> ?D \<and> length xs = length C}"
+    by (auto simp: wf_tuple_def)
+  then show ?thesis
+    by (rule finite_subset) (rule finite_lists_length_eq[OF D])
+qed
 
 
 subsection \<open>Empty, unit, and singleton tables\<close>
@@ -509,6 +607,10 @@ lemma qtable_inter: "qtable cs P Q1 R1 \<Longrightarrow> qtable cs P Q2 R2 \<Lon
   (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x = (Q1 x \<and> Q2 x)) \<Longrightarrow> qtable cs P Q (R1 \<inter> R2)"
   unfolding qtable_def table_def by blast
 
+lemma qtable_diff: "qtable cs P Q1 X \<Longrightarrow> qtable cs P Q2 Y \<Longrightarrow>
+  (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x = (Q1 x \<and> \<not> Q2 x)) \<Longrightarrow> qtable cs P Q (X - Y)"
+  unfolding qtable_def table_def by blast
+
 lemma qtable_filter:
   assumes "qtable cs P Q X" "\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x \<and> R x \<longleftrightarrow> Q' x"
   shows "qtable cs P Q' (Set.filter R X)"
@@ -737,6 +839,23 @@ lemma restrict_mem_restr:
     mem_restr A ds (restrict ds cs x)"
   by (auto simp: mem_restr_iff tup_get_restrict)
 
+text \<open>A join whose second operand's columns are among the first's keeps the first's columns.\<close>
+
+lemma qtable_join_sub:
+  assumes "qtable A (mem_restr R A) Q1 X" "qtable B (mem_restr R B) Q2 Y" "distinct A" "distinct B"
+    "set B \<subseteq> set A"
+    "\<And>x. b \<Longrightarrow> wf_tuple A x \<Longrightarrow> mem_restr R A x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<and> Q2 (restrict B A x)"
+    "\<And>x. \<not> b \<Longrightarrow> wf_tuple A x \<Longrightarrow> mem_restr R A x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<and> \<not> Q2 (restrict B A x)"
+  shows "qtable A (mem_restr R A) Q (join A X b B Y)"
+proof -
+  have A: "A = cols_union A B"
+    using assms(5) by (simp add: cols_union_subset)
+  show ?thesis
+    using assms(1-5)
+    by (rule qtable_join[where es=A, OF _ _ _ _ _ A])
+      (auto simp: restrict_idle[OF assms(3)] assms(3-7) intro!: restrict_mem_restr subsetD[OF assms(5)])
+qed
+
 lemma qtable_mem_restr_UNIV:
   assumes "distinct cs"
   shows "qtable cs (mem_restr UNIV cs) Q = wf_table cs Q"
@@ -745,6 +864,44 @@ proof -
     using mem_restr_UNIV[OF assms, of v] mem_restr_wf_tuple[of UNIV cs v] by blast
   then show ?thesis
     unfolding qtable_iff table_def fun_eq_iff by blast
+qed
+
+text \<open>Over the columns 0, ..., m - 1 a tuple is a whole valuation, and a table over them is the
+  set of the valuations that satisfy its predicate.\<close>
+
+lemma val_upt:
+  assumes "length v = m"
+  shows "val m [0..<m] v = v"
+proof (rule nth_equalityI)
+  fix i
+  assume "i < length (val m [0..<m] v)"
+  then show "val m [0..<m] v ! i = v ! i"
+    using tup_get_nth[of "[0..<m]" v i] assms by (simp add: wf_tuple_def)
+qed (simp add: assms)
+
+lemma qtable_upt_eq:
+  assumes "qtable [0..<m] (mem_restr UNIV [0..<m]) (\<lambda>v. Q (val m [0..<m] v)) X"
+  shows "X = {v. length v = m \<and> Q v}"
+proof -
+  have iff: "v \<in> X \<longleftrightarrow> Q (val m [0..<m] v) \<and> wf_tuple [0..<m] v" for v
+  proof (cases "wf_tuple [0..<m] v")
+    case True
+    then have "mem_restr UNIV [0..<m] v"
+      by (intro mem_restr_UNIV) simp_all
+    with assms True show ?thesis
+      unfolding qtable_iff by blast
+  next
+    case False
+    with qtableD(1)[OF assms] show ?thesis
+      unfolding table_def by blast
+  qed
+  show ?thesis
+  proof (rule set_eqI)
+    fix v
+    show "v \<in> X \<longleftrightarrow> v \<in> {v. length v = m \<and> Q v}"
+      unfolding iff wf_tuple_upt mem_Collect_eq
+      by (cases "length v = m") (simp_all add: val_upt)
+  qed
 qed
 
 
@@ -804,6 +961,23 @@ lemma ex_cols_fold_cols_union:
   "(\<And>t. t \<in> set ts \<Longrightarrow> ex_cols (f t) = g t) \<Longrightarrow>
     ex_cols (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0) = fold (\<lambda>t cs. cols_union cs (g t)) ts (ex_cols cs0)"
   by (induct ts arbitrary: cs0) (simp_all add: ex_cols_cols_union)
+
+text \<open>Under @{term k} binders, the columns are those at least @{term k}, shifted down.\<close>
+
+definition shift_cols :: "nat \<Rightarrow> nat list \<Rightarrow> nat list" where
+  "shift_cols k cs = map (\<lambda>x. x - k) (filter (\<lambda>x. k \<le> x) cs)"
+
+lemma shift_cols_0[simp]: "shift_cols 0 cs = cs"
+  by (simp add: shift_cols_def)
+
+lemma shift_cols_Suc: "shift_cols (Suc k) cs = ex_cols (shift_cols k cs)"
+  by (induction cs) (auto simp: shift_cols_def ex_cols_Cons)
+
+lemma set_shift_cols: "set (shift_cols k cs) = (\<lambda>x. x - k) ` {x \<in> set cs. k \<le> x}"
+  by (auto simp: shift_cols_def)
+
+lemma distinct_shift_cols: "distinct cs \<Longrightarrow> distinct (shift_cols k cs)"
+  by (auto simp: shift_cols_def distinct_map inj_on_def)
 
 lemma wf_tuple_ex_proj[simp]: "wf_tuple (ex_cols cs) (ex_proj cs x)"
   by (simp add: ex_cols_def ex_proj_def wf_tuple_def)

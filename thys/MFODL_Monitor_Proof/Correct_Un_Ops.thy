@@ -40,6 +40,9 @@ lemma set_pred_cols[simp]: "set (pred_cols ts) = (\<Union>t\<in>set ts. Formula.
 lemma distinct_pred_cols[simp]: "distinct (pred_cols ts)"
   by (simp add: pred_cols_def distinct_fold_cols_union)
 
+lemma fv_list_Pred: "Formula.fv_list (Formula.Pred e ts) = pred_cols ts"
+  by (simp add: pred_cols_def)
+
 lemma pred_cols_Var: "distinct ys \<Longrightarrow> pred_cols (map Formula.Var ys) = ys"
 proof -
   have "distinct (cs @ ys) \<Longrightarrow> fold (\<lambda>t cs. cols_union cs (Formula.fv_trm_list t)) (map Formula.Var ys) cs = cs @ ys"

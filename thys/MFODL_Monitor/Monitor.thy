@@ -137,6 +137,24 @@ lemma saturate_code[code]:
   unfolding saturate_def Let_def
   by (subst while_unfold) auto
 
+lemma saturate_commute:
+  assumes "\<And>s. r \<in> g s" "\<And>s. g (Set.insert r s) = g s" "\<And>s. r \<in> s \<Longrightarrow> h s = g s"
+  and terminates: "mono g" "\<And>X. X \<subseteq> C \<Longrightarrow> g X \<subseteq> C" "finite C"
+shows "saturate g {} = saturate h {r}"
+proof (cases "g {} = {r}")
+  case True
+  with assms have "g {r} = {r}" "h {r} = {r}" by auto
+  with True show ?thesis
+    by (subst (1 2) saturate_code; subst saturate_code) (simp add: Let_def)
+next
+  case False
+  then show ?thesis
+    unfolding saturate_def while_def
+    using while_option_finite_subset_Some[OF terminates] assms(1-3)
+    by (subst while_option_commute_invariant[of "\<lambda>S. S = {} \<or> r \<in> S" "\<lambda>S. g S \<noteq> S" g "\<lambda>S. h S \<noteq> S" "Set.insert r" h "{}", symmetric])
+      (auto 4 4 dest: while_option_stop[of "\<lambda>S. g S \<noteq> S" g "{}"])
+qed
+
 definition "MTimesL r S = MTimes r ` S"
 definition "MTimesR R s = (\<lambda>r. MTimes r s) ` R"
 

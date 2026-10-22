@@ -30,6 +30,21 @@ definition "card_UNIV = Phantom(enat) 0"
 instance by intro_classes (simp_all add: finite_UNIV_enat_def card_UNIV_enat_def infinite_UNIV_char_0)
 end
 
+lemma ccomp_eq:
+  assumes "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+  and "ID ccompare = Some (c' :: event_data comparator)"
+  and "e1 \<noteq> e2"
+  shows "c (e1, t1) (e2, t2) = c' e1 e2"
+  using assms
+proof -
+  obtain c'' where "ID ccompare = Some (c'' :: enat comparator)"
+    by (simp add: ccompare_enat_def ID_def)
+  then have "c = comparator_prod c' c''"
+    using assms(1-2) by(auto simp: ccompare_prod_def) (simp add: ID_def)
+  moreover have "c' e1 e2 \<noteq> Eq" using ID_ccompare'[OF assms(2)] assms(3) by (auto simp:comparator.weak_eq)
+  ultimately show ?thesis by (cases "c' e1 e2") auto
+qed
+
 
 subsection \<open>Syntax and semantics\<close>
 
@@ -105,6 +120,156 @@ qualified type_synonym 't agg_op = "agg_type \<times> 't"
 
 definition flatten_multiset :: "(event_data \<times> enat) set \<Rightarrow> event_data list" where
   "flatten_multiset M = concat (map (\<lambda>(x, c). replicate (the_enat c) x) (csorted_list_of_set M))"
+
+lemma set_of_flatten_multiset:
+  assumes "M = {(x, ecard Zs) | x Zs. Zs = f x \<and> Zs \<noteq> {}}" "finite {x. f x \<noteq> {}}"
+  shows "set (flatten_multiset M) \<subseteq> fst ` M"
+proof -
+  have fin_M: "finite M"
+    using assms(2)
+    by (auto simp: assms(1))
+  obtain c :: "(event_data \<times> enat) comparator" where c: "ID ccompare = Some c"
+    by (auto simp: ID_def ccompare_prod_def ccompare_event_data_def ccompare_enat_def)
+  show ?thesis
+    using fin_M image_iff
+    by (fastforce simp: flatten_multiset_def csorted_list_of_set_def c
+        linorder.set_sorted_list_of_set[OF ID_ccompare[OF c]])
+qed
+
+lemma flatten_multiset_range:
+  assumes "\<And> t m. (t, m) \<in> M \<Longrightarrow> t \<in> range f"
+  and "finite M"
+  shows "set (flatten_multiset M) \<subseteq> range f"
+proof
+  obtain c where c_def: "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+    by (simp add: ID_def ccompare_prod_def ccompare_event_data_def ccompare_enat_def split:if_splits option.splits)
+  note c = ID_ccompare'[OF c_def]
+  note c_class = comparator.linorder[OF c]
+  fix x
+  assume "x \<in> set (flatten_multiset M)"
+  then obtain b where [simp]: "(x, b) \<in> set (csorted_list_of_set M)" by (auto simp:flatten_multiset_def)
+  then have "(x, b) \<in> M" using assms(2) linorder.set_sorted_list_of_set[OF c_class] by(auto simp:csorted_list_of_set_def c_def)
+  then show "x \<in> range f" using assms by auto
+qed
+
+lemma meval_in_set_aux:
+  assumes "(m, enat n) \<in> s"
+  and "finite s"
+  and "n > 0"
+  shows "m \<in> set (flatten_multiset s)"
+  using assms(2)
+proof -
+  obtain c where c_def: "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+    by (simp add: ID_def ccompare_prod_def ccompare_event_data_def ccompare_enat_def split:if_splits option.splits)
+  interpret linorder "le_of_comp c" "lt_of_comp c"
+    using ID_ccompare[OF c_def] by auto
+  show ?thesis using assms(2) assms(1) assms(3)
+    by(induction s) (auto simp: set_insort_key flatten_multiset_def csorted_list_of_set_def c_def)
+qed
+
+lemma fold_flatten_multiset:
+  assumes finite_m: "finite M"
+  assumes commute_f: "comp_fun_commute f"
+  shows "fold f (flatten_multiset M) y0  = Finite_Set.fold (\<lambda> (t, m) y. ((f t) ^^ (the_enat m)) y) y0 M"
+proof -
+  interpret comp_fun_commute "\<lambda> (t, m) y. ((f t) ^^ (the_enat m)) y"
+    using cmp_comm[of f] commute_f
+    by unfold_locales auto
+  obtain c where c_def: "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+    by (simp add: ID_def ccompare_prod_def ccompare_event_data_def ccompare_enat_def split:if_splits option.splits)
+  note c = ID_ccompare'[OF c_def]
+  note c_class = comparator.linorder[OF c]
+  show ?thesis
+    using finite_m
+  proof(induction M)
+    case empty
+    then show ?case
+      using linorder.sorted_list_of_set_empty[OF c_class]
+      by (auto simp add:flatten_multiset_def csorted_list_of_set_def c_def)
+  next
+    case (insert x F)
+    obtain t m where x_def: "x = (t, m)"
+      by (cases x) auto
+    define xs where "xs = (linorder.sorted_list_of_set (le_of_comp c) F)"
+    have "fold f (concat (map (\<lambda>(x, c). replicate (the_enat c) x) (linorder.insort_key (le_of_comp c) (\<lambda>x. x) (t, m) xs))) y0
+       = (f t ^^ the_enat m) (fold f (concat (map (\<lambda>(x, c). replicate (the_enat c) x) xs)) y0)"
+    proof(induction xs arbitrary: y0)
+      case Nil
+      then show ?case using linorder.insort_key.simps[OF c_class, of "(\<lambda>x. x)"] by (auto simp:xs_def)
+    next
+      case (Cons a as)
+      then show ?case
+        using linorder.insort_key.simps[OF c_class, of "(\<lambda>x. x)"] cmp_comm[of f "the_enat m"]
+        by (auto simp:xs_def commute_f comp_fun_commute.comp_fun_commute fn_comm_power' fold_commute_apply)
+    qed
+    then show ?case
+      using x_def insert linorder.sorted_list_of_set_insert[OF c_class]
+      by (simp add:flatten_multiset_def csorted_list_of_set_def c_def xs_def)
+  qed
+qed
+
+lemma foldl_flatten_multiset:
+  assumes finite_m: "finite M"
+  assumes commute_f: "comp_fun_commute f"
+  and comm_f: "\<And>x y. f x y = f y x"
+  shows "foldl f y0 (flatten_multiset M)  = Finite_Set.fold (\<lambda> (t, m) y. ((f t) ^^ (the_enat m)) y) y0 M"
+  using assms fold_flatten_multiset fold_eq by (simp add: fold_eq fold_flatten_multiset)
+
+lemma length_flatten_multiset:
+  assumes "finite M"
+  shows "length (flatten_multiset M) = Finite_Set.fold (\<lambda> (t, m) y. y + (the_enat m)) 0 M"
+  using length_fold[of "flatten_multiset M"] fold_flatten_multiset[of M "(\<lambda>_ n. n + 1)" 0]
+  by (simp add: fold_flatten_multiset assms comp_fun_commute.intro) (meson add.commute)
+
+definition valid_finite_mset where
+  "valid_finite_mset X = (finite X \<and> (\<forall>k x y. x \<noteq> y \<and> (k, x) \<in> X \<longrightarrow> (k, y) \<notin> X) \<and>
+                              (\<forall>k x. (k, x) \<in> X \<longrightarrow> x \<noteq> \<infinity> \<and> x \<noteq> 0))"
+
+lemma mset_prop_unfold:
+  assumes "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+  and "\<forall>t m. (t, m) \<in> F \<longrightarrow> (\<exists>k. f t = Some k)"
+  and "valid_finite_mset F"
+  shows "\<forall>t. t \<in> set (flatten_multiset F) \<longrightarrow> (\<exists>k. f t = Some k)"
+proof (rule allI, rule impI)
+  interpret linorder "le_of_comp c" "lt_of_comp c"
+    using ID_ccompare[OF assms(1)] by simp
+  fix t
+  assume "t \<in> set (flatten_multiset F)"
+  moreover have "finite F" using assms(3) by(simp add:valid_finite_mset_def)
+  ultimately obtain t' m where "(t', m) \<in> F" "t = t'"
+    by(simp add:flatten_multiset_def csorted_list_of_set_def assms(1)) blast
+  then show "\<exists>k. f t = Some k" using assms(2) by auto
+qed
+
+lemma mset_multi_prop_unfold:
+  assumes "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+  and "ID ccompare = Some (c' :: event_data comparator)"
+  and "\<forall>t1 m1 t2 m2. (t1, m1) \<in> F \<and> (t2, m2) \<in> F \<longrightarrow> c' t1 t2 = comp_of_ords (\<le>) (<) (the (f t1)) (the (f t2))"
+  and "valid_finite_mset F"
+  shows "\<forall>e1 e2. e1 \<in> set (flatten_multiset F) \<and> e2 \<in> set (flatten_multiset F) \<longrightarrow> c' e1 e2 = comp_of_ords (\<le>) (<) (the (f e1)) (the (f e2))"
+proof (rule allI, rule allI, rule impI)
+  interpret linorder "le_of_comp c" "lt_of_comp c"
+    using ID_ccompare[OF assms(1)] by simp
+  fix e1 e2
+  assume "e1 \<in> set (flatten_multiset F) \<and> e2 \<in> set (flatten_multiset F)"
+  moreover have "finite F" using assms(4) by(simp add:valid_finite_mset_def)
+  ultimately obtain t1 m1 t2 m2 where "(t1, m1) \<in> F" "(t2, m2) \<in> F" "t1 = e1" "t2 = e2"
+    by(simp add:flatten_multiset_def csorted_list_of_set_def assms(1)) blast
+  then show "c' e1 e2 = comp_of_ords (\<le>) (<) (the (f e1)) (the (f e2))" using assms(3) by blast
+qed
+
+lemma set_insert_flatten_mset:
+  assumes "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+  and "valid_finite_mset (Set.insert (t, m) F)"
+  and "(t, m) \<notin> F"
+  shows "set (flatten_multiset (Set.insert (t, m) F)) = Set.insert t (set (flatten_multiset (F)))"
+proof -
+  have "finite F" "m > 0" "m \<noteq> \<infinity>" using assms(2)
+    unfolding valid_finite_mset_def by (meson finite_insert gr_zeroI insertI1)+
+  moreover have "the_enat m > 0" using calculation(2-3) gr0I zero_enat_def by force
+  ultimately show ?thesis using assms(1) assms(3) linorder.sorted_list_of_set_insert[OF ID_ccompare[OF assms(1)]]
+  linorder.set_insort_key[OF ID_ccompare[OF assms(1)], of "\<lambda>x. x"] by(simp add:flatten_multiset_def csorted_list_of_set_def)
+qed
 
 definition finite_multiset :: "(event_data \<times> enat) set \<Rightarrow> bool" where
 "finite_multiset M = (finite M \<and> \<not>(\<exists>s. (s,\<infinity>) \<in> M ))"
@@ -376,6 +541,15 @@ lemma distinct_fvi_list[simp]: "distinct (fvi_list b \<phi>)"
   by (induction b \<phi> rule: fvi_list.induct)
     (simp_all add: distinct_fold_cols_union distinct_fv_regex_list)
 
+abbreviation regex_cols where
+  "regex_cols r \<equiv> Formula.fv_regex_list Formula.fv_list r"
+
+lemma set_regex_cols[simp]: "set (regex_cols r) = Formula.fv_regex r"
+  by simp
+
+lemma distinct_regex_cols[simp]: "distinct (regex_cols r)"
+  by (simp add: distinct_fv_regex_list)
+
 lemma fvi_trm_list_Suc: "fvi_trm_list (Suc b) t = ex_cols (fvi_trm_list b t)"
   by (induction t) (auto simp: ex_cols_Cons ex_cols_cols_union)
 
@@ -437,6 +611,11 @@ qed
 lemma fvi_less_nfv: "\<forall>i\<in>fv \<phi>. i < nfv \<phi>"
   unfolding nfv_def
   by (auto simp add: Max_gr_iff intro: max.strict_coboundedI2)
+
+lemma set_fv_list_nfv:
+  assumes "{0..<m} \<subseteq> fv \<phi>" "m = Formula.nfv \<phi>"
+  shows "set (Formula.fv_list \<phi>) = set [0..<m]"
+  using assms fvi_less_nfv[of \<phi>] by auto
 
 lemma fvi_less_nfv_regex: "\<forall>i\<in>fv_regex \<phi>. i < nfv_regex \<phi>"
   unfolding Regex.nfv_regex_def
@@ -625,6 +804,69 @@ next
   then show ?case unfolding fvi.simps sat.simps by (metis eval_trm_fv_cong)
 qed (auto 10 0 simp: Let_def split: nat.splits intro!: iff_exI)
 
+lemma sat_restrict: "fv \<phi> \<subseteq> set ds \<Longrightarrow>
+  Formula.sat \<sigma> V (val n ds (restrict ds cs v)) i \<phi> = Formula.sat \<sigma> V (val n cs v) i \<phi>"
+  by (rule sat_fv_cong) (auto simp: val_restrict_nth)
+
+text \<open>The table of a formula @{term \<phi>} at time point @{term i} over the columns @{term cs}: its
+  tuples, read as valuations of the first @{term n} variables, are the satisfying valuations in
+  the slice @{term R}.\<close>
+
+abbreviation sat_table :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow>
+  ty Formula.formula \<Rightarrow> event_data table \<Rightarrow> bool" where
+  "sat_table \<sigma> V n R cs i \<phi> \<equiv> qtable cs (mem_restr R cs) (\<lambda>v. Formula.sat \<sigma> V (val n cs v) i \<phi>)"
+
+text \<open>The table of an existential quantifier: the projection drops the column of the bound
+  variable @{term 0}.\<close>
+
+lemma qtable_project_fv:
+  assumes "distinct cs" "set cs = fv \<phi>" "\<forall>x\<in>fv \<phi>. x < Suc n"
+    and "qtable cs (mem_restr (lift_envs R) cs) (\<lambda>v. Formula.sat \<sigma> V (val (Suc n) cs v) i \<phi>) X"
+  shows "qtable (ex_cols cs) (mem_restr R (ex_cols cs))
+    (\<lambda>v. Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)) (ex_proj cs ` X)"
+proof (rule qtable_cong[OF qtable_project[OF assms(1,4)] refl])
+  fix v
+  assume "mem_restr R (ex_cols cs) v"
+  then have wf: "wf_tuple (ex_cols cs) v"
+    by (rule mem_restr_wf_tuple)
+  have agree: "Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi> \<longleftrightarrow> Formula.sat \<sigma> V (z # val n (ex_cols cs) v) i \<phi>"
+    if "0 \<in> set cs \<Longrightarrow> tup_get cs x 0 = z" "\<And>c. c \<in> set cs \<Longrightarrow> c \<noteq> 0 \<Longrightarrow> tup_get cs x c = tup_get (ex_cols cs) v (c - 1)"
+    for x z
+  proof (rule sat_fv_cong, intro ballI)
+    fix c
+    assume "c \<in> fv \<phi>"
+    then show "val (Suc n) cs x ! c = (z # val n (ex_cols cs) v) ! c"
+      using assms(2,3) that by (cases c) auto
+  qed
+  show "(\<exists>x. wf_tuple cs x \<and> ex_proj cs x = v \<and> Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>) \<longleftrightarrow>
+    Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)"
+  proof
+    assume "\<exists>x. wf_tuple cs x \<and> ex_proj cs x = v \<and> Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
+    then obtain x where x: "ex_proj cs x = v" "Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
+      by blast
+    have "Formula.sat \<sigma> V (tup_get cs x 0 # val n (ex_cols cs) v) i \<phi>"
+      using x(2) tup_get_ex_proj[of _ cs x] by (subst agree[symmetric]) (auto simp: x(1)[symmetric])
+    then show "Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)"
+      by auto
+  next
+    assume "Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)"
+    then obtain z where z: "Formula.sat \<sigma> V (z # val n (ex_cols cs) v) i \<phi>"
+      by auto
+    define x where "x = map (\<lambda>c. if c = 0 then z else tup_get (ex_cols cs) v (c - 1)) cs"
+    have get: "tup_get cs x c = (if c = 0 then z else tup_get (ex_cols cs) v (c - 1))" if "c \<in> set cs" for c
+      using that by (simp add: x_def tup_get_map_self)
+    have "ex_proj cs x = map (tup_get (ex_cols cs) v) (ex_cols cs)"
+      by (auto simp: ex_proj_def ex_cols_def restrict_def get)
+    also have "\<dots> = v"
+      using restrict_idle[OF distinct_ex_cols[OF assms(1)] wf] by (simp add: restrict_def)
+    finally have "ex_proj cs x = v" .
+    moreover have "Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
+      using z by (subst agree) (simp_all add: get)
+    ultimately show "\<exists>x. wf_tuple cs x \<and> ex_proj cs x = v \<and> Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
+      by (intro exI[of _ x]) (simp add: wf_tuple_def x_def)
+  qed
+qed
+
 lemma sat_the_update: "y \<notin> fv \<phi> \<Longrightarrow> Formula.sat \<sigma> V (map the (x[y:=z])) i \<phi> = Formula.sat \<sigma> V (map the x) i \<phi>"
   by (rule sat_fv_cong) (metis map_update nth_list_update_neq)
 
@@ -743,6 +985,12 @@ definition always_safe_0 :: "\<I> \<Rightarrow> 't formula \<Rightarrow> 't form
 definition always_safe_bounded :: "\<I> \<Rightarrow> 't formula \<Rightarrow> 't formula" where
   "always_safe_bounded I \<phi> = (And (eventually I \<phi>) (Neg (eventually I (And (Or (once (int_remove_lower_bound I) \<phi>) (eventually (int_remove_lower_bound I) \<phi>)) (Neg \<phi>)))))"
 
+lemma always_safe_0_safe_fv[simp]: "fv (always_safe_0 I \<phi>) = fv \<phi>"
+  by (auto simp add: always_safe_0_def)
+
+lemma always_safe_bounded_fv[simp]: "fv (always_safe_bounded I \<phi>) = fv \<phi>"
+  by (auto simp add: always_safe_bounded_def)
+
 definition release_safe_0 :: "'t formula \<Rightarrow> \<I> \<Rightarrow> 't formula \<Rightarrow> 't formula" where
   "release_safe_0 \<phi> I \<psi> = Or (Until \<psi> I (And \<psi> \<phi>)) (always_safe_0 I \<psi>)"
 
@@ -753,9 +1001,46 @@ lemma fvi_release_safe_0[simp]:
 definition release_safe_bounded :: "'t formula \<Rightarrow> \<I> \<Rightarrow> 't formula \<Rightarrow> 't formula" where
   "release_safe_bounded \<phi> I \<psi> = And (eventually I TT) (Or (Or (always_safe_bounded I \<psi>) (eventually (flip_int_less_lower I) \<phi>)) (eventually (flip_int_less_lower I) (Next all (Until \<psi> (int_remove_lower_bound I) (And \<psi> \<phi>)))))"
 
-lemma fvi_release_safe_bounded[simp]: 
+lemma fvi_release_safe_bounded[simp]:
   "Formula.fvi b (release_safe_bounded \<phi> I \<psi>) = Formula.fvi b \<phi> \<union> Formula.fvi b \<psi>"
   by (auto simp add: release_safe_bounded_def always_safe_bounded_def)
+
+lemma map_formula_release_safe_bounded[simp]: "Formula.formula.map_formula f (release_safe_bounded \<phi> I \<psi>) =
+  release_safe_bounded (Formula.formula.map_formula f \<phi>) I (Formula.formula.map_formula f \<psi>)"
+  by (auto simp: release_safe_bounded_def eventually_def Formula.TT_def always_safe_bounded_def once_def)
+
+lemma formula_release_safe_bounded_induct[case_names Pred Let Frz LetPast
+    Eq Less LessEq Neg Or And Ands Exists Agg
+    Prev Next Since Until Trigger Release MatchP MatchF TP TS]:
+  assumes Pred: "\<And>e ts. Q (formula.Pred e ts)"
+    and Let: "\<And>p \<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Let p \<phi> \<psi>)"
+    and Frz: "\<And>p \<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Frz p \<phi> \<psi>)"
+    and LetPast: "\<And>p \<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.LetPast p \<phi> \<psi>)"
+    and Eq: "\<And>t1 t2. Q (Formula.Eq t1 t2)"
+    and Less: "\<And>t1 t2. Q (Formula.Less t1 t2)"
+    and LessEq: "\<And>t1 t2. Q (Formula.LessEq t1 t2)"
+    and Neg: "\<And>\<phi>. Q \<phi> \<Longrightarrow> Q (formula.Neg \<phi>)"
+    and Or: "\<And>\<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Or \<phi> \<psi>)"
+    and And: "\<And>\<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.And \<phi> \<psi>)"
+    and Ands: "\<And>\<phi>s. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> Q \<phi>) \<Longrightarrow> Q (formula.Ands \<phi>s)"
+    and Exists: "\<And>t \<phi>. Q \<phi> \<Longrightarrow> Q (formula.Exists t \<phi>)"
+    and Agg: "\<And>y \<omega> tys f \<phi>. Q \<phi> \<Longrightarrow> Q (Formula.Agg y \<omega> tys f \<phi>)"
+    and Prev: "\<And>I \<phi>. Q \<phi> \<Longrightarrow> Q (formula.Prev I \<phi>)"
+    and Next: "\<And>I \<phi>. Q \<phi> \<Longrightarrow> Q (formula.Next I \<phi>)"
+    and Since: "\<And>\<phi> I \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Since \<phi> I \<psi>)"
+    and Until: "\<And>\<phi> I \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Until \<phi> I \<psi>)"
+    and Trigger: "\<And>\<phi> I \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Trigger \<phi> I \<psi>)"
+    and Release: "\<And>\<phi> I \<psi>. (mem I 0 \<or> \<not> bounded I \<Longrightarrow> Q \<phi>) \<Longrightarrow> (mem I 0 \<or> \<not> bounded I \<Longrightarrow> Q \<psi>)
+    \<Longrightarrow> (\<not> (mem I 0 \<or> \<not> bounded I) \<Longrightarrow> Q (release_safe_bounded \<phi> I \<psi>))
+    \<Longrightarrow> Q (formula.Release \<phi> I \<psi>)"
+    and MatchP: "(\<And>I r. (\<And>z. z \<in> regex.atms r \<Longrightarrow> Q z) \<Longrightarrow> Q (formula.MatchP I r))"
+    and MatchF: "(\<And>I r. (\<And>z. z \<in> regex.atms r \<Longrightarrow> Q z) \<Longrightarrow> Q (formula.MatchF I r))"
+    and TP: "\<And>t. Q (Formula.TP t)"
+    and TS: "\<And>t. Q (Formula.TS t)"
+  shows "Q \<phi>"
+  by (induct \<phi>)
+    (auto simp: release_safe_bounded_def Formula.eventually_def
+      Formula.TT_def always_safe_bounded_def once_def intro!: assms)
 
 definition and_release_safe_bounded :: "'t formula \<Rightarrow> 't formula \<Rightarrow> \<I> \<Rightarrow> 't formula \<Rightarrow> 't formula" where
   "and_release_safe_bounded \<phi> \<phi>' I \<psi>' = (Or (And \<phi> (Neg (eventually I TT))) (And \<phi> (release_safe_bounded \<phi>' I \<psi>')))"
@@ -903,7 +1188,78 @@ fun wf_formula :: "'t formula \<Rightarrow> bool"
 | "wf_formula (MatchF I r) = Regex.pred_regex wf_formula r"
 | "wf_formula _ = True"
 
+lemma map_regex_fv:  assumes "\<And>x . x \<in> regex.atms x2 \<Longrightarrow>  g (formula.map_formula f x) = g' x"
+  shows "Regex.fv_regex g (regex.map_regex (formula.map_formula f) x2) = Regex.fv_regex g' x2" using assms by (induction x2) auto
+
+lemma map_regex_pred:  assumes "\<And>x . x \<in> regex.atms x2 \<Longrightarrow>  g (formula.map_formula f x) = g' x"
+  shows "regex.pred_regex g (regex.map_regex (formula.map_formula f) x2) = regex.pred_regex g' x2" using assms by (induction x2) auto
+
+lemma fvi_map_formula[simp]:  shows "Formula.fvi b (formula.map_formula f \<psi>) = Formula.fvi b \<psi>"
+proof (induction \<psi> arbitrary: b)
+  case (MatchF x1 x2)
+  show ?case using map_regex_fv[where ?g="Formula.fvi b" and ?f=f] MatchF by auto
+  case (MatchP x1 x2)
+  show ?case using map_regex_fv[where ?g="Formula.fvi b" and ?f=f] MatchP by auto
+qed auto
+
+lemma nfv_map[simp]: "Formula.nfv (formula.map_formula f \<psi>) = Formula.nfv \<psi>"
+  unfolding Formula.nfv_def by auto
+
+lemma wf_formula_map_iff[simp]: "wf_formula (formula.map_formula f \<psi>) = wf_formula \<psi>"
+  by (induction \<psi>) (auto simp add: list_all_def map_regex_pred)
+
+lemma wf_formula_map: "wf_formula \<phi> \<Longrightarrow> wf_formula (formula.map_formula f \<phi>)"
+  by simp
+
+lemma fv_map:
+  "fv \<phi> = fv (formula.map_formula f \<phi>)" by auto
+
+lemma map_regex_size: assumes "\<And>x . x \<in> regex.atms r \<Longrightarrow>   size (f x) = size x" shows "regex.size_regex size r = regex.size_regex size (regex.map_regex f r) "
+  using assms by (induction r arbitrary: ) auto
+
+lemma map_regex_map_formula_size[simp]: " size (regex.map_regex (formula.map_formula f) r) = size r"
+  by (induction r)  auto
+
+lemma map_formula_size[simp]:"size (formula.map_formula f \<psi>) = size \<psi>"
+proof (induction \<psi> arbitrary: f)
+  case (Ands \<phi>s)
+  \<comment> \<open>the sizes of the list elements agree pointwise, hence so do their sums\<close>
+  from Ands.IH show ?case
+    by (simp add: dual_order.eq_iff size_list_pointwise)
+next
+  case (Agg y \<omega> tys t \<phi>)
+  then show ?case by (cases \<omega>) simp
+next
+  case (MatchF I r)
+  have "regex.size_regex size r = regex.size_regex size (regex.map_regex (formula.map_formula f) r)"
+    by (rule map_regex_size) (rule MatchF.IH)
+  then show ?case by simp
+next
+  case (MatchP I r)
+  have "regex.size_regex size r = regex.size_regex size (regex.map_regex (formula.map_formula f) r)"
+    by (rule map_regex_size) (rule MatchP.IH)
+  then show ?case by simp
+qed simp_all
+
+lemma[simp]: "regex.size_regex size (regex.map_regex (formula.map_formula x2) s) = regex.size_regex size s"
+  by (induction s)  auto
+
 end (* context *)
+
+subsection \<open>Finite prefixes\<close>
+
+text \<open>A prefix all of whose databases are finite -- what a log is.\<close>
+
+lift_definition pfinite :: "Formula.prefix \<Rightarrow> bool" is "\<lambda>p. \<forall>x \<in> set p. finite (fst x)" .
+
+lemma pfinite_psnoc: "pfinite \<pi> \<Longrightarrow> finite (fst x) \<Longrightarrow> last_ts \<pi> \<le> snd x \<Longrightarrow> pfinite (psnoc \<pi> x)"
+  by (transfer fixing: x) simp
+
+lemma pfinite_psnocD: "pfinite (psnoc \<pi> x) \<Longrightarrow> last_ts \<pi> \<le> snd x \<Longrightarrow> pfinite \<pi> \<and> finite (fst x)"
+  by (transfer fixing: x) simp
+
+lemma pfinite_mono: "pfinite \<pi>' \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> pfinite \<pi>"
+  by transfer auto
 
 
 subsection \<open> Notation \<close>

@@ -144,12 +144,6 @@ lemma sat_Release_cong:
   shows "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>) = Formula.sat \<sigma> V' v i (Formula.Release \<phi>' I \<psi>')"
   using assms by simp
 
-lemma progress_Release_cong:
-  assumes "progress \<sigma> P \<phi> j = progress \<sigma> P' \<phi>' j" "progress \<sigma> P \<psi> j = progress \<sigma> P' \<psi>' j"
-  shows "progress \<sigma> P (Formula.Release \<phi> I \<psi>) j = progress \<sigma> P' (Formula.Release \<phi>' I \<psi>') j"
-  using assms by (simp add: release_safe_bounded_def always_safe_bounded_def Formula.eventually_def
-    Formula.once_def)
-
 subsection \<open>The rewrite of the whole formula\<close>
 
 lemma fvi_share_rw[simp]: "Formula.fvi b (share_rw \<phi>) = Formula.fvi b \<phi>"

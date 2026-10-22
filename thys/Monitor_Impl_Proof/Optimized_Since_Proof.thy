@@ -198,6 +198,15 @@ lemma valid_mmsaux_tuple_in_keys: "valid_mmsaux args cur
       dest!: Mapping.in_keysD safe_max_Some_dest_in[OF finite_fst_ts_tuple_rel]
       simp add: newest_tuple_in_mapping_def)+
 
+lemma distinct_wf_table_sig[simp]: "distinct (wf_table_sig t)"
+  by transfer auto
+
+lemma wf_table_set_table: "wf_table_sig t = cs \<Longrightarrow> table cs (wf_table_set t)"
+  by transfer auto
+
+lemma distinct_wf_idx_sig[simp]: "distinct (wf_idx_sig t)"
+  by transfer auto
+
 lemma wf_table_sig_args: "distinct (args_R args) \<Longrightarrow> wf_table_sig (wf_table_of_set_args args X) = args_R args"
   by (auto simp: wf_table_of_set_args_def wf_idx_sig_of_set)
 
@@ -209,6 +218,9 @@ lemma wf_table_of_set_args_wf_table_set: "wf_table_sig t = args_R args \<Longrig
   wf_table_of_set_args args (wf_table_set t) = t"
   using distinct_wf_table_sig[of t]
   by (auto simp: wf_table_sig_args wf_table_of_set_args[OF _ wf_table_set_table] intro: wf_table_eqI)
+
+lemma wf_table_sig_of_keys[simp]: "distinct cs \<Longrightarrow> wf_table_sig (wf_table_of_keys cs m) = cs"
+  by (simp add: wf_table_of_keys_def wf_table_sig_of_set)
 
 lemma wf_table_set_of_keys: "distinct cs \<Longrightarrow> table cs (Mapping.keys m) \<Longrightarrow>
   wf_table_set (wf_table_of_keys cs m) = Mapping.keys m"
