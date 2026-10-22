@@ -7,6 +7,8 @@ session Log_Parser = "HOL-Library" +
      read in chunks, from which the log parser of the verified monitor is generated. Started from
      the student projects BA_verimon_parsing (Jonathan Rappl, 2021) and POCS_verimon_parsing
      (2023)."
+  sessions
+    MFODL_Syntax
   theories
     Log_Grammar
     Log_Lexer

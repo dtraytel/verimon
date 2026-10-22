@@ -1,5 +1,5 @@
 theory MFODL_Post
-  imports MFODL_Grammar.MFODL_Syntax
+  imports MFODL_Syntax
 begin
 
 section \<open>Post-processing\<close>

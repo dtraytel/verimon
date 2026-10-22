@@ -1,5 +1,5 @@
 theory MFODL_Parser
-  imports MFODL_Lexer MFODL_Post
+  imports MFODL_Lexer "MFODL_Syntax.MFODL_Post"
 begin
 
 section \<open>The verified parser\<close>

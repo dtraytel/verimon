@@ -1,5 +1,5 @@
 theory MFODL_Grammar
-  imports MFODL_Syntax LR_Parser.LR_Parser
+  imports "MFODL_Syntax.MFODL_Syntax" LR_Parser.LR_Parser
 begin
 
 section \<open>Tokens\<close>

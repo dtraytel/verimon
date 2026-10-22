@@ -2,10 +2,9 @@ chapter AFP
 
 session MFODL_Frontend = MFODL_Logic +
   description
-    "From the parsed formula and signature (sessions MFODL_Parser and Log_Parser) to the
-     logic's typed formulas."
+    "From the parse tree of a formula (session MFODL_Syntax) to the logic's typed formulas.
+     Independent of the parsers, which produce the parse trees."
   sessions
-    Log_Parser
-    MFODL_Parser
+    MFODL_Syntax
   theories
     Formula_Conv

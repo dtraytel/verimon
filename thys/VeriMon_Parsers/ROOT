@@ -9,8 +9,11 @@ session VeriMon_Parsers = Containers +
      monitor does not check them again."
   options [timeout = 0]
   sessions
+    MFODL_Syntax
     Log_Parser
     MFODL_Parser_Code
   theories
+    "MFODL_Syntax.MFODL_Post"
+    "MFODL_Syntax.String_Escape"
     "Log_Parser.Log_Code"
     "MFODL_Parser_Code.MFODL_Parser_Code"

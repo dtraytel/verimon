@@ -11,6 +11,7 @@ session VeriMon_CLI = Monitor_Exec +
   options [document = false, timeout = 0]
   sessions
     MFODL_Frontend
+    Log_Parser
   theories
     CLI_Options
     CLI_Output

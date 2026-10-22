@@ -5,8 +5,9 @@ session MFODL_Grammar = LR_Parser +
     "The grammar of MonPoly's formula syntax, with its semantic actions and the
      relation it defines (a separate session because the grammar command is slow)."
   options [timeout = 7200]
-  theories
+  sessions
     MFODL_Syntax
+  theories
     MFODL_Grammar
 
 session MFODL_Parser in Parser = MFODL_Grammar +
@@ -14,6 +15,8 @@ session MFODL_Parser in Parser = MFODL_Grammar +
     "A verified parser for MonPoly's formula syntax, generated from the grammar by the
      parser command of the grammar package."
   options [timeout = 0]
+  sessions
+    MFODL_Syntax
   theories
     MFODL_Parser
 

@@ -9,6 +9,7 @@ session VeriMon_CLI_Proof = Monitor_Exec_Proof +
   options [document = false]
   sessions
     MFODL_Frontend
+    Log_Parser
     VeriMon_CLI
   theories
     CLI_Proof
