@@ -4,20 +4,15 @@ theory Log_OCaml
 begin
 (*>*)
 
-section \<open>Code generation\<close>
+section \<open>OCaml code of the log parser\<close>
 
-text \<open>
-  The parser of @{theory Log_Parser.Log_Byte_Parser} is compiled to OCaml with characters as OCaml's
-  characters and byte strings as OCaml's strings. The code printings below are the trusted part.
-  Each maps an operation to OCaml code with the same meaning on the represented values: for
-  characters, the bijection between @{typ char} and OCaml's 256 characters, which preserves the
-  order; for byte strings, OCaml's strings of bytes; for @{typ integer}, Zarith's integers, which
-  represent every integer that fits into a machine integer as that machine integer (the same
-  assumption as @{text cmp_integer} in the monitor's code setup). The code equations further below
-  are proved: they make the loops scan the bytes of a lexeme without returning to the automaton.
-\<close>
+text \<open>The code printings are the trusted part. The code equations are proved; they let the loops
+  scan the bytes of a lexeme without returning to the automaton.\<close>
 
 subsection \<open>Characters\<close>
+
+text \<open>The printings rely on the order-preserving bijection between @{typ char} and OCaml's
+  characters.\<close>
 
 code_printing
   type_constructor char \<rightharpoonup> (OCaml) "char"
@@ -27,8 +22,8 @@ code_printing
 | constant "(\<le>) :: char \<Rightarrow> char \<Rightarrow> bool" \<rightharpoonup> (OCaml) "((_ : char) <= _)"
 | constant "(<) :: char \<Rightarrow> char \<Rightarrow> bool" \<rightharpoonup> (OCaml) "((_ : char) < _)"
 
-text \<open>The 256 character constants of @{theory "HOL-Library.Code_Abstract_Char"}, by which the code
-  generator replaces character literals, as OCaml character literals.\<close>
+text \<open>The 256 constants of @{theory "HOL-Library.Code_Abstract_Char"} that replace character
+  literals, printed as the OCaml literals with the same code.\<close>
 
 setup \<open>
   fold (fn n => Code_Target.set_printings (Code_Symbol.Constant
@@ -40,11 +35,8 @@ setup \<open>
 
 subsection \<open>Byte strings and indices\<close>
 
-text \<open>The printings agree with the definitions on all arguments. @{const bytes_sub} is total like
-  its definition, taking @{text "nat (j - i)"} bytes after the first @{text "nat i"} ones.
-  @{const bytes_at} reads the first byte at a negative index, like its definition; at an index
-  beyond the string, where its definition leaves the result unspecified, it raises an exception.
-  The parser applies both within the string only.\<close>
+text \<open>The printings agree with the definitions; beyond the string, where @{const bytes_at} is
+  unspecified, it raises an exception. The index operations rely on Zarith keeping small integers unboxed.\<close>
 
 definition idx_less :: "integer \<Rightarrow> integer \<Rightarrow> bool" where
   "idx_less i j \<longleftrightarrow> i < j"
@@ -83,9 +75,6 @@ code_printing
     "(fun i j -> if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of'_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)"
 
 subsection \<open>Scanning lexemes\<close>
-
-text \<open>The runs of bytes that leave the lexer's state unchanged: white space, the rest of a simple
-  string, the content of a quoted string up to a quote or backslash, and a comment.\<close>
 
 definition skips :: "elstate \<Rightarrow> char \<Rightarrow> bool" where
   "skips l c = (case l of
@@ -192,8 +181,6 @@ proof -
     by (cases l) simp_all
 qed
 
-text \<open>The loop scans before each step of the automaton.\<close>
-
 lemma eloop_code:
   "eloop k s n b i l p sp acc = (let i = eskip l s n i in if idx_less i n then (case elex_step s b i (bytes_at s i) l of
        R_SAME \<Rightarrow> eloop k s n b (idx_succ i) l p sp acc
@@ -209,10 +196,9 @@ lemma eloop_code:
   unfolding idx_less_def idx_succ_def idx_add_def Let_def
   by (subst eloop_eskip, subst eloop.simps) simp
 
-subsection \<open>Other code equations\<close>
+subsection \<open>Steps of the lexer and the parser\<close>
 
-text \<open>The steps of the lexer with the character classes unfolded and the most frequent cases
-  first.\<close>
+text \<open>The lexer's steps with the character classes unfolded and the most frequent cases first.\<close>
 
 lemma elex_init_code[code]: "elex_init pos i c =
     (if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' \<or> CHR ''A'' \<le> c \<and> c \<le> CHR ''Z'' \<or> CHR ''a'' \<le> c \<and> c \<le> CHR ''z'' \<or>
@@ -270,10 +256,10 @@ lemma efinish_p_code[code]: "efinish_p b p sp acc = (case p of
      | Some es \<Rightarrow> fold (\<lambda>e acc. O_ITEM sp e # acc) es acc))"
   by (auto simp: efinish_p_def fold_O_ITEM split: option.splits)
 
-subsection \<open>Numbers\<close>
+subsection \<open>Digits of numbers\<close>
 
-text \<open>The digits of a number are recognized by comparing characters, and their indices are
-  compared and incremented as indices are.\<close>
+text \<open>Digits are recognized by comparing characters, and their indices handled by the index
+  operations.\<close>
 
 lemma idigit_code[code]: "idigit b c =
    (if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' then (let d = integer_of_char c - 48 in if d < b then d else -1)
@@ -301,12 +287,10 @@ lemma ddigits_code[code]: "ddigits s n i acc = (if idx_less i n then (let c = by
    else acc)"
   unfolding idx_less_def idx_succ_def by (subst ddigits.simps) (simp add: Let_def)
 
-subsection \<open>The loop with a fast path for simple strings\<close>
+subsection \<open>Fast path for simple strings\<close>
 
 text \<open>Most lexemes are simple strings followed by a delimiter. From the initial state, the loop
-  below scans such a string and handles the byte after it in one step, where @{const eloop} takes
-  a step for its first byte, scans the rest, and takes another step for the byte after it, which
-  it classifies again. It is proved equal to @{const eloop}.\<close>
+  scans such a string and handles the delimiter after it in one step.\<close>
 
 lemma eskip_ge: "i \<le> eskip l s n i"
   by (induction l s n i rule: eskip.induct) (subst eskip.simps, force)
@@ -383,8 +367,6 @@ function floop :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes \<Rightarrow> 
   by pat_completeness auto
 termination
 proof -
-  text \<open>Each recursive call resumes after a byte below @{term n} that lies at or beyond the
-    current position, reached by one skip or, on the fast path, by two.\<close>
   have step: "nat_of_integer (n - (eskip l s n i + 1)) < nat_of_integer (n - i)"
     if "eskip l s n i < n" for l s n i
     using eskip_ge that by (rule measure_succ_less(1))
@@ -496,8 +478,10 @@ proof (induction "nat_of_integer (n - i)" arbitrary: i l p sp acc rule: less_ind
   qed
 qed
 
-text \<open>The step of the parser, with the transitions that output no item taken directly rather than
-  through the result of @{const fstep}.\<close>
+subsection \<open>Direct transitions of the parser\<close>
+
+text \<open>The transitions that output no item are taken directly, not through the result of
+  @{const fstep}.\<close>
 
 definition efeed_s :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes token \<Rightarrow> integer \<Rightarrow> bytes fpstate \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow>
   out list \<times> bytes fpstate option" where
@@ -550,8 +534,7 @@ lemma efeed_fast[code]: "efeed k t pos p sp acc = (case p of
 lemma eloop_floop[code]: "eloop k s n b i l p sp acc = floop k s n b i l p sp acc"
   by (rule floop_eloop[symmetric])
 
-text \<open>The integer fields compare their indices and the value with the comparisons of indices
-  above, which compare machine integers directly.\<close>
+text \<open>Integer fields use the index operations, which compare machine integers directly.\<close>
 
 lemma iunsigned_idx[code]: "iunsigned s n i =
     (if idx_less i n \<and> idx_less n (idx_add i 257) \<and> CHR ''1'' \<le> bytes_at s i \<and> bytes_at s i \<le> CHR ''9'' then

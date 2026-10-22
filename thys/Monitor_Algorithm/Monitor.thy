@@ -620,6 +620,8 @@ locale msaux =
   assumes valid_result_msaux: "valid_msaux args cur aux auxlist \<Longrightarrow> result_msaux args aux =
     eval_args_agg args (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
 
+subsubsection \<open>Trigger\<close>
+
 fun trigger_results :: "args \<Rightarrow> ts \<Rightarrow> event_data mtaux \<Rightarrow> (nat list \<times> event_data table)" where
   "trigger_results args cur auxlist = (
     if (length (filter (\<lambda> (t, _, _). mem (args_ivl args) (cur - t)) auxlist) > 0) then (
@@ -653,11 +655,8 @@ locale mtaux =
   fixes valid_mtaux :: "args \<Rightarrow> ts \<Rightarrow> 'mtaux \<Rightarrow> event_data mtaux \<Rightarrow> bool"
     and init_mtaux :: "args \<Rightarrow> 'mtaux"
     and update_mtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux"
-    (* and update_mtaux_constraint :: "args \<Rightarrow> ts \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux" *)
-    (* and update_mtaux_safe_assignment :: "args \<Rightarrow> ts \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'mtaux \<Rightarrow> 'mtaux" *)
     and result_mtaux :: "args \<Rightarrow> 'mtaux \<Rightarrow> (nat list \<times> event_data table)"
 
-  (* the initial state should be valid *)
   assumes valid_init_mtaux: "(
     if (mem I 0)
       then
@@ -670,7 +669,6 @@ locale mtaux =
     let args = init_args I n L R pos agg in
     valid_mtaux args 0 (init_mtaux args) []"
 
-  (* assuming the previous state outputted the same result, the next will as well *)
   assumes valid_update_mtaux: "
     nt \<ge> cur \<Longrightarrow>
     table (args_L args) l \<Longrightarrow>
@@ -693,6 +691,8 @@ fun check_before :: "\<I> \<Rightarrow> ts \<Rightarrow> (ts \<times> 'a \<times
 fun proj_thd :: "('a \<times> 'b \<times> 'c) \<Rightarrow> 'c" where
   "proj_thd (t, a1, a2) = a2"
 
+subsubsection \<open>Until and release\<close>
+
 definition update_until :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data muaux \<Rightarrow> event_data muaux" where
   "update_until args rel1 rel2 nt aux =
     (map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if (args_pos args) then a1 \<inter> rel1 else a1 \<union> rel1,
@@ -704,14 +704,8 @@ fun eval_until :: "\<I> \<Rightarrow> ts \<Rightarrow> event_data muaux \<Righta
 | "eval_until I nt ((t, a1, a2) # aux) = (if \<not> memR I (nt - t) then
     (let (xs, aux) = eval_until I nt aux in (a2 # xs, aux)) else ([], (t, a1, a2) # aux))"
 
-text \<open>The release with 0 in its interval is evaluated natively, dually to the until. For each
-  time point @{term i} whose verdict is pending, the auxiliary list holds the tuples that are still
-  waiting to be released (they satisfied the right operand at every point of the window so far, and
-  the left operand at none) and the tuples that are still alive (each point of the window so far
-  where they did not satisfy the right operand was preceded by one where they satisfied the left
-  operand). Both tables are over the columns of the right operand, which contain those of the left
-  operand. Once the window of @{term i} has been left, the alive tuples are its verdict
-  (@{const eval_until}).\<close>
+text \<open>A release with 0 in its interval is evaluated like an until: each pending time point keeps
+the tuples waiting to be released and those still alive, its verdict once its window is left.\<close>
 
 definition update_release :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data muaux \<Rightarrow> event_data muaux" where
   "update_release args rel1 rel2 nt aux =
@@ -748,6 +742,8 @@ locale muaux =
 
 sublocale muaux \<subseteq> muaux_ops init_muaux add_new_muaux length_muaux eval_muaux .
 
+subsection \<open>Parameters of the algorithm\<close>
+
 locale maux = msaux valid_msaux init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux +
   muaux valid_muaux init_muaux add_new_muaux length_muaux eval_muaux + 
   mtaux valid_mtaux init_mtaux update_mtaux result_mtaux
@@ -780,8 +776,6 @@ locale maux = msaux valid_msaux init_msaux add_new_ts_msaux join_msaux add_new_t
       list_all2 (\<lambda>A X. restrict A cs z \<in> X) A_pos (take (length A_pos) L) \<and>
       list_all2 (\<lambda>A X. restrict A cs z \<notin> X) A_neg (drop (length A_pos) L)"
 
-text \<open>The algorithm's parameters: the operations of the auxiliary structures and the joins.\<close>
-
 locale maux_ops = msaux_ops init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux +
   muaux_ops init_muaux add_new_muaux length_muaux eval_muaux +
   mtaux_ops init_mtaux update_mtaux result_mtaux
@@ -803,6 +797,10 @@ locale maux_ops = msaux_ops init_msaux add_new_ts_msaux join_msaux add_new_table
 sublocale maux \<subseteq> maux_ops init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux
   init_muaux add_new_muaux length_muaux eval_muaux init_mtaux update_mtaux result_mtaux
   bin_join mmulti_join .
+
+subsection \<open>Initialization\<close>
+
+subsubsection \<open>Conjuncts and predicates\<close>
 
 fun split_assignment :: "nat set \<Rightarrow> 't Formula.formula \<Rightarrow> nat \<times> Formula.trm" where
   "split_assignment X (Formula.Eq t1 t2) = (case (t1, t2) of
@@ -831,6 +829,8 @@ fun is_simple_pattern :: "Formula.trm list \<Rightarrow> nat \<Rightarrow> bool"
 definition pred_mode_of :: "nat \<Rightarrow> Formula.trm list \<Rightarrow> pred_mode" where
   "pred_mode_of n ts = (if is_copy_pattern n ts then Copy
     else if is_simple_pattern ts 0 then Simple else Match)"
+
+subsubsection \<open>Temporal operators\<close>
 
 abbreviation (input) "init_mbuf2S \<equiv> ([], [], [], False)"
 
@@ -889,10 +889,8 @@ lemma (in mtaux_ops) init_trigger_cong[fundef_cong]:
   using assms
   by (auto simp: init_trigger_def split: formula.splits)
 
-text \<open>The left operand that the native release evaluates: the left operand itself if it is
-  safe, the negated formula if it is the negation of a safe formula, and otherwise its conjunction
-  with the right operand, which is equivalent with 0 in the interval
-  (@{thm [source] sat_release_conj_0}).\<close>
+text \<open>An unsafe left operand of a release is conjoined with the right one, which is equivalent with
+0 in the interval (@{thm [source] sat_release_conj_0}).\<close>
 
 definition release_left :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula \<times> bool" where
   "release_left \<phi> \<psi> = (if safe_formula \<phi> then (\<phi>, True) else (case \<phi> of
@@ -902,20 +900,15 @@ definition release_left :: "'t Formula.formula \<Rightarrow> 't Formula.formula 
 lemma size'_release_left: "size' (fst (release_left \<phi> \<psi>)) < size' (Formula.Release \<phi> I \<psi>)"
   by (auto simp: release_left_def split: formula.splits)
 
-
-
-subsubsection \<open> minit0 \<close>
+subsubsection \<open>Initial state\<close>
 
 fun mtrm_of_trm :: "Formula.trm \<Rightarrow> mtrm" where
   "mtrm_of_trm (Formula.Var x) = MVar x"
 | "mtrm_of_trm (Formula.Const x) = MConst x"
 | "mtrm_of_trm _ = undefined"
 
-text \<open>Whether a predicate occurs under a negation.  A freeze's replay base absorbs the time
-  points that leave its window with some value of the frozen predicate; which value does not matter
-  for the verdicts (they lie beyond the body's past reach), but it decides how much of the replay
-  base's state the copies inherit and then throw away.  Under a negation the frozen predicate
-  keeps the least with a large table, elsewhere with an empty one (@{text frz_fill} below).\<close>
+text \<open>Whether a predicate occurs under a negation, which decides the table with which a freeze's
+replay base absorbs old time points (@{text frz_fill}).\<close>
 
 fun neg_pred :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> bool" where
   "neg_pred p (Formula.Neg \<phi>) = Formula.contains_pred p \<phi>"
@@ -936,9 +929,6 @@ fun neg_pred :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Ri
 | "neg_pred p (Formula.MatchP I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
 | "neg_pred p (Formula.MatchF I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
 | "neg_pred p _ = False"
-
-text \<open>A freeze starts in the replay mode if its body is separable in the frozen predicate and
-  reads it at all, and is never evaluated in the separable mode otherwise.\<close>
 
 definition frz_sep_init :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> ('a set, 'b) frz_sep" where
   "frz_sep_init pn \<psi> = (if key_sep pn \<psi> \<and> Formula.contains_pred pn \<psi> then FSStock 0 1 0 {} 0 0 0 [] else FSOff)"

@@ -7,7 +7,9 @@ theory Event_Data
 begin
 (*>*)
 
-section \<open>Code adaptation for 8-bit strings\<close>
+section \<open>Event data\<close>
+
+subsection \<open>8-bit strings\<close>
 
 typedef string8 = "UNIV :: char list set" ..
 
@@ -37,6 +39,9 @@ declare [[code drop: literal_string8 string8_literal  "HOL.equal :: string8 \<Ri
       "(\<le>) :: string8 \<Rightarrow> _" "(<) :: string8 \<Rightarrow> _"
       "Code_Evaluation.term_of :: string8 \<Rightarrow> _"]]
 
+text \<open>The OCaml adaptation relies on OCaml strings being byte sequences that @{text Stdlib} compares
+  lexicographically.\<close>
+
 code_printing
   type_constructor string8 \<rightharpoonup> (OCaml) "string"
   | constant "HOL.equal :: string8 \<Rightarrow> string8 \<Rightarrow> bool" \<rightharpoonup> (OCaml) "Stdlib.(=)"
@@ -45,6 +50,8 @@ code_printing
   | constant "empty_string :: string8" \<rightharpoonup> (OCaml) "\"\""
   | constant "string8_literal :: String.literal \<Rightarrow> string8" \<rightharpoonup> (OCaml) "id"
   | constant "literal_string8 :: string8 \<Rightarrow> String.literal" \<rightharpoonup> (OCaml) "id"
+
+text \<open>The Eval adaptation relies on the same for Standard ML strings.\<close>
 
 ML \<open>
 structure String8 =
@@ -66,8 +73,7 @@ derive (eq) ceq string8
 derive (linorder) compare string8
 derive (compare) ccompare string8
 
-
-section \<open>Event parameters\<close>
+subsection \<open>Division towards zero\<close>
 
 definition div_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
   "div_to_zero x y = (let z = fst (Code_Numeral.divmod_abs x y) in
@@ -76,17 +82,10 @@ definition div_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" 
 definition mod_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
   "mod_to_zero x y = (let z = snd (Code_Numeral.divmod_abs x y) in
     if x < 0 then - z else z)"
+subsection \<open>Hash codes\<close>
 
-
-text \<open>Hash codes (of the Isabelle Collections Framework) for the values of events: those of the
-  monitor only sample the tuples whose sizes the separable evaluation of @{text FRZ} estimates.
-  A string is hashed by its bytes (its code equation, which reads the bytes of OCaml's string,
-  is in @{text Monitor_Exec.Log_Monitor}), a floating-point number by its integer part (NaN
-  and the infinities by 0).
-
-  The code equations below compute the hash codes of integers and lists with the constants of
-  their definitions bound once, as top-level values: a numeral of type @{typ uint32}, or a large
-  one of type @{typ integer}, is otherwise converted from its digits in every call.\<close>
+text \<open>Named constants keep the numerals of the code equations below from being converted from
+  their digits at every call.\<close>
 
 definition hc_mask :: integer where "hc_mask = 0xFFFFFFFF"
 definition hc_half :: integer where "hc_half = 0x80000000"
@@ -148,6 +147,8 @@ definition def_hashmap_size_double :: "double itself \<Rightarrow> nat" where
 instance by intro_classes (simp add: def_hashmap_size_double_def)
 
 end
+
+subsection \<open>Event parameters\<close>
 
 datatype event_data = EInt integer | EFloat double | EString string8
 

@@ -4,11 +4,9 @@ theory Exec_Monitor_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of the executable monitor\<close>
 
-
-section \<open>The executable monitor inherits the kernel's correctness theorems\<close>
-
-subsection \<open>The concrete monitor is a @{locale verimon}\<close>
+subsection \<open>Instance of @{locale verimon}\<close>
 
 sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
   valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux
@@ -16,16 +14,6 @@ sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
   valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq length_muaux_dq eval_muaux_dq
   valid_mmtaux init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join
   by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
-
-
-text \<open>
-  The executable monitor's online interface mirrors the kernel's -- the record \<open>mstate\<close> and the
-  function \<open>mstep\<close> -- field for field, with @{const ieval} in place of @{const meval}.  The state
-  additionally records the ascending column list its verdicts are narrowed to, and its formula
-  is the indexed one: the state relation forgets the indices (@{const eabs}) and relates the
-  result to the kernel's formula by @{const esim}, and @{thm [source] ieval_eeval} carries a step
-  of @{const ieval} over to one of @{const eeval}.
-\<close>
 
 lemma eannotate_eq:
   "eannotate i tq vs acc = (i', tq', vs') \<Longrightarrow>
@@ -47,9 +35,10 @@ proof (induct vs arbitrary: i tq acc i' tq' vs')
   qed
 qed simp
 
-text \<open>The indices a state keeps do not change what it computes: two states that agree once their
-  indices are forgotten (@{text eforget}) give the same verdicts at every step, and agree again
-  after it.  So the indices can be chosen when the monitor starts (@{text eindex}).\<close>
+subsection \<open>Irrelevance of the indices\<close>
+
+text \<open>The indices a state keeps do not change its verdicts, so they can be chosen when the monitor
+  starts (@{text eindex}).\<close>
 
 definition eforget :: "emstate \<Rightarrow> nat \<times> nat \<times> eformula \<times> nat \<times> cols \<times> ts mbuf_t" where
   "eforget st = (emstate_i st, emstate_j st, eabs (emstate_m st), emstate_n st, emstate_cs st,
@@ -89,22 +78,12 @@ qed simp
 lemma emonitor_eindex[simp]: "emonitor (eindex ix st) \<pi> = emonitor st \<pi>"
   unfolding emonitor_def emsteps_stateless.rep_eq by (rule emsteps0_stateless_eforget) simp
 
-
-subsection \<open>The state relation\<close>
-
-text \<open>
-  Two states are related when their bookkeeping agrees and their formulas are related by
-  @{const esim} at the column lists @{term ks} (the kernel's) and @{term cs} (the executable one the
-  state records), with the timestamp bound of @{const esim} being the last timestamp the two have
-  been fed.
-\<close>
-
 lemma enumerate_zip_map:
   "List.enumerate i (zip us (map f xs))
      = map (\<lambda>(k, u, X). (k, u, f X)) (List.enumerate i (zip us xs))"
   by (simp add: List.enumerate_eq_zip zip_map2 case_prod_beta)
 
-subsection \<open>One step\<close>
+subsection \<open>Simulation of a step\<close>
 
 lemma emstep_mstep:
   assumes r: "emsim_state n ks cs tw st dst" and le: "tw \<le> snd tdb"
@@ -159,16 +138,10 @@ qed
 lemma emsim_state_dframe: "emsim_state n ks cs tw st dst \<Longrightarrow> eframe ks cs"
   unfolding emsim_state_def by (auto dest: esim_dframe)
 
+subsection \<open>Simulation of a prefix\<close>
 
-subsection \<open>The whole prefix\<close>
-
-text \<open>
-  The timestamp bound of @{const esim} is the last timestamp of the prefix read so far: each step
-  re-establishes it at the timestamp just consumed, and the prefix's own sortedness says the next
-  one is no smaller.  That is where the timestamp hypothesis of @{thm [source] esim_deval} is
-  discharged, once and for all.  The kernel's invariant @{const kwf_mstate} threads through alongside: it
-  makes every step a good call (@{thm [source] kgood_mstep}).
-\<close>
+text \<open>The timestamp bound of @{const esim} is the last timestamp of the prefix read so far; the
+  prefix's sortedness keeps it below the next one.\<close>
 
 lemma emsteps0_stateless_rel:
   "emsim_state n (Formula.fv_list \<phi>) cs (last_ts \<pi>0) st dst \<Longrightarrow> kwf_mstate S E \<phi> \<pi>0 R st \<Longrightarrow>
@@ -225,21 +198,15 @@ proof -
     by (rule emsteps0_stateless_rel[OF _ wfm srt _ fin]) (use r in \<open>simp_all add: last_ts.rep_eq pnil.rep_eq\<close>)
 qed
 
-subsection \<open>The verdicts are the narrowing of the kernel's\<close>
+subsection \<open>Transfer of the kernel's theorems\<close>
+
+text \<open>The kernel's results hold with @{const emonitor} in place of the kernel's monitor and the
+  verdict tables widened back, for every related initial state.\<close>
 
 lemma map_etabw_etabc:
   "eframe ks cs \<Longrightarrow> \<forall>(i, t, X) \<in> set V. table ks X \<Longrightarrow>
    map (\<lambda>(i, t, X). (i, t, etabw ks cs X)) (map (\<lambda>(i, t, X). (i, t, etabc ks cs X)) V) = V"
   by (induct V) (auto simp: etabw_dtabc)
-
-subsection \<open>The correctness theorems, transferred\<close>
-
-text \<open>
-  Nothing about the executable representation is left in these statements: they are the kernel's own
-  collected results with @{const emonitor} in place of the kernel's monitor and the verdict
-  tables widened back.  The simulation is what carries them across, and the only thing it asks of
-  the caller is a related initial state.
-\<close>
 
 context verimon_spec
 begin
@@ -252,23 +219,12 @@ theorem emonitor_monitor:
   using emsteps_stateless_rel[OF r kmaux_wf_mstate_minit_safe[OF well_typed monitorable] f wty]
   by (simp_all add: emonitor_def default_maux.monitor_def)
 
-text \<open>Widening the verdicts back recovers the kernel's exactly, because @{const etabc} is a
-  bijection on the tables of the frame (@{thm [source] etabw_dtabc}) and the kernel's verdict
-  tables live there.\<close>
-
 theorem emonitor_widen:
   assumes r: "emsim_state n (Formula.fv_list \<phi>) cs 0 (minit_safe \<phi>) dst"
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) cs X)) (emonitor dst \<pi>) = Monitor_Instance.monitor \<phi> \<pi>"
   unfolding emonitor_monitor(1)[OF r f wty]
   by (rule map_etabw_etabc[OF emsim_state_dframe[OF r] emonitor_monitor(2)[OF r f wty]])
-
-text \<open>
-  Nothing about the executable representation is left in these statements: they are the kernel's own
-  collected results with @{const emonitor} in place of the kernel's monitor and the verdict
-  tables widened back.  The simulation is what carries them across, and the only thing it asks of
-  the caller is a related initial state.
-\<close>
 
 theorem emonitor_mverdicts:
   assumes r: "emsim_state n (Formula.fv_list \<phi>) cs 0 (minit_safe \<phi>) dst"

@@ -4,32 +4,21 @@ theory Exec_Eval
 begin
 (*>*)
 
-
-
-section \<open>The executable evaluator simulates the kernel's\<close>
+section \<open>Executable evaluator\<close>
 
 definition enext :: "ts \<Rightarrow> ts list \<Rightarrow> ts" where
   "enext tw ts = (if ts = [] then tw else last ts)"
 
 text \<open>
-  The simulation also carries a timestamp lower bound @{term tw}: every timestamp in a batch is
-  at least @{term tw}, and the relation is re-established at the bound @{term "enext tw ts"} the
-  batch leaves behind.  The temporal nodes need this -- the verified Since and Until structures
-  accept a new timestamp only at or after the one they are already at -- and the others carry
-  it without using it.
+  Stored timestamps are at most @{term tw} and a new batch's at least, the next bound being
+  @{term "enext tw ts"}; the temporal structures need it, as they accept only later timestamps.
 \<close>
 
-section \<open>The executable formula\<close>
+subsection \<open>Executable formulas\<close>
 
 text \<open>
-  A executable formula mirrors the kernel's @{typ "('msaux, 'muaux, 'mtaux) mformula"} node by node,
-  but every node carries the data the ascending representation needs instead of the data the
-  kernel's needs: a join plan instead of two column lists, a term already reindexed against the
-  operand's column list, a mask at the boundary.  @{term EFail} stands for a node the executable
-  fragment does not cover: it evaluates to nothing and no simulation rule relates it to a kernel
-  formula, so a executable formula containing one proves nothing and the compiler's caller must check
-  that it produced none.  Nothing in the type mentions the kernel's formula type, which is what
-  makes the executable evaluator exportable on its own.
+  They mirror the kernel's @{typ "('msaux, 'muaux, 'mtaux) mformula"} node by node, with the data of
+  the ascending representation; @{term EFail} marks a node outside the executable fragment.
 \<close>
 
 datatype ('b2, 'bn, 'ba, 'bs, 'bu, 'p) geformula =
@@ -66,16 +55,13 @@ datatype ('b2, 'bn, 'ba, 'bs, 'bu, 'p) geformula =
       uebufn "ts mbuf_t" ts "event_data ml\<delta>aux"
   | EPlain 'p
 
-text \<open>The executable formula over plain tables.  The buffers of the unions and the joins, whose
-  tables a consumer may want with indices, have the types @{typ 'b2}, @{typ 'bn} and @{typ 'ba};
-  as type variables they do not count towards the size of a formula, which the evaluation of
-  @{text "LET PAST"} compares before and after a step.\<close>
+text \<open>The buffers are type parameters so that they do not count towards a formula's size, which
+  @{text "LET PAST"} compares across a step.\<close>
 
 type_synonym eformula = "(uebuf2, uebufn, event_data table mbuf_t \<times> event_data table option mbuf_t, udsaux_x, uduaux_x, unit) geformula"
 
-text \<open>The compiler is total on the kernel's formulas, so it answers @{const EFail} at a node it
-  does not cover rather than failing.  Its caller checks that the compiled formula has none: this
-  counts them.\<close>
+text \<open>The compiler answers @{const EFail} at a node it does not cover; its caller checks with this
+  count that there is none.\<close>
 
 fun efail_nodes :: "eformula \<Rightarrow> nat" where
   "efail_nodes EFail = 1"
@@ -102,6 +88,8 @@ fun efail_nodes :: "eformula \<Rightarrow> nat" where
 | "efail_nodes (EMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map efail_nodes L)"
 | "efail_nodes (EMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map efail_nodes L)"
 | "efail_nodes \<phi> = 0"
+
+subsubsection \<open>Evaluation\<close>
 
 function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> eformula \<Rightarrow>
     event_data table list \<times> eformula" where
@@ -237,10 +225,10 @@ function (sequential) eeval :: "nat \<Rightarrow> ts list \<Rightarrow> database
 | "eeval j ts db (EPlain x) = ([], EPlain x)"
   by pat_completeness (simp_all only: prod.inject geformula.inject geformula.distinct simp_thms)
 
-text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
-  not a subterm of the node, so the recursion is not structural and termination goes by the
-  formula's size -- exactly as the kernel's own evaluator does it.  Evaluation preserves that
-  size, which is the fact that makes the measure decrease.\<close>
+subsubsection \<open>Termination\<close>
+
+text \<open>The freeze node re-enters the evaluator on its body's updated state, so termination goes by
+  the formula's size, which evaluation preserves.\<close>
 
 lemma size_list_cong:
   "xs = ys \<Longrightarrow> (\<And>x. x \<in> set xs \<Longrightarrow> f x = g x) \<Longrightarrow> size_list f xs = size_list g ys"
@@ -320,24 +308,21 @@ next
     using 21(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
   show ?case
     using size_\<phi>' size_\<psi>' by (simp add: eeval.psimps(21)[OF 21(1)] lp \<psi>')
-  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas,
-    since evaluation keeps the node's constructor and its non-formula arguments do not count\<close>
 qed (auto simp only: prod.inject eeval.psimps Let_def snd_conv fst_conv
     geformula.size list.map map_map o_apply size_list_map size_frz_keep_st cong: size_list_cong
     split: prod.splits)
 
 lemma total_eeval: "All eeval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
-  text \<open>The live copy and the replays of @{const EFrz}, as for @{const meval}.\<close>
-  case 23 \<comment> \<open>the live copy, a subterm\<close>
+  case 23
   then show ?case
     by simp
 next
-  case 24 \<comment> \<open>the copy of the separable mode with the frozen table, a subterm\<close>
+  case 24
   then show ?case
     by simp
 next
-  case 25 \<comment> \<open>the copy of the separable mode with the empty table, a subterm\<close>
+  case 25
   then show ?case
     by simp
 next
@@ -351,7 +336,7 @@ qed (auto simp: termination_simp dest!: psize_snd_eeval dest: sym)
 
 termination eeval by (rule total_eeval)
 
-section \<open>The simulation relation\<close>
+subsection \<open>Simulation relation\<close>
 
 definition ebuf2 :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> event_data mbuf2 \<Rightarrow> event_data mbuf2 \<Rightarrow> bool" where
   "ebuf2 k1 c1 k2 c2 buf dbuf \<longleftrightarrow>
@@ -363,24 +348,11 @@ definition ebufn :: "cols list \<Rightarrow> cols list \<Rightarrow> event_data 
      (\<forall>i < length css. list_all (ftable (kss ! i)) (buf ! i)) \<and>
      dbuf = map2 map (map2 etabc kss css) buf"
 
-text \<open>
-  The relation carries a timestamp bound: @{term "esim n ks cs tw \<phi>d \<phi>"} is read as \<open>every
-  timestamp stored anywhere inside is at most tw\<close>.  Only the temporal nodes look at it -- the
-  verified Since structure accepts a new timestamp only at or after the one it is already at, and
-  a fresh batch of timestamps arrives at the node from outside, where the relation cannot see it.
-  Every other rule carries the bound without using it.  After a step the bound moves to the last
-  timestamp of the batch.
-\<close>
-
-subsection \<open>The aggregation at a structure's output\<close>
+subsubsection \<open>Aggregation at a structure's output\<close>
 
 text \<open>
-  The kernel fuses an aggregation into the Since and the Until: the structure is stepped at the
-  operand's columns and the aggregation is applied to whatever it reports.  The executable side runs
-  the structure without one -- @{const eargs} clears the field -- and applies the executable
-  aggregation afterwards, so the two output lists are not reorderings of each other but two images
-  of one list of windows.  That is what the relation below says.  With no aggregation it
-  degenerates to the reordering, which is what the unfused nodes use.
+  The kernel aggregates the structure's output inside the node, the executable side afterwards,
+  so the two outputs are images of one list of windows.
 \<close>
 
 definition esres :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> event_data table list \<Rightarrow> event_data table list \<Rightarrow> bool"
@@ -390,11 +362,7 @@ definition esres :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ev
 lemma esres_Nil[simp]: "esres ks cs args [] []"
   unfolding esres_def by (intro exI[of _ "[]"]) simp
 
-text \<open>The window a firing reports is a union of the auxiliary list's tables, so it is a table over
-  the node's columns; the kernel's structure reports its aggregation and the executable one reports its
-  reordering -- or, for the window with the aggregate fused in, the executable aggregation of its
-  reordering.  The relation below carries that post-function; @{const esres} is its identity
-  instance.\<close>
+text \<open>With a post-function on the executable side, for the window with the fused aggregate.\<close>
 
 definition esresh :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> (event_data table \<Rightarrow> event_data table) \<Rightarrow>
     event_data table list \<Rightarrow> event_data table list \<Rightarrow> bool"
@@ -404,15 +372,7 @@ definition esresh :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> (
 lemma esresh_Nil[simp]: "esresh ks cs args h [] []"
   unfolding esresh_def by (intro exI[of _ "[]"]) simp
 
-subsection \<open>The Since structure at the ascending frame, and its buffer\<close>
-
-text \<open>
-  The executable Since node runs the verified structure at @{const eargs}.  What the node carries is
-  the pair of structures -- the kernel's and the executable one -- related through the abstract
-  auxiliary list they are both valid for, together with the two buffers.  The current timestamp
-  is shared: the structure's, and the lower bound on the timestamps still in the buffer.  The
-  left operand's tables enter the buffer at their own columns.
-\<close>
+subsubsection \<open>Since node\<close>
 
 definition esince_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
     mmasaux \<Rightarrow> esaux_x \<Rightarrow> event_data mbuf2S \<Rightarrow> event_data mbuf2S \<Rightarrow> bool" where
@@ -424,22 +384,15 @@ definition esince_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarro
            sorted tss \<and> (\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw) \<and>
            dbuf = (map (etabc kL cL) xs, map (etabc kR cR) ys, tss, sk)))"
 
-subsection \<open>The Until structure at the ascending frame, and its buffer\<close>
+subsubsection \<open>Until node\<close>
 
-text \<open>
-  The Until node's state is the pair of verified structures, related through the abstract
-  auxiliary list they are both valid for, together with the current timestamp.  Since the
-  structure is stepped from inside a buffer traversal, that part is factored out on its own.
-\<close>
+text \<open>The structures' relation is separate, as they are stepped inside a buffer traversal.\<close>
 
 definition euaux_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
     muaux_dq \<Rightarrow> euaux_x \<Rightarrow> bool" where
   "euaux_rel kR cR kL cL args cur aux daux \<longleftrightarrow>
      (\<exists>auxlist. valid_muaux_dq args cur aux auxlist \<and>
         euxaux' kL cL kR cR args cur daux auxlist)"
-
-text \<open>The node relation.  The stored timestamp is at or after the structure's current one and
-  at or before the bound, and so is every timestamp still queued.\<close>
 
 definition euntil_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow>
     muaux_dq \<Rightarrow> euaux_x \<Rightarrow> event_data mbuf2 \<Rightarrow> event_data mbuf2 \<Rightarrow>
@@ -451,15 +404,7 @@ definition euntil_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarro
         dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf)) \<and>
         sorted nts \<and> (\<forall>u \<in> set nts. cur \<le> u \<and> u \<le> tw))"
 
-subsection \<open>The Trigger structure at the ascending frame, and its buffer\<close>
-
-text \<open>
-  The trigger node carries the pair of structures, related through the abstract auxiliary list
-  they are both valid for, together with the two buffers and the pending timestamps.  Unlike the
-  Since and the Until, the structure is stepped and read in the same traversal, so the output
-  list is part of what the step relates.  Each operand's tables enter the buffer at their own
-  columns.
-\<close>
+subsubsection \<open>Trigger node\<close>
 
 definition etrigger_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
     event_data mmtaux \<Rightarrow> event_data twaux \<Rightarrow> event_data mbuf2 \<Rightarrow>
@@ -473,14 +418,11 @@ definition etrigger_rel :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightar
         sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw) \<and>
         dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf)))"
 
-subsection \<open>The fused And-Trigger, and its two buffers\<close>
+subsubsection \<open>Fused And-Trigger\<close>
 
 text \<open>
-  The kernel's fused node reads the trigger structure as a pair: a column list and a table.  On a
-  non-empty window the list is the trigger's own columns and the table is its answer; on an empty
-  one the read is the unit table over no columns at all, which the join then lets through
-  untouched.  The executable node keeps that distinction as an option -- @{term None} stands for the
-  empty window and the join step skips -- so the two reads are related rather than equal.
+  On an empty window the kernel reads the unit table over no columns, the executable node
+  @{term None}, and the join step skips.
 \<close>
 
 definition etres :: "cols \<Rightarrow> cols \<Rightarrow> cols \<times> event_data table \<Rightarrow> event_data table option \<Rightarrow> bool"
@@ -489,9 +431,6 @@ definition etres :: "cols \<Rightarrow> cols \<Rightarrow> cols \<times> event_d
       None \<Rightarrow> p = ([], unit_table)
     | Some d \<Rightarrow> fst p = kR \<and> ftable kR (snd p) \<and> d = etabc kR cR (snd p))"
 
-text \<open>The node's outer buffer: the left operand's tables at the node's own columns, and the
-  trigger's reads as options.\<close>
-
 definition eandbuf :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> event_data mbuft2 \<Rightarrow>
     (event_data table list \<times> event_data table option list) \<Rightarrow> bool" where
   "eandbuf ks cs kR cR buf dbuf \<longleftrightarrow>
@@ -499,15 +438,7 @@ definition eandbuf :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> 
      fst dbuf = map (etabc ks cs) (fst buf) \<and>
      list_all2 (etres kR cR) (snd buf) (snd dbuf)"
 
-subsection \<open>The relation itself\<close>
-
-text \<open>
-  A node's kernel tables are over the column list the kernel computes for it -- the free
-  variables of its formula, in the order @{const Formula.fv_list} lists them -- and the executable ones
-  over the same columns in ascending order.  The kernel's own column lists inside a node (the
-  operands' columns of a join, the columns a let-bound formula is reordered from) are therefore the
-  operands' kernel columns, and the rules below say so.
-\<close>
+subsubsection \<open>Simulation rules\<close>
 
 inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> eformula \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool" where
