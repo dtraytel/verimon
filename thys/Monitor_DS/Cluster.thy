@@ -40,10 +40,6 @@ lemma is_rbt_fold_add_to_rbt: "is_rbt t' \<Longrightarrow>
   is_rbt (RBT_Impl.fold (add_option_to_rbt f) t t')"
   by (induction t arbitrary: t') (auto 0 0 simp: is_rbt_add_to_rbt split: option.splits)
 
-lemma is_rbt_cluster_rbt: "is_rbt (cluster_rbt f t)"
-  using is_rbt_fold_add_to_rbt Empty_is_rbt
-  by (fastforce simp: cluster_rbt_def)
-
 lemma rbt_insert_entries_None: "is_rbt t \<Longrightarrow> rbt_lookup t k = None \<Longrightarrow>
   set (RBT_Impl.entries (rbt_insert k v t)) = insert (k, v) (set (RBT_Impl.entries t))"
   by (auto simp: rbt_lookup_in_tree[symmetric] rbt_lookup_rbt_insert split: if_splits)

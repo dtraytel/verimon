@@ -10,11 +10,6 @@ begin
 
 subsubsection \<open> Regex \<close>
 
-lemma fv_regex_alt2: "Regex.safe_regex fv rgx_safe_pred m g r 
-  \<Longrightarrow> Formula.fv_regex r = (\<Union>\<phi> \<in> safe_atms r. Formula.fv \<phi>)"
-  unfolding fv_regex_alt safe_atms_def
-  by (auto 0 3 dest: safe_regex_safe_formula)
-
 lemma fv_regex_from_mregex:
   "ok (length \<phi>s) mr \<Longrightarrow> fv_regex (from_mregex mr \<phi>s) \<subseteq> (\<Union>\<phi> \<in> set \<phi>s. fv \<phi>)"
   by (induct mr) (auto simp: Bex_def in_set_conv_nth)+
@@ -237,10 +232,6 @@ lemma ok_0_atms: "ok 0 mr \<Longrightarrow> regex.atms (from_mregex mr []) = {}"
 lemma ok_0_progress: "ok 0 mr \<Longrightarrow> progress_regex \<sigma> P (from_mregex mr []) j = j"
   by (drule ok_0_atms) (auto simp: progress_regex_def)
 
-lemma atms_empty_safe_atms: "Regex.safe_regex fv rgx_safe_pred m g r 
-  \<Longrightarrow> safe_atms r = {} \<longleftrightarrow> regex.atms r = {}"
-  by (induct r rule: safe_regex_induct) (auto split: if_splits simp: case_Neg_iff)
-
 lemma atms_empty_progress: "Regex.safe_regex fv rgx_safe_pred m g r \<Longrightarrow> safe_atms r = {} 
   \<Longrightarrow> progress_regex \<sigma> P r j = j"
   by (drule atms_empty_safe_atms) (auto simp: progress_regex_def)
@@ -296,9 +287,6 @@ lemma to_mregex_progress: "Regex.safe_regex fv rgx_safe_pred m g r \<Longrightar
   progress_regex \<sigma> P r j = (if \<phi>s = [] then j else (MIN \<phi>\<in>set \<phi>s. progress \<sigma> P \<phi> j))"
   using to_mregex_nonempty_progress[of m g r mr \<phi>s \<sigma> P] to_mregex_empty_progress[of m g r mr \<sigma> P]
   unfolding progress_regex_def by auto
-
-lemma progress_MatchF_le: "progress \<sigma> P (Formula.MatchF I r) j \<le> progress_regex \<sigma> P r j"
-  by (auto simp: trans_le_add1 progress_regex_def intro!: cInf_lower)
 
 
 subsubsection \<open> Buffers \<close>
@@ -835,14 +823,6 @@ next
     by (cases mr) (auto simp: qtable_unit_table split: if_splits)
 qed
 
-lemma rtranclp_False: "(\<lambda>i j. False)\<^sup>*\<^sup>* = (=)"
-proof -
-  have "(\<lambda>i j. False)\<^sup>*\<^sup>* i j \<Longrightarrow> i = j" for i j :: 'a
-    by (induct i j rule: rtranclp.induct) auto
-  then show ?thesis
-    by (auto intro: exI[of _ 0])
-qed
-
 inductive ok_rctxt for \<phi>s where
   "ok_rctxt \<phi>s id id"
 | "ok_rctxt \<phi>s \<kappa> \<kappa>' \<Longrightarrow> ok_rctxt \<phi>s (\<lambda>t. \<kappa> (MTimes mr t)) (\<lambda>t. \<kappa>' (Regex.Times (from_mregex mr \<phi>s) t))"
@@ -893,10 +873,6 @@ inductive ok_lctxt for \<phi>s where
 lemma ok_lctxt_swap: "ok_lctxt \<phi>s \<kappa> \<kappa>' \<Longrightarrow> from_mregex (\<kappa> mr) \<phi>s = \<kappa>' (from_mregex mr \<phi>s)"
   by (induct \<kappa> \<kappa>' arbitrary: mr rule: ok_lctxt.induct) auto
 
-lemma ok_lctxt_cong: "ok_lctxt \<phi>s \<kappa> \<kappa>' \<Longrightarrow> Regex.match (Formula.sat \<sigma> V v) r = Regex.match (Formula.sat \<sigma> V v) s \<Longrightarrow>
-  Regex.match (Formula.sat \<sigma> V v) (\<kappa>' r) i j = Regex.match (Formula.sat \<sigma> V v) (\<kappa>' s) i j"
-  by (induct \<kappa> \<kappa>' arbitrary: r s rule: ok_lctxt.induct) simp_all
-
 lemma qtable_l\<delta>\<kappa>:
   assumes "ok (length \<phi>s) mr" "fv_regex (from_mregex mr \<phi>s) \<subseteq> set A"
     and "list_all2 (\<lambda>\<phi> rel. sat_table \<sigma> V n R (Formula.fv_list \<phi>) j \<phi> rel) \<phi>s rels"
@@ -933,21 +909,6 @@ lemmas qtable_l\<delta> = qtable_l\<delta>\<kappa>[OF _ _ _ ok_lctxt.intros(1), 
 subsubsection \<open> Invariants \<close>
 
 text \<open>The tables of a regular expression's derivatives are over the columns of the whole expression.\<close>
-
-abbreviation regex_cols where
-  "regex_cols r \<equiv> Formula.fv_regex_list Formula.fv_list r"
-
-lemma set_regex_cols[simp]: "set (regex_cols r) = Formula.fv_regex r"
-  by simp
-
-lemma distinct_regex_cols[simp]: "distinct (regex_cols r)"
-  by (simp add: distinct_fv_regex_list)
-
-lemma fv_list_MatchP[simp]: "Formula.fv_list (Formula.MatchP I r) = regex_cols r"
-  by simp
-
-lemma fv_list_MatchF[simp]: "Formula.fv_list (Formula.MatchF I r) = regex_cols r"
-  by simp
 
 definition wf_matchP_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
     \<I> \<Rightarrow> ty Formula.formula Regex.regex \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> nat \<Rightarrow> bool" where

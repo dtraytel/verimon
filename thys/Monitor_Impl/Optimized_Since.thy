@@ -10,9 +10,6 @@ type_synonym 'a mmsaux = "ts \<times> ts \<times>
   (ts \<times> 'a table) queue \<times> (ts \<times> 'a table) queue \<times>
   'a table \<times> 'a wf_table \<times> (('a tuple, ts) mapping) \<times> 'a wf_table \<times> (('a tuple, ts) mapping)"
 
-fun time_mmsaux :: "'a mmsaux \<Rightarrow> ts" where
-  "time_mmsaux aux = (case aux of (nt, _) \<Rightarrow> nt)"
-
 fun valid_mmsaux :: "args \<Rightarrow> ts \<Rightarrow> 'a mmsaux \<Rightarrow> 'a Monitor.msaux \<Rightarrow> bool" where
   "valid_mmsaux args cur (nt, gc, data_prev, data_in, table_in, wf_table_in, 
   tuple_in, wf_table_since, tuple_since) ys 
@@ -55,9 +52,6 @@ text \<open>
 
 definition wf_table_of_keys :: "nat list \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a wf_table" where
   "wf_table_of_keys cs m = wf_table_of_set cs (Mapping.keys m)"
-
-lemma wf_table_sig_of_keys[simp]: "distinct cs \<Longrightarrow> wf_table_sig (wf_table_of_keys cs m) = cs"
-  by (simp add: wf_table_of_keys_def wf_table_sig_of_set)
 
 definition wf_table_upd :: "args \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> (unit \<Rightarrow> 'a wf_table) \<Rightarrow> 'a wf_table" where
   "wf_table_upd args m w = (if args_L args = [] \<or> args_L args = args_R args

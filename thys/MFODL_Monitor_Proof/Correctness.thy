@@ -11,44 +11,6 @@ begin
 (*>*)
 
 
-lemma fvi_list_remove_neg[simp]: "Formula.fvi_list b (remove_neg \<phi>) = Formula.fvi_list b \<phi>"
-  by (cases \<phi> rule: remove_neg.cases) simp_all
-
-text \<open>An assignment appends its column to the tuple.\<close>
-
-lemma val_snoc:
-  assumes "wf_tuple cs y" "x \<notin> set cs" "x < n"
-  shows "val n (cs @ [x]) (y @ [a]) = (val n cs y)[x := a]"
-proof (rule nth_equalityI)
-  fix i
-  assume "i < length (val n (cs @ [x]) (y @ [a]))"
-  then have "i < n" by simp
-  have none: "tup_get cs y c = the None" if "c \<notin> set cs" for c
-    using assms(1) that unfolding tup_get_def by (metis map_of_zip_is_None wf_tuple_def)
-  show "val n (cs @ [x]) (y @ [a]) ! i = (val n cs y)[x := a] ! i"
-    unfolding nth_val[OF \<open>i < n\<close>] tup_get_append[OF assms(1)] tup_get_Cons
-    using \<open>i < n\<close> assms none[of i] by (auto simp: nth_list_update tup_get_def)
-qed simp
-
-text \<open>A disjunction's table is over its left operand's columns; the right operand's table is
-  reordered to them.\<close>
-
-lemma sat_table_union_reorder:
-  assumes X: "sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi> X"
-    and Y: "sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi> Y"
-    and fv: "Formula.fv \<phi> = Formula.fv \<psi>"
-    and sat: "\<And>v. Formula.sat \<sigma> V v i \<chi> \<longleftrightarrow> Formula.sat \<sigma> V v i \<phi> \<or> Formula.sat \<sigma> V v i \<psi>"
-  shows "sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<chi>
-    (X \<union> reorder (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) Y)"
-proof (rule qtable_union[OF X qtable_reorder_mem_restr[OF Y,
-      where Q' = "\<lambda>v. Formula.sat \<sigma> V (val n (Formula.fv_list \<phi>) v) i \<psi>"]])
-  show "set (Formula.fv_list \<phi>) = set (Formula.fv_list \<psi>)"
-    using fv by simp
-  show "Formula.sat \<sigma> V (val n (Formula.fv_list \<phi>) v) i \<psi> \<longleftrightarrow>
-    Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) (restrict (Formula.fv_list \<psi>) (Formula.fv_list \<phi>) v)) i \<psi>" for v
-    by (simp add: sat_restrict)
-qed (use sat in simp_all)
-
 subsection \<open> Well-formed mformula invariant \<close>
 
 text \<open>The frozen tables are read positionally, as the event tuples.\<close>
@@ -76,84 +38,6 @@ proof -
   show ?thesis
     by (auto simp: wf_frz_state_def wf_frz_queue_def Let_def list_all2_conv_all_nth)
 qed
-
-text \<open>The windowed replay of @{const MFrz}: the replay base has absorbed the time points before
-  @{term w} with, at each, the frozen predicate empty or holding the frozen formula's value at
-  some time point (@{const frz_fill}); they lie beyond the past reach @{term d} of the body,
-  seen from the first undecided time point @{term jfrz}.  The window's timestamps are kept
-  (unless the reach is infinite, in which case the window never moves), and the verdicts of the
-  replay base from @{term jfrz} on are those of the freeze.  A valuation of the frozen predicate
-  of that kind is given by the time point whose frozen value it holds at each time point, if any
-  (@{term frz_val}).\<close>
-
-definition frz_val :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
-    ty Formula.formula \<Rightarrow> (nat \<Rightarrow> nat option) \<Rightarrow> Formula.env \<Rightarrow> nat \<Rightarrow> bool" where
-  "frz_val \<sigma> V \<phi> L = (\<lambda>v k. case L k of None \<Rightarrow> False | Some i \<Rightarrow> Formula.sat \<sigma> V v i \<phi>)"
-
-text \<open>A copy of the replay base for the frozen table of time point @{term i}: the frozen predicate
-  holds that table from @{term w} on, and whatever the replay base absorbed before.\<close>
-
-abbreviation frz_cv where
-  "frz_cv \<sigma> V \<phi> N w i \<equiv> frz_val \<sigma> V \<phi> (\<lambda>k. if k < w then N k else Some i)"
-
-lemma frz_cv_ge: "w \<le> k \<Longrightarrow> frz_cv \<sigma> V \<phi> N w i v k = Formula.sat \<sigma> V v i \<phi>"
-  by (simp add: frz_val_def)
-
-lemma frz_val_sat: "frz_val \<sigma> V \<phi> L v k \<Longrightarrow> \<exists>i. Formula.sat \<sigma> V v i \<phi>"
-  by (auto simp: frz_val_def split: option.splits)
-
-text \<open>The replay base has absorbed the time points before its window's start @{term w}; what the
-  frozen predicate holds from @{term w} on does not matter for its state, as long as it holds
-  only tuples of the frozen formula (@{term frz_sup}): the copies of the separable evaluation give
-  it a union of frozen tables, or the empty table.\<close>
-
-definition frz_sup :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
-    ty Formula.formula \<Rightarrow> (Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow> bool" where
-  "frz_sup \<sigma> V \<phi> M \<longleftrightarrow> (\<forall>v k. M v k \<longrightarrow> (\<exists>i. Formula.sat \<sigma> V v i \<phi>))"
-
-definition frz_ext :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
-    ty Formula.formula \<Rightarrow> (nat \<Rightarrow> nat option) \<Rightarrow> nat \<Rightarrow> (Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
-    Formula.env \<Rightarrow> nat \<Rightarrow> bool" where
-  "frz_ext \<sigma> V \<phi> N w M = (\<lambda>v k. if k < w then frz_val \<sigma> V \<phi> N v k else M v k)"
-
-lemma frz_sup_sat: "frz_sup \<sigma> V \<phi> (\<lambda>v k. Formula.sat \<sigma> V v i \<phi>)"
-  by (auto simp: frz_sup_def)
-
-lemma frz_sup_False: "frz_sup \<sigma> V \<phi> (\<lambda>_ _. False)"
-  by (simp add: frz_sup_def)
-
-lemma frz_sup_val: "frz_sup \<sigma> V \<phi> (frz_val \<sigma> V \<phi> L)"
-  by (auto simp: frz_sup_def dest: frz_val_sat)
-
-lemma frz_ext_sat: "frz_ext \<sigma> V \<phi> N w M v k \<Longrightarrow> frz_sup \<sigma> V \<phi> M \<Longrightarrow> \<exists>i. Formula.sat \<sigma> V v i \<phi>"
-  by (auto simp: frz_ext_def frz_sup_def split: if_splits dest: frz_val_sat)
-
-lemma frz_ext_cv: "frz_ext \<sigma> V \<phi> N w (\<lambda>v k. Formula.sat \<sigma> V v i \<phi>) = frz_cv \<sigma> V \<phi> N w i"
-  by (auto simp: frz_ext_def frz_val_def fun_eq_iff)
-
-lemma frz_ext_ge: "w \<le> k \<Longrightarrow> frz_ext \<sigma> V \<phi> N w M v k = M v k"
-  by (simp add: frz_ext_def)
-
-lemma frz_ext_val: "frz_ext \<sigma> V \<phi> N w (frz_val \<sigma> V \<phi> M) = frz_val \<sigma> V \<phi> (\<lambda>k. if k < w then N k else M k)"
-  by (auto simp: frz_ext_def frz_val_def fun_eq_iff)
-
-lemma frz_ext_False: "frz_ext \<sigma> V \<phi> N w (\<lambda>_ _. False) = frz_val \<sigma> V \<phi> (\<lambda>k. if k < w then N k else None)"
-  by (auto simp: frz_ext_def frz_val_def fun_eq_iff)
-
-text \<open>A table of the separable evaluation: finite, and holding tuples of the frozen formula.\<close>
-
-definition frz_tab :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow>
-    ty Formula.formula \<Rightarrow> event_data list set \<Rightarrow> bool" where
-  "frz_tab \<sigma> V m \<phi> L \<longleftrightarrow> finite L \<and> (\<forall>v \<in> L. length v = m \<and> (\<exists>i. Formula.sat \<sigma> V v i \<phi>))"
-
-lemma frz_tab_empty[simp]: "frz_tab \<sigma> V m \<phi> {}"
-  by (simp add: frz_tab_def)
-
-lemma frz_tab_Un: "frz_tab \<sigma> V m \<phi> A \<Longrightarrow> frz_tab \<sigma> V m \<phi> B \<Longrightarrow> frz_tab \<sigma> V m \<phi> (A \<union> B)"
-  by (auto simp: frz_tab_def)
-
-lemma frz_tab_sup: "frz_tab \<sigma> V m \<phi> L \<Longrightarrow> frz_sup \<sigma> V \<phi> (\<lambda>v k. v \<in> L)"
-  by (auto simp: frz_tab_def frz_sup_def)
 
 lemma frz_unions_kops: "frz_unions (frz_kops m cs) xs L = L \<union> \<Union> (set xs)"
   by (induction xs arbitrary: L) (auto simp: frz_unions_def frz_kops_def)
@@ -218,78 +102,19 @@ proof -
     by (auto simp: frz_meas_def Let_def emp split: if_splits prod.split_asm dest: abA abB)
 qed
 
-text \<open>The combination of the two copies' rows at a time point @{term i}: the first copy's tuples
-  whose frozen tuple is in the frozen table of @{term i}, the second copy's others.  The first
-  copy's frozen predicate holds the frozen table's tuples (and maybe others), the second's none,
-  from points beyond the body's reach on.\<close>
-
-lemma val_sep_key:
-  assumes "m \<le> n"
-  shows "val m cs x = sep_key m (val n cs x)"
-  using assms by (auto simp: val_def)
-
-lemma (in maux) qtable_frz_cmb:
-  assumes sep: "key_sep (p, Formula.nfv \<phi>) \<psi>" and cont: "Formula.contains_pred (p, Formula.nfv \<phi>) \<psi>"
-    and fvn: "\<forall>x \<in> Formula.fv \<psi>. x < n"
-    and \<alpha>: "\<alpha> = {v. length v = Formula.nfv \<phi> \<and> Formula.sat \<sigma> V v i \<phi>}"
-    and S: "sat_table \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> QS)) n R (Formula.fv_list \<psi>) i \<psi> yS"
-    and E: "sat_table \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> QE)) n R (Formula.fv_list \<psi>) i \<psi> yE"
-    and agS: "\<And>u k. wS \<le> k \<Longrightarrow> u \<in> \<alpha> \<Longrightarrow> QS u k"
-    and agE: "\<And>u k. wE \<le> k \<Longrightarrow> \<not> QE u k"
-    and winS: "\<forall>k<wS. enat (\<tau> \<sigma> k) + past_reach \<psi> < enat (\<tau> \<sigma> i)"
-    and winE: "\<forall>k<wE. enat (\<tau> \<sigma> k) + past_reach \<psi> < enat (\<tau> \<sigma> i)"
-  shows "sat_table \<sigma> V n R (Formula.fv_list \<psi>) i (Formula.Frz p \<phi> \<psi>)
-    ({x \<in> yS. val (Formula.nfv \<phi>) (Formula.fv_list \<psi>) x \<in> \<alpha>} \<union> {x \<in> yE. val (Formula.nfv \<phi>) (Formula.fv_list \<psi>) x \<notin> \<alpha>})"
-proof -
-  let ?m = "Formula.nfv \<phi>"
-  let ?cs = "Formula.fv_list \<psi>"
-  let ?pn = "(p, ?m)"
-  have mn: "?m \<le> n"
-  proof (cases "?m = 0")
-    case False
-    then have "?m - 1 \<in> Formula.fv \<psi>"
-      using key_sep_fv[OF sep cont] by auto
-    then show ?thesis
-      using fvn False by fastforce
-  qed simp
-  have key: "val ?m ?cs x = sep_key ?m (val n ?cs x)" for x
-    by (rule val_sep_key[OF mn])
-  have satS: "Formula.sat \<sigma> (V(?pn \<mapsto> QS)) v i \<psi> = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
-    if "sep_key ?m v \<in> \<alpha>" for v
-    by (rule sat_Frz_sep[OF sep _ winS]) (use that agS \<alpha> in auto)
-  have satE: "Formula.sat \<sigma> (V(?pn \<mapsto> QE)) v i \<psi> = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
-    if "sep_key ?m v \<notin> \<alpha>" for v
-    by (rule sat_Frz_sep[OF sep _ winE]) (use that agE \<alpha> in auto)
-  show ?thesis
-    unfolding qtable_iff
-  proof (intro conjI allI impI)
-    show "table ?cs ({x \<in> yS. val ?m ?cs x \<in> \<alpha>} \<union> {x \<in> yE. val ?m ?cs x \<notin> \<alpha>})"
-      using qtableD(1)[OF S] qtableD(1)[OF E] by (auto simp: table_def)
-    show "finite ({x \<in> yS. val ?m ?cs x \<in> \<alpha>} \<union> {x \<in> yE. val ?m ?cs x \<notin> \<alpha>})"
-      using qtableD(5)[OF S] qtableD(5)[OF E] by simp
-  next
-    fix x
-    assume r: "mem_restr R ?cs x"
-    show "x \<in> {x \<in> yS. val ?m ?cs x \<in> \<alpha>} \<union> {x \<in> yE. val ?m ?cs x \<notin> \<alpha>} \<longleftrightarrow>
-      Formula.sat \<sigma> V (val n ?cs x) i (Formula.Frz p \<phi> \<psi>) \<and> wf_tuple ?cs x"
-    proof (cases "val ?m ?cs x \<in> \<alpha>")
-      case True
-      then show ?thesis
-        using S r satS[of "val n ?cs x"] by (auto simp: key qtable_iff)
-    next
-      case False
-      then show ?thesis
-        using E r satE[of "val n ?cs x"] by (auto simp: key qtable_iff)
-    qed
-  qed
-qed
-
 lemma frz_kops_simps: "fo_un (frz_kops m cs) = (\<union>)" "fo_fr (frz_kops m cs) = (\<lambda>\<alpha> L. card (\<alpha> - L))"
   "fo_cd (frz_kops m cs) = card" "fo_emp (frz_kops m cs) = {}"
   by (simp_all add: frz_kops_def)
 
 lemma frz_cmb_same: "fo_cmb (frz_kops m cs) y y \<alpha> = y"
   by (auto simp: frz_kops_def)
+
+text \<open>The windowed replay of @{const MFrz}: the replay base has absorbed the time points before
+  @{term w} with, at each, the frozen predicate empty or holding the frozen formula's value at
+  some time point (@{const frz_fill}, valuations of the kind @{const frz_val}); they lie beyond the
+  past reach @{term d} of the body, seen from the first undecided time point @{term jfrz}.  The
+  window's timestamps are kept (unless the reach is infinite, in which case the window never
+  moves), and the verdicts of the replay base from @{term jfrz} on are those of the freeze.\<close>
 
 definition (in maux) wf_frz_win where
   "wf_frz_win \<sigma> j P V n R p m \<phi> \<psi> jfrz w pR tq rb d \<longleftrightarrow>
@@ -716,101 +541,6 @@ proof -
   with wf list_all2_upt_append[OF ys ys' k \<open>?a \<le> ?b\<close>] i'
   show "letpast_meval_post n V \<sigma> P' \<phi>' m j i' (ys @ ys') buf' p \<phi>f k"
     unfolding letpast_meval_post_def by simp
-qed
-
-lemma (in maux) letpast_meval_ys: "(ys', i', buf', \<phi>f) = letpast_meval m cs j i ys xs p ts db \<phi> \<Longrightarrow> \<exists> zs. ys' = ys@zs"
-  \<comment> \<open>the same statement is already proved in theory Monitor\<close>
-  by (fact letpast_meval_ys)
-
-text \<open>A temporal operator's table, after the aggregation if any, is over @{const args_cols}.\<close>
-
-lemma fv_list_packagg:
-  assumes valid: "valid_aggargs n (Formula.fv_list \<psi>) (args_agg args)"
-    and R: "args_R args = Formula.fv_list \<psi>"
-    and fv: "Formula.fv_list \<chi> = Formula.fv_list \<psi>"
-  shows "Formula.fv_list (packagg args \<chi>) = args_cols args"
-proof (cases "args_agg args")
-  case None
-  then show ?thesis
-    by (simp add: packagg_def args_cols_def R fv)
-next
-  case (Some aggargs)
-  let ?k = "length (aggargs_tys aggargs)"
-  let ?y = "aggargs_y aggargs"
-  from Some valid have cols: "aggargs_cols aggargs = Formula.fv_list \<psi>" and safe: "safe_aggargs aggargs"
-    by (simp_all add: valid_aggargs_def)
-  have set_cols: "set (aggargs_cols aggargs) = Formula.fv \<chi>"
-    unfolding cols fv[symmetric] by simp
-  from safe have fresh: "?y + ?k \<notin> Formula.fv \<chi>"
-    and f_fv: "Formula.fv_trm (aggargs_f aggargs) \<subseteq> Formula.fv \<chi>"
-    by (simp_all add: safe_aggargs_def set_cols)
-  have sub: "set (Formula.fvi_trm_list ?k (aggargs_f aggargs)) \<subseteq> set (Formula.fvi_list ?k \<chi>)"
-    using f_fv by (auto simp: fvi_trm_iff_fv_trm[of _ ?k] fvi_iff_fv[of _ ?k])
-  have y_notin: "?y \<notin> set (Formula.fvi_list ?k \<chi>)"
-    using fresh fvi_iff_fv[of ?y ?k \<chi>] by simp
-  have "Formula.fv_list (packagg args \<chi>) = cols_union [?y] (Formula.fvi_list ?k \<chi>)"
-    by (simp add: packagg_def Some cols_union_subset[OF sub])
-  also have "\<dots> = ?y # Formula.fvi_list ?k \<chi>"
-    using y_notin by (auto simp: cols_union_def filter_id_conv)
-  also have "\<dots> = args_cols args"
-    using fvi_list_plus[of 0 ?k \<chi>] by (simp add: args_cols_def Some R fv)
-  finally show ?thesis .
-qed
-
-lemma fv_packagg_less:
-  assumes valid: "valid_aggargs n (Formula.fv_list \<psi>) (args_agg args)"
-    and fv_sub: "Formula.fv \<chi> \<subseteq> Formula.fv \<psi>"
-    and args_n: "args_n args = n"
-    and bound: "\<forall>x\<in>Formula.fv \<psi>. x < n"
-  shows "\<forall>x\<in>Formula.fv (packagg args \<chi>). x < agg_n args"
-proof (cases "args_agg args")
-  case None
-  with args_n have pk: "packagg args \<chi> = \<chi>" and an: "agg_n args = n"
-    by (simp_all add: packagg_def agg_n_def)
-  show ?thesis
-    unfolding pk an using fv_sub bound by blast
-next
-  case (Some aggargs)
-  let ?b = "length (aggargs_tys aggargs)"
-  from Some valid have cols: "Formula.fv \<psi> = set (aggargs_cols aggargs)" and safe: "safe_aggargs aggargs"
-    by (simp_all add: valid_aggargs_def flip: set_fvi_list)
-  from safe have y_less: "aggargs_y aggargs < aggargs_n aggargs"
-    and cols_less: "\<forall>i\<in>set (aggargs_cols aggargs). i < ?b + aggargs_n aggargs"
-    and f_cols: "Formula.fv_trm (aggargs_f aggargs) \<subseteq> set (aggargs_cols aggargs)"
-    by (simp_all add: safe_aggargs_def)
-  have x_less: "x < aggargs_n aggargs" if x: "x \<in> Formula.fv (packagg args \<chi>)" for x
-  proof -
-    from Some x consider (chi) "x + ?b \<in> Formula.fv \<chi>"
-      | (f) "x + ?b \<in> Formula.fv_trm (aggargs_f aggargs)" | (y) "x = aggargs_y aggargs"
-      by (auto simp: packagg_def fvi_iff_fv[where b="length (aggargs_tys aggargs)"]
-          fvi_trm_iff_fv_trm[where b="length (aggargs_tys aggargs)"])
-    then show ?thesis
-    proof cases
-      case chi
-      with fv_sub cols have "x + ?b \<in> set (aggargs_cols aggargs)"
-        by blast
-      with cols_less have "x + ?b < ?b + aggargs_n aggargs"
-        by (rule bspec)
-      then show ?thesis
-        by simp
-    next
-      case f
-      with f_cols have "x + ?b \<in> set (aggargs_cols aggargs)"
-        by blast
-      with cols_less have "x + ?b < ?b + aggargs_n aggargs"
-        by (rule bspec)
-      then show ?thesis
-        by simp
-    next
-      case y
-      with y_less show ?thesis
-        by simp
-    qed
-  qed
-  from Some have "agg_n args = aggargs_n aggargs"
-    by (simp add: agg_n_def)
-  with x_less show ?thesis
-    by simp
 qed
 
 lemma (in maux) wf_mformula_wf_set: "wf_mformula \<sigma> j P V n R \<phi> \<phi>' \<Longrightarrow> \<forall>x\<in>Formula.fv \<phi>'. x < n"
@@ -1543,23 +1273,6 @@ lemma (in maux) wf_mstate_minit:
 
 subsection \<open> Main correctness result \<close>
 
-text \<open>A formula bound to a predicate has the columns @{term "[0..<m]"}, in the order of
-  @{const Formula.fv_list}; its tables are reordered to be read positionally.\<close>
-
-lemma set_fv_list_nfv:
-  assumes "{0..<m} \<subseteq> fv \<phi>" "m = Formula.nfv \<phi>"
-  shows "set (Formula.fv_list \<phi>) = set [0..<m]"
-  using assms fvi_less_nfv[of \<phi>] by auto
-
-lemma sat_table_reorder_upt:
-  assumes X: "sat_table \<sigma> V m UNIV (Formula.fv_list \<phi>) i \<phi> X"
-    and fv: "{0..<m} \<subseteq> fv \<phi>" "m = Formula.nfv \<phi>"
-  shows "sat_table \<sigma> V m UNIV [0..<m] i \<phi> (reorder [0..<m] (Formula.fv_list \<phi>) X)"
-proof (rule qtable_reorder_mem_restr[OF X])
-  show "set [0..<m] = set (Formula.fv_list \<phi>)"
-    using set_fv_list_nfv[OF fv] by simp
-qed (simp_all add: sat_restrict)
-
 lemma (in maux) letpast_meval_invar_post:
   assumes "safe_letpast (p, m) \<phi>' \<le> PastRec"
   assumes "pred_mapping (\<lambda> x. x\<le>(j-length ts)) P"
@@ -1777,81 +1490,6 @@ next
     with wf_envs show ?thesis
       by (rule wf_envs_finite)
   qed
-qed
-
-lemma (in maux) wf_envs_update4:
-  assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
-  and m_eq: "m = Formula.nfv \<phi>"
-  and in_fv: "{0..<m} \<subseteq> FV \<phi>"
-  and \<alpha>: "sat_table \<sigma> V m UNIV [0..<m] i \<phi> \<alpha>"
-  and safe: "safe_formula \<phi>"
-  and wty: "S, E \<turnstile> \<phi>"
-  shows "wf_envs (S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>))) \<sigma> j \<delta> (P((p, m) \<mapsto> 0)) (P'((p, m) \<mapsto> j)) (V((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>)) (Mapping.update (p, m) (replicate j \<alpha>) db)"
-  unfolding wf_envs_def
-proof (intro conjI ballI, goal_cases)
-  case 1
-  with assms show ?case unfolding wf_envs_def by auto
-next
-  case 2
-  with assms show ?case unfolding wf_envs_def by (auto simp: subset_iff)
-next
-  case 3
-  with assms show ?case by auto
-next
-  case 4
-  with assms show ?case by auto
-next
-  case 5
-  with assms show ?case by auto
-next
-  case (6 q)
-  with assms show ?case unfolding wf_envs_def by (cases "q \<in> dom P") auto
-next
-  case (7 q)
-  from \<alpha> have "\<alpha> = {v. length v = m \<and> Formula.sat \<sigma> V v i \<phi>}"
-    by (rule qtable_upt_eq)
-  moreover have "list_all2 (\<lambda>i X. X = {v. length v = snd q \<and> the (V q) v i}) [the (P q)..<the (P' q)] (the (Mapping.lookup db q))"
-    if "(p, m) \<noteq> q"
-  proof -
-    from that 7 have "q \<in> dom P" by simp
-    with wf_envs show ?thesis unfolding wf_envs_def by blast
-  qed
-  ultimately show ?case
-    by (auto simp add: list.rel_map image_iff lookup_update')
-next
-  case 8
-  from wf_envs have "wty_envs S \<sigma> V" unfolding wf_envs_def by simp
-  then show ?case unfolding wty_envs_def
-    using ty_of_sat_safe[OF safe wty] in_fv
-    by (auto simp: wty_envs_def wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
-next
-  case (9 q Y)
-  show ?case
-  proof (cases "q = (p, m)")
-    case True
-    with 9 show ?thesis
-      using qtableD(5)[OF \<alpha>] by (simp add: lookup_update')
-  next
-    case False
-    with 9 obtain Rs where "Mapping.lookup db q = Some Rs" "Y \<in> set Rs"
-      by (auto simp: lookup_update' keys_dom_lookup domIff)
-    with wf_envs show ?thesis
-      by (rule wf_envs_finite)
-  qed
-qed
-
-lemma sat_V_cong:
-  fixes \<phi> :: "ty Formula.formula"
-  assumes "i < progress \<sigma> P \<phi> j" "dom V = dom V'" "dom P = dom V"
-    "pred_mapping (\<lambda>x. x \<le> j) P"
-    "\<And>p n v i. (p, n) \<in> dom V \<Longrightarrow> i < the (P (p, n)) \<Longrightarrow> n = length v \<Longrightarrow>
-      the (V (p, n)) v i = the (V' (p, n)) v i"
-  shows "Formula.sat \<sigma> V v i \<phi> \<longleftrightarrow> Formula.sat \<sigma> V' v i \<phi>"
-proof -
-  obtain \<pi> where pf: "prefix_of \<pi> \<sigma>" and pl: "plen \<pi> = j"
-    by (metis plen_take_prefix prefix_of_take_prefix)
-  show ?thesis
-    using sat_prefix_conv_gen[OF pf pf, unfolded pl, OF assms] by auto
 qed
 
 lemma (in maux) frz_step_post:
@@ -2075,104 +1713,6 @@ next
   case False
   then show ?thesis
     by (intro that[of None]) (auto simp: frz_fill_def)
-qed
-
-lemma progress_Frz_eq:
-  assumes pm: "pred_mapping (\<lambda>x. x \<le> j) P"
-  shows "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j =
-    (let pn = (p, Formula.nfv \<phi>); jphi = progress \<sigma> P \<phi> j;
-         a = progress \<sigma> (P(pn \<mapsto> 0)) \<psi> j; b = progress \<sigma> (P(pn \<mapsto> j)) \<psi> j
-     in if b < jphi then b else if a \<le> jphi then jphi else a)"
-proof -
-  define pn where "pn = (p, Formula.nfv \<phi>)"
-  define jphi where "jphi = progress \<sigma> P \<phi> j"
-  define a where "a = progress \<sigma> (P(pn \<mapsto> 0)) \<psi> j"
-  define b where "b = progress \<sigma> (P(pn \<mapsto> j)) \<psi> j"
-  have F: "progress \<sigma> (P(pn \<mapsto> (if i < jphi then j else 0))) \<psi> j = (if i < jphi then b else a)" for i
-    by (simp add: a_def b_def)
-  have ab: "a \<le> b"
-    unfolding a_def b_def using pm
-    by (intro progress_mono_gen[OF order_refl])
-      (auto intro!: rel_mapping_map_upd simp: rel_mapping_reflp reflp_def)
-  have bj: "b \<le> j"
-    unfolding b_def using pm by (intro progress_le_gen) auto
-  have jphi_j: "jphi \<le> j"
-    unfolding jphi_def by (rule progress_le_gen[OF pm])
-  have "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j =
-    (LEAST i. i \<le> j \<and> progress \<sigma> (P(pn \<mapsto> (if i < jphi then j else 0))) \<psi> j \<le> i)"
-    by (simp add: frz_progress_def pn_def jphi_def)
-  also have "\<dots> = (if b < jphi then b else if a \<le> jphi then jphi else a)"
-    unfolding F by (rule Least_equality) (use ab bj jphi_j in \<open>auto split: if_splits\<close>)
-  finally show ?thesis
-    by (simp add: Let_def pn_def jphi_def a_def b_def)
-qed
-
-lemma list_all2_diag:
-  assumes "\<And>i. list_all2 (\<lambda>k X. Q i k X) ks xs"
-  shows "list_all2 (\<lambda>k X. Q k k X) ks xs"
-proof -
-  have "length ks = length xs"
-    using assms by (rule list_all2_lengthD)
-  with assms show ?thesis
-    by (auto simp: list_all2_conv_all_nth)
-qed
-
-lemma frz_win_le:
-  assumes "\<forall>k<w. enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> i)"
-  shows "w \<le> i"
-proof (rule ccontr)
-  assume "\<not> w \<le> i"
-  with assms have "enat (\<tau> \<sigma> i) + d < enat (\<tau> \<sigma> i)"
-    by simp
-  then show False
-    by (simp add: not_less le_iff_add[symmetric])
-qed
-
-lemma frz_win_mono:
-  assumes "\<forall>k<w. enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> i)" "i \<le> i'"
-  shows "\<forall>k<w. enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> i')"
-proof (intro allI impI)
-  fix k
-  assume "k < w"
-  with assms(1) have "enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> i)"
-    by simp
-  also have "\<dots> \<le> enat (\<tau> \<sigma> i')"
-    using assms(2) by simp
-  finally show "enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> i')" .
-qed
-
-text \<open>A verdict computed with the frozen predicate empty before a time point @{term w} is the
-  verdict of the freeze, provided @{term w} lies beyond the reach of the body.\<close>
-
-lemma qtable_Frz_window:
-  assumes q: "qtable cs R (\<lambda>v. \<langle>\<sigma>, V((p, Formula.nfv \<phi>) \<mapsto> Q), val n cs v, i\<rangle> \<Turnstile> \<psi>) X"
-    and agree: "\<And>v k. w \<le> k \<Longrightarrow> Q v k = \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
-    and win: "\<forall>k<w. enat (\<tau> \<sigma> k) + past_reach \<psi> < enat (\<tau> \<sigma> i)"
-  shows "qtable cs R (\<lambda>v. \<langle>\<sigma>, V, val n cs v, i\<rangle> \<Turnstile> Formula.Frz p \<phi> \<psi>) X"
-proof -
-  let ?pn = "(p, Formula.nfv \<phi>)"
-  have ag: "agree_from \<sigma> (past_reach \<psi>) i (V(?pn \<mapsto> Q)) (V(?pn \<mapsto> \<lambda>v k. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>))"
-    unfolding agree_from_def
-  proof
-    fix pn'
-    show "rel_option (\<lambda>X X'. \<forall>v k. enat (\<tau> \<sigma> i) \<le> enat (\<tau> \<sigma> k) + past_reach \<psi> \<longrightarrow> X v k = X' v k)
-      ((V(?pn \<mapsto> Q)) pn') ((V(?pn \<mapsto> \<lambda>v k. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>)) pn')"
-    proof (cases "pn' = ?pn")
-      case True
-      have "w \<le> k" if "enat (\<tau> \<sigma> i) \<le> enat (\<tau> \<sigma> k) + past_reach \<psi>" for k
-        using win that by (meson leD leI)
-      with True agree show ?thesis
-        by auto
-    next
-      case False
-      then show ?thesis
-        by (cases "V pn'") auto
-    qed
-  qed
-  have "\<langle>\<sigma>, V(?pn \<mapsto> Q), u, i\<rangle> \<Turnstile> \<psi> \<longleftrightarrow> \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>), u, i\<rangle> \<Turnstile> \<psi>" for u
-    by (rule sat_agree_from[OF order_refl ag])
-  then show ?thesis
-    using q by (auto intro: qtable_cong[OF _ refl])
 qed
 
 lemma (in maux) meval_correct:
@@ -6005,49 +5545,6 @@ qed
 
 section \<open> Specification \<close>
 
-definition pprogress :: "'t Formula.formula \<Rightarrow> Formula.prefix \<Rightarrow> nat" where
-  "pprogress \<phi> \<pi> = (THE n. \<forall>\<sigma>. prefix_of \<pi> \<sigma> \<longrightarrow> progress \<sigma> Map.empty \<phi> (plen \<pi>) = n)"
-
-lemma pprogress_eq: "prefix_of \<pi> \<sigma> \<Longrightarrow> pprogress \<phi> \<pi> = progress \<sigma> Map.empty \<phi> (plen \<pi>)"
-  unfolding pprogress_def using progress_prefix_conv
-  by blast
-
-sublocale future_bounded_mfodl \<subseteq> sliceable_timed_progress "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces "relevant_events \<phi>"
-  "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "pprogress \<phi>"
-proof (unfold_locales, goal_cases)
-  case (1 \<pi>' \<pi>)
-  moreover obtain \<sigma> where "prefix_of \<pi>' \<sigma>"
-    using ex_prefix_of ..
-  moreover have "prefix_of \<pi> \<sigma>"
-    using prefix_of_antimono[OF \<open>\<pi> \<le> \<pi>'\<close> \<open>prefix_of \<pi>' \<sigma>\<close>] .
-  ultimately show ?case
-    by (simp add: pprogress_eq plen_mono progress_mono)
-next
-  case (2 \<sigma> x)
-  obtain j where "x \<le> progress \<sigma> Map.empty \<phi> j"
-    using future_bounded progress_ge by blast
-  then have "x \<le> pprogress \<phi> (take_prefix j \<sigma>)"
-    by (simp add: pprogress_eq[of _ \<sigma>])
-  then show ?case by force
-next
-  case (3 \<sigma> \<pi> \<sigma>' i v)
-  then have "i < progress \<sigma> Map.empty \<phi> (plen \<pi>)"
-    by (simp add: pprogress_eq)
-  with 3 show ?case
-    using sat_prefix_conv by blast
-next
-  case (4 \<pi> \<pi>')
-  then have "plen \<pi> = plen \<pi>'"
-    unfolding length_pts_eq_plen[symmetric] by auto
-  moreover obtain \<sigma> \<sigma>' where "prefix_of \<pi> \<sigma>" "prefix_of \<pi>' \<sigma>'"
-    using ex_prefix_of by blast+
-  moreover have "\<forall>i < plen \<pi>. \<tau> \<sigma> i = \<tau> \<sigma>' i"
-    using 4 calculation nth_pts_eq_\<tau>[OF calculation(3)] nth_pts_eq_\<tau>[OF calculation(2)]
-    by auto
-  ultimately show ?case
-    by (simp add: pprogress_eq progress_time_conv)
-qed
-
 context maux
 begin
 
@@ -6060,25 +5557,6 @@ lemma wf_mstate_minit_safe: "S, E \<turnstile> \<phi> \<Longrightarrow> mmonitor
 end
 
 locale verimon = verimon_spec + maux
-
-lemma (in verimon) Mt_pnil: "Mt pnil = {}"
-  by (simp add: Mt_def M_def pprogress_eq)
-
-lemma (in verimon) fst_M_less_plen: 
-  assumes "(i, v) \<in> M \<pi>" 
-  shows "i < plen \<pi>"
-proof -
-  obtain \<sigma> where "prefix_of \<pi> \<sigma>"
-    using ex_prefix_of by blast
-  then have "pprogress \<phi> \<pi> \<le> plen \<pi>"
-    by (simp add: pprogress_eq)
-  with assms show ?thesis
-    unfolding M_def by simp
-qed
-
-lemma (in verimon) mono_monitor': "\<pi>' \<in> formula_slicer.prefixes \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> Mt \<pi> \<subseteq> Mt \<pi>'"
-  unfolding Mt_def using mono_monitor[of \<pi>' \<pi>] fst_M_less_plen[of _ _ \<pi>]
-  by (auto simp add: nth_pts_prefix_cong dest!: subsetD)
 
 lemma (in verimon) mstep_mverdicts:
   assumes wf: "wf_mstate SIG ENV \<phi> \<pi> R st"

@@ -20,15 +20,6 @@ lift_definition wf_table_sig :: "'a wf_table \<Rightarrow> nat list" is fst .
 
 lift_definition wf_table_set :: "'a wf_table \<Rightarrow> 'a table" is snd .
 
-lemma distinct_wf_table_sig[simp]: "distinct (wf_table_sig t)"
-  by transfer auto
-
-lemma wf_table_set_table: "wf_table_sig t = cs \<Longrightarrow> table cs (wf_table_set t)"
-  by transfer auto
-
-lemma wf_table_set_wf: "wf_table_sig t = cs \<Longrightarrow> x \<in> wf_table_set t \<Longrightarrow> wf_tuple cs x"
-  by transfer (auto simp: table_def)
-
 lemma wf_table_eqI:
   assumes "wf_table_sig t = wf_table_sig t'" "wf_table_set t = wf_table_set t'"
   shows "t = t'"
@@ -119,9 +110,6 @@ lemma idx_wfI:
   idx_wf cs I T"
   by (auto simp: idx_wf_def)
 
-lemma mem_set_of_idx: "z \<in> set_of_idx T \<longleftrightarrow> (\<exists>x Y. Mapping.lookup T x = Some Y \<and> z \<in> Y)"
-  by transfer (auto simp: ran_def Map_To_Mapping.map_apply_def)
-
 lemma idx_wf_table: "idx_wf cs I T \<Longrightarrow> table cs (set_of_idx T)"
   by (auto simp: table_def mem_set_of_idx idx_wf_def)
 
@@ -131,20 +119,6 @@ lemma idx_wf_lookup:
   assumes "idx_wf cs I T" "z \<in> set_of_idx T"
   obtains Y where "Mapping.lookup T (restrict I cs z) = Some Y" "z \<in> Y"
   using assms by (auto simp: mem_set_of_idx dest: idx_wfD(3))
-
-lemma lookup_cluster: "Mapping.lookup (cluster f Y) x =
-  (if Some x \<in> f ` Y then Some {y \<in> Y. f y = Some x} else None)"
-  by transfer (simp add: Map_To_Mapping.map_apply_def)
-
-lemma lookup_mapping_join: "Mapping.lookup (mapping_join f m m') x =
-  (case Mapping.lookup m x of None \<Rightarrow> None
-   | Some y \<Rightarrow> (case Mapping.lookup m' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (f y y')))"
-  by (simp add: Mapping.lookup_def mapping_join.rep_eq split: option.splits)
-
-lemma lookup_mapping_antijoin: "Mapping.lookup (mapping_antijoin m m') x =
-  (case Mapping.lookup m x of None \<Rightarrow> None
-   | Some y \<Rightarrow> (case Mapping.lookup m' x of None \<Rightarrow> Some y | Some y' \<Rightarrow> None))"
-  by (simp add: Mapping.lookup_def mapping_antijoin.rep_eq split: option.splits)
 
 definition idx_create :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> ('a tuple, 'a table) mapping" where
   "idx_create cs I T = cluster (Some \<circ> restrict I cs) T"
@@ -196,19 +170,6 @@ proof -
     using assms by (auto simp: idx_wf_def idx_union_def Mapping.lookup_combine combine_options_def
       split: option.splits)
 qed
-
-lemma join_True_iff:
-  assumes "distinct cs" "distinct ds" "table cs X" "table ds Y"
-  shows "v \<in> join cs X True ds Y \<longleftrightarrow> wf_tuple (cols_union cs ds) v \<and>
-    restrict cs (cols_union cs ds) v \<in> X \<and> restrict ds (cols_union cs ds) v \<in> Y"
-  using join_restrict[OF assms, of True v] by simp
-
-lemma join_False_iff:
-  assumes "distinct cs" "distinct ds" "table cs X" "table ds Y" "set ds \<subseteq> set cs"
-  shows "v \<in> join cs X False ds Y \<longleftrightarrow> v \<in> X \<and> restrict ds cs v \<notin> Y"
-  using join_restrict[OF assms(1-4), of False v] assms(5) tableD[OF assms(3), of v]
-    restrict_idle[OF assms(1), of v]
-  by (auto simp: cols_union_subset)
 
 text \<open>Two indexes on the same key columns are joined cluster by cluster: the tuples of a join
   have the same key in both operands.\<close>
@@ -435,25 +396,6 @@ lift_definition wf_idx_cols :: "'a wf_idx \<Rightarrow> nat list" is "\<lambda>(
 
 lift_definition wf_idx_set :: "'a wf_idx \<Rightarrow> 'a table" is "\<lambda>(cs, I, T). set_of_idx T" .
 
-lemma distinct_wf_idx_sig[simp]: "distinct (wf_idx_sig t)"
-  by transfer auto
-
-lemma wf_idx_set_table: "wf_idx_sig t = cs \<Longrightarrow> table cs (wf_idx_set t)"
-  by transfer (auto intro: idx_wf_table)
-
-lemma wf_idx_set_wf: "wf_idx_sig t = cs \<Longrightarrow> x \<in> wf_idx_set t \<Longrightarrow> wf_tuple cs x"
-  using wf_idx_set_table by (auto simp: table_def)
-
-lift_definition wf_idx_of_table :: "nat list \<Rightarrow> 'a wf_table \<Rightarrow> 'a wf_idx" is
-  "\<lambda>I (cs, T). let I' = filter (\<lambda>c. c \<in> set cs) I in (cs, I', idx_create cs I' T)"
-  by (auto simp: Let_def idx_create)
-
-lemma wf_idx_sig_of_table[simp]: "wf_idx_sig (wf_idx_of_table I t) = wf_table_sig t"
-  by transfer (auto simp: Let_def)
-
-lemma wf_idx_set_of_table[simp]: "wf_idx_set (wf_idx_of_table I t) = wf_table_set t"
-  by transfer (auto simp: Let_def idx_create(1))
-
 lift_definition wf_table_of_idx :: "'a wf_idx \<Rightarrow> 'a wf_table" is
   "\<lambda>(cs, I, T). (cs, set_of_idx T)"
   by (auto intro: idx_wf_table)
@@ -463,9 +405,6 @@ lemma wf_table_sig_of_idx[simp]: "wf_table_sig (wf_table_of_idx t) = wf_idx_sig 
 
 lemma wf_table_set_of_idx[simp]: "wf_table_set (wf_table_of_idx t) = wf_idx_set t"
   by transfer auto
-
-lemma table_filter: "table cs {a \<in> T. wf_tuple cs a}"
-  by (auto simp: table_def)
 
 lemma idx_wf_empty[simp]: "idx_wf cs I Mapping.empty"
   by (simp add: idx_wf_def)
@@ -480,15 +419,6 @@ lemma wf_idx_sig_of_set: "distinct cs \<Longrightarrow> wf_idx_sig (wf_idx_of_se
 
 lemma wf_idx_set_of_set: "distinct cs \<Longrightarrow> wf_idx_set (wf_idx_of_set cs I T) = Set.filter (wf_tuple cs) T"
   by transfer (auto simp: Let_def idx_create(1)[OF table_filter])
-lift_definition wf_idx_reindex :: "nat list \<Rightarrow> 'a wf_idx \<Rightarrow> 'a wf_idx" is
-  "\<lambda>I' (cs, I, T). let I'' = filter (\<lambda>c. c \<in> set I') I in (cs, I'', idx_reindex cs I'' I T)"
-  by (auto simp: Let_def idx_reindex(2))
-
-lemma wf_idx_sig_reindex: "wf_idx_sig (wf_idx_reindex I t) = wf_idx_sig t"
-  by transfer (auto simp: Let_def)
-
-lemma wf_idx_set_reindex: "wf_idx_set (wf_idx_reindex I t) = wf_idx_set t"
-  by transfer (auto simp: Let_def idx_reindex(1))
 
 text \<open>The binary operations bring both indexes to the key columns they share, in the order of
   the first index.\<close>
@@ -646,13 +576,6 @@ lift_definition wf_idx_of_wf_set :: "nat list \<Rightarrow> 'a wf_set \<Rightarr
 
 lemma wf_table_of_idx_of_wf_set[simp]: "wf_table_of_idx (wf_idx_of_wf_set I t) = wf_table_of_wf_set t"
   by (rule wf_table_eqI; transfer) (auto simp: Let_def idx_create(1))
-
-lift_definition wf_set_of_idx :: "'a wf_idx \<Rightarrow> 'a wf_set" is
-  "\<lambda>(cs, I, T). (cs, set_of_idx T)"
-  by (auto intro: idx_wf_table)
-
-lemma wf_table_of_wf_set_of_idx[simp]: "wf_table_of_wf_set (wf_set_of_idx t) = wf_table_of_idx t"
-  by (rule wf_table_eqI; transfer) auto
 
 text \<open>The operations on the two representations.\<close>
 

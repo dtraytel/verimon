@@ -201,18 +201,6 @@ lemma (in msaux) wf_since_aux_Nil: "Formula.fv \<phi>' \<subseteq> Formula.fv \<
   unfolding wf_since_aux_def
   by (auto simp: init_args_def intro!: exI[of _ "[]"] valid_init_msaux[unfolded init_args_def])
 
-lemma (in msaux) wf_since_aux_UNIV_alt:
-  "wf_since_aux \<sigma> V UNIV args \<phi> \<psi> aux pIn pOut \<longleftrightarrow> pIn \<le> pOut \<and>
-    valid_aggargs (args_n args) (Formula.fv_list \<psi>) (args_agg args) \<and>
-    (\<exists>auxlist. valid_msaux args (if pOut = 0 then 0 else \<tau> \<sigma> (pOut-1)) aux auxlist \<and>
-      sorted_wrt (\<lambda>x y. fst x > fst y) auxlist \<and>
-      (\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow>
-        (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - t) \<and>
-        wf_table (Formula.fv_list \<psi>)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (val (args_n args) (Formula.fv_list \<psi>) x)) X) \<and>
-      (\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - \<tau> \<sigma> i) \<longrightarrow> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)))"
-  unfolding wf_since_aux_def qtable_mem_restr_UNIV[OF distinct_fvi_list] ..
-
 lemma (in msaux) wf_since_aux_update1:
   assumes wf: "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn pOut"
     and t_eq: "t = \<tau> \<sigma> pOut"

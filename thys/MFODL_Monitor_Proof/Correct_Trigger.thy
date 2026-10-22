@@ -96,13 +96,6 @@ definition wf_mbuft2' :: "Formula.trace \<Rightarrow> _ \<Rightarrow> _ \<Righta
     (\<lambda>i (dfvs, r). wf_dfvs dfvs \<sigma> I i (formula.Trigger \<alpha> I \<beta>) 
       \<and> sat_table \<sigma> V n R dfvs i (formula.Trigger \<alpha> I \<beta>) r) buf"
 
-lemma wf_mbuf2'_UNIV_alt: "wf_mbuf2' \<sigma> P V j n UNIV \<phi> \<psi> buf \<longleftrightarrow> (case buf of (xs, ys) \<Rightarrow>
-  list_all2 (\<lambda>i (r). wf_table (Formula.fv_list \<phi>) (\<lambda>v. Formula.sat \<sigma> V (val n (Formula.fv_list \<phi>) v) i \<phi>) r)
-    [min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) ..< (progress \<sigma> P \<phi> j)] xs \<and>
-  list_all2 (\<lambda>i (r). wf_table (Formula.fv_list \<psi>) (\<lambda>v. Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) v) i \<psi>) r)
-    [min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) ..< (progress \<sigma> P \<psi> j)] ys)"
-  unfolding wf_mbuf2'_def wf_mbuf2_def
-  by (simp add: qtable_mem_restr_UNIV split: prod.split)
 lemma mbuft2_take_add':
   assumes eq: "mbuf2_take f (mbuf2_add xs ys buf) = (zs, buf')"
     and pre: "wf_mbuft2' \<sigma> P V j n R \<phi> \<alpha> I \<beta> buf"
@@ -143,23 +136,6 @@ proof -
     using mbuf2_take_eqD[OF eq wf_add]
     by auto
 qed
-
-lemma mbuf2t_take_add':
-  assumes eq: "mbuf2t_take f z (mbuf2_add xs ys buf) t nts = (z', buf', nt, nts')"
-    and bounded: "pred_mapping (\<lambda>x. x \<le> j) P" "pred_mapping (\<lambda>x. x \<le> j') P'"
-    and rm: "rel_mapping (\<le>) P P'"
-    and pre_buf: "wf_mbuf2' \<sigma> P V j n R \<phi> \<psi> buf"
-    and pre_nts: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)..<j'] nts"
-    and xs: "list_all2 (\<lambda>i (r). sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi> r)
-      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> j'] xs"
-    and ys: "list_all2 (\<lambda>i (r). sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi> r)
-      [progress \<sigma> P \<psi> j..<progress \<sigma> P' \<psi> j'] ys"
-    and "j \<le> j'"
-  shows "wf_mbuf2' \<sigma> P' V j' n R \<phi> \<psi> buf'"
-    and "wf_ts \<sigma> P' j' \<phi> \<psi> nts'"
-  using pre_buf pre_nts bounded rm unfolding wf_mbuf2'_def wf_ts_def
-  by (auto intro!: mbuf2t_take_eqD[OF eq] wf_mbuf2_add[OF _ xs ys] progress_mono_gen[OF \<open>j \<le> j'\<close> bounded rm]
-      progress_le_gen)
 
 
 text \<open>The trigger's result is finite if the latest entry of the window is in the interval
@@ -239,9 +215,6 @@ proof (cases "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur -
     using fin by auto
   ultimately show ?thesis
     by (rule finite_subset)qed (simp add: unit_table_def)
-
-lemma last_filter: "xs \<noteq> [] \<Longrightarrow> P (last xs) \<Longrightarrow> filter P xs \<noteq> [] \<and> last (filter P xs) = last xs"
-  by (induction xs) (auto split: if_splits)
 
 lemma finite_trigger_results_filter:
   assumes fin: "\<And>t l r. (t, l, r) \<in> set auxlist \<Longrightarrow> finite l \<and> finite r"

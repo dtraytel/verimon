@@ -5,12 +5,6 @@ begin
 (*>*)
 
 
-lemma max_tstp_idem: "max_tstp (max_tstp x y) y = max_tstp x y"
-  by (cases x; cases y) auto
-
-lemma max_cases: "(max a b = a \<Longrightarrow> P) \<Longrightarrow> (max a b = b \<Longrightarrow> P) \<Longrightarrow> P"
-  by (metis max_def)
-
 lemma max_tstpE: "isl tstp \<longleftrightarrow> isl tstp' \<Longrightarrow> (max_tstp tstp tstp' = tstp \<Longrightarrow> P) \<Longrightarrow>
   (max_tstp tstp tstp' = tstp' \<Longrightarrow> P) \<Longrightarrow> P"
   by (cases tstp; cases tstp') (auto elim: max_cases)
@@ -29,22 +23,6 @@ lemma max_tstp_intro'': "isl tstp \<longleftrightarrow> isl tstp' \<Longrightarr
 
 lemma max_tstp_isl: "isl tstp \<longleftrightarrow> isl tstp' \<Longrightarrow> isl (max_tstp tstp tstp') \<longleftrightarrow> isl tstp"
   by (cases tstp; cases tstp') auto
-
-lemma list_length_eq_split:
-  assumes "list = xs @ [x] @ xs'"
-  and "length list = length lista"
-  shows "\<exists>ys y ys'. lista = ys @ [y] @ ys' \<and> length xs = length ys \<and> length xs' = length ys'"
-proof -
-  have length_eq: "length xs = length list - length xs' - 1" using assms by auto
-  then have s1: "lista = take (length xs) lista @ drop (length list - length xs' - 1) lista" by auto
-  have "length lista \<ge> length xs + 1" using assms by auto
-  then have "drop (length list - length xs' - 1) lista \<noteq> []" using length_eq assms(2) by auto 
-  then obtain b xc where xc_def: "drop (length list - length xs' - 1) lista = [b] @ xc" by (metis append_Cons append_Nil list.exhaust)
-  then have "lista = take (length xs) lista @ [b] @ xc" using s1 by auto
-  then obtain xb' where split_list_1: "lista = xb' @ [b] @ xc" "length xb' = length xs" "length xc = length xs'"
-    using xc_def  by (metis (no_types, lifting) One_nat_def Suc_eq_plus1 add_diff_cancel_left' assms(1) assms(2) diff_add_inverse2 diff_diff_left length_append length_drop length_nth_simps(1) length_nth_simps(2) plus_1_eq_Suc)
-  then show ?thesis by metis
-qed
 
 lemma tstp_le_aux: 
   assumes "Mapping.lookup tstp_map tpa = Some ts"
@@ -212,7 +190,7 @@ proof -
     have "tp \<in> {tp - len..tp}" "tp - len + 1 \<in> {tp - len..tp}"
       using len_pos len_tp by auto
     then have "Mapping.keys a2_map' = {tp - len..tp}"
-      unfolding a2_map'_def by (simp add: Mapping_update_keys a2_map_keys insert_absorb)
+      unfolding a2_map'_def by (simp add: Mapping.keys_update a2_map_keys insert_absorb)
     moreover have "{tp - len..tp} - {tp - len} = {tp - len + 1..tp}"
       by auto
     ultimately show ?thesis
@@ -898,22 +876,6 @@ proof (induction tss arbitrary: aux)
     using Cons(1)[OF valid_step] valid_step Cons(4) app_ass by auto
 qed auto
 
-lemma sorted_dropWhile_filter: "sorted xs \<Longrightarrow> dropWhile (\<lambda>t. \<not> memR I (nt - t)) xs =
-  filter (\<lambda>t. memR I (nt - t)) xs"
-proof (induction xs)
-  case (Cons x xs)
-  then show ?case
-  proof (cases "\<not> memR I (nt - x)")
-    case False
-    then have neg: "memR I (nt - x)"
-      by auto
-    with Cons have "\<And>z. z \<in> set xs \<Longrightarrow> memR I (nt - z)"
-      by (auto simp: diff_le_mono2)
-    with False show ?thesis
-      using filter_empty_conv by auto
-  qed auto
-qed auto
-
 lemma valid_shift_mmuaux':
   assumes "valid_mmuaux' args cur cur aux auxlist" "nt \<ge> cur"
   shows "valid_mmuaux' args cur nt (shift_mmuaux args nt aux) auxlist \<and>
@@ -960,35 +922,9 @@ proof -
     unfolding valid_foldl(2)[unfolded shift_mmuaux_eq[symmetric]] by auto
 qed
 
-lemma upd_set'_keys: "Mapping.keys (upd_set' m d f X) = Mapping.keys m \<union> X"
-  by (auto simp add: upd_set'_lookup intro!: Mapping_keys_intro
-      dest!: Mapping.in_keysD split: option.splits)
-
-lemma upd_nested_keys: "Mapping.keys (upd_nested m d f X) = Mapping.keys m \<union> fst ` X"
-  by (auto simp add: upd_nested_lookup Domain.DomainI fst_eq_Domain intro!: Mapping_keys_intro
-      dest!: Mapping.in_keysD split: option.splits)
-
-lemma fst_case: "(\<lambda>x. fst (case x of (t, a1, a2) \<Rightarrow> (t, y t a1 a2, z t a1 a2))) = fst"
-  by auto
-
-lemma list_all2_in_setE: "list_all2 P xs ys \<Longrightarrow> x \<in> set xs \<Longrightarrow> (\<And>y. y \<in> set ys \<Longrightarrow> P x y \<Longrightarrow> Q) \<Longrightarrow> Q"
-  by (fastforce simp: list_all2_iff set_zip in_set_conv_nth)
-
 lemma list_all2_zip: "list_all2 (\<lambda>x y. triple_eq_pair x y f g) xs (zip ys zs) \<Longrightarrow>
   (\<And>y. y \<in> set ys \<Longrightarrow> Q y) \<Longrightarrow> x \<in> set xs \<Longrightarrow> Q (fst x)"
   by (auto simp: in_set_zip elim!: list_all2_in_setE triple_eq_pair.elims)
-
-lemma take_takeWhile: "n \<le> length ys \<Longrightarrow>
-  (\<And>y. y \<in> set (take n ys) \<Longrightarrow> P y) \<Longrightarrow>
-  (\<And>y. y \<in> set (drop n ys) \<Longrightarrow> \<not>P y) \<Longrightarrow>
-  take n ys = takeWhile P ys"
-proof (induction ys arbitrary: n)
-  case Nil
-  then show ?case by simp
-next
-  case (Cons y ys)
-  then show ?case by (cases n) simp_all
-qed
 
 lemma valid_add_new_mmuaux:
   assumes valid_before: "valid_mmuaux args cur aux auxlist"
@@ -1141,9 +1077,14 @@ proof -
     by (auto simp add: Mapping.lookup_filter Mapping_lookup_upd_set Mapping_upd_set_keys
         split: option.splits dest: Mapping.in_keysD) fastforce+
   have sorted_upd_until: "sorted (map fst (update_until args rel1 rel2 nt auxlist))"
-    using sorted_fst_auxlist set_map_fst_auxlist
-    unfolding update_until_eq
-    by (auto simp add: sorted_append comp_def fst_case)
+  proof -
+    have fst_case: "(\<lambda>x. fst (case x of (t, a1, a2) \<Rightarrow> (t, y t a1 a2, z t a1 a2))) = fst" for y z
+      by auto
+    show ?thesis
+      using sorted_fst_auxlist set_map_fst_auxlist
+      unfolding update_until_eq
+      by (auto simp add: sorted_append comp_def fst_case)
+  qed
   have old_tables_restr: "\<forall>(a, b) \<in> set (linearize tables). case b of Inl ts \<Rightarrow> ts \<le> cur |
                                                     Inr tp' \<Rightarrow> tp' \<le> tp" 
     "list_all (\<lambda>k. isl k = (\<not> memL (args_ivl args) 0)) (map snd (linearize tables))"

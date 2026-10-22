@@ -90,16 +90,6 @@ definition "agg_tys args = (case args_agg args of None \<Rightarrow> []         
 lemma progress_packagg[simp]: "Progress.progress \<sigma> P (packagg args \<phi>) j = Progress.progress \<sigma> P \<phi> j"
   by (auto simp: packagg_def split: option.splits)
 
-lemma restrict_Cons_notin:
-  assumes "y \<notin> set cs" "wf_tuple cs x" "distinct cs"
-  shows "restrict cs (y # cs) (a # x) = x"
-proof -
-  have "restrict cs (y # cs) (a # x) = map (tup_get cs x) cs"
-    unfolding restrict_def using assms(1) by (auto simp: tup_get_Cons intro!: map_cong)
-  also have "\<dots> = x"
-    using restrict_idle[OF assms(3,2)] by (simp add: restrict_def)
-  finally show ?thesis .
-qed
 lemma qtable_eval_agg:
   assumes inner: "qtable cs (mem_restr (lift_envs' (length tys) R) cs)
       (\<lambda>v. Formula.sat \<sigma> V (val (length tys + n) cs v) i \<phi>) rel"

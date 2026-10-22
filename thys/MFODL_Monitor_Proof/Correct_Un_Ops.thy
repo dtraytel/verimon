@@ -31,11 +31,6 @@ lemma eval_constraint_sat_eq: "fv_trm t1 \<subseteq> set A \<Longrightarrow> fv_
   by (induction "(t1, p, c, t2)" rule: formula_of_constraint.induct)
     (simp_all add: meval_trm_eval_trm)
 
-lemma formula_of_constraint_neq_release_safe_bdd: 
-  "formula_of_constraint (t1, b, op, t2) \<noteq> release_safe_bounded \<phi>' I \<psi>'"
-  by (induction rule: formula_of_constraint.induct)
-    (auto simp: release_safe_bounded_def)
-
 
 subsubsection \<open> Predicates \<close>
 
@@ -112,13 +107,6 @@ proof -
   qed
 qed
 
-lemma sat_Pred_iff:
-  "V (p, length ts) = Some P \<Longrightarrow>
-    Formula.sat \<sigma> V v i (Formula.Pred p ts) \<longleftrightarrow> map (Formula.eval_trm v) ts \<in> {v. length v = length ts \<and> P v i}"
-  "V (p, length ts) = None \<Longrightarrow>
-    Formula.sat \<sigma> V v i (Formula.Pred p ts) \<longleftrightarrow> map (Formula.eval_trm v) ts \<in> {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}"
-  by simp_all
-
 lemma qtable_simple_pattern:
   assumes "X = Formula.fv_list (Formula.Pred p ts)" and "\<forall>x\<in>fv (Formula.Pred p ts). x < n" 
     and "is_simple_pattern ts 0"
@@ -140,19 +128,6 @@ proof -
     unfolding assms(1) fv_list_Pred using that
     by (intro qtable_simple_pattern_gen[OF assms(3) *]) simp_all
 qed
-lemma qtable_copy_pattern:
-  assumes "X = Formula.fv_list (Formula.Pred p ts)" and "\<forall>x\<in>fv (Formula.Pred p ts). x < n"
-    and "is_copy_pattern n ts"
-  shows "V (p, length ts) = Some P \<Longrightarrow> 
-  R = {v. length v = length ts \<and> P v i} \<Longrightarrow> finite R \<Longrightarrow>
-  qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
-    and "V (p, length ts) = None \<Longrightarrow> 
-  R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts} \<Longrightarrow> finite R \<Longrightarrow>
-  qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
-  by (fact qtable_simple_pattern[OF assms(1,2) is_copy_pattern_simple[OF assms(3)]])+
-
-lemma match_fvi_trm_None: "Some f = match ts xs \<Longrightarrow> \<forall>t\<in>set ts. x \<notin> Formula.fv_trm t \<Longrightarrow> f x = None"
-  by (induction ts xs arbitrary: f rule: match.induct) (auto split: if_splits option.splits)
 
 lemma match_fvi_trm_Some: "Some f = match ts xs \<Longrightarrow> t \<in> set ts \<Longrightarrow> x \<in> Formula.fv_trm t \<Longrightarrow> f x \<noteq> None"
   by (induction ts xs arbitrary: f rule: match.induct) (auto split: if_splits option.splits)
@@ -311,58 +286,6 @@ lemma qtable_eq_relI: "\<forall>x\<in>fv_trm t1. x < n \<Longrightarrow> \<foral
     (auto simp: is_simple_eq_def qtable_iff table_def cols_union_def singleton_table_def unit_table_def
       empty_table_def length_Suc_conv tup_get_Cons dest: mem_restr_wf_tuple)
 
-
-subsubsection \<open> Existential \<close>
-
-text \<open>The table of an existential quantifier: the projection drops the column of the bound
-  variable @{term 0}.\<close>
-
-lemma qtable_project_fv:
-  assumes "distinct cs" "set cs = fv \<phi>" "\<forall>x\<in>fv \<phi>. x < Suc n"
-    and "qtable cs (mem_restr (lift_envs R) cs) (\<lambda>v. Formula.sat \<sigma> V (val (Suc n) cs v) i \<phi>) X"
-  shows "qtable (ex_cols cs) (mem_restr R (ex_cols cs))
-    (\<lambda>v. Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)) (ex_proj cs ` X)"
-proof (rule qtable_cong[OF qtable_project[OF assms(1,4)] refl])
-  fix v
-  assume "mem_restr R (ex_cols cs) v"
-  then have wf: "wf_tuple (ex_cols cs) v"
-    by (rule mem_restr_wf_tuple)
-  have agree: "Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi> \<longleftrightarrow> Formula.sat \<sigma> V (z # val n (ex_cols cs) v) i \<phi>"
-    if "0 \<in> set cs \<Longrightarrow> tup_get cs x 0 = z" "\<And>c. c \<in> set cs \<Longrightarrow> c \<noteq> 0 \<Longrightarrow> tup_get cs x c = tup_get (ex_cols cs) v (c - 1)"
-    for x z
-  proof (rule sat_fv_cong, intro ballI)
-    fix c
-    assume "c \<in> fv \<phi>"
-    then show "val (Suc n) cs x ! c = (z # val n (ex_cols cs) v) ! c"
-      using assms(2,3) that by (cases c) auto
-  qed
-  show "(\<exists>x. wf_tuple cs x \<and> ex_proj cs x = v \<and> Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>) \<longleftrightarrow>
-    Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)"
-  proof
-    assume "\<exists>x. wf_tuple cs x \<and> ex_proj cs x = v \<and> Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
-    then obtain x where x: "ex_proj cs x = v" "Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
-      by blast
-    have "Formula.sat \<sigma> V (tup_get cs x 0 # val n (ex_cols cs) v) i \<phi>"
-      using x(2) tup_get_ex_proj[of _ cs x] by (subst agree[symmetric]) (auto simp: x(1)[symmetric])
-    then show "Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)"
-      by auto
-  next
-    assume "Formula.sat \<sigma> V (val n (ex_cols cs) v) i (Formula.Exists t \<phi>)"
-    then obtain z where z: "Formula.sat \<sigma> V (z # val n (ex_cols cs) v) i \<phi>"
-      by auto
-    define x where "x = map (\<lambda>c. if c = 0 then z else tup_get (ex_cols cs) v (c - 1)) cs"
-    have get: "tup_get cs x c = (if c = 0 then z else tup_get (ex_cols cs) v (c - 1))" if "c \<in> set cs" for c
-      using that by (simp add: x_def tup_get_map_self)
-    have "ex_proj cs x = map (tup_get (ex_cols cs) v) (ex_cols cs)"
-      by (auto simp: ex_proj_def ex_cols_def restrict_def get)
-    also have "\<dots> = v"
-      using restrict_idle[OF distinct_ex_cols[OF assms(1)] wf] by (simp add: restrict_def)
-    finally have "ex_proj cs x = v" .
-    moreover have "Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
-      using z by (subst agree) (simp_all add: get)
-    ultimately show "\<exists>x. wf_tuple cs x \<and> ex_proj cs x = v \<and> Formula.sat \<sigma> V (val (Suc n) cs x) i \<phi>"
-      by (intro exI[of _ x]) (simp add: wf_tuple_def x_def)  qed
-qed
 
 subsubsection \<open> Next and Previous \<close>
 

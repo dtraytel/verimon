@@ -5,6 +5,191 @@ begin
 (*>*)
 
 
+lemma fold_filter_set_sub: "fold filter_set xs (m, Y) = (m', Y') \<Longrightarrow> Y' \<subseteq> Y \<union> \<Union>(snd ` set xs)"
+proof (induction xs arbitrary: m Y)
+  case (Cons a xs)
+  show ?case
+    using Cons(2)
+    by (cases a; cases "filter_set a (m, Y)") (auto dest: Cons(1) filter_set_sub)
+qed auto
+
+lemma fold_filter_set_Some_None: "Mapping.lookup ts as = Some t \<Longrightarrow>
+  as \<in> X \<Longrightarrow> (t, X) \<in> set ds \<Longrightarrow> fold filter_set ds (ts, Y) = (ts', Y') \<Longrightarrow>
+  Mapping.lookup ts' as = None \<and> as \<in> Y'"
+proof (induction ds arbitrary: ts Y)
+  case (Cons a ds)
+  show ?case
+  proof (cases a)
+    case (Pair t' X')
+    obtain ts'' Y'' where step: "filter_set a (ts, Y) = (ts'', Y'')"
+      by fastforce
+    show ?thesis
+    proof (cases "Mapping.lookup ts'' as")
+      case None
+      have "as \<in> Y''"
+        using Cons(2) None step
+        by (auto simp: Pair filter_set.simps Let_def Mapping_keys_intro keys_is_none_rep)
+      then have "fold filter_set ds (ts'', Y'') = (ts', Y') \<Longrightarrow> as \<in> Y'"
+        by (induction ds arbitrary: ts'' Y'') (auto simp: filter_set.simps Let_def)
+      moreover have "fold filter_set ds (ts'', Y'') = (ts', Y') \<Longrightarrow> Mapping.lookup ts' as = None"
+        using None Mapping_lookup_filter_not_None
+        by (induction ds arbitrary: ts'' Y'') (fastforce simp: filter_set.simps Let_def)+
+      ultimately show ?thesis
+        using Cons(5)
+        by (auto simp: step)
+    next
+      case (Some t'')
+      have lookup_ts'': "Mapping.lookup ts'' as = Some t"
+        using Cons(2) step Some Mapping_lookup_filter_not_None
+        by (fastforce simp: Pair filter_set.simps Let_def Mapping_lookup_filter_None)
+      have set_ds: "(t, X) \<in> set ds"
+        using Cons(2,3,4) step Some
+        by (auto simp: filter_set.simps Let_def Mapping_lookup_filter_None)
+      show ?thesis
+        using Cons lookup_ts'' set_ds
+        by (auto simp: step)
+    qed
+  qed
+qed simp
+
+lemma fold_filter_set_Some_Some: "Mapping.lookup ts as = Some t \<Longrightarrow>
+  (\<And>X. (t, X) \<in> set ds \<Longrightarrow> as \<notin> X) \<Longrightarrow> fold filter_set ds (ts, Y) = (ts', Y') \<Longrightarrow>
+  Mapping.lookup ts' as = Some t \<and> (as \<in> Y' \<longleftrightarrow> as \<in> Y)"
+proof (induction ds arbitrary: ts Y)
+  case (Cons a ds)
+  show ?case
+  proof (cases a)
+    case (Pair t' X')
+    obtain ts'' Y'' where step: "filter_set a (ts, Y) = (ts'', Y'')"
+      by fastforce
+    show ?thesis
+    proof (cases "Mapping.lookup ts'' as")
+      case None
+      have ts'': "ts'' = Mapping.filter (filter_cond X' ts t') ts"
+        using step by (simp add: Pair filter_set.simps Let_def)
+      have "as \<in> X' \<and> Mapping.lookup ts as = Some t'"
+      proof (rule ccontr)
+        assume "\<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t')"
+        then have "Mapping.lookup ts'' as = Mapping.lookup ts as"
+          unfolding ts'' by (rule Mapping_lookup_filter_Some)
+        with None Cons(2) show False
+          by simp
+      qed
+      with Cons(2) Pair have "(t, X') \<in> set (a # ds)" and "as \<in> X'"
+        by simp_all
+      with Cons(3) have "False"
+        by blast
+      then show ?thesis ..
+    next
+      case (Some t'')
+      have lookup_ts'': "Mapping.lookup ts'' as = Some t"
+        using Cons(2) step Some Mapping_lookup_filter_not_None
+        by (fastforce simp: Pair filter_set.simps Let_def Mapping_lookup_filter_None)
+      have "as \<in> Y'' \<longleftrightarrow> as \<in> Y"
+        using step Mapping_keys_intro Some
+        by (force simp: Pair filter_set.simps Let_def)
+      then show ?thesis
+        using Cons(1)[OF lookup_ts''] Cons(3,4)
+        by (auto simp: step)
+    qed
+  qed
+qed simp
+
+lemma fold_upd_set_keys_sub:
+  assumes Z_sub: "\<And>X t. Z X t \<subseteq> X"
+  shows "fold (upd_set_keys Z) xs (m, Y) = (m', Y') \<Longrightarrow> Y' \<subseteq> Y \<union> \<Union>(snd ` set xs)"
+proof (induction xs arbitrary: m Y)
+  case (Cons a xs)
+  show ?case
+    using Cons(2) Z_sub
+    by (cases a; cases "upd_set_keys Z a (m, Y)") (fastforce dest: Cons(1) upd_set_keys_sub)
+qed auto
+
+lemma fold_upd_set_keys:
+  assumes "fold (upd_set_keys Z) mv (ts, {}) = (ts', Y)"
+  shows "ts' = fold (\<lambda>(t, X) ts. upd_set ts (\<lambda>_. t) (Z X t)) mv ts"
+    "Mapping.keys ts' = Mapping.keys ts \<union> Y"
+proof -
+  have fst_fold_upd_set_keys: "fst (fold (upd_set_keys Z) mv (ts, Y0)) = fold (\<lambda>(t, X) ts. upd_set ts (\<lambda>_. t) (Z X t)) mv ts"
+    for Y0 :: "'a set"
+    by (induction mv arbitrary: ts Y0) (auto simp: upd_set_keys.simps)
+  show "ts' = fold (\<lambda>(t, X) ts. upd_set ts (\<lambda>_. t) (Z X t)) mv ts"
+    using fst_fold_upd_set_keys[where ?Y0.0="{}"]
+    by (auto simp: assms)
+  have keys_fold_upd_set_keys: "Y0 \<subseteq> Y \<and> Mapping.keys ts \<subseteq> Mapping.keys ts' \<and> Mapping.keys ts' \<union> Y0 = Mapping.keys ts \<union> Y" if "fold (upd_set_keys Z) mv (ts, Y0) = (ts', Y)" for Y0
+    using that
+  proof (induction mv arbitrary: ts Y0)
+    case (Cons a mv)
+    show ?case
+    proof (cases a)
+      case (Pair t' X')
+      let ?ts = "upd_set ts (\<lambda>_. t') (Z X' t')"
+      have "fold (upd_set_keys Z) mv (?ts, Y0 \<union> Z X' t') = (ts', Y)"
+        using Cons(2) by (simp add: Pair upd_set_keys.simps)
+      then have "Y0 \<union> Z X' t' \<subseteq> Y \<and> Mapping.keys ?ts \<subseteq> Mapping.keys ts' \<and>
+        Mapping.keys ts' \<union> (Y0 \<union> Z X' t') = Mapping.keys ?ts \<union> Y"
+        by (rule Cons(1))
+      moreover have "Mapping.keys ?ts = Mapping.keys ts \<union> Z X' t'"
+        by (rule Mapping_upd_set_keys)
+      ultimately show ?thesis
+        by blast
+    qed
+  qed simp
+  show "Mapping.keys ts' = Mapping.keys ts \<union> Y"
+    using keys_fold_upd_set_keys[OF assms]
+    by auto
+qed
+
+lemma ts_tuple_rel_ext_Cons: "tas \<in> ts_tuple_rel_f f {(nt, X)} \<Longrightarrow>
+  tas \<in> ts_tuple_rel_f f (set ((nt, X) # tass))"
+  by (auto simp add: ts_tuple_rel_f_def)
+
+lemma ts_tuple_rel_ext_Cons': "tas \<in> ts_tuple_rel_f f (set tass) \<Longrightarrow>
+  tas \<in> ts_tuple_rel_f f (set ((nt, X) # tass))"
+  by (auto simp add: ts_tuple_rel_f_def)
+
+lemma ts_tuple_rel_dest: "(t, as) \<in> ts_tuple_rel_f f ys \<Longrightarrow> \<exists>X. (t, X) \<in> ys \<and> as \<in> f X"
+  by (auto simp add: ts_tuple_rel_f_def)
+
+lemma ts_tuple_rel_ext: "tas \<in> ts_tuple_rel_f f {(nt, X)} \<Longrightarrow>
+  \<forall> A B. f A \<union> f B = f (A \<union> B) \<Longrightarrow>
+  tas \<in> ts_tuple_rel_f f (set ((nt, Y \<union> X) # tass))"
+proof -
+  assume assm: "tas \<in> ts_tuple_rel_f f {(nt, X)}" "\<forall> A B. f A \<union> f B = f (A \<union> B)"
+  then obtain as where tas_def: "tas = (nt, as)" "as \<in> f X"
+    by (cases tas) (auto simp add: ts_tuple_rel_f_def)
+  then have "as \<in> f (Y \<union> X)"
+    using assm(2)
+    by auto
+  then show "tas \<in> ts_tuple_rel_f f (set ((nt, Y \<union> X) # tass))"
+    unfolding tas_def(1)
+    by (rule ts_tuple_rel_intro) auto
+qed
+
+lemma ts_tuple_rel_ext': "tas \<in> ts_tuple_rel_f f (set ((nt, X) # tass)) \<Longrightarrow>
+  \<forall> A B. f A \<union> f B = f (A \<union> B) \<Longrightarrow>
+  tas \<in> ts_tuple_rel_f f (set ((nt, X \<union> Y) # tass))"
+proof -
+  assume assm: "tas \<in> ts_tuple_rel_f f (set ((nt, X) # tass))" "\<forall> A B. f A \<union> f B = f (A \<union> B)"
+  then have "tas \<in> ts_tuple_rel_f f {(nt, X)} \<union> ts_tuple_rel_f f (set tass)"
+    using ts_tuple_rel_Un by force
+  then show "tas \<in> ts_tuple_rel_f f (set ((nt, X \<union> Y) # tass))"
+  proof
+    assume "tas \<in> ts_tuple_rel_f f {(nt, X)}"
+    then show ?thesis
+      using assm(2)
+      by (auto simp: Un_commute dest!: ts_tuple_rel_ext)
+  next
+    assume "tas \<in> ts_tuple_rel_f f (set tass)"
+    then have "tas \<in> ts_tuple_rel_f f (set ((nt, X \<union> Y) # tass))"
+      by (rule ts_tuple_rel_ext_Cons')
+    then show ?thesis by simp
+  qed
+qed
+
+lemma safe_max_Some_intro: "x \<in> X \<Longrightarrow> \<exists>y. safe_max X = Some y"
+  using safe_max_empty by auto
+
 lemma valid_mmsaux_tuple_in_keys: "valid_mmsaux args cur
   (nt, gc, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) ys \<Longrightarrow>
   Mapping.keys tuple_in = snd ` {tas \<in> ts_tuple_rel (set (linearize data_in)).
@@ -216,9 +401,41 @@ lemma valid_shift_end_mmsaux: "valid_mmsaux args cur aux auxlist \<Longrightarro
   (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
   using valid_shift_end_mmsaux_unfolded by (cases aux) fast
 
-lemma Mapping_keys_fold_upd_set: "k \<in> Mapping.keys (fold (\<lambda>(t, X) m. upd_set m (\<lambda>_. t) (Z t X))
-  xs m) \<Longrightarrow> k \<in> Mapping.keys m \<or> (\<exists>(t, X) \<in> set xs. k \<in> Z t X)"
-  by (induction xs arbitrary: m) (fastforce simp add: Mapping_upd_set_keys)+
+lemma Mapping_lookup_fold_upd_set_max: "{(t, X) \<in> set xs. as \<in> Z X t} \<noteq> {} \<Longrightarrow>
+  sorted (map fst xs) \<Longrightarrow>
+  Mapping.lookup (fold (\<lambda>(t, X) m. upd_set m (\<lambda>_. t) (Z X t)) xs m) as =
+  Some (Max (fst ` {(t, X) \<in> set xs. as \<in> Z X t}))"
+proof (induction xs arbitrary: m)
+  case (Cons x xs)
+  obtain t X where tX_def: "x = (t, X)"
+    by (cases x) auto
+  have set_fst_eq: "(fst ` {(t, X). (t, X) \<in> set (x # xs) \<and> as \<in> Z X t}) =
+    ((fst ` {(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t}) \<union>
+    (if as \<in> Z X t then {t} else {}))"
+    using image_iff by (fastforce simp add: tX_def split: if_splits)
+  show ?case
+  proof (cases "{(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t} \<noteq> {}")
+    case True
+    have "{(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t} \<subseteq> set xs"
+      by auto
+    then have fin: "finite (fst ` {(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t})"
+      by (simp add: finite_subset)
+    have "Max (insert t (fst ` {(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t})) =
+      Max (fst ` {(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t})"
+      using Max_Un_absorb[OF fin, of "{t}"] True Cons(3) tX_def by auto
+    then show ?thesis
+      using Cons True unfolding set_fst_eq by auto
+  next
+    case False
+    then have empty: "{(t, X). (t, X) \<in> set xs \<and> as \<in> Z X t} = {}"
+      by auto
+    then have "as \<in> Z X t"
+      using Cons(2) set_fst_eq by fastforce
+    then show ?thesis
+      using Mapping_lookup_fold_upd_set_idle[OF empty] unfolding set_fst_eq empty
+      by (auto simp add: Mapping_lookup_upd_set tX_def)
+  qed
+qed simp
 
 lemma valid_add_new_ts_mmsaux'_unfolded:
   assumes valid_before: "valid_mmsaux args cur
@@ -413,20 +630,6 @@ lemma valid_add_new_ts_mmsaux:
     (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
   using valid_add_new_ts_mmsaux'[OF valid_shift_end_mmsaux[OF assms] assms(2)]
   unfolding add_new_ts_mmsaux_def .
-
-lemma Mapping_filter_cong:
-  assumes cong: "(\<And>k v. k \<in> Mapping.keys m \<Longrightarrow> f k v = f' k v)"
-  shows "Mapping.filter f m = Mapping.filter f' m"
-proof -
-  have "\<And>k. Mapping.lookup (Mapping.filter f m) k = Mapping.lookup (Mapping.filter f' m) k"
-    using cong
-    by (fastforce simp add: Mapping.lookup_filter intro: Mapping_keys_intro split: option.splits)
-  then show ?thesis
-    by (simp add: mapping_eqI)
-qed
-
-lemma Mapping_keys_filter: "Mapping.keys (Mapping.filter (\<lambda>x _. P x) m) = Set.filter P (Mapping.keys m)"
-  by transfer (auto split: option.splits if_splits)
 
 lemma join_mmsaux_abs_eq:
   assumes valid_before: "valid_mmsaux args cur

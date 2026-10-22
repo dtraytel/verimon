@@ -1,13 +1,10 @@
 (*<*)
 theory Queue
-  imports "HOL-Library.Extended_Nat" "HOL-Library.Simps_Case_Conv" "HOL-Library.Mapping"
+  imports "HOL-Library.Simps_Case_Conv" "HOL-Library.Mapping"
 begin
 (*>*)
 
 subsection \<open>Optimized queue data structure\<close>
-
-lemma less_enat_iff: "a < enat i \<longleftrightarrow> (\<exists>j. a = enat j \<and> j < i)"
-  by (cases a) auto
 
 type_synonym 'a queue_t = "'a list \<times> 'a list"
 
@@ -54,18 +51,6 @@ lift_definition append_queue :: "'a \<Rightarrow> 'a queue \<Rightarrow> 'a queu
 lemma append_queue_rep: "linearize (append_queue a q) = linearize q @ [a]"
   by transfer (auto simp add: linearize_def split: prod.splits)
 
-fun safe_last_t :: "'a queue_t \<Rightarrow> 'a option \<times> 'a queue_t" where
-  "safe_last_t ([], []) = (None, ([], []))"
-| "safe_last_t (fs, l # ls) = (Some l, (fs, l # ls))"
-| "safe_last_t (f # fs, []) = undefined"
-
-lift_definition safe_last :: "'a queue \<Rightarrow> 'a option \<times> 'a queue" is safe_last_t
-  by (auto simp: queue_invariant_def split: prod.splits list.splits)
-
-lemma safe_last_rep: "safe_last q = (\<alpha>, q') \<Longrightarrow> linearize q = linearize q' \<and>
-  (case \<alpha> of None \<Rightarrow> linearize q = [] | Some a \<Rightarrow> linearize q \<noteq> [] \<and> a = last (linearize q))"
-  by transfer (auto simp: queue_invariant_def split: list.splits elim: safe_last_t.elims)
-
 fun safe_hd_t :: "'a queue_t \<Rightarrow> 'a option \<times> 'a queue_t" where
   "safe_hd_t ([], []) = (None, ([], []))"
 | "safe_hd_t ([], [l]) = (Some l, ([], [l]))"
@@ -85,38 +70,6 @@ lemma safe_hd_rep: "safe_hd q = (\<alpha>, q') \<Longrightarrow> linearize q = l
   (case \<alpha> of None \<Rightarrow> linearize q = [] | Some a \<Rightarrow> linearize q \<noteq> [] \<and> a = hd (linearize q))"
   by transfer
     (auto simp add: queue_invariant_def Let_def hd_append split: list.splits elim: safe_hd_t.elims)
-
-fun replace_hd_t :: "'a \<Rightarrow> 'a queue_t \<Rightarrow> 'a queue_t" where
-  "replace_hd_t a ([], []) = ([], [])"
-| "replace_hd_t a ([], [l]) = ([], [a])"
-| "replace_hd_t a ([], l # ls) = (let fs = rev ls in (a # tl fs, [l]))"
-| "replace_hd_t a (f # fs, l # ls) = (a # fs, l # ls)"
-| "replace_hd_t a (f # fs, []) = undefined"
-
-lift_definition replace_hd :: "'a \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is replace_hd_t
-  by (auto simp: queue_invariant_def split: list.splits elim: replace_hd_t.elims)
-
-lemma tl_append: "xs \<noteq> [] \<Longrightarrow> tl xs @ ys = tl (xs @ ys)"
-  by simp
-
-lemma replace_hd_rep: "linearize q = f # fs \<Longrightarrow> linearize (replace_hd a q) = a # fs"
-proof (transfer fixing: f fs a)
-  fix q
-  assume "queue_invariant q" and "(case q of (fs, ls) \<Rightarrow> fs @ rev ls) = f # fs"
-  then show "(case replace_hd_t a q of (fs, ls) \<Rightarrow> fs @ rev ls) = a # fs"
-    by (cases "(a, q)" rule: replace_hd_t.cases) (auto simp: queue_invariant_def tl_append)
-qed
-
-fun replace_last_t :: "'a \<Rightarrow> 'a queue_t \<Rightarrow> 'a queue_t" where
-  "replace_last_t a ([], []) = ([], [])"
-| "replace_last_t a (fs, l # ls) = (fs, a # ls)"
-| "replace_last_t a (fs, []) = undefined"
-
-lift_definition replace_last :: "'a \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is replace_last_t
-  by (auto simp: queue_invariant_def split: list.splits elim: replace_last_t.elims)
-
-lemma replace_last_rep: "linearize q = fs @ [f] \<Longrightarrow> linearize (replace_last a q) = fs @ [a]"
-  by transfer (auto simp: queue_invariant_def split: list.splits prod.splits elim!: replace_last_t.elims)
 
 fun tl_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
   "tl_queue_t ([], []) = ([], [])"
@@ -149,14 +102,6 @@ lemma safe_hd_t_code[code]:
               | l # v # va \<Rightarrow> (let gs = rev (v # va) in (Some (hd gs), (gs, [l]))))))"
   by (cases q rule: safe_hd_t.cases) (auto simp: Let_def)
 
-declare [[code drop: safe_last_t]]
-
-lemma safe_last_t_code[code]:
-  "safe_last_t q = (case q of (fs, ls) \<Rightarrow>
-     (case ls of [] \<Rightarrow> (case fs of [] \<Rightarrow> (None, q) | _ \<Rightarrow> undefined)
-      | l # _ \<Rightarrow> (Some l, q)))"
-  by (cases q rule: safe_last_t.cases) auto
-
 declare [[code drop: prepend_queue_t]]
 
 lemma prepend_queue_t_code[code]:
@@ -164,18 +109,6 @@ lemma prepend_queue_t_code[code]:
      (case ls of [] \<Rightarrow> (case fs of [] \<Rightarrow> ([], [a]) | _ \<Rightarrow> undefined)
       | _ \<Rightarrow> (a # fs, ls)))"
   by (cases "(a, q)" rule: prepend_queue_t.cases) auto
-
-declare [[code drop: replace_hd_t]]
-
-lemma replace_hd_t_code[code]:
-  "replace_hd_t a q = (case q of (fs, ls) \<Rightarrow>
-     (case fs of
-        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> (a # fs', ls))
-      | [] \<Rightarrow> (case ls of
-                [] \<Rightarrow> q
-              | [l] \<Rightarrow> ([], [a])
-              | l # v # va \<Rightarrow> (let gs = rev (v # va) in (a # tl gs, [l])))))"
-  by (cases "(a, q)" rule: replace_hd_t.cases) (auto simp: Let_def)
 
 declare [[code drop: tl_queue_t]]
 
@@ -328,7 +261,7 @@ lemma pop_queue_t_rep:
    (case pop_queue_t q of (fs, ls) \<Rightarrow> fs @ rev ls) =
    tl (case q of (fs, ls) \<Rightarrow> fs @ rev ls)"
   by (cases q rule: pop_queue_t.cases)
-     (auto simp: queue_invariant_def tl_append split: list.splits)
+     (auto simp: queue_invariant_def tl_append2[symmetric] split: list.splits)
 
 lemma pop_queue_rep: "linearize (pop_queue q) = tl (linearize q)"
   by transfer (rule pop_queue_t_rep)
@@ -352,11 +285,6 @@ fun rev_prepend :: "'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
 lemma rev_prepend_eq: "rev_prepend xs ys = rev xs @ ys"
   by (induction xs arbitrary: ys) auto
 
-declare [[code drop: rev]]
-
-lemma rev_code[code]: "rev xs = rev_prepend xs []"
-  by (simp add: rev_prepend_eq)
-
 lift_definition append_queue_list :: "'a list \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is
   "\<lambda>ys q. (case q of (fs, ls) \<Rightarrow> (fs, rev_prepend ys ls))"
   by (auto simp: queue_invariant_def rev_prepend_eq split: list.splits)
@@ -366,7 +294,7 @@ lemma append_queue_list_rep:
   by transfer (auto simp: linearize_def rev_prepend_eq)
 
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
-  by transfer (auto simp: tl_append split: prod.splits list.splits elim!: tl_queue_t.elims)
+  by transfer (auto simp: tl_append2[symmetric] split: prod.splits list.splits elim!: tl_queue_t.elims)
 
 lemma length_tl_queue_rep: "\<not>is_empty q \<Longrightarrow>
   length (linearize (tl_queue q)) < length (linearize q)"
@@ -478,25 +406,5 @@ proof -
     by (cases x) auto
   with safe_hd_eq show ?thesis by blast
 qed
-
-fun pop_t :: "'a queue_t \<Rightarrow> 'a option \<times> 'a queue_t" where
-  "pop_t ([], []) = (None, ([], []))"
-| "pop_t ([], [y]) = (Some y, ([], []))"
-| "pop_t ([], y # ys) = (case rev ys of z # ys' \<Rightarrow> (Some z, (ys', [y])))"
-| "pop_t (x # xs, ys) = (Some x, (xs, ys))"
-
-lift_definition (code_dt) pop :: "'a queue \<Rightarrow> 'a option \<times> 'a queue" is pop_t
-proof -
-  fix q :: "'a queue_t"
-  assume "queue_invariant q"
-  then show "pred_prod top queue_invariant (pop_t q)"
-    by (induction q rule: pop_t.induct)
-      (simp_all add: queue_invariant_def split: list.split)
-qed
-
-lemma pop_rep: "pop q = (x, q') \<Longrightarrow> (case x of
-    None \<Rightarrow> linearize q = [] \<and> q' = q
-  | Some y \<Rightarrow> linearize q = y # linearize q')"
-  by transfer (auto split: list.splits elim!: pop_t.elims)
 
 end

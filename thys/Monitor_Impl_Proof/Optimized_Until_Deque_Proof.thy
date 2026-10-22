@@ -5,24 +5,6 @@ begin
 (*>*)
 
 
-lemma dq_len_list: "dq_inv d \<Longrightarrow> dq_len d = length (dq_list d)"
-  by (simp add: dq_inv_def dq_len_def dq_list_def)
-
-lemma dq_nth: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth d k = dq_list d ! k"
-  by (auto simp add: dq_inv_def dq_nth_def dq_len_def dq_list_def nth_append rev_nth)
-
-lemma dq_list_upd: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_list (dq_upd d k x) = (dq_list d)[k := x]"
-  by (auto simp add: dq_inv_def dq_upd_def dq_len_def dq_list_def list_update_append rev_update)
-
-lemma dq_len_tl: "dq_inv d \<Longrightarrow> dq_len (dq_tl d) = dq_len d - 1"
-  by (simp add: dq_len_list)
-
-lemma dq_len_upd: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_len (dq_upd d k x) = dq_len d"
-  by (simp add: dq_len_list dq_list_upd)
-
-lemma dq_len_push: "dq_inv d \<Longrightarrow> dq_len (dq_push x d) = dq_len d + 1"
-  by (simp add: dq_len_list)
-
 lemma rel_a2_lookup: "rel_a2 tp len d m \<Longrightarrow> k \<le> len \<Longrightarrow> Mapping.lookup m (tp - len + k) = Some (dq_nth d k)"
   by (simp add: rel_a2_def)
 
@@ -31,70 +13,6 @@ lemma rel_a2_lookup0: "rel_a2 tp len d m \<Longrightarrow> Mapping.lookup m (tp 
 
 lemma rel_a2_lookup1: "rel_a2 tp len d m \<Longrightarrow> 1 \<le> len \<Longrightarrow> Mapping.lookup m (tp - len + 1) = Some (dq_nth d 1)"
   using rel_a2_lookup[of tp len d m 1] by simp
-
-lemma dq_nth_tl_upd:
-  assumes "dq_inv d" "i < dq_len d" "Suc k < dq_len d"
-  shows "dq_nth (dq_tl (dq_upd d i X)) k = (dq_list d)[i := X] ! Suc k"
-proof -
-  have inv1: "dq_inv (dq_upd d i X)" using assms by simp
-  have len1: "dq_len (dq_upd d i X) = dq_len d" using assms by (simp add: dq_len_upd)
-  have inv2: "dq_inv (dq_tl (dq_upd d i X))" using inv1 by simp
-  have len2: "dq_len (dq_tl (dq_upd d i X)) = dq_len d - 1" using inv1 len1 by (simp add: dq_len_tl)
-  have "dq_nth (dq_tl (dq_upd d i X)) k = dq_list (dq_tl (dq_upd d i X)) ! k"
-    using inv2 len2 assms(3) by (intro dq_nth) auto
-  also have "\<dots> = tl (dq_list (dq_upd d i X)) ! k" using inv1 by simp
-  also have "\<dots> = tl ((dq_list d)[i := X]) ! k" using assms by (simp add: dq_list_upd)
-  also have "\<dots> = (dq_list d)[i := X] ! Suc k" using assms by (intro nth_tl) (simp add: dq_len_list)
-  finally show ?thesis .
-qed
-
-text \<open>
-  The same entry, reached the other way round: dropping the head first and then reading and
-  writing at index 0. @{const dq_norm} guarantees that the front list of a non-empty deque is
-  non-empty, so index 0 is the head of the front list and both the read and the write are
-  constant time, whereas index 1 of the deque before the head is dropped falls into the back
-  list whenever the front list holds exactly one element, and is then reached by walking the
-  back list to its far end.
-\<close>
-
-lemma tl_list_update_1: "tl (xs[Suc 0 := X]) = (tl xs)[0 := X]"
-  by (cases xs) auto
-
-lemma dq_nth_upd_tl:
-  assumes "dq_inv d" "Suc 0 < dq_len d" "Suc k < dq_len d"
-  shows "dq_nth (dq_upd (dq_tl d) 0 X) k = (dq_list d)[Suc 0 := X] ! Suc k"
-proof -
-  have inv1: "dq_inv (dq_tl d)" using assms(1) by simp
-  have len1: "dq_len (dq_tl d) = dq_len d - 1" using assms(1) by (simp add: dq_len_tl)
-  have k1: "k < dq_len (dq_tl d)" using assms(3) len1 by simp
-  have z1: "0 < dq_len (dq_tl d)" using assms(2) len1 by simp
-  have inv2: "dq_inv (dq_upd (dq_tl d) 0 X)" using inv1 by simp
-  have len2: "dq_len (dq_upd (dq_tl d) 0 X) = dq_len (dq_tl d)"
-    using inv1 z1 by (simp add: dq_len_upd)
-  have "dq_nth (dq_upd (dq_tl d) 0 X) k = dq_list (dq_upd (dq_tl d) 0 X) ! k"
-    using inv2 len2 k1 by (intro dq_nth) auto
-  also have "\<dots> = (dq_list (dq_tl d))[0 := X] ! k" using inv1 z1 by (simp add: dq_list_upd)
-  also have "\<dots> = (tl (dq_list d))[0 := X] ! k" using assms(1) by simp
-  also have "\<dots> = tl ((dq_list d)[Suc 0 := X]) ! k" by (simp add: tl_list_update_1)
-  also have "\<dots> = (dq_list d)[Suc 0 := X] ! Suc k"
-    using assms by (intro nth_tl) (simp add: dq_len_list)
-  finally show ?thesis .
-qed
-
-lemma dq_nth_tl_0:
-  assumes "dq_inv d" "Suc 0 < dq_len d"
-  shows "dq_nth (dq_tl d) 0 = dq_nth d 1"
-proof -
-  have inv1: "dq_inv (dq_tl d)" using assms(1) by simp
-  have len1: "dq_len (dq_tl d) = dq_len d - 1" using assms(1) by (simp add: dq_len_tl)
-  have "dq_nth (dq_tl d) 0 = dq_list (dq_tl d) ! 0"
-    using inv1 len1 assms(2) by (intro dq_nth) auto
-  also have "\<dots> = tl (dq_list d) ! 0" using assms(1) by simp
-  also have "\<dots> = dq_list d ! Suc 0"
-    using assms by (intro nth_tl) (simp add: dq_len_list)
-  also have "\<dots> = dq_nth d 1" using assms by (simp add: dq_nth)
-  finally show ?thesis .
-qed
 
 lemma rel_a2_step:
   assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
@@ -200,41 +118,6 @@ proof -
       using k look[of k] inv dlen assms(2)
       by (auto simp: Mapping.lookup_update' dq_nth dq_len_push nth_append len_list)
   qed
-qed
-
-lemma rel_a2_upd:
-  assumes "rel_a2 tp len d m" "tp - len \<le> t" "t \<le> tp"
-  shows "rel_a2 tp len (dq_upd d (t - (tp - len)) X) (Mapping.update t X m)"
-proof -
-  have inv: "dq_inv d" and dlen: "dq_len d = len + 1" and keys: "Mapping.keys m = {tp - len..tp}"
-    and look: "\<And>k. k \<le> len \<Longrightarrow> Mapping.lookup m (tp - len + k) = Some (dq_nth d k)"
-    using assms(1) by (auto simp: rel_a2_def)
-  have len_list: "length (dq_list d) = len + 1" using inv dlen by (simp add: dq_len_list)
-  have i: "t - (tp - len) < dq_len d" using assms(2,3) dlen by simp
-  show ?thesis
-    unfolding rel_a2_def
-  proof (intro conjI allI impI)
-    show "dq_inv (dq_upd d (t - (tp - len)) X)" using inv by simp
-    show "dq_len (dq_upd d (t - (tp - len)) X) = len + 1" using inv dlen i by (simp add: dq_len_upd)
-    show "Mapping.keys (Mapping.update t X m) = {tp - len..tp}" using assms(2,3) by (auto simp: keys)
-    fix k assume k: "k \<le> len"
-    show "Mapping.lookup (Mapping.update t X m) (tp - len + k) = Some (dq_nth (dq_upd d (t - (tp - len)) X) k)"
-      using k look[of k] inv dlen assms(2,3) i
-      by (auto simp: Mapping.lookup_update' dq_nth dq_len_upd dq_list_upd nth_list_update len_list)
-  qed
-qed
-
-lemma rel_a2_step':
-  assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
-  shows "rel_a2 tp (len - 1) (dq_tl (dq_upd d 1 (if len = 1 then E else C)))
-    (Mapping.delete (tp - len) (if len = 1 then Mapping.update tp E m else Mapping.update (tp - len + 1) C m))"
-proof (cases "len = 1")
-  case True
-  have eq: "tp - len + 1 = tp" using True assms(3) by simp
-  show ?thesis using True rel_a2_step[OF assms, of E, unfolded eq] by simp
-next
-  case False
-  then show ?thesis using rel_a2_step[OF assms, of C] by simp
 qed
 
 text \<open>
@@ -404,12 +287,6 @@ lemma init_sim: "rel_uaux (init_dq args) (init_mmuaux args)"
 lemma length_sim: "rel_uaux d a \<Longrightarrow> length_dq args d = length_mmuaux args a"
   by (cases d; cases a) auto
 
-
-lemma upd_set'_insert_dq: "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_set' m d f (Set.insert x A) =
-  (let m' = (upd_set' m d f A) in case Mapping.lookup m' x of None \<Rightarrow> Mapping.update x d m'
-  | Some v \<Rightarrow> Mapping.update x (f v) m')"
-  by (rule mapping_eqI) (auto simp: upd_set'_lookup Mapping.lookup_update' split: option.splits)
-
 lemma dq_len_nested_step: "dq_inv dq \<Longrightarrow> dq_len (upd_nested_step_dq base d f x dq) = dq_len dq"
   by (auto simp: upd_nested_step_dq_def dq_len_upd split: prod.splits)
 
@@ -474,9 +351,6 @@ proof -
 qed
 
 subsection \<open>Conversions (used only for infinite operand tables)\<close>
-
-lemma lookup_tabulate_upt: "Mapping.lookup (Mapping.tabulate [a..<b] f) t = (if a \<le> t \<and> t < b then Some (f t) else None)"
-  by (subst Mapping.lookup_tabulate) auto
 
 lemma rel_a2_det:
   assumes "rel_a2 tp len dq m"

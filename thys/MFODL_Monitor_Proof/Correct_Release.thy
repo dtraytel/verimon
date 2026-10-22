@@ -76,10 +76,6 @@ lemma wty_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrigh
 lemma wf_release_auxlist_Nil: "wf_release_auxlist \<sigma> V n R pos \<phi> I \<psi> [] ne"
   unfolding wf_release_auxlist_def by simp
 
-lemma qtable_diff: "qtable cs P Q1 X \<Longrightarrow> qtable cs P Q2 Y \<Longrightarrow>
-  (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x = (Q1 x \<and> \<not> Q2 x)) \<Longrightarrow> qtable cs P Q (X - Y)"
-  unfolding qtable_def table_def by blast
-
 lemma length_update_release: "length (update_release args rel1 rel2 nt aux) = Suc (length aux)"
   unfolding update_release_def by simp
 

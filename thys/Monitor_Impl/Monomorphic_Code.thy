@@ -17,8 +17,7 @@ text \<open>
 code_printing
   constant "literal_string8 :: string8 \<Rightarrow> String.literal" \<rightharpoonup> (OCaml) "(fun x -> x)"
 
-lemma set_union_code[code_unfold]: "set xs \<union> set ys = set (xs @ ys)"
-  by simp
+lemmas [code_unfold] = set_append[symmetric]
 
 section \<open>Monomorphisation of the hot code as a refinement\<close>
 
@@ -353,11 +352,6 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("init_mmsaux", "ed_init_mmsaux", ["event_data"]),
    ("init_mmtaux", "ed_init_mmtaux", ["event_data"])]
   ["etuple_dict_simps"]\<close>
-
-lemma lookup_update_mapping_with:
-  "Mapping.lookup (update_mapping_with f k v m) k' =
-    (if k' = k then (case Mapping.lookup m k of None \<Rightarrow> Some v | Some v' \<Rightarrow> Some (f k v' v)) else Mapping.lookup m k')"
-  by transfer (auto split: option.splits)
 
 (*<*)
 end

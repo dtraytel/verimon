@@ -8,29 +8,26 @@ theory Preparation
 begin
 (*>*)
 
-lemma map_formula_release_safe_bounded[simp]: "Formula.formula.map_formula f (release_safe_bounded \<phi> I \<psi>) =
-  release_safe_bounded (Formula.formula.map_formula f \<phi>) I (Formula.formula.map_formula f \<psi>)"
-  by (auto simp: release_safe_bounded_def eventually_def Formula.TT_def always_safe_bounded_def once_def)
-
-
 subsection \<open>Negated right operands\<close>
 
 text \<open>A past operator with a negated right operand, @{term "Formula.Since \<phi> I (Formula.Neg \<psi>)"},
   is not safe on its own. The rewriting (@{const rrewrite}) makes it monitorable by freezing the
   conjunct that restricts its free variables (@{const Formula.Frz}), which the monitor evaluates
   by replaying the operator for every time point. If the interval contains 0, the dual
-  @{term "Formula.Neg (Formula.Trigger (Formula.Neg \<phi>) I \<psi>)"} is equivalent and has the same
-  progress, and it is safe in a conjunction with a formula that restricts its free variables:
-  the negation is the difference with the trigger, whose tables are contained in those of
+  @{term "Formula.Neg (Formula.Trigger (Formula.Neg \<phi>) I \<psi>)"} is equivalent, a monitor can
+  evaluate it as far as the since operator (it has the same progress, see the session
+  MFODL_Monitor_Proof), and it is safe in a conjunction with a formula that restricts its free
+  variables: the negation is the difference with the trigger, whose tables are contained in those of
   @{term \<psi>}. This is the unnesting of a correlated @{text "NOT EXISTS"} into an anti-join, which
   needs no freezing. The negation of the left operand removes a double negation
   (@{text neg_dual}), as for @{term "Formula.Since (Formula.Neg \<phi>) I (Formula.Neg \<psi>)"}.
   Without 0 in the interval, the trigger is not safe on its own (its tables are infinite at the
-  time points without any in the interval), and the progress of the since operator is larger.
+  time points without any in the interval), and a monitor can evaluate the since operator further
+  (its progress is larger).
   Dually, a future operator with a negated right operand,
   @{term "Formula.Until \<phi> I (Formula.Neg \<psi>)"}, is the negation of the release
-  @{term "Formula.Release (Formula.Neg \<phi>) I \<psi>"}, which the monitor evaluates natively with 0 in
-  the interval and with the progress of the until operator.\<close>
+  @{term "Formula.Release (Formula.Neg \<phi>) I \<psi>"}, which a monitor can evaluate natively with 0 in
+  the interval, as far as the until operator.\<close>
 
 definition neg_dual :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "neg_dual \<phi> = (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> \<phi>' | _ \<Rightarrow> Formula.Neg \<phi>)"
@@ -81,7 +78,7 @@ next
 next
   case (5 p \<phi> \<psi>)
   then show ?case unfolding dual_since.simps Formula.sat.simps 5 dual_since_nfv by auto
-qed (auto simp: Rewriting.match_map_regex dual_since_fvi split: nat.splits)
+qed (auto simp: match_map_regex_cong dual_since_fvi split: nat.splits)
 
 lemma wty_neg_dual: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> neg_dual \<phi>"
   by (cases \<phi>) (auto simp: neg_dual_def intro: wty_formula.Neg dest: wty_formula_NegD)
@@ -151,9 +148,6 @@ next
     by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 qed (auto intro!: wty_formula.intros)
 
-lemma NonFutuRec_times[simp]: "NonFutuRec * x = x"
-  by (cases x) auto
-
 lemma safe_letpast_neg_dual[simp]: "safe_letpast p (neg_dual \<phi>) = safe_letpast p \<phi>"
   by (cases \<phi>) (auto simp: neg_dual_def)
 
@@ -190,33 +184,6 @@ definition "prepare_verimon rw sig \<phi> =
                   let r\<phi> = rrewrite n\<phi> in
                     if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
          else Inl STR ''not monitorable'')))"
-
-
-lemma normalize_fvi:
-  "Formula.fvi b (normalize \<phi>) = Formula.fvi b \<phi>"
-  unfolding normalize_def by (auto simp: assoc_and_fvi elim_double_negation_fvi push_negation_fvi simplify_terms_fvi)
-
-lemma normalize_nfv:
-  "Formula.nfv (normalize \<phi>) = Formula.nfv \<phi>"
-  unfolding normalize_def by (auto simp: assoc_and_nfv elim_double_negation_nfv push_negation_nfv simplify_terms_nfv)
-
-lemma rrewrite_fvi:
-  "Formula.fvi b (rrewrite \<phi>) = Formula.fvi b \<phi>"
-  unfolding rrewrite_def by (auto simp: rewrite_fv[symmetric] project_embed)
-
-lemma rrewrite_nfv:
-  "Formula.nfv (rrewrite \<phi>) = Formula.nfv \<phi>"
-  unfolding Formula.nfv_def rrewrite_fvi ..
-
-lemma val_restrict_perm: "set ds = set cs \<Longrightarrow> val n ds (restrict ds cs x) = val n cs x"
-proof (rule nth_equalityI)
-  fix i
-  assume set: "set ds = set cs" and "i < length (val n ds (restrict ds cs x))"
-  have none: "map_of (zip xs ys) i = None" if "i \<notin> set xs" for xs :: "nat list" and ys :: "'a list"
-    using that by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
-  from set show "val n ds (restrict ds cs x) ! i = val n cs x ! i"
-    using \<open>i < length _\<close> by (cases "i \<in> set ds") (simp add: tup_get_restrict, simp add: tup_get_def none)
-qed simp
 
 (* Elimination rules for well-typed formulas*)
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
@@ -1008,9 +975,6 @@ lemma wty_Ands_Cons_get_and_list:
   "S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<beta> \<Longrightarrow> S, E \<turnstile> Formula.Ands (\<alpha> # get_and_list \<beta>)"
   by (auto intro!: wty_formula.Ands dest: wty_get_and_list)
 
-lemma wty_release_safe_0: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> release_safe_0 \<phi> I \<psi>"
-  by (auto simp: release_safe_0_def always_safe_0_def intro!: wty_formula.intros)
-
 lemma wty_release_safe_bounded: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> release_safe_bounded \<phi> I \<psi>"
   by (auto simp: release_safe_bounded_def always_safe_bounded_def Formula.eventually_def once_def
       intro!: wty_formula.intros)
@@ -1151,8 +1115,6 @@ proof -
   show ?thesis
     by unfold_locales (auto intro: wty_convert_multiway[OF well_typed] mmonitorable_convert_multiway[OF monitorable])
 qed
-
-(* Locales for correctness proofs *)
 
 (*<*)
 end

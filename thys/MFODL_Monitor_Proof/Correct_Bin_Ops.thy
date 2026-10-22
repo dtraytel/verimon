@@ -65,6 +65,86 @@ lemma mbuf2_take_add':
   using pre rm unfolding wf_mbuf2'_def
   by (force intro!: mbuf2_take_eqD[OF eq] wf_mbuf2_add[OF _ xs ys] progress_mono_gen[OF \<open>j \<le> j'\<close> bounded rm])+
 
+lemma mbuf2t_take_induct[consumes 5, case_names base step]:
+  assumes "mbuf2t_take f z buf t nts = (z', buf', nt, nts')"
+    and "wf_mbuf2 i ja jb P Q buf"
+    and "list_all2 R [i..<j] nts"
+    and "ja \<le> j" "jb \<le> j"
+    and "U i z"
+    and "\<And>k x y t z. i \<le> k \<Longrightarrow> Suc k \<le> ja \<Longrightarrow> Suc k \<le> jb \<Longrightarrow>
+      P k x \<Longrightarrow> Q k y \<Longrightarrow> R k t \<Longrightarrow> U k z \<Longrightarrow> U (Suc k) (f x y t z)"
+  shows "U (min ja jb) z'"
+  using assms unfolding wf_mbuf2_def
+  by (induction f z buf t nts arbitrary: i z' buf' nt nts' rule: mbuf2t_take.induct)
+    (auto simp add: list_all2_Cons2 upt_eq_Cons_conv less_eq_Suc_le min_absorb1 min_absorb2
+      elim!: arg_cong2[of _ _ _ _ U, OF _ refl, THEN iffD1, rotated] split: prod.split)
+
+lemma mbuf2t_take_add_induct'[consumes 6, case_names base step]:
+  assumes eq: "mbuf2t_take f z (mbuf2_add xs ys buf) t nts = (z', buf', nt, nts')"
+    and bounded: "pred_mapping (\<lambda>x. x \<le> j) P" "pred_mapping (\<lambda>x. x \<le> j') P'"
+    and rm: "rel_mapping (\<le>) P P'"
+
+    and pre_buf: "wf_mbuf2' \<sigma> P V j n R \<phi> \<psi> buf"
+    and pre_nts: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)..<j'] nts"
+    and xs: "list_all2 (\<lambda>i (r). sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi> r)
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> j'] xs"
+    and ys: "list_all2 (\<lambda>i (r). sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi> r)
+      [progress \<sigma> P \<psi> j..<progress \<sigma> P' \<psi> j'] ys"
+    and "j \<le> j'"
+    and base: "U (min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)) z"
+    and step: "\<And>k X Y z. min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) \<le> k \<Longrightarrow>
+      Suc k \<le> progress \<sigma> P' \<phi> j' \<Longrightarrow> Suc k \<le> progress \<sigma> P' \<psi> j' \<Longrightarrow>
+      sat_table \<sigma> V n R (Formula.fv_list \<phi>) k \<phi> X \<Longrightarrow>
+      sat_table \<sigma> V n R (Formula.fv_list \<psi>) k \<psi> Y \<Longrightarrow>      U k z \<Longrightarrow> U (Suc k) (f X Y (\<tau> \<sigma> k) z)"
+  shows "U (min (progress \<sigma> P' \<phi> j') (progress \<sigma> P' \<psi> j')) z'"
+  using pre_buf pre_nts bounded rm unfolding wf_mbuf2'_def
+  by (blast intro!: mbuf2t_take_induct[OF eq] wf_mbuf2_add[OF _ xs ys] 
+      progress_mono_gen[OF \<open>j \<le> j'\<close> bounded rm]
+      progress_le_gen base step)
+
+lemma mbuf2t_take_nt:
+  assumes "mbuf2t_take f z buf t nts = (z', buf', nt, nts')"
+  shows "nt = hd (nts' @ rev nts @ [t])"
+  using assms
+  by (induction f z buf t nts arbitrary: z' buf' nt nts' rule: mbuf2t_take.induct)
+     (auto simp add: hd_app split: list.splits if_splits)
+
+lemma mbuf2t_take_eqD:
+  assumes "mbuf2t_take f z buf t nts = (z', buf', nt, nts')"
+    and "wf_mbuf2 i ja jb P Q buf"
+    and "list_all2 R [i..<j] nts"
+    and "ja \<le> j" "jb \<le> j"
+  shows "wf_mbuf2 (min ja jb) ja jb P Q buf'"
+    and "list_all2 R [min ja jb..<j] nts'"
+  using assms unfolding wf_mbuf2_def
+  by (induction f z buf t nts arbitrary: i z' buf' nt nts' rule: mbuf2t_take.induct)
+     (auto simp add: list_all2_Cons2 upt_eq_Cons_conv less_eq_Suc_le min_absorb1 min_absorb2
+      split: prod.split)
+
+definition wf_ts :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> ts list \<Rightarrow> bool" 
+  where "wf_ts \<sigma> P j \<phi> \<psi> ts 
+  \<longleftrightarrow> list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)..<j] ts"
+
+lemma wf_ts_0: "wf_ts \<sigma> P 0 \<phi> \<psi> []"
+  unfolding wf_ts_def by simp
+
+lemma mbuf2t_take_add':
+  assumes eq: "mbuf2t_take f z (mbuf2_add xs ys buf) t nts = (z', buf', nt, nts')"
+    and bounded: "pred_mapping (\<lambda>x. x \<le> j) P" "pred_mapping (\<lambda>x. x \<le> j') P'"
+    and rm: "rel_mapping (\<le>) P P'"
+    and pre_buf: "wf_mbuf2' \<sigma> P V j n R \<phi> \<psi> buf"
+    and pre_nts: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)..<j'] nts"
+    and xs: "list_all2 (\<lambda>i (r). sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi> r)
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> j'] xs"
+    and ys: "list_all2 (\<lambda>i (r). sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi> r)
+      [progress \<sigma> P \<psi> j..<progress \<sigma> P' \<psi> j'] ys"
+    and "j \<le> j'"
+  shows "wf_mbuf2' \<sigma> P' V j' n R \<phi> \<psi> buf'"
+    and "wf_ts \<sigma> P' j' \<phi> \<psi> nts'"
+  using pre_buf pre_nts bounded rm unfolding wf_mbuf2'_def wf_ts_def
+  by (auto intro!: mbuf2t_take_eqD[OF eq] wf_mbuf2_add[OF _ xs ys] progress_mono_gen[OF \<open>j \<le> j'\<close> bounded rm]
+      progress_le_gen simp: progress_le_gen)
+
 
 subsection \<open> Binary operators' qtable \<close>
 
@@ -88,70 +168,6 @@ lemma (in maux) qtable_bin_join_mem_restr:
   shows "qtable C (mem_restr R C) Q (bin_join A X b B Y)"
   using assms(6) by (intro qtable_bin_join[OF assms(1-6)] assms(7,8))
     (auto intro!: restrict_mem_restr simp: assms(3,4))
-
-lemma qtable_reorder_table:
-  assumes "qtable ds P Q X" "distinct cs" "distinct ds" "set cs = set ds"
-    "\<And>v. wf_tuple cs v \<Longrightarrow> P' v \<Longrightarrow> P (restrict ds cs v)"
-    "\<And>v. wf_tuple cs v \<Longrightarrow> P' v \<Longrightarrow> Q' v \<longleftrightarrow> Q (restrict ds cs v)"
-  shows "qtable cs P' Q' (reorder cs ds X)"
-proof -
-  have q: "qtable cs P' Q' (restrict cs ds ` X)"
-    by (rule qtable_reorder[OF assms(1,3,2,4) assms(5,6)])
-  show ?thesis
-  proof (cases "cs = ds")
-    case True
-    have "restrict ds ds x = x" if "x \<in> X" for x
-      using restrict_idle[OF assms(3) qtableD(1)[OF assms(1), THEN tableD, OF that]] .
-    then have "restrict cs ds ` X = X"
-      using True by (auto simp: image_iff)
-    with q True show ?thesis
-      by (simp add: reorder_def)
-  next
-    case False
-    with q show ?thesis
-      by (simp add: reorder_def)
-  qed
-qed
-lemma qtable_reorder_mem_restr:
-  assumes "qtable ds (mem_restr R ds) Q X" "distinct cs" "distinct ds" "set cs = set ds"
-    "\<And>v. wf_tuple cs v \<Longrightarrow> mem_restr R cs v \<Longrightarrow> Q' v \<longleftrightarrow> Q (restrict ds cs v)"
-  shows "qtable cs (mem_restr R cs) Q' (reorder cs ds X)"
-  using assms by (intro qtable_reorder_table[OF assms(1-4)] restrict_mem_restr) auto
-
-text \<open>A tuple whose restrictions to a cover of its columns lie in finite tables takes its values
-  from those tables, so there are finitely many.\<close>
-
-lemma finite_restrict_cover:
-  assumes "distinct C" "set C \<subseteq> (\<Union>A\<in>set As. set A)" "\<forall>X \<in> set Xs. finite X"
-  shows "finite {x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs}"
-proof -
-  let ?D = "\<Union>X \<in> set Xs. \<Union>t \<in> X. set t"
-  have D: "finite ?D"
-    using assms(3) by auto
-  have "set x \<subseteq> ?D" if x: "wf_tuple C x" "list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs" for x
-  proof
-    fix a
-    assume "a \<in> set x"
-    then obtain k where k: "k < length C" "a = x ! k"
-      using x(1) by (auto simp: wf_tuple_def in_set_conv_nth)
-    obtain A where "A \<in> set As" "C ! k \<in> set A"
-      using assms(2) nth_mem[OF k(1)] by blast
-    then obtain i where i: "i < length As" "C ! k \<in> set (As ! i)"
-      by (auto simp: in_set_conv_nth)
-    have "restrict (As ! i) C x \<in> Xs ! i" "i < length Xs"
-      using x(2) i(1) by (auto simp: list_all2_conv_all_nth)
-    moreover have "a \<in> set (restrict (As ! i) C x)"
-      using i(2) tup_get_nth[OF assms(1) x(1) k(1)] k(2) unfolding restrict_def
-      by (metis image_eqI set_map)
-    ultimately show "a \<in> ?D"
-      by (auto intro!: bexI[of _ "Xs ! i"])
-  qed
-  then have "{x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs} \<subseteq>
-    {xs. set xs \<subseteq> ?D \<and> length xs = length C}"
-    by (auto simp: wf_tuple_def)
-  then show ?thesis
-    by (rule finite_subset) (rule finite_lists_length_eq[OF D])
-qed
 
 lemma (in maux) qtable_mmulti_join:
   assumes pos: "list_all3 (\<lambda>A Qi X. qtable A (mem_restr R A) Qi X \<and> distinct A) A_pos Q_pos L_pos"

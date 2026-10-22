@@ -25,10 +25,6 @@ definition group_multiset where [simp]:
   "group_multiset k b cs f X = (let group = group k b cs X in
                       (\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm cs f x = y) group))) ` meval_trm cs f ` group)"
 
-definition valid_finite_mset where
-  "valid_finite_mset X = (finite X \<and> (\<forall>k x y. x \<noteq> y \<and> (k, x) \<in> X \<longrightarrow> (k, y) \<notin> X) \<and> 
-                              (\<forall>k x. (k, x) \<in> X \<longrightarrow> x \<noteq> \<infinity> \<and> x \<noteq> 0))"
-
 definition mset_conv where
   "mset_conv f s = Finite_Set.fold (\<lambda> (t, m) b. (case f t of 
                                                        Some k \<Rightarrow> (replicate_mset (the_enat m) k) + b |
@@ -227,12 +223,6 @@ fun result_maggaux :: "aggargs \<Rightarrow> aggaux \<Rightarrow> event_data tab
                                             else double_of_event_data_agg (get_edata_list k u')) in
                                             EFloat aggval))))"
 
-context linorder
-begin
-
-end
-
-
 lemma insert_sum_comm': "(insert_sum args x \<circ> insert_sum args y) (v, m)  = (insert_sum args y \<circ> insert_sum args x) (v, m)"
   by (auto simp:lookup_update' mapping_eqI update_update split:option.splits event_data.splits)
 
@@ -254,9 +244,6 @@ lemma insert_cnt_comm: "(insert_cnt args x \<circ> insert_cnt args y) (v, m)  = 
 lemma delete_cnt_comm:  "(delete_cnt args x \<circ> delete_cnt args y) (v, aux)  = (delete_cnt args y \<circ> delete_cnt args x) (v, aux)"
    by(auto; transfer; auto split:option.splits)
 
-lemma insert_treelist_comm: "(insert_treelist a (insert_treelist b x)) = (insert_treelist b (insert_treelist a x))" 
-  by(transfer) (simp add: insort_eq2 insort_left_comm)
-
 lemma insert_rank_comm': "(insert_rank args type x  \<circ> insert_rank args type y) (v, m)  = (insert_rank args type y \<circ> insert_rank args type x) (v, m)"
 proof (cases v)
   case True
@@ -277,14 +264,6 @@ proof (cases v)
   qed
 qed simp
 
-lemma del_list_comm: "del_list x (del_list y xs) = del_list y (del_list x xs)"
-  by(induction xs; auto)
-
-lemma remove_comm: "remove_treelist x (remove_treelist y xs) = remove_treelist y (remove_treelist x xs)"
-  by(transfer) (simp add:del_list_comm)
-
-lemma auxa: "remove_treelist x empty_treelist \<noteq> empty_treelist \<Longrightarrow> False" by transfer auto
-
 lemma delete_rank_comm': 
   shows "(delete_rank args type x \<circ> delete_rank args type y) (v, m) = (delete_rank args type y \<circ> delete_rank args type x) (v, m)"
 proof (cases v)
@@ -296,7 +275,7 @@ proof (cases v)
     \<comment> \<open>Both deletions act on the same list: removals commute, and a list that
       became empty stays empty under further removals.\<close>
     have remove_empty: "remove_treelist a empty_treelist = empty_treelist" for a :: "'a::linorder"
-      using auxa by blast
+      by (rule remove_treelist_empty)
     have remove_remove_empty: "remove_treelist a (remove_treelist b l) = empty_treelist"
       if "remove_treelist a l = empty_treelist" for a b :: "'a::linorder" and l
       using that by (metis remove_comm remove_empty)

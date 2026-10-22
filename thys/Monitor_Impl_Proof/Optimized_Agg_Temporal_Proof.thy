@@ -87,9 +87,6 @@ lemma valid_add_new_table_mmasaux:
   using valid_add_new_table_mmasaux_unfolded assms
   by (cases mmsaux) fast
 
-lemma mapping_filter_keys_diff: "Mapping.keys (Mapping.filter p m) = Mapping.keys m - (Mapping.keys m - Mapping.keys (Mapping.filter p m))"
-  by (simp add: double_diff keys_filter)
-
 lemma valid_join_mmasaux_unfolded:
   assumes "valid_mmasaux args cur ((nt, gc, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since), aggaux) auxlist"
   and "table (args_L args) rel1"
@@ -236,11 +233,6 @@ lemma valid_gc_join_mmasaux:
     (map (\<lambda>(t, rel). (t, join (args_R args) rel (args_pos args) (args_L args) rel1)) auxlist)"
   using gc_join_mmasaux_alt[of args rel1 mmsaux aux]
   valid_gc_mmasaux[OF assms(1)] valid_join_mmasaux using assms by presburger
-
-lemma fold_pair_extract:
-  assumes "(x', y') = fold (\<lambda>(t, X) (x, y). (f X x t, g X x t y)) Y (x, y)"
-  shows "x' = fold (\<lambda>(t, X) x. f X x t) Y x"
-  using assms by(induction Y arbitrary: x y) auto
 
 lemma valid_shift_end_mmasaux_unfolded:
   assumes valid_before: "valid_mmasaux args cur
@@ -426,8 +418,6 @@ proof -
       by(simp only:init_args_def init_mmauaux.simps) (auto simp add: Mapping.lookup_update[of 0 Mapping.empty Mapping.empty] simp del: valid_mmuaux'.simps simp add: init_mmuaux_def valid_mmauaux_def valid_mmuaux_def)
   qed
 qed
-
-lemma finite_keys_filter: "finite (Mapping.keys m) \<Longrightarrow> finite (Mapping.keys (Mapping.filter p m))" by (meson infinite_super keys_filter)
 
 lemma valid_eval_step_mmauaux_unfolded:
   assumes "valid_mmauaux' args cur dt ((tp, tss, tables, len, result,  a1_map, a2_map, tstp_map, done), aggaux) auxlist"

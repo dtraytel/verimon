@@ -27,199 +27,6 @@ lemma valid_init_nmtaux: "(
       ts_tuple_rel_binary_def ts_tuple_rel_f_def
       auxlist_data_prev_def auxlist_data_in_def Queue.is_empty_alt tuple_since_tp_def tuple_since_lhs_def)
 
-lemma sorted_filter_dropWhile_memL:
-  assumes "sorted (map fst xs)"
-  shows "filter (\<lambda>(t, _). \<not>memL (args_ivl args) (mt - t)) xs = dropWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs"
-using assms proof (induction xs)
-  case Nil
-  then show ?case by auto
-next
-  case (Cons x xs)
-  then have IH: "filter (\<lambda>(t, _).\<not> memL (args_ivl args) (mt - t)) xs = dropWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs"
-    by auto
-  show ?case
-  proof (cases "(\<lambda>(t, _). memL (args_ivl args) (mt - t)) x")
-    case True
-    then have "filter (\<lambda>(t, _).\<not> memL (args_ivl args) (mt - t)) (x#xs) = filter (\<lambda>(t, _).\<not> memL (args_ivl args) (mt - t)) xs"
-      by auto
-    moreover have "dropWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = dropWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs"
-      using True
-      by auto
-    ultimately show ?thesis using IH by auto
-  next
-    case not_mem: False
-    then have filter_IH: "filter (\<lambda>(t, _).\<not> memL (args_ivl args) (mt - t)) (x#xs) = x#(filter (\<lambda>(t, _).\<not> memL (args_ivl args) (mt - t)) xs)"
-      by auto
-    have dropWhile_IH: "dropWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = x#xs"
-      using not_mem
-      by auto
-    show ?thesis
-    proof (cases "\<forall>db \<in> set xs. (\<lambda>(t, _). \<not>memL (args_ivl args) (mt - t)) db")
-      case True
-      then have "filter (\<lambda>(t, _).\<not> memL (args_ivl args) (mt - t)) (x#xs) = x#xs"
-        using filter_IH
-        by auto
-      then show ?thesis using dropWhile_IH by auto
-    next
-      case False
-      then obtain j where j_props: "((\<lambda>(t, _). memL (args_ivl args) (mt - t)) (xs!j))" "j \<in> {0..<length xs}"
-        by (metis (mono_tags, lifting) atLeastLessThan_iff case_prod_beta' in_set_conv_nth leI not_less_zero)
-      then have "((\<lambda>(t, _). memL (args_ivl args) (mt - t)) ((x#xs)!(Suc j)))"
-        by auto
-      moreover have "fst ((x#xs)!0) \<le> fst ((x#xs)!(Suc j))"
-        using Cons(2) j_props
-        by auto
-      ultimately have "((\<lambda>(t, _). memL (args_ivl args) (mt - t)) x)" by auto
-      then show ?thesis using not_mem by auto
-    qed
-  qed
-qed
-
-lemma sorted_filter_dropWhile_memR:
-  assumes "sorted (map fst xs)"
-  shows "filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) xs = dropWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs"
-using assms proof (induction xs)
-  case Nil
-  then show ?case by auto
-next
-  case (Cons x xs)
-  then have IH: "filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) xs = dropWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs"
-    by auto
-  show ?case
-  proof (cases "(\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) x")
-    case True
-    then have "filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) (x#xs) = filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) xs"
-      by auto
-    moreover have "dropWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = dropWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs"
-      using True
-      by auto
-    ultimately show ?thesis using IH by auto
-  next
-    case mem: False
-    then have filter_IH: "filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) (x#xs) = x#(filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) xs)"
-      by auto
-    have dropWhile_IH: "dropWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = x#xs"
-      using mem
-      by auto
-    show ?thesis
-    proof (cases "\<forall>db \<in> set xs. (\<lambda>(t, _). memR (args_ivl args) (mt - t)) db")
-      case True
-      then have "filter (\<lambda>(t, _). memR (args_ivl args) (mt - t)) (x#xs) = x#xs"
-        using filter_IH
-        by auto
-      then show ?thesis using dropWhile_IH by auto
-    next
-      case False
-      then obtain j where j_props: "((\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (xs!j))" "j \<in> {0..<length xs}"
-        by (metis (mono_tags, lifting) atLeastLessThan_iff case_prod_beta' in_set_conv_nth leI not_less_zero)
-      then have "((\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) ((x#xs)!(Suc j)))"
-        by auto
-      moreover have "fst ((x#xs)!0) \<le> fst ((x#xs)!(Suc j))"
-        using Cons(2) j_props
-        by auto
-      ultimately have "((\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) x)" using memR_antimono by auto
-      then show ?thesis using mem by auto
-    qed
-  qed
-qed
-
-lemma sorted_filter_takeWhile_memL:
-  assumes "sorted (map fst xs)"
-  shows "filter (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs = takeWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs"
-using assms proof (induction xs)
-  case Nil
-  then show ?case by auto
-next
-  case (Cons x xs)
-  then have IH: "filter (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs = takeWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs"
-    by auto
-  show ?case
-  proof (cases "(\<lambda>(t, _). memL (args_ivl args) (mt - t)) x")
-    case True
-    then have "filter (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = x#(filter (\<lambda>(t, _).memL (args_ivl args) (mt - t)) xs)"
-      by auto
-    moreover have "takeWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = x#(takeWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs)"
-      using True
-      by auto
-    ultimately show ?thesis using IH by auto
-  next
-    case not_mem: False
-    then have filter_IH: "filter (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = (filter (\<lambda>(t, _). memL (args_ivl args) (mt - t)) xs)"
-      by auto
-    have takeWhile_IH: "takeWhile (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = []"
-      using not_mem
-      by auto
-    show ?thesis
-    proof (cases "\<forall>db \<in> set xs. (\<lambda>(t, _). \<not>memL (args_ivl args) (mt - t)) db")
-      case True
-      then have "filter (\<lambda>(t, _). memL (args_ivl args) (mt - t)) (x#xs) = []"
-        using filter_IH
-        by (simp add: case_prod_beta')
-      then show ?thesis using takeWhile_IH by auto
-    next
-      case False
-      then obtain j where j_props: "((\<lambda>(t, _). memL (args_ivl args) (mt - t)) (xs!j))" "j \<in> {0..<length xs}"
-        by (metis (mono_tags, lifting) atLeastLessThan_iff case_prod_beta' in_set_conv_nth leI not_less_zero)
-      then have "((\<lambda>(t, _). memL (args_ivl args) (mt - t)) ((x#xs)!(Suc j)))"
-        by auto
-      moreover have "fst ((x#xs)!0) \<le> fst ((x#xs)!(Suc j))"
-        using Cons(2) j_props
-        by auto
-      ultimately have "((\<lambda>(t, _). memL (args_ivl args) (mt - t)) x)" by auto
-      then show ?thesis using not_mem by auto
-    qed
-  qed
-qed
-
-lemma sorted_filter_takeWhile_not_memR:
-  assumes "sorted (map fst xs)"
-  shows "filter (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs = takeWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs"
-using assms proof (induction xs)
-  case Nil
-  then show ?case by auto
-next
-  case (Cons x xs)
-  then have IH: "filter (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs = takeWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs"
-    by auto
-  show ?case
-  proof (cases "(\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) x")
-    case True
-    then have "filter (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = x#(filter (\<lambda>(t, _).\<not>memR (args_ivl args) (mt - t)) xs)"
-      by auto
-    moreover have "takeWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = x#(takeWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs)"
-      using True
-      by auto
-    ultimately show ?thesis using IH by auto
-  next
-    case not_mem: False
-    then have filter_IH: "filter (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = (filter (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) xs)"
-      by auto
-    have takeWhile_IH: "takeWhile (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = []"
-      using not_mem
-      by auto
-    show ?thesis
-    proof (cases "\<forall>db \<in> set xs. (\<lambda>(t, _). memR (args_ivl args) (mt - t)) db")
-      case True
-      then have "filter (\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (x#xs) = []"
-        using filter_IH
-        by (simp add: case_prod_beta')
-      then show ?thesis using takeWhile_IH by auto
-    next
-      case False
-      then obtain j where j_props: "((\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) (xs!j))" "j \<in> {0..<length xs}"
-        by (metis (mono_tags, lifting) atLeastLessThan_iff case_prod_beta' in_set_conv_nth leI not_less_zero)
-      then have "((\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) ((x#xs)!(Suc j)))"
-        by auto
-      moreover have "fst ((x#xs)!0) \<le> fst ((x#xs)!(Suc j))"
-        using Cons(2) j_props
-        by auto
-      ultimately have "((\<lambda>(t, _). \<not>memR (args_ivl args) (mt - t)) x)"
-        using memR_antimono by auto
-      then show ?thesis using not_mem by auto
-    qed
-  qed
-qed
-
 lemma data_in_mem:
   assumes "valid_nmtaux args cur (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) auxlist"
   assumes "db \<in> set (linearize data_in)"
@@ -482,35 +289,6 @@ proof -
   then show ?thesis by auto
 qed
 
-lemma auxlist_index_time_mono:
-  assumes "valid_nmtaux args cur (nt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) auxlist"
-  assumes "i \<le> j" "j \<in> {0..<(length auxlist)}"
-  shows "fst (auxlist!i) \<le> fst (auxlist!j)"
-proof -
-  from assms have "sorted (map fst auxlist)" unfolding valid_nmtaux_def prod.case by blast
-  then have sorted: "\<forall>i. \<forall>j \<in> {0..<(length auxlist)}.
-    i \<le> j \<longrightarrow> fst (auxlist!i) \<le> fst (auxlist!j)"
-    by (simp add: sorted_iff_nth_mono)
-  then show "fst (auxlist!i) \<le> fst (auxlist!j)"
-    using sorted assms(2-3)
-    by auto
-qed
-
-lemma auxlist_time_index_strict_mono:
-  assumes "valid_nmtaux args cur (nt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) auxlist"
-  assumes "i \<in> {0..<(length auxlist)}"
-  assumes "fst (auxlist!i) < fst (auxlist!j)" (* t < t' *)
-  shows "i < j"
-proof -
-    {
-      assume assm: "j \<le> i"
-      then have "False"
-        using auxlist_index_time_mono[OF assms(1) assm assms(2)] assms(3)
-        by auto
-    }
-    then show "i < j" using not_le_imp_less by blast
-  qed
-
 lemma data_in_auxlist_nonempty:
   assumes "valid_nmtaux args cur (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) auxlist"
   shows "(length (filter (\<lambda> (t, _, _). mem (args_ivl args) (mt - t)) auxlist) > 0) = (\<not> Queue.is_empty (data_in))"
@@ -560,45 +338,6 @@ next
       by auto
   qed
 
-lemma valid_nmtaux_nonempty:
-  assumes "valid_nmtaux args cur (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) auxlist"
-  shows "(length (filter (\<lambda> (t, _, _). mem (args_ivl args) (mt - t)) auxlist) > 0) = (\<not> Queue.is_empty data_in)"
-proof -
-  from assms(1) have data_in_equiv:
-    "map (\<lambda> (t, l, r). (t, r)) (auxlist_data_in args mt auxlist) = linearize data_in"
-      unfolding valid_nmtaux_def prod.case by blast
-    show ?thesis
-    proof (rule iffI)
-      assume "length (filter (\<lambda> (t, _, _). mem (args_ivl args) (mt - t)) auxlist) > 0"
-      then have "length (auxlist_data_in args mt auxlist) > 0"
-        using auxlist_data_in_def[of args mt auxlist]
-        by auto
-      then have "{} \<noteq> set (map (\<lambda> (t, l, r). (t, r)) (auxlist_data_in args mt auxlist))"        
-        by auto
-      then have "(linearize data_in) \<noteq> []"
-        using data_in_equiv
-        by auto
-      then show "\<not> Queue.is_empty data_in"
-        using Queue.is_empty_alt
-        by auto
-    next
-      assume "\<not> Queue.is_empty data_in"
-      then have "\<exists>e. e \<in> set (linearize data_in)"
-        using Queue.is_empty_alt nth_mem
-        by blast
-      then have "{} \<noteq> set (map (\<lambda> (t, l, r). (t, r)) (auxlist_data_in args mt auxlist))"
-        using data_in_equiv
-        by auto
-      then have "{} \<noteq> set (auxlist_data_in args mt auxlist)"
-        by auto
-      then have "length (auxlist_data_in args mt auxlist) > 0"
-        by auto 
-      then show "length (filter (\<lambda> (t, _, _). mem (args_ivl args) (mt - t)) auxlist) > 0"
-        unfolding auxlist_data_in_def 
-        by auto
-    qed
-  qed
-
 lemma valid_result_nmtaux_unfolded: 
   assumes "valid_nmtaux args cur (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) auxlist"
   shows "result_nmtaux args (mt, idx_next, idx_mid, idx_oldest, data_prev, data_in, tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) = trigger_results args cur auxlist"
@@ -620,7 +359,7 @@ proof -
       fix tuple
       assume assm: "tuple \<in> snd (result_nmtaux args aux)"
       then have non_empty: "length (filter (\<lambda> (t, _, _). mem (args_ivl args) (mt - t)) auxlist) > 0"
-        using non_empty_assm valid_nmtaux_nonempty[OF assms(1)]
+        using non_empty_assm data_in_auxlist_nonempty[OF assms(1)]
         by auto
   
       {
@@ -1358,9 +1097,6 @@ lemma valid_result_nmtaux: "valid_nmtaux args cur aux auxlist \<Longrightarrow> 
   using valid_result_nmtaux_unfolded
   by (cases aux) (fast)
 
-lemma drop_list_shift: "n \<ge> m \<Longrightarrow> drop n xs = drop (n - m) (drop m xs)"
-  by simp
-
 (* analogous to join_mmsaux *)
 lemma proj_tuple_in_join_optim_equiv:
   assumes "table R r" "distinct R"
@@ -1374,284 +1110,40 @@ proof -
     by (auto simp: proj_tuple_in_join_def idle dest: nil)
 qed
 
-(* TODO: combine with shift_end *)
-lemma ts_tuple_rel_empty: "ts_tuple_rel_f (\<lambda>_. {}) A = {}"
-  unfolding ts_tuple_rel_f_def
-  by auto
+lemma fold_Mapping_filter_None: "Mapping.lookup ts as = None \<Longrightarrow>
+  Mapping.lookup (fold (\<lambda>(t, X) ts. Mapping.filter
+  (filter_cond (f X) ts t) ts) ds ts) as = None"
+  by (induction ds arbitrary: ts) (auto simp add: Mapping.lookup_filter)
 
-lemma Mapping_empty_filter: "Mapping.filter f Mapping.empty = Mapping.empty"
-  by (metis Mapping.lookup_empty Mapping_lookup_filter_not_None mapping_eqI)
-
-lemma fold_Mapping_filter_empty: "fold (\<lambda>el tuple_in. Mapping.filter (f el tuple_in) tuple_in) xs Mapping.empty = Mapping.empty"
-proof (induction xs arbitrary: )
-  case Nil
-  then show ?case by auto
-next
-  case (Cons x xs)
-  then have "(fold (\<lambda>el tuple_in. Mapping.filter (f el tuple_in) tuple_in) xs Mapping.empty) = Mapping.empty"
-    by auto
-  then have "(fold (\<lambda>el tuple_in. Mapping.filter (f el tuple_in) tuple_in) xs (Mapping.filter (f x Mapping.empty) Mapping.empty)) = Mapping.empty"
-    using Mapping_empty_filter[of "f x Mapping.empty"]
-    by auto
-  then have "(fold (\<lambda>el tuple_in. Mapping.filter (f el tuple_in) tuple_in) xs \<circ> (\<lambda>el tuple_in. Mapping.filter (f el tuple_in) tuple_in) x) Mapping.empty = Mapping.empty"
-    by auto
-  then show ?case by simp
-qed
-
-lemma Mapping_filter_Some:
-  assumes "Mapping.lookup mapping k = Some v"
-  assumes "f k v = True"
-  shows "Mapping.lookup (Mapping.filter f mapping) k = Some v"
-  using assms
-  by (simp add: Mapping_keys_filterI Mapping_lookup_filter_keys)
-
-lemma Mapping_filter_None:
-  assumes "Mapping.lookup mapping k = None"
-  shows "Mapping.lookup (Mapping.filter f mapping) k = None"
-  using assms Mapping_lookup_filter_not_None
-  by fastforce
-
-lemma filter_order_inv: "filter f (filter g xs) = filter g (filter f xs)"
-  by (metis (mono_tags, lifting) filter_cong filter_filter)
-
-lemma not_memL_imp_memR: "\<not> memL (args_ivl args) t \<Longrightarrow> memR (args_ivl args) t"
-proof -
-  assume "\<not> memL (args_ivl args) t"
-  then have memL: "\<forall>t'\<le>t. \<not>mem (args_ivl args) t'" using memL_mono by auto
-  have "(memL (args_ivl args), memR (args_ivl args), bounded (args_ivl args)) \<in> {(memL, memR, bounded). (\<exists>m. memL m \<and> memR m) \<and> upclosed memL \<and> downclosed memR \<and> bounded = (\<exists>m. \<not> memR m)}"
-    using Rep_\<I>[of "(args_ivl args)"]
-    by (simp add: bounded.rep_eq memL.rep_eq memR.rep_eq)
-  then obtain t_ex where t_ex_props: "mem (args_ivl args) t_ex"
-    by auto
-  {
-    assume memR: "\<not>memR (args_ivl args) t"
-    {
-      fix t'
-      assume t'_leq_t: "t' \<ge> t"
-      then have "\<not>memR (args_ivl args) t'"
-        using memR memR_antimono
-        by auto
-    }
-    then have "\<forall>t'\<ge>t. \<not>mem (args_ivl args) t'" by auto
-    then have "\<forall>t'. \<not>mem (args_ivl args) t'"
-      using memL nat_le_linear
-      by auto
-    then have "False" using t_ex_props by auto
-  }
-  then show "memR (args_ivl args) t" by auto
-qed
-
-lemma not_memR_imp_memL: "\<not> memR (args_ivl args) t \<Longrightarrow> memL (args_ivl args) t"
-proof -
-  assume "\<not> memR (args_ivl args) t"
-  then have memR: "\<forall>t'\<ge>t. \<not>memR (args_ivl args) t'" using memR_antimono by auto
-  have "(memL (args_ivl args), memR (args_ivl args), bounded (args_ivl args)) \<in> {(memL, memR, bounded). (\<exists>m. memL m \<and> memR m) \<and> upclosed memL \<and> downclosed memR \<and> bounded = (\<exists>m. \<not> memR m)}"
-    using Rep_\<I>[of "(args_ivl args)"]
-    by (simp add: bounded.rep_eq memL.rep_eq memR.rep_eq)
-  then obtain t_ex where t_ex_props: "mem (args_ivl args) t_ex"
-    by auto
-  {
-    assume memL: "\<not>memL (args_ivl args) t"
-    {
-      fix t'
-      assume t'_leq_t: "t' \<le> t"
-      then have "\<not>memL (args_ivl args) t'"
-        using memL memL_mono
-        by auto
-    }
-    then have "\<forall>t'\<le>t. \<not>mem (args_ivl args) t'" by auto
-    then have "\<forall>t'. \<not>mem (args_ivl args) t'"
-      using memR nat_le_linear
-      by auto
-    then have "False" using t_ex_props by auto
-  }
-  then show "memL (args_ivl args) t" by auto
-qed
-
-lemma fold_append_queue_map: "linearize (fold (\<lambda>(t, l, r) q. append_queue (t, r) q) xs q) = linearize q @ (map (\<lambda>(t, l, r). (t, r)) xs)"
-  by (induction xs arbitrary: q) (auto simp add: append_queue_rep)
-
-lemma filter_imp: "(\<forall>x. P x \<longrightarrow> Q x) \<longrightarrow> length (filter P xs) \<le> length (filter Q xs)"
-  by (metis (mono_tags, lifting) filter_cong filter_filter length_filter_le)
-
-lemma filter_take_drop:
-  assumes "filter P xs = take n xs"
-  shows "filter (\<lambda>x. \<not> P x) xs = drop n xs"
-  using assms
-proof (induction xs arbitrary: n)
-  case Nil
-  then show ?case by simp
-next
-  case (Cons a xs)
+lemma fold_Mapping_filter_Some_None: "Mapping.lookup ts as = Some t \<Longrightarrow>
+  as \<in> (f X) \<Longrightarrow> (t, X) \<in> set ds \<Longrightarrow>
+  Mapping.lookup (fold (\<lambda>(t, X) ts. Mapping.filter (filter_cond (f X) ts t) ts) ds ts) as = None"
+proof (induction ds arbitrary: ts)
+  case (Cons a ds)
   show ?case
-  proof (cases "P a")
-    case True
-    with Cons.prems obtain m where "n = Suc m" "filter P xs = take m xs"
-      by (cases n) auto
-    with Cons.IH True show ?thesis by simp
-  next
-    case False
-    show ?thesis
-    proof (cases n)
-      case 0
-      with Cons.prems False have "\<forall>x\<in>set xs. \<not> P x"
-        by (simp add: filter_empty_conv)
-      with False 0 show ?thesis by simp
-    next
-      case (Suc m)
-      with Cons.prems False have "filter P xs = a # take m xs" by simp
-      then have "a \<in> set (filter P xs)" by simp
-      with False show ?thesis by simp
-    qed
+  proof (cases a)
+    case (Pair t' X')
+    with Cons show ?thesis
+      using
+        fold_Mapping_filter_None[of "Mapping.filter (filter_cond (f X') ts t') ts" as f ds]
+        Mapping_lookup_filter_not_None[of "filter_cond (f X') ts t'" ts as]
+        fold_Mapping_filter_None[OF Mapping_lookup_filter_None, of _ as f ds ts]
+      by (cases "Mapping.lookup (Mapping.filter (filter_cond (f X') ts t') ts) as = None") auto
   qed
-qed
+qed simp
 
-lemma mem_mt_and_memR_imp_mem:
-  assumes "nt \<ge> mt"
-  shows "(mem (args_ivl args) (mt - t) \<and> memR (args_ivl args) (nt - t)) = (mem (args_ivl args) (mt - t) \<and> mem (args_ivl args) (nt - t))"
-  using assms by auto
-
-lemma take_filter_mem:
-  assumes "\<forall>db \<in> set xs. memR I (mt - time db)"
-  assumes "sorted (map fst xs)"
-  shows "filter (\<lambda>(t, _). mem I (mt - t)) xs = take (length (filter (\<lambda>(t, _). mem I (mt - t)) xs)) xs"
-using assms proof (induction xs)
-  case Nil
-  then show ?case by auto
-next
-  case (Cons x xs)
-  then have IH: "filter (\<lambda>(t, _). mem I (mt - t)) xs = take (length (filter (\<lambda>(t, _). mem I (mt - t)) xs)) xs"
-    using Cons
-    by auto
-  from Cons(2) have x_memR: "((\<lambda>(t, _). memR I (mt - t)) x)" unfolding time_def by auto
-  show ?case
-  proof (cases "(\<lambda>(t, _). mem I (mt - t)) x")
-    case True
-    then have "filter (\<lambda>(t, _). mem I (mt - t)) (x#xs) = x#(filter (\<lambda>(t, _). mem I (mt - t)) xs)"
-      by auto
-    moreover have "take (length (filter (\<lambda>(t, _). mem I (mt - t)) (x#xs))) (x#xs) = x#(take (length (filter (\<lambda>(t, _). mem I (mt - t)) xs)) xs)"
-      using True
-      by auto
-    ultimately show ?thesis using IH by auto
-  next
-    case not_mem: False
-    then have filter_IH: "filter (\<lambda>(t, _). mem I (mt - t)) (x#xs) = (filter (\<lambda>(t, _). mem I (mt - t)) xs)"
-      by auto
-    then have takeWhile_IH: "take (length (filter (\<lambda>(t, _). mem I (mt - t)) (x#xs))) (x#xs) = take (length (filter (\<lambda>(t, _). mem I (mt - t)) xs)) (x#xs)"
-      by auto
-    show ?thesis
-    proof (cases "length (filter (\<lambda>(t, _). mem I (mt - t)) xs)")
-      case 0
-      then show ?thesis by auto
-    next
-      case (Suc nat)
-      then have takeWhile_IH: "take (length (filter (\<lambda>(t, _). mem I (mt - t)) (x#xs))) (x#xs) = x # (take nat xs)"
-        using takeWhile_IH
-        by auto
-      then show ?thesis
-      proof (cases "\<forall>db \<in> set xs. (\<lambda>(t, _). \<not>mem I (mt - t)) db")
-        case True
-        then have "filter (\<lambda>(t, _). mem I (mt - t)) (x#xs) = []"
-          using filter_IH
-          by (simp add: case_prod_beta')
-        then show ?thesis using takeWhile_IH by auto
-      next
-        case False
-        then obtain j where j_props: "((\<lambda>(t, _). mem I (mt - t)) (xs!j))" "j \<in> {0..<length xs}"
-          by (metis (mono_tags, lifting) atLeastLessThan_iff case_prod_beta' in_set_conv_nth leI not_less_zero)
-        then have "((\<lambda>(t, _). mem I (mt - t)) ((x#xs)!(Suc j)))"
-          by auto
-        moreover have "fst ((x#xs)!0) \<le> fst ((x#xs)!(Suc j))"
-          using Cons(3) j_props
-          by auto
-        ultimately have "((\<lambda>(t, _). mem I (mt - t)) x)" using x_memR by auto
-        then show ?thesis using not_mem by auto
-      qed
-    qed
+lemma fold_Mapping_filter_Some_Some: "Mapping.lookup ts as = Some t \<Longrightarrow>
+  (\<And>X. (t, X) \<in> set ds \<Longrightarrow> as \<notin> f X) \<Longrightarrow>
+  Mapping.lookup (fold (\<lambda>(t, X) ts. Mapping.filter (filter_cond (f X) ts t) ts) ds ts) as = Some t"
+proof (induction ds arbitrary: ts)
+  case (Cons a ds)
+  then show ?case
+  proof (cases a)
+    case (Pair t' X')
+    with Cons show ?thesis
+      using Mapping_lookup_filter_Some[of "filter_cond (f X') ts t'" as ts] by auto
   qed
-qed
-
-
-lemma fold_alt: "fold f (xs @ [x]) acc = f x (fold f xs acc)"
-  by simp
-
-lemma drop_last: "length xs \<ge> 1 \<Longrightarrow> drop (length xs - 1) xs = [last xs]"
-  by (cases xs rule: rev_cases) simp_all
-
-lemma filter_sublist: "x#xs = filter f zs \<Longrightarrow> \<exists>n\<le>length zs. xs = filter f (drop n zs) \<and> [x] = filter f (take n zs)"
-  proof (induction zs)
-    case (Cons z zs)
-    then show ?case
-    proof (cases "f z")
-      case False
-      then obtain n where "n\<le>length zs" "xs = filter f (drop n zs)" "[x] = filter f (take n zs)"
-        using Cons
-        by auto
-      then show ?thesis
-        using False
-        by (auto intro: exI[of _ "n+1"])
-    qed (auto intro: exI[of _ 1])
-  qed (auto)
-
-lemma idx_filter:
-  assumes "x = (filter f xs)!i"
-  assumes "i < length (filter f xs)"
-  shows "\<exists>i' \<in> {0..<length xs}. xs!i' = x"
-  using assms
-  by (metis (no_types, lifting) atLeastLessThan_iff in_set_conv_nth
-      mem_Collect_eq set_filter zero_le)
-
-lemma idx_filter_pair:
-  assumes "x = (filter f xs)!i"
-  assumes "y = (filter f xs)!j"
-  assumes "j < i" "i < length (filter f xs)"
-  shows "\<exists>i' \<in> {0..<length xs}. \<exists>j' \<in> {0..<i'}. xs!j' = y \<and> xs!i' = x"
-using assms proof (induction "filter f xs" arbitrary: xs i j)
-  case (Cons a as zs)
-
-  obtain i' where i'_def: "i = Suc i'"
-    using Cons(5)
-    by (cases i) (auto)
-
-  obtain n where zs'_props: "n\<le>length zs" "as = filter f (drop n zs)" "[a] = filter f (take n zs)"
-    using Cons filter_sublist[of a as f zs]
-    by auto
-
-  show ?case
-  proof (cases j)
-    case 0
-
-    obtain i'' where i''_props: "i'' \<in> {0..<length (drop n zs)}" "(drop n zs)!i'' = x"
-      using idx_filter[of x f "(drop n zs)" i'] Cons(3-)[folded Cons(2)] zs'_props
-      by (auto simp add: i'_def)
-
-    have "y = a" using 0 Cons(2)[symmetric] Cons(4) by auto
-    then have y_list: "[y] = filter f (take n zs)" using zs'_props(3) by auto
-    then have "filter f (take n zs)!0 = y"
-      by (metis nth_Cons_0)
-    moreover have "0 < length (filter f (take n zs))" using y_list by auto
-
-    ultimately obtain j'' where j''_props: "j'' \<in> {0..<length (take n zs)}" "(take n zs)!j'' = y"
-      using idx_filter[of y f "(take n zs)" 0]
-      by (auto)
-
-    have "n + i'' \<in> {0..<length zs}" "j'' \<in> {0..<n + i''}" "zs ! j'' = y" "zs ! (n + i'') = x"
-      using i''_props j''_props zs'_props(1) by auto
-    then show ?thesis by blast
-      
-  next
-    case (Suc j')
-    have "x = as ! i'" "y = as ! j'" "j' < i'" "i' < length as"
-      using Cons(3-)[folded Cons(2)] Suc i'_def by auto
-    then obtain i'' j'' where "i'' < length (drop n zs)" "j'' < i''"
-      "drop n zs ! j'' = y" "drop n zs ! i'' = x"
-      using Cons(1)[OF zs'_props(2), folded zs'_props(2), of i' j'] by auto
-    then have "n + i'' \<in> {0..<length zs}" "n + j'' \<in> {0..<n + i''}"
-      "zs ! (n + j'') = y" "zs ! (n + i'') = x"
-      using zs'_props(1) by auto
-    then show ?thesis by blast
-  qed
-qed (simp)
+qed simp
 
 lemma no_hist_last_not_sat:
   assumes data_in_len: "length xs + idx_oldest = idx_mid"
@@ -1751,12 +1243,6 @@ proof -
   }
   then show "as \<notin> snd (last xs)" by auto
 qed
-
-lemma idx_append_snd: "i \<in> {length ys..<length xs} \<Longrightarrow> xs = ys @ zs \<Longrightarrow> xs!i = zs!(i - length ys)"
-  by (simp add: nth_append)
-
-lemma nth_set_member: "i \<in> {0..<length xs} \<Longrightarrow> xs!i \<in> set xs"
-  by auto
 
 lemma tuple_since_hist_lookup_eq:
   assumes "(\<forall>as. (case Mapping.lookup tuple_since_hist as of
@@ -1886,9 +1372,6 @@ proof -
   }
   then show ?thesis by auto
 qed
-
-lemma idx_append: "i < length xs \<Longrightarrow> ((xs @ [x])!i) = (xs!i)"
-  by (simp add: nth_append)
 
 (* since shift_end only affects data_prev, data_in & tuple_in, explicitly write the conditions out *)
 lemma valid_shift_end'_unfolded:
@@ -2475,7 +1958,7 @@ proof -
     using takedropWhile_queue_snd
     by auto
   then have move_filter: "move = filter (\<lambda>(t, X). memL (args_ivl args) (nt - t)) (linearize data_prev)"
-    using data_sorted[OF assms(1)] sorted_filter_takeWhile_memL[of "linearize data_prev" args nt]
+    using data_sorted[OF assms(1)] takeWhile_filter'[of "linearize data_prev" "args_ivl args" nt, symmetric]
     by auto
   have filter_simp: "(\<lambda>x. (case x of (t, uu_) \<Rightarrow> memL (args_ivl args) (nt - t)) \<and> (case x of (t, uu_) \<Rightarrow> memR (args_ivl args) (nt - t))) = (\<lambda>(t,_). (memL (args_ivl args) (nt - t)) \<and> (memR (args_ivl args) (nt - t)))"
     by auto
@@ -2501,12 +1984,12 @@ proof -
   ultimately have filter_auxlist_data_prev': "filter (\<lambda>(t, X). \<not>memL (args_ivl args) (nt - t)) auxlist = (linearize data_prev')"
     by auto
   moreover have "\<forall>t. \<not>memL (args_ivl args) (nt - t) = (\<not>memL (args_ivl args) (nt - t) \<and> memR (args_ivl args) (nt - t))"
-    using not_memL_imp_memR[of args]
+    using not_memL_imp_memR[of "args_ivl args"]
     by auto
   ultimately have filter_eq: "filter (\<lambda>x. (case x of (t, uu_) \<Rightarrow> memR (args_ivl args) (nt - t)) \<and> (case x of (t, uu_) \<Rightarrow> \<not> memL (args_ivl args) (nt - t))) auxlist = (linearize data_prev')"
   proof -
     have memR_eq: "(memR (args_ivl args) (nt - t) \<and> \<not> memL (args_ivl args) (nt - t)) \<longleftrightarrow> \<not> memL (args_ivl args) (nt - t)" for t
-      using not_memL_imp_memR[of args "nt - t"]
+      using not_memL_imp_memR[of "args_ivl args" "nt - t"]
       by blast
     show ?thesis
       using filter_auxlist_data_prev'
@@ -2523,7 +2006,7 @@ proof -
     by auto
 
   have "\<forall>t. \<not>memL (args_ivl args) (nt - t) = (\<not>memL (args_ivl args) (nt - t) \<and> memR (args_ivl args) (nt - t))"
-    using not_memL_imp_memR[of args]
+    using not_memL_imp_memR[of "args_ivl args"]
     by auto
   then have auxlist_data_prev_inv: "auxlist_data_prev args nt auxlist = auxlist_data_prev args nt (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
     unfolding auxlist_data_prev_def filter_filter
@@ -2818,7 +2301,7 @@ proof -
   then have "drop_prev_len = length (filter (\<lambda>(t, _). memL (args_ivl args) (nt - t) \<and> \<not> memR (args_ivl args) (nt - t)) (linearize data_prev))"
     by (simp add: case_prod_beta')
   moreover have "\<forall>t. (memL (args_ivl args) (nt - t) \<and> \<not> memR (args_ivl args) (nt - t)) = (\<not> memR (args_ivl args) (nt - t))"
-    using not_memR_imp_memL[of args]
+    using not_memR_imp_memL[of "args_ivl args"]
     by auto
   ultimately have drop_prev_len_eq: "drop_prev_len = length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_prev))"
     by auto
@@ -2853,7 +2336,7 @@ proof -
     using idx_oldest'_def
     unfolding in_drop_def
     using takedropWhile_queue_snd[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
-      data_sorted[OF assms(1)] sorted_filter_takeWhile_not_memR[of "linearize data_in" args nt]
+      data_sorted[OF assms(1)] takeWhile_filter[of "linearize data_in" "args_ivl args" nt, symmetric]
     by auto
   then have "idx_mid' + idx_oldest + length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)) + drop_prev_len = idx_oldest' + idx_mid + length (filter (\<lambda>(t, _). memL (args_ivl args) (nt - t)) (linearize data_prev))"
     using idx_mid'_eq
@@ -2861,7 +2344,7 @@ proof -
   then have len_eq: "idx_mid' + idx_oldest + length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)) + drop_prev_len = idx_oldest' + idx_mid + length (filter (\<lambda>(t, _). memL (args_ivl args) (nt - t)) (linearize data_prev))"
     by auto
   have "(\<forall>x. (\<not> memR (args_ivl args) (fst x)) \<longrightarrow> (memL (args_ivl args) (fst x)))"
-    using not_memR_imp_memL[of args]
+    using not_memR_imp_memL[of "args_ivl args"]
     by auto
   then have prev_not_memR_leq_prev_memL: "length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_prev)) \<le> length (filter (\<lambda>(t, _). memL (args_ivl args) (nt - t)) (linearize data_prev))"
     using filter_imp[of "\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)" "\<lambda>(t, _). memL (args_ivl args) (nt - t)" "linearize data_prev"]
@@ -2882,9 +2365,9 @@ proof -
     using data_in'_def takedropWhile_queue_fst[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
           data_sorted[OF assms(1)]
           dropWhile_queue_rep[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
-          sorted_filter_dropWhile_memR[of "linearize data_in" args nt] move_def
+          dropWhile_filter[of "linearize data_in" "args_ivl args" nt, symmetric] move_def
           takedropWhile_queue_snd[of "(\<lambda>(t, X). memL (args_ivl args) (nt - t))" data_prev]
-          sorted_filter_takeWhile_memL[of "linearize data_prev" args nt]
+          takeWhile_filter'[of "linearize data_prev" "args_ivl args" nt, symmetric]
     by auto
   moreover have "filter (\<lambda>x. (case x of (t, uu_) \<Rightarrow> memL (args_ivl args) (nt - t)) \<and> (case x of (t, uu_) \<Rightarrow> memR (args_ivl args) (nt - t))) (linearize data_prev) = filter (\<lambda>(t, _). mem (args_ivl args) (nt - t)) (linearize data_prev)"
     by (simp add: case_prod_beta')
@@ -2908,7 +2391,7 @@ proof -
           filter_filter[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" "(\<lambda>(t, _). memL (args_ivl args) (nt - t))" "linearize data_prev"]
     by (auto simp add: case_prod_beta')
   moreover have "\<forall>t. (memL (args_ivl args) (nt - t) \<and> \<not> memR (args_ivl args) (nt - t)) = (\<not> memR (args_ivl args) (nt - t))"
-    using not_memR_imp_memL[of args]
+    using not_memR_imp_memL[of "args_ivl args"]
     by auto
   ultimately have "length (filter (\<lambda>(t, _). memL (args_ivl args) (nt - t)) (linearize data_prev)) = length (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (filter (\<lambda>(t, _). memL (args_ivl args) (nt - t)) (linearize data_prev))) + length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_prev))"
     by auto
@@ -3094,7 +2577,7 @@ proof -
     using filter_filter[of "(\<lambda>(t, _). memR (args_ivl args) (nt - t))" "(\<lambda>(t, _). mem (args_ivl args) (mt - t))" auxlist]
     by (auto simp add: filter_simp'')
   then have x: "linearize data_in'' = map (\<lambda>(t, l, r). (t, r)) ((filter (\<lambda>(t, _). mem (args_ivl args) (mt - t) \<and> mem (args_ivl args) (nt - t)) auxlist) @ (filter (\<lambda>(t, _). mem (args_ivl args) (nt - t)) (filter (\<lambda>(t, _). \<not> memL (args_ivl args) (mt - t)) auxlist)))"
-    using mem_mt_and_memR_imp_mem[of mt nt args] nt_mono time
+    using mem_mt_and_memR_imp_mem[of mt nt "args_ivl args"] nt_mono time
     by auto
   moreover have filter_simp': "(\<lambda>(t, _). mem (args_ivl args) (mt - t) \<and> mem (args_ivl args) (nt - t)) = (\<lambda>x. (case x of (t, uu_) \<Rightarrow> mem (args_ivl args) (mt - t)) \<and> (case x of (t, uu_) \<Rightarrow> mem (args_ivl args) (nt - t)))"
     by auto
@@ -3151,7 +2634,7 @@ proof -
     by (simp flip: lin_data_in''_eq)
 
   then have filter_take_eq: "filter (\<lambda>(t, _). mem (args_ivl args) (nt - t)) (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist) = take (length (linearize data_in'')) (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist)"
-    using take_filter_mem[OF memR sorted]
+    using take_filter_mem[OF memR[unfolded time_def] sorted]
     by auto
   then show auxlist_data_in_take_eq: "auxlist_data_in args nt (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist) = take (length (linearize data_in'')) (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist)"
     unfolding auxlist_data_in_def
@@ -3204,7 +2687,7 @@ proof -
       unfolding data_in'_def
       using takedropWhile_queue_fst[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
             dropWhile_queue_rep[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
-            data_sorted[OF assms(1)] sorted_filter_dropWhile_memR[of "linearize data_in" args nt]
+            data_sorted[OF assms(1)] dropWhile_filter[of "linearize data_in" "args_ivl args" nt, symmetric]
       by auto
 
     {
@@ -3381,7 +2864,7 @@ proof -
         unfolding lin_data_in''_mv_def data_in'_def
         using takedropWhile_queue_fst[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
               dropWhile_queue_rep[of "(\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t))" data_in]
-              data_sorted[OF assms(1)] sorted_filter_dropWhile_memR[of "linearize data_in" args nt]
+              data_sorted[OF assms(1)] dropWhile_filter[of "linearize data_in" "args_ivl args" nt, symmetric]
               drop_filter_memR[of "linearize data_in" "(args_ivl args)" nt ]
         by auto
       have idx_oldest'_eq: "idx_oldest_mv [] = idx_oldest + length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))"
@@ -3500,7 +2983,7 @@ proof -
               unfolding r_def
               by auto
             then have  "db \<in> set (drop (idx - idx_oldest) (linearize data_in))"
-              by (metis drop_list_shift in_set_dropD leI less_imp_le_nat)
+              by (metis drop_drop le_add_diff_inverse2 in_set_dropD leI less_imp_le_nat)
             then have "False" using idx_props(3) db_props(2) by auto
           }
           then have "\<forall>(t, r) \<in> set (drop (idx-(idx_oldest_mv [])) (lin_data_in''_mv [])). as \<in> r"
@@ -3672,21 +3155,21 @@ proof -
               then have j_geq: "j \<ge> length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))"
                 by auto
               moreover have "filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in) = takeWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)"
-                using data_sorted[OF assms(1)] sorted_filter_takeWhile_not_memR[of "linearize data_in" args nt]
+                using data_sorted[OF assms(1)] takeWhile_filter[of "linearize data_in" "args_ivl args" nt, symmetric]
                 by auto
               moreover have "linearize data_in = (takeWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)) @ (dropWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))"
                 by auto
               ultimately have "((linearize data_in)!j) = (dropWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))!(j - length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)))"
-                using j_props(1) idx_append_snd[of j "(takeWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))" "linearize data_in" "(dropWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))"]
+                using j_props(1) nth_append_right[of "(takeWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))" j "(dropWhile (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))"]
                 by auto
               then have jth: "((linearize data_in)!j) = filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (linearize data_in)!(j - length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)))"
-                using data_sorted[OF assms(1)] sorted_filter_dropWhile_memR[of "linearize data_in" args nt]
+                using data_sorted[OF assms(1)] dropWhile_filter[of "linearize data_in" "args_ivl args" nt, symmetric]
                 by auto
               have "j - length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in)) \<in> {0..<length (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (linearize data_in))}"
                 using j_geq j_props(1) sum_length_filter_compl[of "(\<lambda>(t, _). memR (args_ivl args) (nt - t))" "(linearize data_in)"]
                 by (auto simp add: filter_simp)
               then have "filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (linearize data_in)!(j - length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))) \<in> set (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (linearize data_in))"
-                using nth_set_member[of "j - length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))" "filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (linearize data_in)"]
+                using nth_mem[of "j - length (filter (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (linearize data_in))" "filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) (linearize data_in)"]
                 by auto
               then have "as \<in> snd ((linearize data_in)!j)"
                 using jth all_relR
@@ -4192,7 +3675,6 @@ proof -
           unfolding tuple_since_hist_mv_def
           by auto
         then have "tuple_since_hist_mv (xs @ [x]) init_tuple = fst (fold_op_f x tuple)"
-          using fold_alt[of fold_op_f "xs" "x" init_tuple]
           unfolding tuple_def
           by auto              
         then have mapping_eq: "tuple_since_hist_mv (xs @ [x]) init_tuple = upd_set joined_mapping (\<lambda>_. (get_idx_move tuple)) ((relR x) - Mapping.keys joined_mapping)"
@@ -4516,7 +3998,7 @@ proof -
                   then show ?thesis by auto
                 qed
                 ultimately have "lin_data_in''_mv (xs @ [x]) ! (idx - idx_oldest_mv (xs @ [x]) - 1) = lin_data_in''_mv (xs) ! (idx_mid_mv (xs @ [x]) - idx_oldest_mv (xs @ [x]) - 2)"
-                  using data_in''_eq idx_append[of "idx_mid_mv (xs @ [x]) - idx_oldest_mv (xs @ [x]) - 2" "lin_data_in''_mv (xs)" "(\<lambda>(t, l, y). (t, y)) x"]
+                  using data_in''_eq nth_append_left[of "idx_mid_mv (xs @ [x]) - idx_oldest_mv (xs @ [x]) - 2" "lin_data_in''_mv (xs)" "[(\<lambda>(t, l, y). (t, y)) x]"]
                   using idx_eq idx_oldest_eq assm len
                   by auto
                 then have "lin_data_in''_mv (xs @ [x]) ! (idx - idx_oldest_mv (xs @ [x]) - 1) = lin_data_in''_mv (xs) ! (idx_mid_mv (xs) - idx_oldest_mv (xs) - 1)"
@@ -4557,7 +4039,7 @@ proof -
                   using assm idx_oldest_eq idx_props(1) mv_ln_eq less_diff_conv2
                   by auto
                 ultimately show ?thesis
-                  using idx_append[of "idx - idx_oldest_mv (xs @ [x]) - 1" "lin_data_in''_mv xs" "(\<lambda>(t, l, y). (t, y)) x"]
+                  using nth_append_left[of "idx - idx_oldest_mv (xs @ [x]) - 1" "lin_data_in''_mv xs" "[(\<lambda>(t, l, y). (t, y)) x]"]
                         data_in''_eq
                   by auto
               qed
@@ -4576,7 +4058,6 @@ proof -
         ))"
       proof -
         have fold_eq: "(fst \<circ> snd) (fold fold_op_f (xs @ [x]) init_tuple) = (fst \<circ> snd) (fold_op_f x tuple)"
-          using fold_alt[of fold_op_f xs x init_tuple]
           unfolding tuple_def
           by auto
         
@@ -4622,7 +4103,7 @@ proof -
             proof (rule iffI)
               assume "as \<in> hist_sat_mv (xs @ [x]) init_tuple"
               then have "as \<in> (((fst \<circ> snd) (fold fold_op_f xs init_tuple) \<inter> relR x) \<union> {as \<in> (snd o snd) x. case Mapping.lookup (tuple_since_hist_mv (xs @ [x]) init_tuple) as of None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> idx_oldest_mv (xs @ [x])})"
-                using lin_eq fold_alt[of fold_op_f xs x init_tuple] fold_IH_hist_sat
+                using lin_eq fold_IH_hist_sat
                 unfolding hist_sat_mv_def tuple_def hist_sat'_def
                 by (auto split: list.splits simp add: case_prod_beta')
               moreover {
@@ -4763,7 +4244,6 @@ proof -
             by (auto split: if_splits)
 
           then have "as \<in> (snd \<circ> snd \<circ> snd) (fold_op_f x (fold fold_op_f xs init_tuple))"
-            using fold_alt[of fold_op_f xs x init_tuple]
             by auto
           then have as_mem: "as \<in> (since_sat' \<inter> relR x) \<union> {as \<in> relR x. proj_tuple_in_join (args_pos args) (args_L args) (args_R args) as (relL x)}"
             using fold_IH_since_sat
@@ -5054,7 +4534,6 @@ proof -
             unfolding tuple_def
             by auto
           then have "as \<in> (snd \<circ> snd \<circ> snd) (fold fold_op_f (xs @ [x]) init_tuple)"
-            using fold_alt[of fold_op_f xs x init_tuple]
             by auto
           then have "as \<in> since_sat_mv (xs @ [x]) init_tuple"
             using mv_ln_eq non_empty
@@ -5066,7 +4545,6 @@ proof -
       moreover have "get_idx_move (fold fold_op_f (xs @ [x]) init_tuple) = idx_mid_mv (xs @ [x])"
       proof -
         have "fold fold_op_f (xs @ [x]) init_tuple = fold_op_f x tuple"
-          using fold_alt[of fold_op_f "xs" "x" init_tuple]
           unfolding tuple_def
           by auto
         moreover have "get_idx_move (fold_op_f x tuple) = (get_idx_move tuple) + 1"
@@ -5081,7 +4559,6 @@ proof -
       moreover have "(case Mapping.lookup (fst (fold fold_op_f (xs @ [x]) init_tuple)) as of None \<Rightarrow> True | Some idx \<Rightarrow> idx < idx_mid_mv (xs @ [x]))"
       proof -
         have "fold fold_op_f (xs @ [x]) init_tuple = fold_op_f x (fold fold_op_f xs init_tuple)"
-          using fold_alt[of fold_op_f xs x init_tuple]
           by auto
         then have mapping_eq: "fst (fold fold_op_f (xs @ [x]) init_tuple) = upd_set joined_mapping (\<lambda>_. get_idx_move tuple) (relR x - Mapping.keys joined_mapping)"
           using fold_IH_since_hist
@@ -5890,7 +5367,7 @@ proof -
             moreover have "linearize data_in'' ! (idx - idx_oldest' - 1) = linearize data_in' ! (idx - idx_oldest' - 1)"
               using before_len idx_props
               unfolding data_in''_def append_queue_rep
-              by (metis (no_types, lifting) diff_is_0_eq idx_append not_le_imp_less length_greater_0_conv less_diff_conv2 less_imp_diff_less less_or_eq_imp_le tuple_since tuple_since_tp_def)
+              by (metis (no_types, lifting) diff_is_0_eq nth_append_left not_le_imp_less length_greater_0_conv less_diff_conv2 less_imp_diff_less less_or_eq_imp_le tuple_since tuple_since_tp_def)
 
             ultimately have "tuple_since_tp args as (linearize data_in'') idx_oldest' idx_mid'' idx"
               using non_empty idx_props
@@ -6675,30 +6152,6 @@ lemma valid_update_nmtaux: "
 
 lemma table_trigger_lhs: "table (args_L args) l \<Longrightarrow> table (args_L (trigger_args args)) (trigger_lhs args l)"
   by (auto simp: trigger_lhs_def table_def)
-
-lemma join_cond_restrict_perm:
-  assumes "set L = set R" "distinct L" "distinct R" "table L l" "wf_tuple R x"
-  shows "join_cond pos (restrict R L ` l) x \<longleftrightarrow> join_cond pos l (restrict L R x)"
-proof -
-  have "x \<in> restrict R L ` l \<longleftrightarrow> restrict L R x \<in> l"
-  proof
-    assume "x \<in> restrict R L ` l"
-    then obtain y where y: "y \<in> l" "x = restrict R L y"
-      by auto
-    then show "restrict L R x \<in> l"
-      using restrict_restrict[of L R L y] restrict_idle[OF assms(2) tableD[OF assms(4) y(1)]] assms(1)
-      by auto
-  next
-    assume "restrict L R x \<in> l"
-    moreover have "restrict R L (restrict L R x) = x"
-      using restrict_restrict[of R L R x] restrict_idle[OF assms(3,5)] assms(1)
-      by auto
-    ultimately show "x \<in> restrict R L ` l"
-      by (metis image_eqI)
-  qed
-  then show ?thesis
-    by auto
-qed
 
 lemma trigger_results_trigger_args:
   assumes "if mem (args_ivl args) 0 then set (args_L args) \<subseteq> set (args_R args) else set (args_L args) = set (args_R args)"

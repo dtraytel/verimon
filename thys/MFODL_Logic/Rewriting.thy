@@ -537,18 +537,6 @@ next
 qed (auto simp: Formula.TT_def once_def always_def
     eventually_def historically_def)
 
-lemma shift_fv_in_f: "(x+1) \<in> (Formula.fvi b (shiftI b \<phi>)) 
-  \<longleftrightarrow> x \<in> (Formula.fvi b \<phi>)"
-  using shift_fv_in_t 
-proof (induction b \<phi> rule: Formula.fvi.induct)
-  case (20 b I r)
-  then show ?case by (induct r;auto)
-
-next
-case (21 b I r)
-  then show ?case by (induct r;auto)
-qed auto
-
 lemma no_shift_t:  "b' \<le> x3 \<Longrightarrow> Formula.fvi_trm b' (shiftTI (b + x3) t) 
   \<subseteq> {0..<x3-b'} \<longleftrightarrow> Formula.fvi_trm b' t \<subseteq> {0..<x3-b'}"
   by (induction t; auto)
@@ -604,10 +592,6 @@ next
     by (induction r) auto
 qed (auto simp: no_shift_t)
 
-lemma match_map_regex: "(\<And>k a. a \<in> Regex.atms r \<Longrightarrow> sat1 k (f a) \<longleftrightarrow> sat2 k a) \<Longrightarrow>
-  Regex.match sat1 (regex.map_regex f r) = Regex.match sat2 r"
-  by (induction r) simp_all
-
 lemma sat_shift: "length xs = b 
   \<Longrightarrow> Formula.sat \<sigma> V (xs @ z # v) i (shiftI b \<phi>) 
   \<longleftrightarrow> Formula.sat \<sigma> V (xs@v) i \<phi>"
@@ -648,7 +632,7 @@ next
   case (MatchF I r)
   have rw: "Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    by (rule match_map_regex) (simp add: MatchF)
+    by (rule match_map_regex_cong) (simp add: MatchF)
   show ?case
     using MatchF
     by (simp add: rw)
@@ -656,7 +640,7 @@ next
   case (MatchP I r)
   have rw: "\<And>j. Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    by (rule match_map_regex) (simp add: MatchP)
+    by (rule match_map_regex_cong) (simp add: MatchP)
   show ?case
     by (simp add: rw)
 qed (auto simp: eval_trm_shiftTI)
@@ -671,19 +655,6 @@ lemma left_init_ivl[simp]: "memL (init_ivl I) n"
 lemma right_init_ivl[simp]: "memR (init_ivl I) = memR I" 
   by (transfer; auto)+
 
-lemma nat_less_than_range: "\<And>i j:: nat. k \<in> {i..j} \<and> k' \<in>{i..j} \<Longrightarrow> (k-k') \<le> (j-i)"
-proof -
-  fix i j :: nat assume A:"k \<in> {i..j} \<and> k' \<in>{i..j}"
-  show "(k-k') \<le> (j-i)"
-  proof(cases "i\<le>j")
-  case True
-  then show ?thesis using A diff_le_mono2 by auto
-next
-  case False
-  then show ?thesis using A by auto
-qed
-qed
-
 lemma mem_of_init: "mem I j \<Longrightarrow>  \<forall>k\<le>j. mem (init_ivl I) k"
 proof(induction j)
   case 0
@@ -694,15 +665,23 @@ next
     by (metis left_init_ivl memR_antimono right_init_ivl)
 qed
 
-(*Main lemma used multiple times*)
+(*Main lemma, used by equiv_4*)
 lemma nat_less_mem_of_init: "\<And>i j. k \<in> {i..j} \<and> k' \<in>{i..j} 
   \<Longrightarrow> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) 
   \<Longrightarrow>  mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> k')"
 proof -
+  have diff_le_range: "x - y \<le> b - a" if "x \<in> {a..b} \<and> y \<in> {a..b}" for x y a b :: nat
+  proof (cases "a \<le> b")
+    case True
+    then show ?thesis using that diff_le_mono2 by auto
+  next
+    case False
+    then show ?thesis using that by auto
+  qed
   fix i j :: nat 
   assume A:"k \<in> {i..j} \<and> k' \<in>{i..j}" "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)"
   then have "(\<tau> \<sigma> k - \<tau> \<sigma> k') \<le> (\<tau> \<sigma> j - \<tau> \<sigma> i)" 
-    using nat_less_than_range by auto
+    using diff_le_range by auto
   then show " mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> k')" 
     using A(2) mem_of_init by blast
 qed
@@ -767,9 +746,6 @@ fun my_size :: "'a formula \<Rightarrow> nat" where
 lemma ands_size: "my_size (Ands rs) > my_size_list my_size rs" 
   by simp
 
-lemma my_size_neg_sub: "my_size a = my_size b \<Longrightarrow> my_size (Neg a) = my_size (Neg b)"
-  by simp
-
 lemma shift_size: "my_size (shiftI_r b \<alpha>) = my_size \<alpha>"
 proof(induction \<alpha> arbitrary: b)
 next
@@ -797,9 +773,6 @@ fun fix_r :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
 lemma not_swapped: "t \<noteq> Swapped \<Longrightarrow> t = Same" 
   by (induction t) auto
 
-lemma fix_r_same: "fix_r r Same = r" 
-  by auto
-
 declare regex.map_cong[fundef_cong]
 
 lemma my_size_list_estimation[termination_simp]: 
@@ -822,8 +795,9 @@ subsubsection \<open> Fresh predicates for frozen snapshots \<close>
 
 text \<open> Several rewrite rules below propagate a range restriction from a conjunct @{term \<alpha>}
 into a temporal operator. Instead of copying @{term \<alpha>} under an opposite temporal operator,
-which overapproximates @{term \<alpha>}'s satisfactions and may destroy the monitor's progress,
-we freeze @{term \<alpha>} at the current time-point into a fresh predicate @{term q} with
+which overapproximates @{term \<alpha>}'s satisfactions and may delay a monitor's evaluation of
+the formula (its progress, see the session MFODL_Monitor_Proof), we freeze @{term \<alpha>} at the
+current time-point into a fresh predicate @{term q} with
 @{term "Frz q \<alpha> \<psi>"} and use @{term q} inside the temporal operator in @{term \<psi>}.
 To guarantee freshness, @{term q} is chosen to differ from all predicate names occurring in
 the involved subformulas. \<close>
@@ -979,9 +953,10 @@ Propagation of Range Restrictions" of Samuel Mueller's
 ETH PhD-thesis: Theory and applications of runtime
 monitoring MFOTL.
 The rules that would copy a conjunct under an opposite temporal operator (introducing
-future dependencies for past operators and reducing the progress of future operators) have been
-replaced by rules using the freeze operator (see Krstic and Traytel: "From Harbin with Love:
-Freezing MFOTL"), which preserve the monitor's progress. *)
+future dependencies for past operators and delaying a monitor's evaluation of future operators)
+have been replaced by rules using the freeze operator (see Krstic and Traytel: "From Harbin with
+Love: Freezing MFOTL"), which do not delay a monitor (they preserve the progress defined in the
+session MFODL_Monitor_Proof). *)
 function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
   where
 (*1*)  "rewrite (And \<alpha> (Or \<beta> \<gamma>)) t =
@@ -1065,7 +1040,8 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 
 (*6 first, then 8*)
 (* the Same cases freeze \<alpha> (resp. \<gamma>), which necessarily holds at the current time-point;
-   the Swapped cases are restricted to intervals containing 0 to preserve progress *)
+   the Swapped cases are restricted to intervals containing 0, so that they do not delay a
+   monitor (they preserve the progress defined in MFODL_Monitor_Proof) *)
 | "rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same in
               if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
@@ -1079,7 +1055,8 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
                       else rewrite \<beta> Same
               in fix_r (Since l I r) t)"
 
-(*7 first*) (* the Swapped case (9) has been removed as it does not preserve progress *)
+(*7 first*) (* the Swapped case (9) has been removed as it would delay a monitor (it does not
+   preserve the progress defined in MFODL_Monitor_Proof) *)
 | "rewrite (Until (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same;
                   r =      if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once I \<alpha>) \<beta>) Same
@@ -1257,19 +1234,6 @@ lemma fvi_frz_atom: "frz_ok \<alpha> \<Longrightarrow> Formula.fvi b (project (f
 lemma preds_frz_atom[simp]: "preds (project (frz_atom q n)) = {(q, n)}"
   by (simp add: frz_atom_def)
 
-(* TODO: Unused definition, move to formula or delete? *)
-definition trigger :: "'a Formula.formula \<Rightarrow> \<I> \<Rightarrow> 'a Formula.formula \<Rightarrow> 'a Formula.formula"
-  where "trigger \<phi> I \<psi> = \<not>\<^sub>F (\<not>\<^sub>F \<phi> \<^bold>S I \<not>\<^sub>F \<psi>)"
-
-lemma sat_trigger[simp]: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> trigger \<phi> I \<psi> 
-  \<longleftrightarrow> (\<forall>j\<le>i. mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<longrightarrow> \<langle>\<sigma>, V, v, j\<rangle> \<Turnstile> \<psi> \<or> (\<exists>k\<in>{j<..i}. \<langle>\<sigma>, V, v, k\<rangle> \<Turnstile> \<phi>))"
-  unfolding release_def
-  by (auto simp: trigger_def)
-
-lemma sat_trigger_eq: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> trigger \<phi> I \<psi> 
-  \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi> \<^bold>T I \<psi>"
-  by auto
-
 lemma rewrite_fv': "Formula.fvi b (project (rewrite \<alpha> t)) = Formula.fvi b (project \<alpha>)"
 proof(induction \<alpha> t arbitrary:b rule:rewrite.induct)
   case (4 \<alpha> t \<beta>)
@@ -1303,19 +1267,6 @@ qed (auto simp: Let_def fvi_frz_atom once_def eventually_def always_def historic
 lemma rewrite_fv: "Formula.fvi b (project \<alpha>) = Formula.fvi b (project (rewrite \<alpha> t))"
   by (rule rewrite_fv'[symmetric])
 
-lemma equiv_2: "sat \<sigma> V v i (Until \<alpha> I \<beta>) = sat \<sigma> V v i (Until (And \<alpha> (Eventually (init_ivl I) \<beta>) ) I \<beta>)"
-(is "?L = ?R")
-proof(rule iffI)
-  assume ass:?L
-  then obtain j where j: "j\<ge>i" "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)" 
-    "sat \<sigma> V v j \<beta>" "(\<forall>k\<in>{i..<j}. sat \<sigma> V v k \<alpha>)" by auto
-  then have "\<forall>k\<in>{i..<j}.j\<ge>k " by auto
-  moreover have "\<forall>k\<in>{i..<j}. mem (init_ivl I) (\<tau> \<sigma> j - \<tau> \<sigma> k)" using nat_less_mem_of_init[OF _ j(2)] by auto
-  moreover have "\<forall>k\<in>{i..<j}. sat \<sigma> V v j \<beta>" using j(3) by auto
-  ultimately have "\<forall>k\<in>{i..<j}. (\<exists>j\<ge>k. mem (init_ivl I) (\<tau> \<sigma> j - \<tau> \<sigma> k) \<and> sat \<sigma> V v j \<beta>)" by fast
-  then show ?R using j by auto
-qed auto
-
 lemma equiv_4: " sat \<sigma> V v i (Since \<alpha> I \<beta>)  = sat \<sigma> V v i (Since (And \<alpha> (Once (init_ivl I) \<beta>) ) I \<beta>)"
 (is "?L = ?R")
 proof(rule iffI)
@@ -1335,76 +1286,6 @@ lemma sat_main_1:
    sat \<sigma> V v i (Or (And \<alpha> \<beta>) (And \<alpha> \<gamma>))"
   by auto
 
-lemma sat_main_2: "sat \<sigma> V v i (And \<alpha> (Release \<beta> I \<gamma>)) 
-  \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Release (And \<beta> (Once (init_ivl I) \<alpha>)) I (And \<gamma> (Once I \<alpha>))))"
-(is "?L = ?R" )
-proof(rule iffI)
-  assume ass: "?L"
-  then have split_A: "sat \<sigma> V v i \<alpha>"
-                   "(\<And>j. j\<ge>i \<Longrightarrow> \<not> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<or> sat \<sigma> V v j \<gamma> \<or> (\<exists>k\<in>{i..<j}. sat \<sigma> V v k \<beta>))"
-    by auto
-
-  then have "(\<And>j. j\<ge>i \<Longrightarrow> \<not> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<or>
-               (sat \<sigma> V v j \<gamma> \<and> (\<exists>ja\<le>j. mem I (\<tau> \<sigma> j - \<tau> \<sigma> ja))) \<or>
-              (\<exists>k\<in>{i..<j}.
-                  (sat \<sigma> V v k \<beta> \<and> (\<exists>j\<le>k. mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> j) \<and> sat \<sigma> V v j \<alpha> ))))"
-  proof -
-  fix j assume le:"j\<ge>i"
-  then have " \<not> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<or> sat \<sigma> V v j \<gamma> \<or> (\<exists>k\<in>{i..<j}. sat \<sigma> V v k \<beta>)" using ass by auto
-  then consider (a) "\<not> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)" |
-                (b) "(sat \<sigma> V v j \<gamma>) \<and>  mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)" |
-                (c) "(\<exists>k\<in>{i..<j}. sat \<sigma> V v k \<beta>)"  "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)" by auto
-  then show "(\<not> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<or>
-               (sat \<sigma> V v j \<gamma> \<and> (\<exists>ja\<le>j. mem I (\<tau> \<sigma> j - \<tau> \<sigma> ja))) \<or>
-              (\<exists>k\<in>{i..<j}.
-                  (sat \<sigma> V v k \<beta> \<and> (\<exists>j\<le>k. mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> j) \<and> sat \<sigma> V v j \<alpha> ))))"
-  proof(cases)
-    case a
-    then show ?thesis by auto
-  next
-    case b
-    then show ?thesis using le by auto
-  next
-    case c
-    then show ?thesis using split_A(1) nat_less_mem_of_init[OF _ c(2)] by auto
-  qed
-qed
-  then show ?R using split_A(1)  by auto
-qed auto
-
-lemma sat_main_3: "sat \<sigma> V v i (And \<alpha> (Trigger \<beta> I \<gamma>)) 
-  \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Trigger (And \<beta> (Eventually (init_ivl I) \<alpha>)) I (And \<gamma> (Eventually I \<alpha>))))"
-(is "?L = ?R" )
-proof(rule iffI)
-  assume ass: "?L"
-  then have split_A: "sat \<sigma> V v i \<alpha>"
-                     "(\<And>j. i\<ge>j \<Longrightarrow> \<not> mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<or> sat \<sigma> V v j \<gamma> \<or> (\<exists>k\<in>{j<..i}. sat \<sigma> V v k \<beta>))" by auto
-  then have "(\<And>j. i\<ge>j \<Longrightarrow> \<not>mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<or>
-              (sat \<sigma> V v j \<gamma> \<and> (\<exists>ja\<ge>j. mem I (\<tau> \<sigma> ja - \<tau> \<sigma> j))) \<or>
-              (\<exists>k\<in>{j<..i}. (sat \<sigma> V v k \<beta> \<and> (\<exists>j\<ge>k. mem (init_ivl I) (\<tau> \<sigma> j - \<tau> \<sigma> k) \<and> sat \<sigma> V v j \<alpha>))))"
-  proof -
-    fix j assume le:"i\<ge>j"
-    then have " \<not> mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<or> sat \<sigma> V v j \<gamma> \<or> (\<exists>k\<in>{j<..i}. sat \<sigma> V v k \<beta>)" using ass by auto
-    then consider (a) "\<not> mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)" |
-                  (b) "sat \<sigma> V v j \<gamma> \<and> mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)" |
-                  (c) "(\<exists>k\<in>{j<..i}. sat \<sigma> V v k \<beta>)" "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)" by auto
-    then show "\<not>mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<or>
-              (sat \<sigma> V v j \<gamma> \<and> (\<exists>ja\<ge>j. mem I (\<tau> \<sigma> ja - \<tau> \<sigma> j))) \<or>
-              (\<exists>k\<in>{j<..i}. (sat \<sigma> V v k \<beta> \<and> (\<exists>j\<ge>k. mem (init_ivl I) (\<tau> \<sigma> j - \<tau> \<sigma> k) \<and> sat \<sigma> V v j \<alpha>)))"
-  proof(cases)
-    case a
-    then show ?thesis by blast
-  next
-    case b
-    then show ?thesis using le by auto
-  next
-    case c
-    then show ?thesis using split_A(1) nat_less_mem_of_init[OF _ c(2)] by auto
-  qed
-qed
-then show ?R using split_A(1) by auto
-qed auto
-
 lemma sat_main_4: "Formula.sat \<sigma> V v i (Formula.And \<alpha> (Formula.Exists t \<beta>)) =
                     Formula.sat \<sigma> V v i (Formula.Exists t (Formula.And (shift \<alpha>) \<beta> ))"
   using sat_shift[of "[]"] by auto
@@ -1412,11 +1293,6 @@ lemma sat_main_4: "Formula.sat \<sigma> V v i (Formula.And \<alpha> (Formula.Exi
 lemma sat_main_5: "sat \<sigma> V v i (And \<alpha> (Neg \<beta>))
   \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Neg (And \<alpha> \<beta>)))"
   by auto
-
-lemma sat_main_6: "\<not> mem I 0 
-  \<Longrightarrow> sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I \<beta> )
-  \<longleftrightarrow> sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I (And (Eventually I \<alpha>) \<beta>))" 
-  by fastforce
 
 lemma sat_main_7: "\<not> mem I 0 
   \<Longrightarrow> sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I \<beta> ) 
@@ -1430,49 +1306,6 @@ proof(rule iffI)
   assume L:?L
   show ?R using iffD1[OF equiv_4 L] by fastforce
 qed auto
-
-lemma sat_main_9: "sat \<sigma> V v i (Until \<beta> I (And \<alpha> \<gamma>)) 
-  \<longleftrightarrow> sat \<sigma> V v i (Until (And (Eventually (init_ivl I) \<alpha>) \<beta>) I (And \<alpha> \<gamma>))"
-(is "?L = ?R")
-proof(rule iffI)
-  assume L:?L
-  show ?R using iffD1[OF equiv_2 L] by fastforce
-qed auto
-
-lemma sat_main_10: "sat \<sigma> V v i (And \<alpha> (Since \<beta> I \<gamma>))
-  \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Since (And (Eventually (init_ivl I) \<alpha>) \<beta>) I \<gamma>))"
-(is "?L = ?R")
-proof(rule iffI)
-  assume L:?L
-  then obtain j where j: "j\<le>i" "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)" 
-    "sat \<sigma> V v j \<gamma>" "(\<forall>k\<in>{j<..i}. sat \<sigma> V v i \<alpha> \<and> sat \<sigma> V v k \<beta>)" by auto
-  then have "\<forall>k\<in>{j<..i}. mem (init_ivl I) (\<tau> \<sigma> i - \<tau> \<sigma> k)" using nat_less_mem_of_init[OF _ j(2)] by fastforce
-  then show ?R using L j by fastforce
-qed auto
-
-lemma sat_main_11: "sat \<sigma> V v i (And \<alpha> (Until \<beta> I \<gamma>)) 
-  \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Until (And (Once (init_ivl I) \<alpha>) \<beta>) I \<gamma>))"
-(is "?L = ?R")
-proof(rule iffI)
-  assume L:?L
-  then obtain j where j: "j\<ge>i" "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)" 
-    "sat \<sigma> V v j \<gamma>" "(\<forall>k\<in>{i..<j}.  sat \<sigma> V v i \<alpha> \<and> sat \<sigma> V v k \<beta>)" 
-    by auto
-  then have "\<forall>k\<in>{i..<j}. mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> i)" using nat_less_mem_of_init[OF _ j(2)] by fastforce
-  then show ?R using L j by fastforce
-qed auto
-
-lemma sat_main_12: "sat \<sigma> V v i (And \<alpha> (Since \<gamma> I \<beta>)) 
- \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Since \<gamma> I (And (Eventually I \<alpha>)\<beta>)))"
-  by auto
-
-lemma sat_main_13: "sat \<sigma> V v i (And \<alpha> (Until \<gamma> I \<beta>))
-  \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Until \<gamma> I (And (Once I \<alpha>)\<beta>)))" 
-  by auto
-
-lemma sat_main_22: "sat \<sigma> V v i (And \<alpha> (Prev I \<beta>))
-  \<longleftrightarrow> sat \<sigma> V v i (And \<alpha> (Prev I (And (Next I \<alpha>) \<beta>)))" 
-  by (auto split: nat.splits)
 
 inductive f_con where
 f_con_1_t: "f_con (\<lambda>f1. Formula.Exists t f1)"|
@@ -1591,26 +1424,6 @@ lemma trans2_2: "trans2 P P' \<Longrightarrow> project (P r r2) = P' (project r)
 lemma trans2_3: "f_conr2 P \<Longrightarrow> \<exists>P'. trans2 P P'"
   by (induction P rule: f_conr2.induct) (blast intro: trans2.intros)+
 
-lemma rsub_2: "f_conr2 P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1) \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2) \<Longrightarrow> sat \<sigma> V v i (P a1 a2) = sat \<sigma> V v i (P b1 b2)"
-proof -
-  assume A: "f_conr2 P" "(\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1)" "(\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2)"
-  then obtain P2 :: "ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula"
-    where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
-  have L1: "f_con2 P2" using trans2_1[OF P2] by auto
-  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
-    using A(2) by (simp add: sat_project)
-  have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
-    using A(3) by (simp add: sat_project)
-  have "sat \<sigma> V v i (P a1 a2) = Formula.sat \<sigma> V v i (P2 (project a1) (project a2))"
-    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
-  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project b1) (project b2))"
-    by (rule sub_2[OF L1 L2 L3])
-  also have "\<dots> = sat \<sigma> V v i (P b1 b2)"
-    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
-  finally show ?thesis .
-qed
-
-
 inductive f_con_agg where
 f_con_agg_1_t: "f_con_agg (\<lambda>f1. Formula.Agg n1 op n2 t f1)"
 
@@ -1660,14 +1473,11 @@ lemma preds_shiftI[simp]: "preds (shiftI k \<phi>) = preds \<phi>"
 lemma preds_TT[simp]: "preds Formula.TT = {}"
   by (simp add: Formula.TT_def)
 
-lemma Diff_fresh: "x \<notin> A \<Longrightarrow> A - {x} = A"
-  by blast
-
 lemma preds_rewrite[simp]: "preds (project (rewrite \<phi> t)) = preds (project \<phi>)"
 proof (induction \<phi> t rule: rewrite.induct)
   case (14 \<alpha> \<gamma> I \<beta> t)
   then show ?case
-    by (cases t) (simp_all add: Let_def once_def nfv_project frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
+    by (cases t) (simp_all add: Let_def once_def nfv_project frz_name_fresh Un_Diff Un_ac split: if_splits)
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
   then show ?case
@@ -1679,10 +1489,7 @@ next
   case (36 I r t)
   then show ?case by (simp add: fv_regex_alt regex.set_map)
 qed (simp_all add: Let_def nfv_project project_shift once_def eventually_def historically_def
-  always_def frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
-
-lemma fresh_rewrite: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
-  by simp
+  always_def frz_name_fresh Un_Diff Un_ac split: if_splits)
 
 lemma sat_fun_upd_fresh[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> sat \<sigma> (V(p \<mapsto> X)) v i \<phi> = sat \<sigma> V v i \<phi>"
   unfolding sat_project[symmetric]
@@ -1829,10 +1636,10 @@ next
     by simp
 next
   case (35 I r t)
-  then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
+  then show ?case by (simp add: regex.map_comp o_def match_map_regex_cong cong: regex.map_cong)
 next
   case (36 I r t)
-  then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
+  then show ?case by (simp add: regex.map_comp o_def match_map_regex_cong cong: regex.map_cong)
 qed (simp only:rewrite.simps fix_r.simps;auto)+
 
 definition "rrewrite \<phi> = project (rewrite (embed \<phi>) Same)"
@@ -1841,6 +1648,14 @@ lemma final_sat: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> rrewrite \<ph
   unfolding sat_project sat_rewrite rrewrite_def
   unfolding sat_embed[symmetric]
   by simp
+
+lemma rrewrite_fvi:
+  "Formula.fvi b (rrewrite \<phi>) = Formula.fvi b \<phi>"
+  unfolding rrewrite_def by (auto simp: rewrite_fv[symmetric] project_embed)
+
+lemma rrewrite_nfv:
+  "Formula.nfv (rrewrite \<phi>) = Formula.nfv \<phi>"
+  unfolding Formula.nfv_def rrewrite_fvi ..
 
 
 subsection \<open> Simplify terms \<close>
@@ -1904,7 +1719,7 @@ next
 next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding simplify_terms.simps Formula.sat.simps 4 simplify_terms_nfv by auto
-qed (auto simp:eval_st Rewriting.match_map_regex simplify_terms_fvi split:nat.splits)
+qed (auto simp:eval_st match_map_regex_cong simplify_terms_fvi split:nat.splits)
 
 
 subsection \<open> Push negation \<close>
@@ -1952,7 +1767,7 @@ next
 next
   case (6 p \<phi> \<psi>)
   then show ?case unfolding push_negation.simps Formula.sat.simps 6 push_negation_nfv by auto
-qed (auto simp: Rewriting.match_map_regex push_negation_fvi split:nat.splits)
+qed (auto simp: match_map_regex_cong push_negation_fvi split:nat.splits)
 
 fun elim_double_negation where
   "elim_double_negation (Formula.Neg (Formula.Neg \<phi>)) = elim_double_negation \<phi>"
@@ -1992,7 +1807,7 @@ next
 next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding elim_double_negation.simps Formula.sat.simps 4 elim_double_negation_nfv by auto
-qed (auto simp: Rewriting.match_map_regex elim_double_negation_fvi split:nat.splits)
+qed (auto simp: match_map_regex_cong elim_double_negation_fvi split:nat.splits)
 
 subsection \<open> Conjunctions nested to the left \<close>
 
@@ -2069,7 +1884,7 @@ next
 next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding assoc_and.simps Formula.sat.simps 4 assoc_and_nfv by auto
-qed (auto simp: Rewriting.match_map_regex assoc_and_fvi split:nat.splits)
+qed (auto simp: match_map_regex_cong assoc_and_fvi split:nat.splits)
 
 definition normalize where
   "normalize = assoc_and \<circ> elim_double_negation \<circ> push_negation \<circ> simplify_terms"
@@ -2079,6 +1894,14 @@ lemma normalize_sat:
   unfolding normalize_def comp_apply 
   using simplify_terms_sat push_negation_sat elim_double_negation_sat assoc_and_sat
   by auto
+
+lemma normalize_fvi:
+  "Formula.fvi b (normalize \<phi>) = Formula.fvi b \<phi>"
+  unfolding normalize_def by (auto simp: assoc_and_fvi elim_double_negation_fvi push_negation_fvi simplify_terms_fvi)
+
+lemma normalize_nfv:
+  "Formula.nfv (normalize \<phi>) = Formula.nfv \<phi>"
+  unfolding normalize_def by (auto simp: assoc_and_nfv elim_double_negation_nfv push_negation_nfv simplify_terms_nfv)
 
 
 unbundle MFODL_no_notation

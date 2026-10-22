@@ -226,12 +226,6 @@ next
     by (auto elim!: safe_regex_mono[rotated] simp: case_Neg_iff regex.pred_set)
 qed (auto simp add: is_simple_eq_def list.pred_set case_Neg_iff safe_dual_def split: if_splits)
 
-lemma safe_assignment_future_bounded: "safe_assignment X \<phi> \<Longrightarrow> Safety.future_bounded \<phi>"
-  unfolding safe_assignment_def by (auto split: formula.splits)
-
-lemma is_constraint_future_bounded: "is_constraint \<phi> \<Longrightarrow> Safety.future_bounded \<phi>"
-  by (induction rule: is_constraint.induct) simp_all
-
 lemma mmonitorable_exec_mmonitorable: "mmonitorable_exec \<phi> \<Longrightarrow> mmonitorable \<phi>"
 proof (induct \<phi> rule: mmonitorable_exec.induct)
   case (8 \<phi> \<psi>)

@@ -147,11 +147,6 @@ proof (induction "\<lambda>xs t (zs, aux). case f xs t aux of (z, aux) \<Rightar
     by (auto simp: mbufnt_take.simps[where ?ts=ts] mbuf_t_append.rep_eq simp del: mbufnt_take.simps split: if_splits prod.splits)
 qed
 
-context
-begin
-
-end
-
 interpretation verimon_maux: maux valid_vmsaux init_vmsaux add_new_ts_vmsaux join_vmsaux
   add_new_table_vmsaux result_vmsaux valid_vmuaux init_vmuaux add_new_vmuaux length_vmuaux
   eval_vmuaux valid_mmtaux init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join
@@ -210,42 +205,6 @@ interpretation default_maux: maux
   (* mtaux *) valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
   (* joins *) bin_join mmulti_join
   by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
-
-lemma upd_set'_insert: "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_set' m d f (Set.insert x A) =
-  (let m' = (upd_set' m d f A) in case Mapping.lookup m' x of None \<Rightarrow> Mapping.update x d m'
-  | Some v \<Rightarrow> Mapping.update x (f v) m')"
-  by (rule mapping_eqI) (auto simp: upd_set'_lookup Mapping.lookup_update' split: option.splits)
-
-lemma filter_join_False_empty: "filter_join False {} m = m"
-  unfolding filter_join_def
-  by transfer (auto split: option.splits)
-
-lemma filter_join_False_insert: "filter_join False (Set.insert a A) m =
-  filter_join False A (Mapping.delete a m)"
-proof -
-  {
-    fix x
-    have "Mapping.lookup (filter_join False (Set.insert a A) m) x =
-      Mapping.lookup (filter_join False A (Mapping.delete a m)) x"
-      by (auto simp add: filter_join_def Mapping.lookup_filter Mapping_lookup_delete
-          split: option.splits)
-  }
-  then show ?thesis
-    by (simp add: mapping_eqI)
-qed
-
-lemma tabulate_remdups: "Mapping.tabulate xs f = Mapping.tabulate (remdups xs) f"
-  by (transfer fixing: xs f) (auto simp: map_of_map_restrict)
-
-lemma to_add_set_insert: "to_add_set a m (Set.insert x X) = to_add_set_fun a m x (to_add_set a m X) "
-  unfolding to_add_set_def to_add_set_fun_def
-  by transfer auto
-
-lemma update_mapping_with_alt: "update_mapping_with f k v m =
-  (case Mapping.lookup m k of
-      None \<Rightarrow> Mapping.update k v m
-    | Some v' \<Rightarrow> Mapping.update k (f k v' v) m)"
-  by transfer simp
 
 end
 (*>*)

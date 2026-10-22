@@ -232,12 +232,6 @@ section \<open>Clustering\<close>
 
 derive (no) cenum event_data
 
-lemma keys_cluster: "Mapping.keys (cluster (Some \<circ> g) X) = g ` X"
-  by (auto simp: Mapping.keys_dom_lookup lookup_cluster image_iff split: if_splits)
-
-lemma lookup_cluster_Some: "k \<in> g ` X \<Longrightarrow> Mapping.lookup (cluster (Some \<circ> g) X) k = Some (Set.filter (\<lambda>x. g x = k) X)"
-  by (auto simp: lookup_cluster image_iff)
-
 subsection \<open>Unions of option-valued images without sets of sets\<close>
 
 text \<open>

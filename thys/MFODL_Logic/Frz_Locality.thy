@@ -1,6 +1,6 @@
 (*<*)
 theory Frz_Locality
-  imports Formula "HOL-Library.While_Combinator"
+  imports Formula
 begin
 (*>*)
 
@@ -14,70 +14,6 @@ text \<open>
   the frozen predicate of @{const Formula.Frz}: a time point older than the reach of every
   verdict still to be computed can be given any value for it.
 \<close>
-
-subsection \<open>The upper bound of an interval\<close>
-
-text \<open>The largest time difference in a bounded interval: one less than the first one outside it.
-  A past operator at @{term i} looks at time points @{term k} with @{term "\<tau> \<sigma> i - \<tau> \<sigma> k"} at most
-  this far.\<close>
-
-definition ivl_ub :: "\<I> \<Rightarrow> enat" where
-  "ivl_ub I = (if bounded I then enat ((LEAST t. \<not> memR I t) - 1) else \<infinity>)"
-
-lemma memR_le_ivl_ub: "memR I t \<Longrightarrow> enat t \<le> ivl_ub I"
-proof (cases "bounded I")
-  case True
-  then obtain m where m: "\<not> memR I m"
-    by (auto simp: bounded_memR)
-  assume t: "memR I t"
-  have "\<not> memR I (LEAST t. \<not> memR I t)"
-    using m by (rule LeastI)
-  then have "t < (LEAST t. \<not> memR I t)"
-    using t memR_antimono by (metis not_less)
-  then show ?thesis
-    using True by (simp add: ivl_ub_def)
-qed (simp add: ivl_ub_def)
-
-text \<open>The upper bound is computed by searching for the first time difference outside the
-  interval; the search is linear in the bound, and runs once per operator at initialisation.\<close>
-
-lemma while_option_Suc_Least:
-  assumes "\<not> P m" "\<forall>t<k. P t" "k \<le> m"
-  shows "while_option P Suc k = Some (LEAST t. \<not> P t)"
-  using assms(2,3)
-proof (induction "m - k" arbitrary: k)
-  case 0
-  then have "k = m"
-    by simp
-  with assms(1) 0(2) show ?case
-    by (subst while_option_unfold) (auto intro!: Least_equality[symmetric] simp: not_less[symmetric])
-next
-  case (Suc x)
-  show ?case
-  proof (cases "P k")
-    case True
-    have "while_option P Suc (Suc k) = Some (LEAST t. \<not> P t)"
-      by (rule Suc.hyps(1)) (use Suc.hyps(2) Suc.prems True in \<open>auto simp: less_Suc_eq\<close>)
-    with True show ?thesis
-      by (subst while_option_unfold) simp
-  next
-    case False
-    with Suc.prems(1) show ?thesis
-      by (subst while_option_unfold) (auto intro!: Least_equality[symmetric] simp: not_less[symmetric])
-  qed
-qed
-
-lemma ivl_ub_code[code]:
-  "ivl_ub I = (if bounded I then enat (the (while_option (memR I) Suc 0) - 1) else \<infinity>)"
-proof (cases "bounded I")
-  case True
-  then obtain m where "\<not> memR I m"
-    by (auto simp: bounded_memR)
-  then have "while_option (memR I) Suc 0 = Some (LEAST t. \<not> memR I t)"
-    by (rule while_option_Suc_Least) simp_all
-  with True show ?thesis
-    by (simp add: ivl_ub_def)
-qed (simp add: ivl_ub_def)
 
 subsection \<open>The reach\<close>
 
@@ -94,9 +30,6 @@ lemma regex_reach_cong[fundef_cong]:
 
 lemma regex_reach_upper: "z \<in> Regex.atms r \<Longrightarrow> f z \<le> regex_reach f r"
   by (induct r) (auto simp: le_max_iff_disj)
-
-lemma foldr_max_upper: "x \<in> set l \<Longrightarrow> f x \<le> foldr max (map f l) (0 :: enat)"
-  by (induct l) (auto simp: le_max_iff_disj)
 
 function (sequential) past_reach :: "'t Formula.formula \<Rightarrow> enat" where
   "past_reach (Formula.Pred e ts) = 0"
@@ -176,96 +109,7 @@ lemma agree_from_infinity: "agree_from \<sigma> \<infinity> i V V' \<Longrightar
   unfolding agree_from_def
   by (rule ext, erule_tac x=x in allE) (auto simp: option.rel_sel fun_eq_iff option.expand)
 
-subsection \<open>Regular expressions between two positions\<close>
-
-lemma match_le: "Regex.match t r i j \<Longrightarrow> i \<le> j"
-proof (induct r arbitrary: i j)
-  case (Star r)
-  from Star(2) have "(Regex.match t r)\<^sup>*\<^sup>* i j"
-    by simp
-  then show ?case
-    by (induct rule: rtranclp_induct) (auto dest: Star(1))
-qed fastforce+
-
-lemma match_cong_between:
-  assumes "\<And>k z. i \<le> k \<Longrightarrow> k \<le> j \<Longrightarrow> z \<in> Regex.atms r \<Longrightarrow> t k z = t' k z"
-  shows "Regex.match t r i j = Regex.match t' r i j"
-  using assms
-proof (induct r arbitrary: i j t t')
-  case (Times r s)
-  have r: "Regex.match t r i k = Regex.match t' r i k" if "k \<le> j" for k
-    by (rule Times(1)) (use Times(3) that in auto)
-  have s: "Regex.match t s k j = Regex.match t' s k j" if "i \<le> k" for k
-    by (rule Times(2)) (use Times(3) that in auto)
-  have "Regex.match t r i k \<and> Regex.match t s k j \<longleftrightarrow> Regex.match t' r i k \<and> Regex.match t' s k j"
-    for k
-    by (metis match_le r s)
-  then show ?case
-    by (simp add: OO_def)
-next
-  case (Star r)
-  have one: "(Regex.match t' r)\<^sup>*\<^sup>* i j"
-    if st: "(Regex.match t r)\<^sup>*\<^sup>* i j"
-      and ag: "\<And>k z. i \<le> k \<Longrightarrow> k \<le> j \<Longrightarrow> z \<in> Regex.atms r \<Longrightarrow> t k z = t' k z"
-      and IH: "\<And>i j t t'. (\<And>k z. i \<le> k \<Longrightarrow> k \<le> j \<Longrightarrow> z \<in> Regex.atms r \<Longrightarrow> t k z = t' k z) \<Longrightarrow>
-        Regex.match t r i j = Regex.match t' r i j"
-    for t t'
-  proof -
-    have "y \<le> j \<longrightarrow> (Regex.match t' r)\<^sup>*\<^sup>* i y" if "(Regex.match t r)\<^sup>*\<^sup>* i y" for y
-      using that
-    proof (induct rule: rtranclp_induct)
-      case (step y z)
-      have iy: "i \<le> y"
-        using step(1) by (induct rule: rtranclp_induct) (auto dest: match_le)
-      have yz: "y \<le> z"
-        using step(2) by (rule match_le)
-      show ?case
-      proof
-        assume "z \<le> j"
-        then have "Regex.match t' r y z"
-          using IH[of y z t t'] ag iy yz step(2) by auto
-        then show "(Regex.match t' r)\<^sup>*\<^sup>* i z"
-          using step(3) yz \<open>z \<le> j\<close> by (auto intro: rtranclp.rtrancl_into_rtrancl)
-      qed
-    qed simp
-    then show ?thesis
-      using st by blast
-  qed
-  have ag': "\<And>k z. i \<le> k \<Longrightarrow> k \<le> j \<Longrightarrow> z \<in> Regex.atms r \<Longrightarrow> t' k z = t k z"
-    using Star(2) by (simp add: eq_commute[of "t' _ _"])
-  have IH': "\<And>i j t t'. (\<And>k z. i \<le> k \<Longrightarrow> k \<le> j \<Longrightarrow> z \<in> Regex.atms r \<Longrightarrow> t k z = t' k z) \<Longrightarrow>
-        Regex.match t r i j = Regex.match t' r i j"
-    by (rule Star(1)) blast
-  show ?case
-    using one[of t t', OF _ _ IH'] one[of t' t, OF _ ag' IH'] Star(2)
-    by (auto simp del: Regex.match.simps simp: Regex.match.simps(5))
-next
-  case (Plus r s)
-  have "Regex.match t r i j = Regex.match t' r i j"
-    by (rule Plus(1)) (use Plus(3) in auto)
-  moreover have "Regex.match t s i j = Regex.match t' s i j"
-    by (rule Plus(2)) (use Plus(3) in auto)
-  ultimately show ?case
-    by simp
-next
-  case (Test x)
-  then show ?case
-    by auto
-qed simp
-
 subsection \<open>Locality\<close>
-
-lemma tau_win:
-  assumes "j \<le> k"
-  shows "enat (\<tau> \<sigma> i) \<le> enat (\<tau> \<sigma> k) + enat (\<tau> \<sigma> i - \<tau> \<sigma> j)"
-proof -
-  have "\<tau> \<sigma> j \<le> \<tau> \<sigma> k"
-    using assms by simp
-  then have "\<tau> \<sigma> i \<le> \<tau> \<sigma> k + (\<tau> \<sigma> i - \<tau> \<sigma> j)"
-    by arith
-  then show ?thesis
-    by simp
-qed
 
 lemma tau_fwd:
   assumes "i \<le> k"
@@ -404,8 +248,10 @@ next
   case (MatchP I r)
   have "Regex.match (Formula.sat \<sigma> V v) r j i = Regex.match (Formula.sat \<sigma> V' v) r j i"
     if "j \<le> i" "memR I (\<tau> \<sigma> i - \<tau> \<sigma> j)" for j
-  proof (rule match_cong_between)
-    fix k z assume "j \<le> k" "k \<le> i" "z \<in> Regex.atms r"
+  proof (rule Regex.match_cong_strong)
+    fix k z assume "k \<in> {j ..< i + 1}" "z \<in> Regex.atms r"
+    then have "j \<le> k" "k \<le> i" "z \<in> Regex.atms r"
+      by auto
     then show "Formula.sat \<sigma> V v k z = Formula.sat \<sigma> V' v k z"
       by (intro MatchP.IH[OF _ order_refl agree_from_shift[OF MatchP.prems(2) tau_win[of j k]]])
         (use MatchP.prems(1) that in \<open>auto intro: ub_add_le order_trans[rotated] add_right_mono order_trans[OF regex_reach_upper]\<close>)
@@ -416,8 +262,10 @@ next
   case (MatchF I r)
   have "Regex.match (Formula.sat \<sigma> V v) r i j = Regex.match (Formula.sat \<sigma> V' v) r i j"
     if "i \<le> j" for j
-  proof (rule match_cong_between)
-    fix k z assume "i \<le> k" "k \<le> j" "z \<in> Regex.atms r"
+  proof (rule Regex.match_cong_strong)
+    fix k z assume "k \<in> {i ..< j + 1}" "z \<in> Regex.atms r"
+    then have "i \<le> k" "k \<le> j" "z \<in> Regex.atms r"
+      by auto
     then show "Formula.sat \<sigma> V v k z = Formula.sat \<sigma> V' v k z"
       by (intro MatchF.IH[OF _ order_refl agree_from_shift[OF MatchF.prems(2) tau_fwd[of i k]]])
         (use MatchF.prems(1) in \<open>auto intro: order_trans[rotated] order_trans[OF regex_reach_upper]\<close>)
@@ -468,24 +316,6 @@ text \<open>The tuple of a valuation at which a separable predicate of arity @{t
 abbreviation sep_key :: "nat \<Rightarrow> Formula.env \<Rightarrow> event_data list" where
   "sep_key m v \<equiv> map ((!) v) [0..<m]"
 
-lemma sat_not_contains_upd:
-  assumes "\<not> Formula.contains_pred q \<phi>"
-  shows "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> (V(q \<mapsto> c)) v i \<phi>"
-proof (cases "V q")
-  case None
-  then show ?thesis
-    using assms by simp
-next
-  case (Some x)
-  then have "V = V(q \<mapsto> c, q \<mapsto> x)"
-    by (auto simp: fun_eq_iff)
-  then have "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> (V(q \<mapsto> c, q \<mapsto> x)) v i \<phi>"
-    by simp
-  also have "\<dots> = Formula.sat \<sigma> (V(q \<mapsto> c)) v i \<phi>"
-    using assms by (rule not_contains_pred_sat)
-  finally show ?thesis .
-qed
-
 lemma sat_not_contains_agree:
   assumes "\<not> Formula.contains_pred q \<phi>" "\<And>q'. q' \<noteq> q \<Longrightarrow> V q' = V' q'"
   shows "Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> V' v i \<phi>"
@@ -493,8 +323,8 @@ proof -
   have "V(q \<mapsto> undefined) = V'(q \<mapsto> undefined)"
     using assms(2) by (auto simp: fun_eq_iff)
   then show ?thesis
-    using sat_not_contains_upd[OF assms(1), of \<sigma> V v i undefined]
-      sat_not_contains_upd[OF assms(1), of \<sigma> V' v i undefined] by simp
+    using not_contains_pred_sat[OF assms(1), of \<sigma> V undefined v i, symmetric]
+      not_contains_pred_sat[OF assms(1), of \<sigma> V' undefined v i, symmetric] by simp
 qed
 
 lemma sat_key_sep_gen:

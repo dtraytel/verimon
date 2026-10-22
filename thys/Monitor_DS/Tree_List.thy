@@ -20,7 +20,6 @@ lift_definition unpack :: "'a::linorder treelist \<Rightarrow> 'a list" is id .
 lift_definition set_treelist :: "'a::linorder treelist \<Rightarrow> 'a set" is set .
 lift_definition sort_treelist :: "'a::linorder treelist \<Rightarrow> 'a treelist" is sort .
 lift_definition sorted_treelist :: "'a::linorder treelist \<Rightarrow> bool" is sorted .
-lift_definition cons_treelist :: "'a::linorder \<Rightarrow> 'a treelist \<Rightarrow> 'a treelist" is Cons .
 
 lemma mset_treelist_insert:
   "mset_treelist (insert_treelist i t) = {#i#} + mset_treelist t"
@@ -45,11 +44,8 @@ lemma empty_treelist_code[code]: "empty_treelist = Collapse empty_tree"
 lemma insert_treelist_code[code]: "insert_treelist x (Collapse y) = Collapse (tree_insert x y)"
   by transfer (simp add: inorder_insert)
 
-lemma sorted_sort_inv: "sorted xs \<Longrightarrow> sort xs = xs"
-  by (simp add: sorted_sort_id)
-
 lemma get_treelist_code[code]: "get_treelist (Collapse y) n = tree_select y n"
-  by transfer (simp add: sorted_sort_inv valid_select_wbt)
+  by transfer (simp add: sorted_sort_id valid_select_wbt)
 
 lemma length_treelist_code[code]: "length_treelist (Collapse y) = tree_size y"
   by transfer simp

@@ -1,74 +1,11 @@
 (*<*)
 theory Progress
-  imports "MFODL_Logic.Safety"
+  imports "MFODL_Logic.Safety" "MFODL_Logic.Specification"
 begin
 (*>*)
 
 
 section \<open> Verdict delay \<close>
-
-
-subsection \<open> Pred and rel mapping \<close>
-
-definition "pred_mapping Q = pred_fun (\<lambda>_. True) (pred_option Q)"
-definition "rel_mapping Q = rel_fun (=) (rel_option Q)"
-
-lemma pred_mapping_alt: "pred_mapping Q P = (\<forall>p \<in> dom P. Q (the (P p)))"
-  unfolding pred_mapping_def pred_fun_def option.pred_set dom_def
-  by (force split: option.splits)
-
-lemma rel_mapping_alt: "rel_mapping Q P P' = (dom P = dom P' \<and> (\<forall>p \<in> dom P. Q (the (P p)) (the (P' p))))"
-  unfolding rel_mapping_def rel_fun_def rel_option_iff dom_def
-  by (force split: option.splits)
-
-lemma rel_mapping_reflp: "reflp Q \<Longrightarrow> rel_mapping Q P P"
-  by (auto simp: rel_mapping_alt reflp_def)
-
-lemma rel_mapping_map_upd[simp]: "Q x y \<Longrightarrow> rel_mapping Q P P' \<Longrightarrow> rel_mapping Q (P(p \<mapsto> x)) (P'(p \<mapsto> y))"
-  by (auto simp: rel_mapping_alt)
-
-lemma rel_mapping_order_refl: "rel_mapping (\<le>) (x::'a \<rightharpoonup> 'b::order) x"
-  by (intro rel_mapping_reflp reflpI order_refl)
-
-lemma rel_mapping_le_map_upd[simp]: "(x::'a::order) \<le> y \<Longrightarrow> rel_mapping (\<le>) (P(p \<mapsto> x)) (P(p \<mapsto> y))"
-  by (simp add: rel_mapping_order_refl)
-
-lemma pred_mapping_map_upd[simp]: "Q x \<Longrightarrow> pred_mapping Q P \<Longrightarrow> pred_mapping Q (P(p \<mapsto> x))"
-  by (auto simp: pred_mapping_alt)
-
-lemma pred_mapping_fun_upd[simp]: "(case x of Some x \<Rightarrow> Q x | _ \<Rightarrow> True) \<Longrightarrow> pred_mapping Q P \<Longrightarrow> pred_mapping Q (P(p := x))"
-  by (auto simp: pred_mapping_alt)
-
-lemma pred_mapping_empty[simp]: "pred_mapping Q Map.empty"
-  by (auto simp: pred_mapping_alt)
-
-lemma pred_mapping_mono: "pred_mapping Q P \<Longrightarrow> Q \<le> R \<Longrightarrow> pred_mapping R P"
-  by (auto simp: pred_mapping_alt)
-
-lemma pred_mapping_mono_strong: "pred_mapping Q P \<Longrightarrow>
-  (\<And>p. p \<in> dom P \<Longrightarrow> Q (the (P p)) \<Longrightarrow> R (the (P p))) \<Longrightarrow> pred_mapping R P"
-  by (auto simp: pred_mapping_alt)
-
-lemma rel_mapping_trans: "P OO Q \<le> R \<Longrightarrow>
-  rel_mapping P P1 P2 \<Longrightarrow> rel_mapping Q P2 P3 \<Longrightarrow> rel_mapping R P1 P3"
-  by (force simp: rel_mapping_alt dom_def set_eq_iff)
-
-abbreviation range_mapping :: "nat \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> nat option) \<Rightarrow> bool" where
-  "range_mapping i j P \<equiv> pred_mapping (\<lambda>x. i \<le> x \<and> x \<le> j) P"
-
-lemma range_mapping_relax:
-  "range_mapping i j P \<Longrightarrow> i' \<le> i \<Longrightarrow> j' \<ge> j \<Longrightarrow> range_mapping i' j' P"
-  by (auto simp: pred_mapping_alt dom_def set_eq_iff split: option.splits)
-
-lemma pred_mapping_le:
-  "pred_mapping ((\<le>) i) P1 \<Longrightarrow> rel_mapping (\<le>) P1 P2 
-  \<Longrightarrow> pred_mapping ((\<le>) (i :: nat)) P2"
-  by (force simp: rel_mapping_alt pred_mapping_alt dom_def set_eq_iff)
-
-lemma pred_mapping_le':
-  "pred_mapping ((\<le>) j) P1 \<Longrightarrow> i \<le> j \<Longrightarrow> rel_mapping (\<le>) P1 P2 
-  \<Longrightarrow> pred_mapping ((\<le>) (i :: nat)) P2"
-  by (force simp: rel_mapping_alt pred_mapping_alt dom_def set_eq_iff)
 
 
 subsection \<open> Progress function \<close>
@@ -183,22 +120,6 @@ lemma progress_eventually_or[simp]: "progress P (eventually I (Formula.Or \<phi>
   unfolding progress_eventually min_Inf[OF progress_eventually_nempty progress_eventually_nempty]
   by (cases "progress P \<phi> j \<le> progress P \<psi> j") (auto intro: arg_cong[where ?f=Inf])
 
-lemma progress_eventually_double_upper: 
-  "(progress P (eventually I (eventually (int_remove_lower_bound I) \<phi>)) j) =
-  (case j of 0 \<Rightarrow> 0
-   | Suc x \<Rightarrow> \<Sqinter> {i. memR I (\<tau> \<sigma> (\<Sqinter> {i. memR I (\<tau> \<sigma> (min x (progress P \<phi> j)) - \<tau> \<sigma> i)}) - \<tau> \<sigma> i)})"
-proof -
-  have "(progress P (eventually I (eventually (int_remove_lower_bound I) \<phi>)) j) =
-    (case j of 0 \<Rightarrow> 0
-     | Suc x \<Rightarrow> \<Sqinter> {i. memR I (\<tau> \<sigma> (min x (\<Sqinter> {i. memR I (\<tau> \<sigma> (min x (progress P \<phi> j)) - \<tau> \<sigma> i)})) - \<tau> \<sigma> i)})"
-  unfolding progress_eventually Inf_memR_conv
-  by transfer' (auto split: nat.splits)
-  moreover have "\<dots> = (case j of 0 \<Rightarrow> 0
-     | Suc x \<Rightarrow> \<Sqinter> {i. memR I (\<tau> \<sigma> (\<Sqinter> {i. memR I (\<tau> \<sigma> (min x (progress P \<phi> j)) - \<tau> \<sigma> i)}) - \<tau> \<sigma> i)})"
-    by (auto simp: min_x_Inf split: nat.splits)
-  finally show ?thesis .
-qed
-
 lemma progress_release_safe_bounded_evtl: 
   "min (progress P (Formula.eventually I Formula.TT) j) (progress P (release_safe_bounded \<phi> I \<psi>) j)
   = progress P (release_safe_bounded \<phi> I \<psi>) j"
@@ -253,34 +174,6 @@ lemma progress_fixpoint_ex':
   shows "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> \<exists>i \<le> j. i = Progress.progress \<sigma> (P(p \<mapsto> i)) \<phi> j"
   by (rule bounded_fixpoint_ex)
     (auto simp: reflp_def intro!: mono_onI assms rel_mapping_map_upd rel_mapping_reflp)
-
-lemma progress_fixpoint_ex_above:
-  assumes "(\<And>j P. pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P \<phi> j \<le> j)"
-  and "(\<And>j j' P P'. j \<le> j' \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j') P' \<Longrightarrow> rel_mapping (\<le>) P P' \<Longrightarrow> progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> j')"
-  and "j \<le> j'" "pred_mapping (\<lambda>x. x \<le> j) P" "pred_mapping (\<lambda>x. x \<le> j') P'" "rel_mapping (\<le>) P P'"
-    "i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j" "i \<le> j"
-shows "\<exists>x \<le> j'. x = progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<and> i \<le> x"
-proof -
-  have "\<exists>x \<in> {i .. j'}. x = progress \<sigma> (P'(p \<mapsto> x)) \<phi> j'"
-  proof (rule bounded_fixpoint_ex_above)
-    show "mono_on {i..j'} (\<lambda>x. progress \<sigma> (P'(p \<mapsto> x)) \<phi> j')"
-      by (auto intro!: mono_onI assms(2,4,5) pred_mapping_map_upd rel_mapping_map_upd rel_mapping_reflp reflpI)
-    show "\<forall>x\<in>{i..j'}. progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<in> {i..j'}"
-    proof
-      fix x assume "x \<in> {i..j'}"
-      then have *: "i \<le> x" "x \<le> j'" by simp_all
-      then have "i \<le> progress \<sigma> (P'(p \<mapsto> x)) \<phi> j'"
-        by (subst assms(7)) (auto intro!: assms(2-6,8) pred_mapping_map_upd rel_mapping_map_upd)
-      moreover from * have "progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<le> j'"
-        by (auto intro!: assms(1,5) pred_mapping_map_upd)
-      ultimately show "progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<in> {i..j'}"
-        by simp
-    qed
-    show "i \<le> j'" using assms(3,8) by simp
-  qed
-  then show ?thesis
-    by auto
-qed
 
 lemma progress_le_gen: "\<And>j P. pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P \<phi> j \<le> j" 
   and progress_mono_gen: "\<And>j j' P P'. j \<le> j' \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P 
@@ -563,6 +456,62 @@ lemma progress_mono:
 lemma progress_le: "progress \<sigma> Map.empty \<phi> j \<le> j"
   using progress_le_gen[of _ Map.empty] by auto
 
+lemma progress_Frz_eq:
+  assumes pm: "pred_mapping (\<lambda>x. x \<le> j) P"
+  shows "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j =
+    (let pn = (p, Formula.nfv \<phi>); jphi = progress \<sigma> P \<phi> j;
+         a = progress \<sigma> (P(pn \<mapsto> 0)) \<psi> j; b = progress \<sigma> (P(pn \<mapsto> j)) \<psi> j
+     in if b < jphi then b else if a \<le> jphi then jphi else a)"
+proof -
+  define pn where "pn = (p, Formula.nfv \<phi>)"
+  define jphi where "jphi = progress \<sigma> P \<phi> j"
+  define a where "a = progress \<sigma> (P(pn \<mapsto> 0)) \<psi> j"
+  define b where "b = progress \<sigma> (P(pn \<mapsto> j)) \<psi> j"
+  have F: "progress \<sigma> (P(pn \<mapsto> (if i < jphi then j else 0))) \<psi> j = (if i < jphi then b else a)" for i
+    by (simp add: a_def b_def)
+  have ab: "a \<le> b"
+    unfolding a_def b_def using pm
+    by (intro progress_mono_gen[OF order_refl])
+      (auto intro!: rel_mapping_map_upd simp: rel_mapping_reflp reflp_def)
+  have bj: "b \<le> j"
+    unfolding b_def using pm by (intro progress_le_gen) auto
+  have jphi_j: "jphi \<le> j"
+    unfolding jphi_def by (rule progress_le_gen[OF pm])
+  have "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j =
+    (LEAST i. i \<le> j \<and> progress \<sigma> (P(pn \<mapsto> (if i < jphi then j else 0))) \<psi> j \<le> i)"
+    by (simp add: frz_progress_def pn_def jphi_def)
+  also have "\<dots> = (if b < jphi then b else if a \<le> jphi then jphi else a)"
+    unfolding F by (rule Least_equality) (use ab bj jphi_j in \<open>auto split: if_splits\<close>)
+  finally show ?thesis
+    by (simp add: Let_def pn_def jphi_def a_def b_def)
+qed
+
+text \<open> The progress of a freeze operator whose body is not ahead of the frozen formula. \<close>
+
+lemma progress_Frz_eq_le:
+  assumes P: "pred_mapping (\<lambda>x. x \<le> j) P"
+    and le1: "progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> j)) \<psi> j \<le> progress \<sigma> P \<alpha> j"
+    and le0: "progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> 0)) \<psi> j \<le> progress \<sigma> P \<alpha> j"
+  shows "progress \<sigma> P (Formula.Frz q \<alpha> \<psi>) j = progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> j)) \<psi> j"
+proof -
+  let ?pn = "(q, Formula.nfv \<alpha>)"
+  let ?a = "progress \<sigma> P \<alpha> j" and ?m = "progress \<sigma> (P(?pn \<mapsto> j)) \<psi> j"
+  have a_le: "?a \<le> j"
+    by (rule progress_le_gen[OF P])
+  have "(LEAST i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> (if i < ?a then j else 0))) \<psi> j \<le> i) = ?m"
+  proof (rule Least_equality)
+    show "?m \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> if ?m < ?a then j else 0)) \<psi> j \<le> ?m"
+      using le1 le0 a_le by auto
+  next
+    fix y
+    assume "y \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> if y < ?a then j else 0)) \<psi> j \<le> y"
+    then show "?m \<le> y"
+      using le1 by (cases "y < ?a") auto
+  qed
+  then show ?thesis
+    by (simp add: frz_progress_def)
+qed
+
 lemma progress_0_gen[simp]:
   "pred_mapping (\<lambda>x. x = 0) P \<Longrightarrow> progress \<sigma> P \<phi> 0 = 0"
   using progress_le_gen[of 0 P] by auto
@@ -675,63 +624,14 @@ qed (simp_all add: progress_regex_def)
 lemma progress_regex_le: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress_regex \<sigma> P r j \<le> j"
   by (auto intro!: progress_le_gen simp: Min_le_iff progress_regex_def)
 
+lemma progress_Release_cong:
+  assumes "progress \<sigma> P \<phi> j = progress \<sigma> P' \<phi>' j" "progress \<sigma> P \<psi> j = progress \<sigma> P' \<psi>' j"
+  shows "progress \<sigma> P (Formula.Release \<phi> I \<psi>) j = progress \<sigma> P' (Formula.Release \<phi>' I \<psi>') j"
+  using assms
+  by (simp only: progress.simps release_safe_bounded_def always_safe_bounded_def Formula.eventually_def once_def Formula.TT_def)
+
 
 subsection \<open> Progress letpast \<close>
-
-definition max_mapping :: "('b \<Rightarrow> 'a option) \<Rightarrow> ('b \<Rightarrow> 'a option) \<Rightarrow> 'b \<Rightarrow> ('a :: linorder) option" 
-  where "max_mapping P P' x = (case (P x, P' x) of
-    (None, None) \<Rightarrow> None
-  | (Some x, None) \<Rightarrow> None
-  | (None, Some x) \<Rightarrow> None
-  | (Some x, Some y) \<Rightarrow> Some (max x y))"
-
-definition Max_mapping :: "('b \<Rightarrow> 'a option) set \<Rightarrow> 'b \<Rightarrow> ('a :: linorder) option" where
-  "Max_mapping Ps x = (if (\<forall>P \<in> Ps. P x \<noteq> None) then Some (Max ((\<lambda>P. the (P x)) ` Ps)) else None)"
-
-lemma dom_max_mapping[simp]: "dom (max_mapping P1 P2) = dom P1 \<inter> dom P2"
-  unfolding max_mapping_def by (auto split: option.splits)
-
-lemma dom_Max_mapping[simp]: "dom (Max_mapping X) = (\<Inter>P \<in> X. dom P)"
-  unfolding Max_mapping_def by (auto split: if_splits)
-
-lemma Max_mapping_coboundedI:
-  assumes "finite X" "\<forall>Q \<in> X. dom Q = dom P" "P \<in> X"
-  shows "rel_mapping (\<le>) P (Max_mapping X)"
-  unfolding rel_mapping_alt
-proof (intro conjI ballI)
-  from assms(3) have "X \<noteq> {}" by auto
-  then show "dom P = dom (Max_mapping X)" using assms(2) by auto
-next
-  fix p
-  assume "p \<in> dom P"
-  with assms show "the (P p) \<le> the (Max_mapping X p)"
-    by (force simp add: Max_mapping_def intro!: Max.coboundedI imageI)
-qed
-
-lemma range_mapping_max_mapping[simp]:
-  "range_mapping i j1 P1 \<Longrightarrow> range_mapping i j2 P2 
-  \<Longrightarrow> range_mapping i (max j1 j2) (max_mapping P1 P2)"
-  by (auto simp: pred_mapping_alt dom_def set_eq_iff max_mapping_def split: option.splits)
-
-lemma range_mapping_Max_mapping[simp]:
-  "finite X \<Longrightarrow> X \<noteq> {} \<Longrightarrow> \<forall>x\<in>X. range_mapping i (j x) (P x) 
-  \<Longrightarrow> range_mapping i (Max (j ` X)) (Max_mapping (P ` X))"
-  by (force simp: pred_mapping_alt Max_mapping_def dom_def image_iff
-      intro!: Max_ge_iff[THEN iffD2] split: if_splits)
-
-lemma max_mapping_cobounded1: "dom P1 \<subseteq> dom P2 \<Longrightarrow> rel_mapping (\<le>) P1 (max_mapping P1 P2)"
-  unfolding max_mapping_def rel_mapping_alt by (auto simp: dom_def split: option.splits)
-
-lemma max_mapping_cobounded2: "dom P2 \<subseteq> dom P1 \<Longrightarrow> rel_mapping (\<le>) P2 (max_mapping P1 P2)"
-  unfolding max_mapping_def rel_mapping_alt by (auto simp: dom_def split: option.splits)
-
-lemma max_mapping_fun_upd2[simp]:
-  "(max_mapping P1 (P2(p := y)))(p \<mapsto> x) = (max_mapping P1 P2)(p \<mapsto> x)"
-  by (auto simp: max_mapping_def)
-
-lemma rel_mapping_max_mapping_fun_upd: "dom P2 \<subseteq> dom P1 \<Longrightarrow> p \<in> dom P2 \<Longrightarrow> the (P2 p) \<le> y 
-  \<Longrightarrow> rel_mapping (\<le>) P2 ((max_mapping P1 P2)(p \<mapsto> y))"
-  by (auto simp: rel_mapping_alt max_mapping_def split: option.splits)
 
 lemma not_contains_letpast_progress[simp]: 
   "\<not> contains_pred p \<phi> \<Longrightarrow> letpast_progress \<sigma> (P(p \<mapsto> x)) q \<phi> j = letpast_progress \<sigma> P q \<phi> j"
@@ -826,17 +726,6 @@ proof (rule cInf_greatest)
     using P P' PP' jj' k(1) ik by (intro progress_mono_gen) simp_all
   then show "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> k"
     using k(2)[symmetric] by (rule ord_le_eq_trans)
-qed
-
-lemma Least_antimono: "Q \<le> P \<Longrightarrow> \<exists>x. Q x \<Longrightarrow> Least P \<le> Least (Q :: nat \<Rightarrow> bool)"
-proof -
-  assume QP: "Q \<le> P" and ex: "\<exists>x. Q x"
-  from ex have "Q (Least Q)"
-    by (rule LeastI_ex)
-  with QP have "P (Least Q)"
-    by (rule predicate1D)
-  then show "Least P \<le> Least Q"
-    by (rule Least_le)
 qed
 
 lemma safe_letpast_progress_upd':
@@ -1577,73 +1466,17 @@ proof -
     using P by blast
 qed
 
-lemma pred_mapping_max_mapping:
-  "pred_mapping (\<lambda>x. x\<le>j1) P1 \<Longrightarrow> pred_mapping (\<lambda>x. x\<le>j2) P2 
-  \<Longrightarrow> pred_mapping (\<lambda>x. x\<le>(max j1 j2)) (max_mapping P1 P2)"
-proof -
-  assume P1: "pred_mapping (\<lambda>x. x\<le>j1) P1" and P2: "pred_mapping (\<lambda>x. x\<le>j2) P2"
-  show "pred_mapping (\<lambda>x. x\<le>(max j1 j2)) (max_mapping P1 P2)"
-    unfolding pred_mapping_alt
-  proof
-    fix p assume "p \<in> dom (max_mapping P1 P2)"
-    then obtain x y where xy: "P1 p = Some x" "P2 p = Some y"
-      by auto
-    with P1 P2 have "x \<le> j1" "y \<le> j2"
-      by (force simp: pred_mapping_alt)+
-    moreover from xy have "max_mapping P1 P2 p = Some (max x y)"
-      by (simp add: max_mapping_def)
-    ultimately show "the (max_mapping P1 P2 p) \<le> max j1 j2"
-      by (metis max.mono option.sel)
-  qed
-qed
-
-lemma range_mapping_to_pred_mapping: "range_mapping a j P \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P"
-  by(auto simp add: pred_mapping_alt)
-
 lemma letpast_progress_ignore_upd: 
   "letpast_progress \<sigma> (P(p := x)) p \<phi> j = letpast_progress \<sigma> P p \<phi> j"
   by (simp add: letpast_progress_def)
 
 subsection \<open> Progress' formula-trace properties \<close>
 
-lemma progress_custom_induct[case_names Pred Let Frz LetPast 
-    Eq Less LessEq Neg Or And Ands Exists Agg 
-    Prev Next Since Until Trigger Release MatchP MatchF TP TS]:
-  assumes Pred: "\<And>e ts. Q (formula.Pred e ts)"
-    and Let: "\<And>p \<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Let p \<phi> \<psi>)"
-    and Frz: "\<And>p \<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Frz p \<phi> \<psi>)"
-    and LetPast: "\<And>p \<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.LetPast p \<phi> \<psi>)"
-    and Eq: "\<And>t1 t2. Q (Formula.Eq t1 t2)"
-    and Less: "\<And>t1 t2. Q (Formula.Less t1 t2)"
-    and LessEq: "\<And>t1 t2. Q (Formula.LessEq t1 t2)"
-    and Neg: "\<And>\<phi>. Q \<phi> \<Longrightarrow> Q (formula.Neg \<phi>)"
-    and Or: "\<And>\<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Or \<phi> \<psi>)"
-    and And: "\<And>\<phi> \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.And \<phi> \<psi>)"
-    and Ands: "\<And>\<phi>s. (\<And>\<phi>. \<phi> \<in> set \<phi>s \<Longrightarrow> Q \<phi>) \<Longrightarrow> Q (formula.Ands \<phi>s)"
-    and Exists: "\<And>t \<phi>. Q \<phi> \<Longrightarrow> Q (formula.Exists t \<phi>)"
-    and Agg: "\<And>y \<omega> tys f \<phi>. Q \<phi> \<Longrightarrow> Q (Formula.Agg y \<omega> tys f \<phi>)"
-    and Prev: "\<And>I \<phi>. Q \<phi> \<Longrightarrow> Q (formula.Prev I \<phi>)"
-    and Next: "\<And>I \<phi>. Q \<phi> \<Longrightarrow> Q (formula.Next I \<phi>)"
-    and Since: "\<And>\<phi> I \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Since \<phi> I \<psi>)"
-    and Until: "\<And>\<phi> I \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Until \<phi> I \<psi>)"
-    and Trigger: "\<And>\<phi> I \<psi>. Q \<phi> \<Longrightarrow> Q \<psi> \<Longrightarrow> Q (formula.Trigger \<phi> I \<psi>)"
-    and Release: "\<And>\<phi> I \<psi>. (mem I 0 \<or> \<not> bounded I \<Longrightarrow> Q \<phi>) \<Longrightarrow> (mem I 0 \<or> \<not> bounded I \<Longrightarrow> Q \<psi>) 
-    \<Longrightarrow> (\<not> (mem I 0 \<or> \<not> bounded I) \<Longrightarrow> Q (release_safe_bounded \<phi> I \<psi>)) 
-    \<Longrightarrow> Q (formula.Release \<phi> I \<psi>)"
-    and MatchP: "(\<And>I r. (\<And>z. z \<in> regex.atms r \<Longrightarrow> Q z) \<Longrightarrow> Q (formula.MatchP I r))"
-    and MatchF: "(\<And>I r. (\<And>z. z \<in> regex.atms r \<Longrightarrow> Q z) \<Longrightarrow> Q (formula.MatchF I r))"
-    and TP: "\<And>t. Q (Formula.TP t)"
-    and TS: "\<And>t. Q (Formula.TS t)"
-  shows "Q \<phi>"
-  by (induct \<phi>)
-    (auto simp: release_safe_bounded_def Formula.eventually_def 
-      Formula.TT_def always_safe_bounded_def once_def intro!: assms)
-
 lemma progress_ge_gen:
   fixes \<phi> :: "'t Formula.formula"
   shows "Safety.future_bounded \<phi> \<Longrightarrow>
    \<exists>P j. dom P = S \<and> range_mapping i j P \<and> i \<le> progress \<sigma> P \<phi> j"
-proof (induction \<phi> arbitrary: i S rule: progress_custom_induct)
+proof (induction \<phi> arbitrary: i S rule: formula_release_safe_bounded_induct)
   case (Pred e ts)
   then show ?case
     by (intro exI[of _ "\<lambda>e. if e \<in> S then Some i else None"])
@@ -2332,7 +2165,7 @@ lemma sat_prefix_conv_gen:
     (\<And>p n v i \<phi>. (p, n) \<in> dom V \<Longrightarrow> i < the (P (p, n)) \<Longrightarrow> n = length v \<Longrightarrow>
       the (V (p, n)) v i = the (V' (p, n)) v i) \<Longrightarrow>
     Formula.sat \<sigma> V v i \<phi> \<longleftrightarrow> Formula.sat \<sigma>' V' v i \<phi>"
-proof (induction \<phi> arbitrary: P V V' v i rule: progress_custom_induct)
+proof (induction \<phi> arbitrary: P V V' v i rule: formula_release_safe_bounded_induct)
   case (Pred e ts)
   let ?en = "(e, length ts)"
   from Pred.prems(1,4) have "i < plen \<pi>"
@@ -2974,6 +2807,73 @@ lemma sat_prefix_conv:
 
 lemma progress_remove_neg[simp]: "progress \<sigma> P (remove_neg \<phi>) j = progress \<sigma> P \<phi> j"
   by (cases \<phi>) simp_all
+
+subsection \<open> Progress on prefixes and the specification \<close>
+
+text \<open>The progress on a prefix does not depend on the trace that extends it; with it, every
+  future-bounded formula meets the abstract specification of a sliceable monitor.\<close>
+
+definition pprogress :: "'t Formula.formula \<Rightarrow> Formula.prefix \<Rightarrow> nat" where
+  "pprogress \<phi> \<pi> = (THE n. \<forall>\<sigma>. prefix_of \<pi> \<sigma> \<longrightarrow> progress \<sigma> Map.empty \<phi> (plen \<pi>) = n)"
+
+lemma pprogress_eq: "prefix_of \<pi> \<sigma> \<Longrightarrow> pprogress \<phi> \<pi> = progress \<sigma> Map.empty \<phi> (plen \<pi>)"
+  unfolding pprogress_def using progress_prefix_conv
+  by blast
+
+sublocale future_bounded_mfodl \<subseteq> sliceable_timed_progress "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces "relevant_events \<phi>"
+  "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "pprogress \<phi>"
+proof (unfold_locales, goal_cases)
+  case (1 \<pi>' \<pi>)
+  moreover obtain \<sigma> where "prefix_of \<pi>' \<sigma>"
+    using ex_prefix_of ..
+  moreover have "prefix_of \<pi> \<sigma>"
+    using prefix_of_antimono[OF \<open>\<pi> \<le> \<pi>'\<close> \<open>prefix_of \<pi>' \<sigma>\<close>] .
+  ultimately show ?case
+    by (simp add: pprogress_eq plen_mono progress_mono)
+next
+  case (2 \<sigma> x)
+  obtain j where "x \<le> progress \<sigma> Map.empty \<phi> j"
+    using future_bounded progress_ge by blast
+  then have "x \<le> pprogress \<phi> (take_prefix j \<sigma>)"
+    by (simp add: pprogress_eq[of _ \<sigma>])
+  then show ?case by force
+next
+  case (3 \<sigma> \<pi> \<sigma>' i v)
+  then have "i < progress \<sigma> Map.empty \<phi> (plen \<pi>)"
+    by (simp add: pprogress_eq)
+  with 3 show ?case
+    using sat_prefix_conv by blast
+next
+  case (4 \<pi> \<pi>')
+  then have "plen \<pi> = plen \<pi>'"
+    unfolding length_pts_eq_plen[symmetric] by auto
+  moreover obtain \<sigma> \<sigma>' where "prefix_of \<pi> \<sigma>" "prefix_of \<pi>' \<sigma>'"
+    using ex_prefix_of by blast+
+  moreover have "\<forall>i < plen \<pi>. \<tau> \<sigma> i = \<tau> \<sigma>' i"
+    using 4 calculation nth_pts_eq_\<tau>[OF calculation(3)] nth_pts_eq_\<tau>[OF calculation(2)]
+    by auto
+  ultimately show ?case
+    by (simp add: pprogress_eq progress_time_conv)
+qed
+
+lemma (in future_bounded_mfodl) Mt_pnil: "Mt pnil = {}"
+  by (simp add: Mt_def M_def pprogress_eq)
+
+lemma (in future_bounded_mfodl) fst_M_less_plen: 
+  assumes "(i, v) \<in> M \<pi>" 
+  shows "i < plen \<pi>"
+proof -
+  obtain \<sigma> where "prefix_of \<pi> \<sigma>"
+    using ex_prefix_of by blast
+  then have "pprogress \<phi> \<pi> \<le> plen \<pi>"
+    by (simp add: pprogress_eq)
+  with assms show ?thesis
+    unfolding M_def by simp
+qed
+
+lemma (in future_bounded_mfodl) mono_monitor': "\<pi>' \<in> formula_slicer.prefixes \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> Mt \<pi> \<subseteq> Mt \<pi>'"
+  unfolding Mt_def using mono_monitor[of \<pi>' \<pi>] fst_M_less_plen[of _ _ \<pi>]
+  by (auto simp add: nth_pts_prefix_cong dest!: subsetD)
 
 (*<*)
 end

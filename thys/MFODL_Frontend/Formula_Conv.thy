@@ -455,8 +455,11 @@ and conv_r :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list \<R
 
 subsection \<open>Folding ground terms\<close>
 
-text \<open>A term without variables is replaced by its value (@{text Rewriting.simplify_terms}), in
-  the atoms where MonPoly's front end folds them.\<close>
+text \<open>A term without variables is replaced by its value, in the atoms where MonPoly's front end
+  folds them.  This is @{text Rewriting.simplify_terms}, which preserves the semantics
+  (@{text Rewriting.simplify_terms_sat}); the front end keeps its own copy because theory
+  @{text Rewriting} declares a formula datatype and a function @{text tvars} whose names clash
+  with those of the parse tree.\<close>
 
 fun ground :: "Formula.trm \<Rightarrow> bool" where
   "ground (Formula.Var x) = False"
@@ -497,29 +500,6 @@ fun fold_ground :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "fold_ground (Formula.MatchP I r) = Formula.MatchP I (Regex.regex.map_regex fold_ground r)"
 | "fold_ground (Formula.TP t) = Formula.TP (fold_trm t)"
 | "fold_ground (Formula.TS t) = Formula.TS (fold_trm t)"
-
-lemma eval_trm_ground: "ground t \<Longrightarrow> Formula.eval_trm v t = Formula.eval_trm [] t"
-  by (induction t) auto
-
-lemma eval_fold_trm[simp]: "Formula.eval_trm v (fold_trm t) = Formula.eval_trm v t"
-  using eval_trm_ground[of t v] by (simp add: fold_trm_def)
-
-lemma fvi_trm_ground: "ground t \<Longrightarrow> Formula.fvi_trm b t = {}"
-  by (induction t) auto
-
-lemma fvi_fold_trm[simp]: "Formula.fvi_trm b (fold_trm t) = Formula.fvi_trm b t"
-  by (simp add: fold_trm_def fvi_trm_ground)
-
-lemma fvi_fold_ground[simp]: "Formula.fvi b (fold_ground \<phi>) = Formula.fvi b \<phi>"
-  by (induction \<phi> arbitrary: b rule: fold_ground.induct)
-    (auto simp: regex.set_map fv_regex_alt)
-
-lemma nfv_fold_ground[simp]: "Formula.nfv (fold_ground \<phi>) = Formula.nfv \<phi>"
-  by (simp add: Formula.nfv_def)
-
-lemma sat_fold_ground: "Formula.sat \<sigma> V v i (fold_ground \<phi>) = Formula.sat \<sigma> V v i \<phi>"
-  by (induction \<phi> arbitrary: V v i rule: fold_ground.induct)
-    (auto simp: comp_def Regex.match_map_regex split: nat.splits option.splits cong: Regex.match_cong_strong)
 
 subsection \<open>The formula of the input\<close>
 
