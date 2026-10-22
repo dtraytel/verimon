@@ -4,6 +4,10 @@ theory Optimized_Agg_Valid
 begin
 (*>*)
 
+section \<open>Correctness of incremental aggregation\<close>
+
+subsection \<open>Group multisets\<close>
+
 lemma mset_conv_comm:
   "comp_fun_commute_on UNIV (\<lambda>(t, m) b. case f t of None \<Rightarrow> b | Some k \<Rightarrow> replicate_mset (the_enat m) k + b)"
   by(unfold_locales) (auto split:option.splits)
@@ -62,6 +66,8 @@ lemma valid_finite_group_mset:
   assumes "finite X"
   shows "valid_finite_mset (group_multiset k b cs f X)"
   using assms by(auto simp:valid_finite_mset_def ecard_def zero_enat_def)+ 
+
+subsection \<open>Sorted lists of a group\<close>
 
 lemma insort_mset_bulk_insort:
   assumes "ID ccompare = Some (c :: (event_data \<times> enat) comparator)" 
@@ -338,6 +344,8 @@ proof -
   then show ?thesis using sort_flatten_mset_eq[OF c_def * valid_finite_group_mset[OF assms(2)] *** **] 
     by(simp add:unpack_string_def; transfer) (metis id_def image_set set_sort) 
 qed
+
+subsection \<open>Group multisets under updates\<close>
 
 lemma other_evals_unchanged:
   assumes elem_group: "agg_key b cs elem = k"
@@ -673,6 +681,8 @@ proof -
       length_flatten_multiset[OF insert(1)] by(simp add:mset_conv_def)
   qed
 qed
+
+subsection \<open>Validity of insertion\<close>
 
 lemma valid_insert_sum_unfolded:
   assumes valid_before: "valid_maggaux \<lparr>aggargs_cols = cs, aggargs_n = n, aggargs_g0 = g0, aggargs_y = y, aggargs_\<omega> = \<omega>, aggargs_tys = tys, aggargs_f = f\<rparr> (SumAux m) X" 
@@ -1193,6 +1203,8 @@ lemma valid_insert_maggaux: "valid_maggaux args aux X \<Longrightarrow> finite Y
   let (v', aux') = insert_maggaux args Y aux in if v' then valid_maggaux args aux' (X \<union> Y) else True"
   using valid_insert_maggaux_unfolded by(cases args) blast
 
+
+subsection \<open>Validity of deletion\<close>
 
 lemma valid_delete_sum_unfolded:
   assumes valid_before: "valid_maggaux \<lparr>aggargs_cols = cs, aggargs_n = n, aggargs_g0 = g0, aggargs_y = y, aggargs_\<omega> = \<omega>, aggargs_tys = tys, aggargs_f = f\<rparr> (SumAux m) X" 
@@ -1884,6 +1896,8 @@ lemma valid_delete_maggaux: "valid_maggaux args aux X \<Longrightarrow>
     let (v', aux') = delete_maggaux args Y aux in if v' then valid_maggaux args aux' (X - Y) else True"
   using valid_delete_maggaux_unfolded by (cases args) blast
 
+subsection \<open>Sums, minima and maxima\<close>
+
 lemma plus'_aux: "(plus' x \<circ> plus' y) z = (plus' y \<circ> plus' x) z"
   by(cases x, cases y, cases z) auto
 
@@ -2197,6 +2211,8 @@ qed
 
 lemma finite_group_mset: "finite X \<Longrightarrow> finite_multiset (group_multiset k b cs f X)"
   unfolding finite_multiset_def by (auto simp add: ecard_def)
+
+subsection \<open>Correctness of the result\<close>
 
 lemma valid_result_maggaux_unfolded: 
   assumes valid_before: "valid_maggaux \<lparr>aggargs_cols = cs, aggargs_n = n, aggargs_g0 = g0, aggargs_y = y, aggargs_\<omega> = \<omega>, aggargs_tys = tys, aggargs_f = f\<rparr> aux X"

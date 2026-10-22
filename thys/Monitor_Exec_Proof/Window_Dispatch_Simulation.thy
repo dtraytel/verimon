@@ -4,7 +4,9 @@ theory Window_Dispatch_Simulation
 begin
 (*>*)
 
+section \<open>Simulation of the dispatched structures\<close>
 
+subsection \<open>Since structure\<close>
 
 lemma esx_post_eq: "esx_post d = (case esx_agg d of None \<Rightarrow> id | Some p \<Rightarrow> eagg_p p)"
   by (cases d) simp_all
@@ -166,6 +168,8 @@ lemma esx_agg_eval_since:
   by (induct args rs buf daux arbitrary: dzs buf' daux' rule: esx_eval_since.induct)
     (auto simp: Let_def split: if_splits)
 
+subsection \<open>Until structure\<close>
+
 lemma eux_post_eq: "eux_post d = (case eux_agg d of None \<Rightarrow> id | Some p \<Rightarrow> eagg_p p)"
   by (cases d) simp_all
 
@@ -316,6 +320,8 @@ next
     by (auto simp: euxaux'_def)
 qed
 
+subsection \<open>Representations of the structures\<close>
+
 lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
   by (simp add: esx_init_def udsx_init_def)
 
@@ -332,8 +338,7 @@ lemma esx_add_new_table_rdsx:
   "esx_add_new_table args X (rdsx d) = rdsx (udsx_add_new_table args X d)"
   by (cases d) (simp_all add: sa_add_new_table_rsc)
 
-text \<open>The structure above reports the node's whole result; this one reports it read through the
-  guard straight away.\<close>
+text \<open>The representation reports the result already read through the guard.\<close>
 
 lemma esx_result_rdsx:
   "usx_q d = q \<Longrightarrow> ufilt q (esx_result args (rdsx d)) = udsx_result args d"
@@ -352,6 +357,8 @@ lemma eux_add_new_rdux:
 lemma eux_eval_rdux:
   "eux_eval args nt (rdux d) = (case udux_eval args nt d of (zs, d') \<Rightarrow> (zs, rdux d'))"
   by (cases d) (simp_all add: ua_eval_rua split: prod.splits)
+
+subsection \<open>Buffers\<close>
 
 lemma mbuf2S_add_rbufS: "mbuf2S_add xs ys ts (rbufS buf) = rbufS (mebuf2S_add xs ys ts buf)"
   by (cases buf) (simp add: mbuf_t_append.rep_eq)
@@ -451,6 +458,8 @@ proof -
   then show ?thesis using m' e by (simp add: mbuf_t_empty.rep_eq del: mbufnt_take.simps)
 qed
 
+subsection \<open>Traversal of the Since buffer\<close>
+
 lemma usx_q_uedsx_eval_since:
   "usx_q (snd (snd (uedsx_eval_since args rs buf aux))) = usx_q aux"
 proof (induct args rs buf aux rule: uedsx_eval_since.induct)
@@ -468,10 +477,8 @@ lemma usx_q_uedsx_eval_since':
   "uedsx_eval_since args rs buf aux = (zs, buf', aux') \<Longrightarrow> usx_q aux' = usx_q aux"
   using usx_q_uedsx_eval_since[of args rs buf aux] by simp
 
-text \<open>The traversal commutes with the representations: the traversal of
-  @{const esx_eval_since} on the images reports the same results, read through the node's guard.
-  The accumulator is carried the same way, so the statement relates the two lists it is started
-  with.\<close>
+text \<open>The traversal commutes with the representations up to the guard; the statement relates the
+  two accumulators it is started with.\<close>
 
 lemma esx_eval_since_rdsx:
   "map (ufilt (usx_q aux)) Rs = rs \<Longrightarrow>
@@ -503,7 +510,7 @@ lemma esx_eval_since_rdsx0:
         (zs, buf', aux') \<Rightarrow> (zs, rbufS buf', rdsx aux'))"
   using esx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
 
-subsection \<open>The Until buffer's traversal, and the two buffers of the fused And-Trigger\<close>
+subsection \<open>Until and And-Trigger buffers\<close>
 
 lemma mebuf2t_take_nat:
   assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"

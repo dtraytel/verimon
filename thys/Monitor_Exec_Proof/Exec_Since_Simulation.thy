@@ -4,26 +4,12 @@ theory Exec_Since_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of the executable Since structure\<close>
 
+text \<open>Over ascending columns, restricting a stored tuple to the left operand's columns is the
+  projection at the mask @{term "mrg_left_key (mrg_plan cs_R cs_L)"}, which keys the index.\<close>
 
-section \<open>The executable Since and Until structures\<close>
-
-text \<open>
-  The temporal structures run over the ascending columns @{term "eargs cs_R cs_L args"}: a stored
-  tuple is a tuple over the right operand's columns @{term cs_R}, and the probe table is the left
-  operand's, over @{term cs_L}.  The kernel's structures read the probe at a stored tuple by
-  restricting the latter to the left operand's columns; over ascending columns that restriction
-  is the executable projection at the mask @{term "mrg_left_key (mrg_plan cs_R cs_L)"}, which is a
-  single pass over the tuple.  This theory adds an index on that projection and proves the
-  resulting structures equal to the verified ones.
-\<close>
-
-subsection \<open>The executable index under the semi-join\<close>
-
-text \<open>
-  Restricting the index to the surviving keys is the index of the surviving tuples: a bucket
-  passes or fails as a whole, because the filter only looks at the key.
-\<close>
+subsection \<open>Index under the semi-join\<close>
 
 lemma eidx_filter:
   "Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (eidx msk T) = eidx msk (esemi msk pos T X)"
@@ -42,23 +28,10 @@ proof -
   then show ?thesis by (simp add: mapping_eqI)
 qed
 
-subsection \<open>Maintaining the index incrementally\<close>
-
-text \<open>
-  The structure adds and removes whole tables at a time, so the index is maintained by combining
-  it with the index of the added table, and by subtracting the index of the removed one bucket by
-  bucket.
-\<close>
-
 lemma eidx_empty[simp]: "eidx msk {} = Mapping.empty"
   by (intro mapping_eqI) (simp add: lookup_eidx)
 
-text \<open>Only the buckets that the subtrahend touches are dropped when they empty: a bucket at a key
-  the subtrahend does not have is left as it is.  On a clustering, which has no empty buckets, the
-  two readings agree; the executable version of the subtraction, which only visits the
-  subtrahend's keys, realises this one exactly.\<close>
-
-subsection \<open>The mask of the left operand's columns among the right operand's\<close>
+subsection \<open>Mask of the left operand's columns\<close>
 
 lemma length_mrg_left_key:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
@@ -159,11 +132,6 @@ lemma emsk_args_dargs:
   shows "emsk_args (eargs cs_R cs_L args) (mrg_left_key (mrg_plan cs_R cs_L))"
   using assms by (simp add: emsk_args_def)
 
-text \<open>
-  Both indexed tables are determined by the mapping they index, so normalising them away does not
-  leave the invariant.
-\<close>
-
 lemma valid_mmsaux_norm: "valid_mmsaux args cur aux ys \<Longrightarrow>
     valid_mmsaux args cur (mmsaux_norm args aux) ys"
   by (cases aux) (auto simp: wf_table_sig_args wf_table_of_set_args)
@@ -171,13 +139,10 @@ lemma valid_mmsaux_norm: "valid_mmsaux args cur aux ys \<Longrightarrow>
 lemma emsk_args_length: "emsk_args args msk \<Longrightarrow> length msk = length (args_R args)"
   by (simp add: emsk_args_def length_mrg_left_key)
 
-subsection \<open>What the window's entry and exit do to the keys\<close>
+subsection \<open>Keys entering and leaving the window\<close>
 
-text \<open>
-  The two folds that move tables out of and into the window report the tuples they removed and
-  added.  That report is exactly the difference between the old and the new key set, which is what
-  the index has to be reduced by and combined with.
-\<close>
+text \<open>The tuples these folds report are exactly the keys they remove or add, hence what the
+  index is reduced by or extended with.\<close>
 
 lemma fold_filter_set_keys:
   "fold filter_set ds (m, Y) = (m', Y') \<Longrightarrow> Y \<inter> Mapping.keys m = {} \<Longrightarrow>
@@ -225,7 +190,7 @@ lemma fold_upd_set_keys_keys':
   "fold (upd_set_keys Z) ds (m, {}) = (m', Y') \<Longrightarrow> Mapping.keys m' = Mapping.keys m \<union> Y'"
   using fold_upd_set_keys_keys[of Z ds m "{}" m' Y'] by simp
 
-subsection \<open>The executable operations are the verified ones\<close>
+subsection \<open>Operations without probing\<close>
 
 lemma emsaux_cases:
   fixes daux :: "'a emsaux"
@@ -354,7 +319,7 @@ lemma valid_eresult_msaux:
     = foldr (\<union>) [rel. (t, rel) \<leftarrow> ys, memL (args_ivl args) (cur - t)] {}"
   by (simp add: eresult_msaux_eq valid_result_mmsaux[OF valid_dmsauxD])
 
-subsection \<open>The join is the verified join\<close>
+subsection \<open>Join agrees with the abstract join\<close>
 
 lemma eproj_all_False: "\<forall>i \<in> set msk. \<not> i \<Longrightarrow> length as = length msk \<Longrightarrow> eproj msk as = []"
   by (induct msk as rule: eproj.induct) auto
@@ -373,12 +338,6 @@ lemma mapping_delete_set_filter:
   by (intro mapping_eqI)
      (auto simp: delete_set_lookup Mapping.lookup_filter Mapping.keys_dom_lookup
        split: option.splits)
-
-text \<open>
-  Whichever branch it takes, the executable join filters both mappings by the executable test, and the
-  window's table follows the mapping it indexes.  That is the verified join's abstract form
-  (@{const join_mmsaux_abs}).
-\<close>
 
 lemma ejoin_msaux_abs:
   assumes v: "valid_emsaux args msk cur (t, gc, m, dp, di, ti, ii, tui, idxs, tus) ys"
@@ -526,7 +485,7 @@ next
   qed
 qed
 
-subsection \<open>The join's validity\<close>
+subsection \<open>Validity of the join\<close>
 
 lemma mmsaux_cases:
   fixes aux :: "'a mmsaux"
@@ -587,6 +546,8 @@ proof -
     then show ?thesis using valid_djoin[OF v dm tY] by simp
   qed
 qed
+
+subsection \<open>Intervals containing zero\<close>
 
 lemma valid_emsaux_lz_intro:
   "valid_emsaux args msk cur daux ys \<Longrightarrow> (memL (args_ivl args) 0 \<Longrightarrow> linearize (eprev_of daux) = [])
@@ -770,6 +731,8 @@ lemma valid_eresult_msaux_lz:
     = foldr (\<union>) [rel. (t, rel) \<leftarrow> ys, memL (args_ivl args) (cur - t)] {}"
   unfolding valid_emsaux_lz_def
   by (cases daux rule: emsaux_cases) (auto dest: valid_eresult_msaux split: if_splits)
+
+subsection \<open>Validity over ascending columns\<close>
 
 lemma eframe_sub:
   "eframe kR cR \<Longrightarrow> eframe kL cL \<Longrightarrow> set kL \<subseteq> set kR \<Longrightarrow> set cL \<subseteq> set cR"

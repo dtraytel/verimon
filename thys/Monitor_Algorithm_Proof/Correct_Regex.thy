@@ -8,7 +8,10 @@ begin
 (*>*)
 
 
-subsubsection \<open> Regex \<close>
+section \<open> Correctness of regular expressions \<close>
+
+
+subsection \<open> Translation of regular expressions \<close>
 
 lemma from_mregex_cong: "ok m mr \<Longrightarrow> (\<forall>i < m. xs ! i = ys ! i) \<Longrightarrow> from_mregex mr xs = from_mregex mr ys"
   by (induct mr) auto
@@ -34,7 +37,7 @@ lemma fv_regex_from_mregex:
   by (induct mr) (auto simp: Bex_def in_set_conv_nth)+
 
 
-subsubsection \<open> Safety \<close>
+subsection \<open> Safety of right derivatives \<close>
 
 lemma RPD_fv_regex_le:
   "ms \<in> RPD mr \<Longrightarrow> fv_regex (from_mregex ms \<phi>s) \<subseteq> fv_regex (from_mregex mr \<phi>s)"
@@ -137,6 +140,8 @@ lemma RPDi_ok: "ok m mr \<Longrightarrow> ms \<in> RPDi n mr \<Longrightarrow> o
 
 lemma RPDs_ok: "ok m mr \<Longrightarrow> ms \<in> RPDs mr \<Longrightarrow> ok m ms"
   unfolding RPDs_def by (auto intro: RPDi_ok)
+
+subsection \<open> Safety of left derivatives \<close>
 
 lemma LPD_fv_regex_le:
   "ms \<in> LPD mr \<Longrightarrow> fv_regex (from_mregex ms \<phi>s) \<subseteq> fv_regex (from_mregex mr \<phi>s)"
@@ -243,7 +248,7 @@ lemma LPDs_ok: "ok m mr \<Longrightarrow> ms \<in> LPDs mr \<Longrightarrow> ok 
   unfolding LPDs_def by (auto intro: LPDi_ok)
 
 
-subsubsection \<open> Progress \<close>
+subsection \<open> Progress \<close>
 
 lemma ok_0_atms: "ok 0 mr \<Longrightarrow> regex.atms (from_mregex mr []) = {}"
   by (induct mr) auto
@@ -308,7 +313,7 @@ lemma to_mregex_progress: "Regex.safe_regex fv rgx_safe_pred m g r \<Longrightar
   unfolding progress_regex_def by auto
 
 
-subsubsection \<open> Buffers \<close>
+subsection \<open> N-ary buffers \<close>
 
 definition wf_mbufn :: "nat \<Rightarrow> nat list \<Rightarrow> (nat \<Rightarrow> event_data table \<Rightarrow> bool) list \<Rightarrow> event_data mbufn \<Rightarrow> bool" where
   "wf_mbufn i js Ps buf \<longleftrightarrow> list_all3 (\<lambda>P j xs. i \<le> j \<and> list_all2 P [i..<j] xs) Ps js buf"
@@ -587,7 +592,7 @@ proof (induction f z buf arbitrary: i z' buf' rule: mbufn_take.induct)
 qed
 
 
-subsection \<open> Regular expression's qtable \<close>
+subsection \<open> Tables of empty matches \<close>
 
 lemma qtable_\<epsilon>_lax:
   assumes "ok (length \<phi>s) mr"
@@ -842,6 +847,8 @@ next
     by (cases mr) (auto simp: qtable_unit_table split: if_splits)
 qed
 
+subsection \<open> Tables of derivatives \<close>
+
 inductive ok_rctxt for \<phi>s where
   "ok_rctxt \<phi>s id id"
 | "ok_rctxt \<phi>s \<kappa> \<kappa>' \<Longrightarrow> ok_rctxt \<phi>s (\<lambda>t. \<kappa> (MTimes mr t)) (\<lambda>t. \<kappa>' (Regex.Times (from_mregex mr \<phi>s) t))"
@@ -925,9 +932,7 @@ qed (auto simp: qtable_empty_iff)
 lemmas qtable_l\<delta> = qtable_l\<delta>\<kappa>[OF _ _ _ ok_lctxt.intros(1), unfolded lpd\<kappa>_lpd image_id id_apply]
 
 
-subsubsection \<open> Invariants \<close>
-
-text \<open>The tables of a regular expression's derivatives are over the columns of the whole expression.\<close>
+subsection \<open> Invariants of the auxiliary states \<close>
 
 definition wf_matchP_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
     \<I> \<Rightarrow> ty Formula.formula Regex.regex \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> nat \<Rightarrow> bool" where
@@ -973,6 +978,8 @@ lemma lookup_tabulate:
   unfolding lookup_default_def lookup_def
   by transfer (auto simp: Let_def map_filter_def map_of_eq_None_iff o_def image_image dest!: map_of_SomeD
       split: if_splits option.splits)
+
+subsection \<open> Update for MatchP \<close>
 
 lemma update_matchP:
   assumes pre: "wf_matchP_aux \<sigma> V n R I r aux ne"
@@ -1228,6 +1235,8 @@ proof -
   qed (auto dest!: in_aux'_1 intro!: qtable_empty dest!: bspec[OF _ RPDs_refl]
       simp: from_mregex_eq[OF safe mr])
 qed
+
+subsection \<open> Update for MatchF \<close>
 
 lemma length_update_matchF_base:
   "length (fst (update_matchF_base cs dss I mr mrs rels nt)) = Suc 0"
