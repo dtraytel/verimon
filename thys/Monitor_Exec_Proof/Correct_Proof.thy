@@ -49,9 +49,6 @@ definition eforget :: "emstate \<Rightarrow> nat \<times> nat \<times> eformula 
 lemma eforget_eindex[simp]: "eforget (eindex ix st) = eforget st"
   by (simp add: eforget_def eindex_def)
 
-lemma eabs_eindex[simp]: "eabs (emstate_m (eindex ix st)) = eabs (emstate_m st)"
-  by (simp add: eindex_def)
-
 lemma emstep_eforget:
   assumes "eforget s1 = eforget s2"
   shows "fst (emstep tdb s1) = fst (emstep tdb s2) \<and>

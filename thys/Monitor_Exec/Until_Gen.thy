@@ -180,6 +180,16 @@ fun fix_res :: "'b gmuaux \<Rightarrow> 'b gmuaux" where
      (tp, tss, tables, len, Mapping.keys (dq_hd_s a2_dq Mapping.empty), a1_map,
       a2_dq, tstp_dq, dn)"
 
+lemma ushape_fix_res[simp]: "ushape (fix_res d) = ushape d"
+  and ulen_fix_res[simp]: "ulen (fix_res d) = ulen d"
+  and utp_fix_res[simp]: "utp (fix_res d) = utp d"
+  and ua1_fix_res[simp]: "ua1 (fix_res d) = ua1 d"
+  and glength_fix_res[simp]: "glength_dq args (fix_res d) = glength_dq args d"
+  by (induct d rule: fix_res.induct, simp)+
+
+lemma fix_res_ginit_dq[simp]: "fix_res (ginit_dq args) = ginit_dq args"
+  by (simp add: ginit_dq_def dq_hd_s_def dq_push_def dq_empty_def)
+
 text \<open>The insertion.  The kernel's fold carries the result along with the table and the nested
   deque, and adds a tuple to it exactly when the tuple is entered into the front entry; so if
   the result starts as the key set of the front entry, it stays that.\<close>

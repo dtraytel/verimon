@@ -96,6 +96,12 @@ definition erel' :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> 
 definition erel :: "\<I> \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
   "erel I aux L = erel' I (fst aux) aux L"
 
+lemma fst_eraux_update[simp]: "fst (eraux_update args msk l r nt aux) = nt"
+  by (simp add: eraux_update_def Let_def split: prod.splits)
+
+lemma length_eupdate_release[simp]: "length (eupdate_release args msk l r nt L) = Suc (length L)"
+  by (simp add: eupdate_release_def)
+
 subsection \<open>The release node's structure\<close>
 
 text \<open>

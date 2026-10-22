@@ -658,6 +658,9 @@ fun free_preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) 
 | "free_preds (Formula.TP t) = []"
 | "free_preds (Formula.TS t) = []"
 
+lemma set_free_preds[simp]: "set (free_preds \<phi>) = Rewriting.preds \<phi>"
+  by (induction \<phi> rule: free_preds.induct) (auto simp: fv_regex_alt)
+
 subsection \<open>The monitor on the log\<close>
 
 text \<open>The configuration: which predicates' events to skip, the signature, the lookup of a
@@ -760,6 +763,9 @@ text \<open>For the driver: the least offset in the input that later outputs may
 definition vpending :: "vstate \<Rightarrow> integer" where
   "vpending z = (case fst z of (b, l, _) \<Rightarrow> (case l of
      E_SIMPLE xs j t \<Rightarrow> t | E_QUOTED xs j t \<Rightarrow> t | E_ESCAPE xs j t \<Rightarrow> t | _ \<Rightarrow> b))"
+
+lemma preds_map_formula[simp]: "Rewriting.preds (Formula.formula.map_formula f \<phi>) = Rewriting.preds \<phi>"
+  by (induction \<phi>) (auto simp: fv_regex_alt regex.set_map)
 
 end
 (*>*)

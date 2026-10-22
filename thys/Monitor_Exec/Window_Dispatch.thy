@@ -61,6 +61,21 @@ fun esx_post :: "esaux_x \<Rightarrow> event_data table \<Rightarrow> event_data
 | "esx_post (ESX_win w) = id"
 | "esx_post (ESX_wagg p a) = eagg_p p"
 
+lemma esx_post_add_new_ts[simp]: "esx_post (esx_add_new_ts args nt d) = esx_post d"
+  by (cases d) simp_all
+
+lemma esx_post_join[simp]: "esx_post (esx_join args X d) = esx_post d"
+  by (cases d) simp_all
+
+lemma esx_post_add_new_table[simp]: "esx_post (esx_add_new_table args X d) = esx_post d"
+  by (cases d) simp_all
+
+lemma esx_post_init[simp]: "esx_post (esx_init args msk) = id"
+  by (simp add: esx_init_def)
+
+lemma esx_post_init_agg[simp]: "esx_post (esx_init_agg args p) = eagg_p p"
+  by (simp add: esx_init_agg_def)
+
 text \<open>Which aggregate, if any, a structure reports; the compiler and the simulation tell the
   structures apart by it.\<close>
 
@@ -68,6 +83,21 @@ fun esx_agg :: "esaux_x \<Rightarrow> eaggp option" where
   "esx_agg (ESX_gen d) = None"
 | "esx_agg (ESX_win w) = None"
 | "esx_agg (ESX_wagg p a) = Some p"
+
+lemma esx_agg_add_new_ts[simp]: "esx_agg (esx_add_new_ts args nt d) = esx_agg d"
+  by (cases d) simp_all
+
+lemma esx_agg_join[simp]: "esx_agg (esx_join args X d) = esx_agg d"
+  by (cases d) simp_all
+
+lemma esx_agg_add_new_table[simp]: "esx_agg (esx_add_new_table args X d) = esx_agg d"
+  by (cases d) simp_all
+
+lemma esx_agg_init[simp]: "esx_agg (esx_init args msk) = None"
+  by (simp add: esx_init_def)
+
+lemma esx_agg_init_agg[simp]: "esx_agg (esx_init_agg args p) = Some p"
+  by (simp add: esx_init_agg_def)
 
 text \<open>The windows are used for a closed left operand, whose kernel columns are then empty as
   well.\<close>
@@ -136,6 +166,30 @@ fun eux_agg :: "euaux_x \<Rightarrow> eaggp option" where
 | "eux_agg (EUX_win w) = None"
 | "eux_agg (EUX_wagg p a) = Some p"
 
+lemma eux_post_add_new[simp]: "eux_post (eux_add_new args msk rel1 rel2 nt d) = eux_post d"
+  by (cases d) simp_all
+
+lemma eux_agg_add_new[simp]: "eux_agg (eux_add_new args msk rel1 rel2 nt d) = eux_agg d"
+  by (cases d) simp_all
+
+lemma eux_post_init[simp]: "eux_post (eux_init args) = id"
+  by (simp add: eux_init_def)
+
+lemma eux_agg_init[simp]: "eux_agg (eux_init args) = None"
+  by (simp add: eux_init_def)
+
+lemma eux_post_init_agg[simp]: "eux_post (eux_init_agg args p) = eagg_p p"
+  by (simp add: eux_init_agg_def)
+
+lemma eux_agg_init_agg[simp]: "eux_agg (eux_init_agg args p) = Some p"
+  by (simp add: eux_init_agg_def)
+
+lemma eux_post_eval[simp]: "eux_post (snd (eux_eval args nt d)) = eux_post d"
+  by (cases d) (simp_all split: prod.splits)
+
+lemma eux_agg_eval[simp]: "eux_agg (snd (eux_eval args nt d)) = eux_agg d"
+  by (cases d) (simp_all split: prod.splits)
+
 definition euxaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> euaux_x \<Rightarrow>
     event_data muaux \<Rightarrow> bool" where
   "euxaux' kL cL kR cR args cur daux auxlist \<longleftrightarrow> (case daux of
@@ -202,6 +256,21 @@ fun udsx_result :: "args \<Rightarrow> udsaux_x \<Rightarrow> utable" where
   "udsx_result args (UDSX_gen d) = eresult_msaux args d"
 | "udsx_result args (UDSX_win w) = sw_result args w"
 | "udsx_result args (UDSX_wagg p q a) = usc_result q args p a"
+
+lemma usx_q_add_new_ts[simp]: "usx_q (udsx_add_new_ts args nt d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_join[simp]: "usx_q (udsx_join args X d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
+  by (simp add: udsx_init_agg_def)
+
+lemma usx_q_init[simp]: "usx_q (udsx_init args msk) = None"
+  by (simp add: udsx_init_def)
 
 datatype uduaux_x = UDUX_gen "event_data mmuaux_dq" | UDUX_win uwaux | UDUX_wagg eaggp uuwagg
 

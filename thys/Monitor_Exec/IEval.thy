@@ -26,17 +26,32 @@ type_synonym ieformula =
 
 lift_definition mbuf_t_map :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a mbuf_t \<Rightarrow> 'b mbuf_t" is map .
 
+lemma Rep_mbuf_t_map[simp]: "Rep_mbuf_t (mbuf_t_map f b) = map f (Rep_mbuf_t b)"
+  by transfer simp
+
+lemma mbuf_t_map_comp[simp]: "mbuf_t_map f (mbuf_t_map g b) = mbuf_t_map (f \<circ> g) b"
+  by transfer simp
+
+lemma mbuf_t_map_id[simp]: "mbuf_t_map (\<lambda>x. x) b = b" "mbuf_t_map id b = b"
+  by (transfer, simp)+
+
 definition ib2 :: "iebuf2 \<Rightarrow> uebuf2" where
   "ib2 = map_prod (mbuf_t_map iset) (mbuf_t_map iset)"
 
 definition eb2 :: "uebuf2 \<Rightarrow> iebuf2" where
   "eb2 = map_prod (mbuf_t_map itab) (mbuf_t_map itab)"
 
+lemma ib2_eb2[simp]: "ib2 (eb2 b) = b"
+  by (cases b) (simp add: ib2_def eb2_def comp_def)
+
 definition ibn :: "iebufn \<Rightarrow> uebufn" where
   "ibn = map (mbuf_t_map iset)"
 
 definition ebn :: "uebufn \<Rightarrow> iebufn" where
   "ebn = map (mbuf_t_map itab)"
+
+lemma ibn_ebn[simp]: "ibn (ebn b) = b"
+  by (simp add: ibn_def ebn_def comp_def map_idI)
 
 text \<open>Forgetting the indices, and adding none.  A subformula the indexed evaluator does not
   run itself is kept in the plain form (@{text EPlain}): the freeze and the recursive let.\<close>
@@ -95,6 +110,9 @@ text \<open>The multiway join joins its first operand with the other positive on
 definition eands_req :: "ejoin_plan list \<Rightarrow> nat \<Rightarrow> bool list list list" where
   "eands_req ps n = take n ((case ps of [] \<Rightarrow> [[]] | p # _ \<Rightarrow> [jreq_l p True]) @
      map (\<lambda>p. jreq_r p True) ps @ replicate n [])"
+
+lemma length_eands_req[simp]: "length (eands_req ps n) = n"
+  by (cases ps) (simp_all add: eands_req_def)
 
 fun igands_pos :: "ejoin_plan list \<Rightarrow> itable \<Rightarrow> itable list \<Rightarrow> itable" where
   "igands_pos [] t us = t"
@@ -329,5 +347,26 @@ subsection \<open>Forgetting the indices\<close>
 
 lemma mbuf_t_map_code[code]: "mbuf_t_map f (MBuf2_t q) = mbuf_t_empty @@ map f (linearize q)"
   by transfer simp
+
+lemma mbuf_t_map_append[simp]: "mbuf_t_map f (b @@ xs) = mbuf_t_map f b @@ map f xs"
+  by transfer simp
+
+lemma mbuf_t_map_Cons[simp]: "mbuf_t_map f (mbuf_t_Cons x b) = mbuf_t_Cons (f x) (mbuf_t_map f b)"
+  by transfer simp
+
+lemma mbuf_t_map_empty[simp]: "mbuf_t_map f mbuf_t_empty = mbuf_t_empty"
+  by transfer simp
+
+lemma mbuf_t_is_empty_map[simp]: "mbuf_t_is_empty (mbuf_t_map f b) = mbuf_t_is_empty b"
+  by transfer simp
+
+lemma ib2_add[simp]: "ib2 (mebuf2_add xs ys b) = mebuf2_add (map iset xs) (map iset ys) (ib2 b)"
+  by (cases b) (simp add: ib2_def)
+
+lemma map_eabs[simp]: "map eabs (map snd R) = map (eabs \<circ> snd) R"
+  by simp
+
+lemma map_iset_itab[simp]: "map (iset \<circ> itab) X = X" "map (\<lambda>x. iset (itab x)) X = X"
+  by (simp_all add: map_idI)
 
 end

@@ -420,20 +420,8 @@ lemma cnt_del_ucc[simp]: "cnt_del T (ucc c) = ucc (ucnt_del T c)"
 lemma ag_ins_ucc[simp]: "ag_ins p w T (ucc c) ax = uag_ins p w T c ax"
   by (cases p) (simp add: ag_ins_def uag_ins_def ucc.simps lookup_None_keys)
 
-lemma ag_del_ucc[simp]: "ag_del p w T (ucc c) ax = uag_del p w T c ax"
-  by (cases p) (simp add: ag_del_def uag_del_def ucc.simps)
-
-lemma uqok_None[simp]: "uqok None = (\<lambda>_. True)"
-  by (simp add: uqok_def)
-
-lemma ufilt_None[simp]: "ufilt None = id"
-  by (simp add: ufilt_def fun_eq_iff)
-
 lemma ufilt_Some: "ufilt (Some c) X = Set.filter (ueval_constraint c) X"
   by (simp add: ufilt_def uqok_def)
-
-lemma ufilt_idem[simp]: "ufilt q (ufilt q X) = ufilt q X"
-  by (auto simp: ufilt_def)
 
 lemma ag_res_ucc: "ufilt q (ag_res p w (ucc c) ax) = uag_res q p w c ax"
   by (cases ax; cases p) (simp_all add: uag_res_def ag_res_def ucc.simps id_def)

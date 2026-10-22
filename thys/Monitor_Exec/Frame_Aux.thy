@@ -337,6 +337,12 @@ text \<open>The atoms' tables, reordered each at its own columns.\<close>
 definition etabcs :: "cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> 'b list set list" where
   "etabcs kss css rels = map (\<lambda>i. etabc (kss ! i) (css ! i) (rels ! i)) [0..<length rels]"
 
+lemma length_etabcs[simp]: "length (etabcs kss css rels) = length rels"
+  by (simp add: etabcs_def)
+
+lemma nth_etabcs[simp]: "i < length rels \<Longrightarrow> etabcs kss css rels ! i = etabc (kss ! i) (css ! i) (rels ! i)"
+  by (simp add: etabcs_def)
+
 definition wf_atoms :: "cols \<Rightarrow> cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> bool" where
   "wf_atoms ks kss css rels \<longleftrightarrow> length kss = length rels \<and> length css = length rels \<and>
      (\<forall>i < length rels. eframe (kss ! i) (css ! i) \<and> set (kss ! i) \<subseteq> set ks \<and> table (kss ! i) (rels ! i))"
@@ -372,6 +378,15 @@ definition emrd_rel :: "cols \<Rightarrow> cols \<Rightarrow> event_data mr\<del
   "emrd_rel ks cs = list_all2 (\<lambda>(t, X) (t', X'). t = t' \<and>
      (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)))"
 
+lemma emrd_rel_Nil[simp]: "emrd_rel ks cs [] []"
+  by (simp add: emrd_rel_def)
+
+lemma emrd_rel_Cons[simp]:
+  "emrd_rel ks cs ((t, X) # aux) ((t', X') # daux) \<longleftrightarrow> t = t' \<and>
+     (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)) \<and>
+     emrd_rel ks cs aux daux"
+  by (simp add: emrd_rel_def)
+
 locale ematchP_frame = eregex_frame ks cs \<psi>s css
   for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +
   fixes rels :: "event_data table list" and mrs :: "mregex list"
@@ -398,6 +413,16 @@ definition emld_rel :: "cols \<Rightarrow> cols \<Rightarrow> ty Formula.formula
   "emld_rel ks cs \<psi>s css = list_all2 (\<lambda>(t, rls, rel) (t', drls, drel). t = t' \<and>
      list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
      drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel)"
+
+lemma emld_rel_Nil[simp]: "emld_rel ks cs \<psi>s css [] []"
+  by (simp add: emld_rel_def)
+
+lemma emld_rel_Cons[simp]:
+  "emld_rel ks cs \<psi>s css ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
+     drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel \<and>
+     emld_rel ks cs \<psi>s css aux daux"
+  by (simp add: emld_rel_def)
 
 locale ematchF_frame = eregex_frame ks cs \<psi>s css
   for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +

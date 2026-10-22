@@ -278,9 +278,6 @@ proof (rule mapping_eqI)
   qed
 qed
 
-lemma set_free_preds[simp]: "set (free_preds \<phi>) = Rewriting.preds \<phi>"
-  by (induction \<phi> rule: free_preds.induct) (auto simp: fv_regex_alt)
-
 lemma vskip_fun: "vskip_fun xs q \<longleftrightarrow> q \<in> set xs"
   by (auto simp: vskip_fun_def str8_eq_def list_ex_iff)
 
@@ -566,9 +563,6 @@ proof (induction \<phi> arbitrary: v e)
       by simp
   qed
 qed (fastforce simp: fv_regex_alt)+
-
-lemma preds_map_formula[simp]: "Rewriting.preds (Formula.formula.map_formula f \<phi>) = Rewriting.preds \<phi>"
-  by (induction \<phi>) (auto simp: fv_regex_alt regex.set_map)
 
 lemma pmap_\<Gamma>_pmap_\<Gamma>: "pmap_\<Gamma> f (pmap_\<Gamma> g \<pi>) = pmap_\<Gamma> (f \<circ> g) \<pi>"
   by transfer (auto split: prod.splits)

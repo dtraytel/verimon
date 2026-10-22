@@ -54,6 +54,9 @@ definition isw_abs :: "iswaux \<Rightarrow> swaux" where
 definition isw_emb :: "swaux \<Rightarrow> iswaux" where
   "isw_emb aux = (case aux of (t, pend, win, c, s) \<Rightarrow> (t, pend, win, c, itab s))"
 
+lemma isw_abs_emb[simp]: "isw_abs (isw_emb aux) = aux"
+  by (simp add: isw_abs_def isw_emb_def icnt_abs_def split: prod.splits)
+
 function isw_move :: "args \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data table) queue \<Rightarrow>
     (ts \<times> event_data table) queue \<Rightarrow> icntset \<Rightarrow>
     (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> icntset" where
@@ -111,6 +114,9 @@ definition isw_result :: "iswaux \<Rightarrow> event_data itab" where
 
 definition isw_ensure :: "bool list list \<Rightarrow> iswaux \<Rightarrow> iswaux" where
   "isw_ensure msks aux = (case aux of (t, pend, win, c, s) \<Rightarrow> (t, pend, win, c, iensure msks s))"
+
+lemma isw_abs_ensure[simp]: "isw_abs (isw_ensure msks aux) = isw_abs aux"
+  by (simp add: isw_abs_def isw_ensure_def icnt_abs_def split: prod.splits)
 
 subsection \<open>The Since structure of a general left operand\<close>
 
@@ -316,6 +322,13 @@ definition iuw_emb :: "uwaux \<Rightarrow> iuwaux" where
   "iuw_emb aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
      (nts, win, rest, len, bend, (fst cc, itab (snd cc)), map itab dn))"
 
+lemma iuw_abs_tuple[simp]:
+  "iuw_abs (nts, win, rest, len, bend, cc, dn) = (nts, win, rest, len, bend, icnt_abs cc, map iset dn)"
+  by (simp add: iuw_abs_def)
+
+lemma iuw_abs_emb[simp]: "iuw_abs (iuw_emb a) = a"
+  by (simp add: iuw_abs_def iuw_emb_def icnt_abs_def comp_def split: prod.splits)
+
 function iuw_extend :: "args \<Rightarrow> ts \<Rightarrow> uw_entry queue \<Rightarrow> uw_entry queue \<Rightarrow> bool \<Rightarrow> icntset \<Rightarrow>
     uw_entry queue \<times> uw_entry queue \<times> bool \<times> icntset" where
   "iuw_extend args ts0 win rest bend cc =
@@ -345,6 +358,9 @@ definition iuw_step :: "args \<Rightarrow> ts \<Rightarrow> iuwaux \<Rightarrow>
                 cc' = icnt_del (fst (snd e)) cc;
                 bend' = (if Queue.is_empty win'' then True else bend)
             in (tl_queue nts, win'', rest, len - 1, bend', cc', snd cc # dn)))))"
+
+lemma snd_icnt_abs[simp]: "snd (icnt_abs cc) = iset (snd cc)"
+  by (simp add: icnt_abs_def)
 
 function iuw_shift :: "args \<Rightarrow> ts \<Rightarrow> iuwaux \<Rightarrow> iuwaux" where
   "iuw_shift args nt aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
@@ -376,6 +392,9 @@ definition iuw_ensure :: "bool list list \<Rightarrow> iuwaux \<Rightarrow> iuwa
   "iuw_ensure msks aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
      (nts, win, rest, len, bend, (fst cc, iensure msks (snd cc)), dn))"
 
+lemma iuw_abs_ensure[simp]: "iuw_abs (iuw_ensure msks aux) = iuw_abs aux"
+  by (simp add: iuw_abs_def iuw_ensure_def icnt_abs_def split: prod.splits)
+
 subsection \<open>The dispatched Since structures\<close>
 
 text \<open>The aggregating structures are kept as they are; their result is a table without
@@ -394,6 +413,9 @@ definition iudsx_emb :: "bool list list \<Rightarrow> udsaux_x \<Rightarrow> iud
        UDSX_win w \<Rightarrow> IUDSX_win (isw_ensure msks (isw_emb w))
      | UDSX_gen g \<Rightarrow> IUDSX_gen (iems_ensure msks (ims_emb g))
      | _ \<Rightarrow> IUDSX_u d))"
+
+lemma riu_iudsx_emb[simp]: "riu (iudsx_emb msks d) = d"
+  by (cases d) (simp_all add: iudsx_emb_def)
 
 fun iudsx_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> iudsaux_x \<Rightarrow> iudsaux_x" where
   "iudsx_add_new_ts args nt (IUDSX_u d) = IUDSX_u (udsx_add_new_ts args nt d)"
@@ -420,6 +442,9 @@ fun iudsx_ensure :: "bool list list \<Rightarrow> iudsaux_x \<Rightarrow> iudsau
 | "iudsx_ensure msks (IUDSX_gen g) = IUDSX_gen (iems_ensure msks g)"
 | "iudsx_ensure msks d = d"
 
+lemma riu_ensure[simp]: "riu (iudsx_ensure msks d) = riu d"
+  by (induct msks d rule: iudsx_ensure.induct) simp_all
+
 subsection \<open>The dispatched Until structures\<close>
 
 text \<open>Likewise, only the window of a closed left operand has indexed answers, if it is embedded
@@ -436,6 +461,9 @@ definition iudux_emb :: "bool list list \<Rightarrow> uduaux_x \<Rightarrow> iud
        UDUX_win w \<Rightarrow> IUDUX_win (iuw_ensure msks (iuw_emb w))
      | _ \<Rightarrow> IUDUX_u d))"
 
+lemma riud_iudux_emb[simp]: "riud (iudux_emb msks d) = d"
+  by (cases d) (simp_all add: iudux_emb_def)
+
 fun iudux_add_new :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> iuduaux_x \<Rightarrow> iuduaux_x" where
   "iudux_add_new args msk rel1 rel2 nt (IUDUX_u d) = IUDUX_u (udux_add_new args msk rel1 rel2 nt d)"
 | "iudux_add_new args msk rel1 rel2 nt (IUDUX_win w) = IUDUX_win (iuw_add_new args rel1 rel2 nt w)"
@@ -447,6 +475,9 @@ fun iudux_eval :: "args \<Rightarrow> ts \<Rightarrow> iuduaux_x \<Rightarrow> e
 fun iudux_ensure :: "bool list list \<Rightarrow> iuduaux_x \<Rightarrow> iuduaux_x" where
   "iudux_ensure msks (IUDUX_win w) = IUDUX_win (iuw_ensure msks w)"
 | "iudux_ensure msks d = d"
+
+lemma riud_ensure[simp]: "riud (iudux_ensure msks d) = riud d"
+  by (induct msks d rule: iudux_ensure.induct) simp_all
 
 subsection \<open>The Since buffer's traversal\<close>
 

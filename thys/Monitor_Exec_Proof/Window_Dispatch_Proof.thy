@@ -6,38 +6,8 @@ begin
 
 
 
-lemma esx_post_add_new_ts[simp]: "esx_post (esx_add_new_ts args nt d) = esx_post d"
-  by (cases d) simp_all
-
-lemma esx_post_join[simp]: "esx_post (esx_join args X d) = esx_post d"
-  by (cases d) simp_all
-
-lemma esx_post_add_new_table[simp]: "esx_post (esx_add_new_table args X d) = esx_post d"
-  by (cases d) simp_all
-
-lemma esx_post_init[simp]: "esx_post (esx_init args msk) = id"
-  by (simp add: esx_init_def)
-
-lemma esx_post_init_agg[simp]: "esx_post (esx_init_agg args p) = eagg_p p"
-  by (simp add: esx_init_agg_def)
-
 lemma esx_post_eq: "esx_post d = (case esx_agg d of None \<Rightarrow> id | Some p \<Rightarrow> eagg_p p)"
   by (cases d) simp_all
-
-lemma esx_agg_add_new_ts[simp]: "esx_agg (esx_add_new_ts args nt d) = esx_agg d"
-  by (cases d) simp_all
-
-lemma esx_agg_join[simp]: "esx_agg (esx_join args X d) = esx_agg d"
-  by (cases d) simp_all
-
-lemma esx_agg_add_new_table[simp]: "esx_agg (esx_add_new_table args X d) = esx_agg d"
-  by (cases d) simp_all
-
-lemma esx_agg_init[simp]: "esx_agg (esx_init args msk) = None"
-  by (simp add: esx_init_def)
-
-lemma esx_agg_init_agg[simp]: "esx_agg (esx_init_agg args p) = Some p"
-  by (simp add: esx_init_agg_def)
 
 lemma esxaux'_tables:
   "esxaux' kR cR cL args cur daux auxlist \<Longrightarrow> \<forall>(t, rel) \<in> set auxlist. table kR rel"
@@ -199,30 +169,6 @@ lemma esx_agg_eval_since:
 lemma eux_post_eq: "eux_post d = (case eux_agg d of None \<Rightarrow> id | Some p \<Rightarrow> eagg_p p)"
   by (cases d) simp_all
 
-lemma eux_post_add_new[simp]: "eux_post (eux_add_new args msk rel1 rel2 nt d) = eux_post d"
-  by (cases d) simp_all
-
-lemma eux_agg_add_new[simp]: "eux_agg (eux_add_new args msk rel1 rel2 nt d) = eux_agg d"
-  by (cases d) simp_all
-
-lemma eux_post_init[simp]: "eux_post (eux_init args) = id"
-  by (simp add: eux_init_def)
-
-lemma eux_agg_init[simp]: "eux_agg (eux_init args) = None"
-  by (simp add: eux_init_def)
-
-lemma eux_post_init_agg[simp]: "eux_post (eux_init_agg args p) = eagg_p p"
-  by (simp add: eux_init_agg_def)
-
-lemma eux_agg_init_agg[simp]: "eux_agg (eux_init_agg args p) = Some p"
-  by (simp add: eux_init_agg_def)
-
-lemma eux_post_eval[simp]: "eux_post (snd (eux_eval args nt d)) = eux_post d"
-  by (cases d) (simp_all split: prod.splits)
-
-lemma eux_agg_eval[simp]: "eux_agg (snd (eux_eval args nt d)) = eux_agg d"
-  by (cases d) (simp_all split: prod.splits)
-
 lemma euxaux'_tables:
   "euxaux' kL cL kR cR args cur daux auxlist \<Longrightarrow>
      \<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2"
@@ -370,26 +316,11 @@ next
     by (auto simp: euxaux'_def)
 qed
 
-lemma usx_q_add_new_ts[simp]: "usx_q (udsx_add_new_ts args nt d) = usx_q d"
-  by (cases d) simp_all
-
-lemma usx_q_join[simp]: "usx_q (udsx_join args X d) = usx_q d"
-  by (cases d) simp_all
-
-lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
-  by (cases d) simp_all
-
 lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
   by (simp add: esx_init_def udsx_init_def)
 
 lemma esx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = esx_init_agg args p"
   by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsc[symmetric])
-
-lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
-  by (simp add: udsx_init_agg_def)
-
-lemma usx_q_init[simp]: "usx_q (udsx_init args msk) = None"
-  by (simp add: udsx_init_def)
 
 lemma esx_add_new_ts_rdsx: "esx_add_new_ts args nt (rdsx d) = rdsx (udsx_add_new_ts args nt d)"
   by (cases d) (simp_all add: sa_add_new_ts_rsc)

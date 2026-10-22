@@ -137,9 +137,6 @@ qed
 lemma in_tbls_at: "x \<in> tbls_at u es \<longleftrightarrow> (\<exists>rel. (u, rel) \<in> set es \<and> x \<in> rel)"
   by (auto simp: tbls_at_def)
 
-lemma tbls_at_Nil[simp]: "tbls_at u [] = {}"
-  by (simp add: tbls_at_def)
-
 lemma tbls_at_Cons: "tbls_at u ((t, rel) # es) = (if t = u then rel \<union> tbls_at u es else tbls_at u es)"
   by (auto simp: tbls_at_def)
 
@@ -576,9 +573,6 @@ proof -
   qed
   then show ?thesis unfolding r foldr_Un_filter .
 qed
-
-lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
-  by (induct es rule: uw_abs.induct) simp_all
 
 text \<open>Appending an entry to a run extends every answer by the new table exactly when the new
   timestamp is in range from the run's start and the left operand held throughout the run.\<close>

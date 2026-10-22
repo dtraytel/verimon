@@ -34,16 +34,6 @@ proof -
   qed
 qed
 
-lemma ushape_fix_res[simp]: "ushape (fix_res d) = ushape d"
-  and ulen_fix_res[simp]: "ulen (fix_res d) = ulen d"
-  and utp_fix_res[simp]: "utp (fix_res d) = utp d"
-  and ua1_fix_res[simp]: "ua1 (fix_res d) = ua1 d"
-  and glength_fix_res[simp]: "glength_dq args (fix_res d) = glength_dq args d"
-  by (induct d rule: fix_res.induct, simp)+
-
-lemma fix_res_ginit_dq[simp]: "fix_res (ginit_dq args) = ginit_dq args"
-  by (simp add: ginit_dq_def dq_hd_s_def dq_push_def dq_empty_def)
-
 lemma dq_hd_s_list: "dq_inv d \<Longrightarrow> 0 < dq_len d \<Longrightarrow> dq_hd_s d z = hd (dq_list d)"
   by (simp add: dq_hd_s_nth dq_nth dq_len_list hd_conv_nth)
 

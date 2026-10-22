@@ -1016,12 +1016,6 @@ proof -
   then show ?thesis using vd r w by (auto simp: euaux'_def)
 qed
 
-lemma length_etabcs[simp]: "length (etabcs kss css rels) = length rels"
-  by (simp add: etabcs_def)
-
-lemma nth_etabcs[simp]: "i < length rels \<Longrightarrow> etabcs kss css rels ! i = etabc (kss ! i) (css ! i) (rels ! i)"
-  by (simp add: etabcs_def)
-
 lemma wf_atomsD:
   assumes "wf_atoms ks kss css rels" "i < length rels"
   shows "eframe (kss ! i) (css ! i)" "set (kss ! i) \<subseteq> set ks" "table (kss ! i) (rels ! i)"
@@ -1341,15 +1335,6 @@ next
     by (simp add: etabc_Un_img etabc_eps_lax[OF fK wf o1 tg])
 qed (simp_all add: empty_table_def)
 
-lemma emrd_rel_Nil[simp]: "emrd_rel ks cs [] []"
-  by (simp add: emrd_rel_def)
-
-lemma emrd_rel_Cons[simp]:
-  "emrd_rel ks cs ((t, X) # aux) ((t', X') # daux) \<longleftrightarrow> t = t' \<and>
-     (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)) \<and>
-     emrd_rel ks cs aux daux"
-  by (simp add: emrd_rel_def)
-
 lemma emrd_rel_length: "emrd_rel ks cs aux daux \<Longrightarrow> length aux = length daux"
   by (simp add: emrd_rel_def list_all2_lengthD)
 
@@ -1474,16 +1459,6 @@ proof -
 qed
 
 end
-
-lemma emld_rel_Nil[simp]: "emld_rel ks cs \<psi>s css [] []"
-  by (simp add: emld_rel_def)
-
-lemma emld_rel_Cons[simp]:
-  "emld_rel ks cs \<psi>s css ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
-     list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
-     drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel \<and>
-     emld_rel ks cs \<psi>s css aux daux"
-  by (simp add: emld_rel_def)
 
 lemma emld_rel_induct[consumes 1, case_names Nil Cons]:
   assumes "emld_rel ks cs \<psi>s css aux daux"

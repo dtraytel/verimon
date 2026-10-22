@@ -62,6 +62,9 @@ lemma inj_on_restrict:
   "eframe ks cs \<Longrightarrow> inj_on (restrict cs ks) {x. wf_tuple ks x}"
   by (rule inj_onI) (metis mem_Collect_eq restrict_inv)
 
+lemma etabc_empty[simp]: "etabc ks cs {} = {}"
+  by (simp add: etabc_def)
+
 subsection \<open>Merging two column lists\<close>
 
 datatype mrg = MLft | MRgt | MBth
@@ -553,6 +556,18 @@ text \<open>
 definition eargs :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> args" where
   "eargs cs_R cs_L args = init_args (args_ivl args) (length cs_R) cs_L cs_R (args_pos args) None"
 
+lemma eargs_simps[simp]:
+  "args_ivl (eargs cs_R cs_L args) = args_ivl args"
+  "args_n (eargs cs_R cs_L args) = length cs_R"
+  "args_L (eargs cs_R cs_L args) = cs_L"
+  "args_R (eargs cs_R cs_L args) = cs_R"
+  "args_pos (eargs cs_R cs_L args) = args_pos args"
+  "args_agg (eargs cs_R cs_L args) = None"
+  by (simp_all add: eargs_def init_args_def)
+
+lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_args_agg args X = X"
+  by (simp add: eval_args_agg_def)
+
 subsection \<open>The Since structure's auxiliary list\<close>
 
 definition eauxlist :: "cols \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set) list" where
@@ -564,6 +579,12 @@ definition eauxlist3 :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow
     (ts \<times> 'b list set \<times> 'b list set) list" where
   "eauxlist3 kL cL kR cR aux = map (\<lambda>(t, a1, a2). (t, etabc kL cL a1, etabc kR cR a2)) aux"
 
+lemma length_map2_map[simp]: "length hs = length buf \<Longrightarrow> length (map2 map hs buf) = length buf"
+  by simp
+
+lemma etabc_empty_table[simp]: "etabc ks cs empty_table = empty_table"
+  by (simp add: empty_table_def)
+
 section \<open>The multi-way join the monitor runs\<close>
 
 text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for
@@ -573,6 +594,9 @@ definition gmulti_join :: "ejoin_plan list \<Rightarrow> ejoin_plan list \<Right
     'b list set" where
   "gmulti_join ps ns us = (case us of [] \<Rightarrow> {}
      | t # r \<Rightarrow> gands_neg ns (gands_pos ps t (take (length ps) r)) (drop (length ps) r))"
+
+lemma length_eands_plans[simp]: "length (eands_plans acc css) = length css"
+  by (induct css arbitrary: acc) auto
 
 section \<open>Comparisons on short tuples\<close>
 
@@ -610,6 +634,9 @@ text \<open>
 
 definition mtrm_ecols :: "mtrm \<Rightarrow> cols" where
   "mtrm_ecols mt = (case mt of MVar v \<Rightarrow> [v] | MConst c \<Rightarrow> [])"
+
+lemma length_eauxlist3[simp]: "length (eauxlist3 kL cL kR cR auxlist) = length auxlist"
+  by (simp add: eauxlist3_def)
 
 section \<open>An index for the executable semi-join\<close>
 

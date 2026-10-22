@@ -212,5 +212,11 @@ fun rua :: "uuwagg \<Rightarrow> uwagg" where
 
 declare rua.simps[simp del]
 
+lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
+  by (cases a) (simp add: rua.simps)
+
+lemma snd_rua[simp]: "snd (rua a) = snd a"
+  by (cases a) (simp add: rua.simps)
+
 end
 (*>*)

@@ -6,24 +6,6 @@ begin
 
 
 
-lemma Rep_mbuf_t_map[simp]: "Rep_mbuf_t (mbuf_t_map f b) = map f (Rep_mbuf_t b)"
-  by transfer simp
-
-lemma mbuf_t_map_comp[simp]: "mbuf_t_map f (mbuf_t_map g b) = mbuf_t_map (f \<circ> g) b"
-  by transfer simp
-
-lemma mbuf_t_map_id[simp]: "mbuf_t_map (\<lambda>x. x) b = b" "mbuf_t_map id b = b"
-  by (transfer, simp)+
-
-lemma ib2_eb2[simp]: "ib2 (eb2 b) = b"
-  by (cases b) (simp add: ib2_def eb2_def comp_def)
-
-lemma ibn_ebn[simp]: "ibn (ebn b) = b"
-  by (simp add: ibn_def ebn_def comp_def map_idI)
-
-lemma length_eands_req[simp]: "length (eands_req ps n) = n"
-  by (cases ps) (simp_all add: eands_req_def)
-
 lemma iset_igands_pos: "iset (igands_pos ps t us) = gands_pos ps (iset t) (map iset us)"
   by (induct ps t us rule: igands_pos.induct) (simp_all add: ijoin_eq)
 
@@ -53,20 +35,8 @@ proof (induct ix rq \<phi> rule: eemb.induct)
   then show ?case by simp
 qed (auto simp: comp_def intro!: map_idI)
 
-lemma mbuf_t_map_append[simp]: "mbuf_t_map f (b @@ xs) = mbuf_t_map f b @@ map f xs"
-  by transfer simp
-
-lemma mbuf_t_map_Cons[simp]: "mbuf_t_map f (mbuf_t_Cons x b) = mbuf_t_Cons (f x) (mbuf_t_map f b)"
-  by transfer simp
-
-lemma mbuf_t_map_empty[simp]: "mbuf_t_map f mbuf_t_empty = mbuf_t_empty"
-  by transfer simp
-
 lemma mbuf_t_cases_map: "mbuf_t_cases (mbuf_t_map f b) = map_prod (map_option f) (mbuf_t_map f) (mbuf_t_cases b)"
   by transfer (auto split: list.splits)
-
-lemma mbuf_t_is_empty_map[simp]: "mbuf_t_is_empty (mbuf_t_map f b) = mbuf_t_is_empty b"
-  by transfer simp
 
 lemma imebufn_take_ibn:
   "imebufn_take g z buf = (z', buf') \<Longrightarrow> (\<forall>xs z. g xs z = f (map iset xs) z) \<Longrightarrow>
@@ -114,9 +84,6 @@ lemma ibn_add: "ibn (List.map2 (@@) dbuf xss) = mebufn_add (map (map iset) xss) 
   unfolding ibn_def mebufn_add.simps
   by (induct dbuf xss rule: list_induct2') simp_all
 
-lemma ib2_add[simp]: "ib2 (mebuf2_add xs ys b) = mebuf2_add (map iset xs) (map iset ys) (ib2 b)"
-  by (cases b) (simp add: ib2_def)
-
 lemma mebuf2_take_ib2:
   "mebuf2_take g b = (zs, b') \<Longrightarrow> (\<forall>x y. iset (g x y) = f (iset x) (iset y)) \<Longrightarrow>
    mebuf2_take f (ib2 b) = (map iset zs, ib2 b')"
@@ -142,12 +109,6 @@ proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
   qed
 qed
 
-
-lemma map_eabs[simp]: "map eabs (map snd R) = map (eabs \<circ> snd) R"
-  by simp
-
-lemma map_iset_itab[simp]: "map (iset \<circ> itab) X = X" "map (\<lambda>x. iset (itab x)) X = X"
-  by (simp_all add: map_idI)
 
 lemma map_eeval_eabs:
   assumes "\<And>x xs \<phi>'. x \<in> set Ld \<Longrightarrow> ieval [] j ts db x = (xs, \<phi>') \<Longrightarrow>

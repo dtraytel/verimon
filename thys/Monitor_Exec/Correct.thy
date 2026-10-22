@@ -78,6 +78,9 @@ definition emonitor :: "emstate \<Rightarrow> Formula.prefix \<Rightarrow> (nat 
 definition eindex :: "ipolicy \<Rightarrow> emstate \<Rightarrow> emstate" where
   "eindex ix st = st\<lparr>emstate_m := eemb ix [] (eabs (emstate_m st))\<rparr>"
 
+lemma eabs_eindex[simp]: "eabs (emstate_m (eindex ix st)) = eabs (emstate_m st)"
+  by (simp add: eindex_def)
+
 context verimon_spec
 begin
 

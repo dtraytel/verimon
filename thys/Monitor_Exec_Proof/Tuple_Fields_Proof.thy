@@ -12,11 +12,5 @@ lemma umatch_match: "umatch tms xs = match tms xs"
 lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
   by (force simp: Option.these_def image_iff)
 
-lemma uagg_values:
-  "uagg_values f G = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. umeval_trm f x = v) G))) ` umeval_trm f ` G"
-  unfolding uagg_values_def Let_def keys_cluster
-  by (intro image_cong[OF refl]) (simp add: lookup_cluster_Some)
-
-(*<*)
 end
 (*>*)

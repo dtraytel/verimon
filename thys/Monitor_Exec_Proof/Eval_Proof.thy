@@ -30,9 +30,6 @@ text \<open>
   @{theory MFODL_Monitor_Exec.Frame} theorems ask for comes from the call (@{const kgood}).
 \<close>
 
-lemma esres_Nil[simp]: "esres ks cs args [] []"
-  unfolding esres_def by (intro exI[of _ "[]"]) simp
-
 lemma esres_none:
   assumes "args_agg args = None" and "esres ks cs args zs dzs"
   shows "dzs = map (etabc ks cs) zs"
@@ -40,9 +37,6 @@ lemma esres_none:
 
 lemma esresh_id: "esresh ks cs args id zs dzs \<longleftrightarrow> esres ks cs args zs dzs"
   unfolding esresh_def esres_def by simp
-
-lemma esresh_Nil[simp]: "esresh ks cs args h [] []"
-  unfolding esresh_def by (intro exI[of _ "[]"]) simp
 
 lemma esresh_Cons:
   assumes w: "table ks w" and r: "esresh ks cs args h zs dzs"

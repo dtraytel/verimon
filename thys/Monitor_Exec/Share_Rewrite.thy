@@ -80,5 +80,14 @@ text \<open>As for the frozen predicates, the rewrite is applied only when its r
 definition share_opt :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "share_opt \<phi> = (let \<phi>' = share_rw \<phi> in if mmonitorable_exec \<phi>' then \<phi>' else \<phi>)"
 
+lemma fvi_share_opt[simp]: "Formula.fvi b (share_opt \<phi>) = Formula.fvi b \<phi>"
+  by (simp add: share_opt_def Let_def)
+
+lemma nfv_share_opt[simp]: "Formula.nfv (share_opt \<phi>) = Formula.nfv \<phi>"
+  by (simp add: share_opt_def Let_def)
+
+lemma sat_share_opt[simp]: "Formula.sat \<sigma> V v i (share_opt \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (simp add: share_opt_def Let_def)
+
 end
 (*>*)

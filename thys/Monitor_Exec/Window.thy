@@ -125,6 +125,9 @@ text \<open>The tables of a list at one timestamp.\<close>
 definition tbls_at :: "ts \<Rightarrow> (ts \<times> event_data table) list \<Rightarrow> event_data table" where
   "tbls_at u es = \<Union> {rel. (u, rel) \<in> set es}"
 
+lemma tbls_at_Nil[simp]: "tbls_at u [] = {}"
+  by (simp add: tbls_at_def)
+
 subsection \<open>The Since structure for a closed left operand\<close>
 
 text \<open>
@@ -327,6 +330,9 @@ fun uw_abs :: "args \<Rightarrow> uw_entry list \<Rightarrow> event_data muaux" 
   "uw_abs args [] = []"
 | "uw_abs args ((t, R, b) # es) =
      (t, uw_a1 args (b # map (snd \<circ> snd) es), uw_a2 (args_ivl args) t ((t, R, b) # es)) # uw_abs args es"
+
+lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
+  by (induct es rule: uw_abs.induct) simp_all
 
 text \<open>The abstract list of the expired entries is what the kernel's evaluation pops.\<close>
 

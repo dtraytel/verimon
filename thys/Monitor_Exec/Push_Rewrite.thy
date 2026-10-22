@@ -98,6 +98,33 @@ fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 
 declare push_ex.simps(4)[simp del]
 
+lemma fvi_ex_into[simp]: "Formula.fvi b (ex_into t \<phi>) = Formula.fvi (Suc b) \<phi>"
+  by (induct t \<phi> arbitrary: b rule: ex_into.induct) auto
+
+lemma nfv_push_ex[simp]: "Formula.nfv (push_ex \<phi>) = Formula.nfv \<phi>"
+  by (simp add: Formula.nfv_def)
+
+lemma sat_ex_into[simp]:
+  "Formula.sat \<sigma> V v i (ex_into t \<phi>) = (\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>)"
+  by (induct t \<phi> arbitrary: v i rule: ex_into.induct) auto
+
+lemma safe_ex_into[simp]: "safe_formula (ex_into t \<phi>) = (safe_formula \<phi> \<and> 0 \<in> Formula.fv \<phi>)"
+  by (induct t \<phi> rule: ex_into.induct) auto
+
+lemma future_bounded_ex_into[simp]:
+  "Safety.future_bounded (ex_into t \<phi>) = Safety.future_bounded \<phi>"
+  by (induct t \<phi> rule: ex_into.induct) auto
+
+lemma mmonitorable_push_ex[simp]: "mmonitorable (push_ex \<phi>) = mmonitorable \<phi>"
+  by (simp add: mmonitorable_def)
+
+lemma matches_ex_into[simp]:
+  "Safety.matches v (ex_into t \<phi>) e = (\<exists>z. Safety.matches (z # v) \<phi> e)"
+  by (induct t \<phi> arbitrary: v rule: ex_into.induct) (auto simp: Formula.TT_def)
+
+lemma progress_ex_into[simp]: "progress \<sigma> P (ex_into t \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct t \<phi> arbitrary: P rule: ex_into.induct) (simp_all add: Formula.TT_def)
+
 subsection \<open>The rewritten formula\<close>
 
 text \<open>
@@ -114,6 +141,15 @@ text \<open>
 
 definition eprep :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "eprep \<phi> = share_opt (push_ex (frz_opt \<phi>))"
+
+lemma fvi_eprep[simp]: "Formula.fvi b (eprep \<phi>) = Formula.fvi b \<phi>"
+  by (simp add: eprep_def)
+
+lemma nfv_eprep[simp]: "Formula.nfv (eprep \<phi>) = Formula.nfv \<phi>"
+  by (simp add: eprep_def)
+
+lemma sat_eprep[simp]: "Formula.sat \<sigma> V v i (eprep \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (simp add: eprep_def)
 
 context verimon_spec
 begin

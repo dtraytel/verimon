@@ -51,6 +51,9 @@ text \<open>
 definition gnth :: "'b list set list \<Rightarrow> nat \<Rightarrow> 'b list set" where
   "gnth xs i = (if i < length xs then xs ! i else {})"
 
+lemma gnth_nth[simp]: "i < length xs \<Longrightarrow> gnth xs i = xs ! i"
+  by (simp add: gnth_def)
+
 definition glookup :: "(mregex, 'b list set) mapping \<Rightarrow> mregex \<Rightarrow> 'b list set" where
   "glookup = Mapping.lookup_default {}"
 

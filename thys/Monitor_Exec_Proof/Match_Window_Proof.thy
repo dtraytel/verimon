@@ -6,9 +6,6 @@ begin
 
 
 
-lemma gnth_nth[simp]: "i < length xs \<Longrightarrow> gnth xs i = xs ! i"
-  by (simp add: gnth_def)
-
 lemma mrg_left_key_map:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
      mrg_left_key (mrg_plan cs1 cs2) = map (\<lambda>c. c \<in> set cs2) cs1"

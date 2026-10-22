@@ -11,15 +11,6 @@ lemma efail_nodes_eset_q: "eset_q c d = Some d' \<Longrightarrow> efail_nodes d'
 
 text \<open>The structures the compiler starts the nodes with, read through their representations.\<close>
 
-lemma Rep_mbuf_t_empty[simp]: "Rep_mbuf_t mbuf_t_empty = []"
-  by (rule mbuf_t_empty.rep_eq)
-
-lemma Rep_mbuf_t_empty_append[simp]: "Rep_mbuf_t (mbuf_t_empty @@ xs) = xs"
-  by (simp add: mbuf_t_append.rep_eq)
-
-lemma rbufS_init[simp]: "rbufS init_mebuf2S = init_mbuf2S"
-  by simp
-
 lemma rdsx_udsx_init[simp]: "rdsx (udsx_init args msk) = esx_init args msk"
   by (rule esx_init_rdsx[symmetric])
 

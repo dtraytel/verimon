@@ -24,9 +24,6 @@ lemma icnt_abs_add: "icnt_abs (icnt_add T cc) = cnt_add T (icnt_abs cc)"
 lemma icnt_abs_del: "icnt_abs (icnt_del T cc) = cnt_del T (icnt_abs cc)"
   by (simp add: icnt_del_def cnt_del_def icnt_abs_fold_del1)
 
-lemma isw_abs_emb[simp]: "isw_abs (isw_emb aux) = aux"
-  by (simp add: isw_abs_def isw_emb_def icnt_abs_def split: prod.splits)
-
 lemma isw_move_abs:
   "isw_move args nt pend win cc = (pend', win', cc') \<Longrightarrow>
      sw_move args nt pend win (icnt_abs cc) = (pend', win', icnt_abs cc')"
@@ -69,9 +66,6 @@ lemma isw_abs_add_new_table:
 
 lemma iset_isw_result: "iset (isw_result aux) = sw_result args (isw_abs aux)"
   by (simp add: isw_abs_def isw_result_def sw_result_def icnt_abs_def split: prod.splits)
-
-lemma isw_abs_ensure[simp]: "isw_abs (isw_ensure msks aux) = isw_abs aux"
-  by (simp add: isw_abs_def isw_ensure_def icnt_abs_def split: prod.splits)
 
 lemma ims_abs_emb[simp]: "ims_abs (ims_emb a) = a"
   by (cases a rule: emsaux_cases) simp
@@ -119,13 +113,6 @@ lemma iset_ieresult: "iset (ieresult_msaux a) = eresult_msaux args (ims_abs a)"
 lemma ims_abs_ensure[simp]: "ims_abs (iems_ensure msks a) = ims_abs a"
   by (cases a rule: iemsaux_cases) simp
 
-lemma iuw_abs_tuple[simp]:
-  "iuw_abs (nts, win, rest, len, bend, cc, dn) = (nts, win, rest, len, bend, icnt_abs cc, map iset dn)"
-  by (simp add: iuw_abs_def)
-
-lemma iuw_abs_emb[simp]: "iuw_abs (iuw_emb a) = a"
-  by (simp add: iuw_abs_def iuw_emb_def icnt_abs_def comp_def split: prod.splits)
-
 lemma iuw_extend_abs:
   "uw_extend args ts0 win rest bend (icnt_abs cc) =
      (case iuw_extend args ts0 win rest bend cc of (w, r, b, c) \<Rightarrow> (w, r, b, icnt_abs c))"
@@ -135,9 +122,6 @@ proof (induct args ts0 win rest bend cc rule: iuw_extend.induct)
     by (subst uw_extend.simps, subst iuw_extend.simps)
       (use 1 in \<open>auto simp: icnt_abs_add split: prod.splits option.splits\<close>)
 qed
-
-lemma snd_icnt_abs[simp]: "snd (icnt_abs cc) = iset (snd cc)"
-  by (simp add: icnt_abs_def)
 
 lemma iuw_abs_step: "iuw_abs (iuw_step args ts0 aux) = uw_step args ts0 (iuw_abs aux)"
 proof -
@@ -189,12 +173,6 @@ lemma iuw_eval_abs: "iuw_eval args nt aux = (zs, aux') \<Longrightarrow>
   using iuw_abs_shift[of args nt aux]
   by (auto simp: iuw_eval_def uw_eval_def iuw_abs_def rev_map split: prod.splits)
 
-lemma iuw_abs_ensure[simp]: "iuw_abs (iuw_ensure msks aux) = iuw_abs aux"
-  by (simp add: iuw_abs_def iuw_ensure_def icnt_abs_def split: prod.splits)
-
-lemma riu_iudsx_emb[simp]: "riu (iudsx_emb msks d) = d"
-  by (cases d) (simp_all add: iudsx_emb_def)
-
 lemma riu_add_new_ts[simp]: "riu (iudsx_add_new_ts args nt d) = udsx_add_new_ts args nt (riu d)"
   by (cases d) (simp_all add: isw_abs_add_new_ts ims_abs_add_new_ts)
 
@@ -207,12 +185,6 @@ lemma riu_add_new_table[simp]: "riu (iudsx_add_new_table args X d) = udsx_add_ne
 lemma iset_iudsx_result[simp]: "iset (iudsx_result args d) = udsx_result args (riu d)"
   by (cases d) (simp_all add: iset_isw_result iset_ieresult)
 
-lemma riu_ensure[simp]: "riu (iudsx_ensure msks d) = riu d"
-  by (induct msks d rule: iudsx_ensure.induct) simp_all
-
-lemma riud_iudux_emb[simp]: "riud (iudux_emb msks d) = d"
-  by (cases d) (simp_all add: iudux_emb_def)
-
 lemma riud_add_new: "udux_add_new args msk rel1 rel2 nt (riud d) = riud (iudux_add_new args msk rel1 rel2 nt d)"
   by (cases d) (simp_all add: iuw_abs_add_new)
 
@@ -223,9 +195,6 @@ proof (cases d)
   then show ?thesis
     using iuw_eval_abs[of args nt w] by (cases "iuw_eval args nt w") simp
 qed (simp add: comp_def split: prod.splits)
-
-lemma riud_ensure[simp]: "riud (iudux_ensure msks d) = riud d"
-  by (induct msks d rule: iudux_ensure.induct) simp_all
 
 lemma iuedsx_eval_since_abs:
   "uedsx_eval_since args (map iset rs) buf (riu aux) =

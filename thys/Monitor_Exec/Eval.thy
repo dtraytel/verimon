@@ -387,6 +387,9 @@ definition esres :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ev
   where "esres ks cs args zs dzs \<longleftrightarrow> (\<exists>ws. list_all (table ks) ws \<and>
      zs = map (eval_args_agg args) ws \<and> dzs = map (etabc ks cs) ws)"
 
+lemma esres_Nil[simp]: "esres ks cs args [] []"
+  unfolding esres_def by (intro exI[of _ "[]"]) simp
+
 text \<open>The window a firing reports is a union of the auxiliary list's tables, so it is a table over
   the node's columns; the kernel's structure reports its aggregation and the executable one reports its
   reordering -- or, for the window with the aggregate fused in, the executable aggregation of its
@@ -397,6 +400,9 @@ definition esresh :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> (
     event_data table list \<Rightarrow> event_data table list \<Rightarrow> bool"
   where "esresh ks cs args h zs dzs \<longleftrightarrow> (\<exists>ws. list_all (table ks) ws \<and>
      zs = map (eval_args_agg args) ws \<and> dzs = map (h \<circ> etabc ks cs) ws)"
+
+lemma esresh_Nil[simp]: "esresh ks cs args h [] []"
+  unfolding esresh_def by (intro exI[of _ "[]"]) simp
 
 subsection \<open>The Since structure at the ascending frame, and its buffer\<close>
 

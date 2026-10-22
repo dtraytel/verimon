@@ -19,18 +19,9 @@ lemma uc_set_gcache: "cachedp (snd (uc_key x)) \<Longrightarrow> uc_ax x = Some 
     uc_set x = gcache (fst (uc_key x)) (snd (uc_key x)) a"
   by transfer auto
 
-lemma uc_mk[simp]: "uc_cnt (uc_mk q p c ax) = c" "uc_ax (uc_mk q p c ax) = ax"
-  by (transfer; simp add: urmk)+
-
 lemma cstep_fst: "fst (cstep S q p t axC) = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
     (case fst axC of None \<Rightarrow> None | Some a \<Rightarrow> S k (umeval_trm f) t (Some a)))"
   by (auto simp: cstep_def split: prod.splits option.splits)
-
-lemma gstep_ins_None[simp]: "gstep_ins k ev t None = None"
-  by (simp add: gstep_ins_def)
-
-lemma gstep_del_None[simp]: "gstep_del k ev t None = None"
-  by (simp add: gstep_del_def)
 
 lemma cstep_ins_fst: "fst (cstep gstep_ins q p t axC) =
     (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> gstep_ins k (umeval_trm f) t (fst axC))"

@@ -22,9 +22,6 @@ lemma table_etabc: "table cs (etabc ks cs T)"
 lemma etabw_dtabc: "eframe ks cs \<Longrightarrow> table ks T \<Longrightarrow> etabw ks cs (etabc ks cs T) = T"
   by (force simp: etabw_def etabc_def table_def restrict_inv image_image)
 
-lemma etabc_empty[simp]: "etabc ks cs {} = {}"
-  by (simp add: etabc_def)
-
 lemma etabc_empty_iff: "(etabc ks cs T = {}) = (T = {})"
   by (auto simp: etabc_def)
 
@@ -858,18 +855,6 @@ proof -
   qed
 qed
 
-lemma eargs_simps[simp]:
-  "args_ivl (eargs cs_R cs_L args) = args_ivl args"
-  "args_n (eargs cs_R cs_L args) = length cs_R"
-  "args_L (eargs cs_R cs_L args) = cs_L"
-  "args_R (eargs cs_R cs_L args) = cs_R"
-  "args_pos (eargs cs_R cs_L args) = args_pos args"
-  "args_agg (eargs cs_R cs_L args) = None"
-  by (simp_all add: eargs_def init_args_def)
-
-lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_args_agg args X = X"
-  by (simp add: eval_args_agg_def)
-
 text \<open>A join whose right operand's columns are among the left one's keeps the left one's columns;
   it commutes with the reordering.\<close>
 
@@ -1119,9 +1104,6 @@ text \<open>
   fixed sets @{term Ss}, one per slot, because the tables the operands produce have to be well
   formed for the multi-way join theorem to apply and the buffer only ever shrinks.
 \<close>
-
-lemma length_map2_map[simp]: "length hs = length buf \<Longrightarrow> length (map2 map hs buf) = length buf"
-  by simp
 
 lemma map2_map_empty_iff:
   "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
@@ -1376,12 +1358,6 @@ lemma etabc_unit_table: "etabc [] [] unit_table = unit_table"
 text \<open>Hence a negation node, whose operand has no columns at all, only has to look at
   emptiness -- which the reordering preserves in both directions.\<close>
 
-lemma etabc_empty_table[simp]: "etabc ks cs empty_table = empty_table"
-  by (simp add: empty_table_def)
-
-lemma length_eands_plans[simp]: "length (eands_plans acc css) = length css"
-  by (induct css arbitrary: acc) auto
-
 lemma map2_append:
   "length as = length xs \<Longrightarrow> map2 f (as @ bs) (xs @ ys) = map2 f as xs @ map2 f bs ys"
   by simp
@@ -1551,9 +1527,6 @@ lemma nth_eauxlist3:
   "i < length auxlist \<Longrightarrow> eauxlist3 kL cL kR cR auxlist ! i =
      (fst (auxlist ! i), etabc kL cL (fst (snd (auxlist ! i))), etabc kR cR (snd (snd (auxlist ! i))))"
   by (simp add: eauxlist3_def case_prod_beta)
-
-lemma length_eauxlist3[simp]: "length (eauxlist3 kL cL kR cR auxlist) = length auxlist"
-  by (simp add: eauxlist3_def)
 
 theorem etabc_trigger_results:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"

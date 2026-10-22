@@ -828,6 +828,9 @@ lift_definition uc_mk :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> ucnt 
   "\<lambda>q p c ax. ((q, p), urmk p c ax, cset q p ax)"
   by (simp add: cset_def urmk)
 
+lemma uc_mk[simp]: "uc_cnt (uc_mk q p c ax) = c" "uc_ax (uc_mk q p c ax) = ax"
+  by (transfer; simp add: urmk)+
+
 text \<open>A tuple's step, on the aggregate and its result together: the result changes only at the
   tuple's group, from the group's value before the step to its value after.\<close>
 
@@ -869,6 +872,12 @@ proof -
     qed
   qed
 qed
+
+lemma gstep_ins_None[simp]: "gstep_ins k ev t None = None"
+  by (simp add: gstep_ins_def)
+
+lemma gstep_del_None[simp]: "gstep_del k ev t None = None"
+  by (simp add: gstep_del_def)
 
 lemma cstep_ins_cinv: "cinv q p axC \<Longrightarrow> cinv q p (cstep gstep_ins q p t axC)"
   by (rule cstep_cinv) (auto intro: gval_gstep_ins)

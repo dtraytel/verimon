@@ -722,6 +722,9 @@ definition uag_del :: "eaggp \<Rightarrow> nat \<Rightarrow> event_data list set
   "uag_del p w T c ax = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
      gdel k (umeval_trm f) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl T)) ax)"
 
+lemma ag_del_ucc[simp]: "ag_del p w T (ucc c) ax = uag_del p w T c ax"
+  by (cases p) (simp add: ag_del_def uag_del_def ucc.simps)
+
 subsection \<open>The node's guard\<close>
 
 text \<open>
@@ -741,6 +744,15 @@ definition uqok :: "uconstr option \<Rightarrow> event_data list \<Rightarrow> b
 
 definition ufilt :: "uconstr option \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
   "ufilt q X = Set.filter (uqok q) X"
+
+lemma uqok_None[simp]: "uqok None = (\<lambda>_. True)"
+  by (simp add: uqok_def)
+
+lemma ufilt_None[simp]: "ufilt None = id"
+  by (simp add: ufilt_def fun_eq_iff)
+
+lemma ufilt_idem[simp]: "ufilt q (ufilt q X) = ufilt q X"
+  by (auto simp: ufilt_def)
 
 text \<open>The result writes the aggregate into each group and keeps what passes the node's guard.
   The fused form walks the mapping's entries -- the key and its value together, so no lookup --

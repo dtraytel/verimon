@@ -176,10 +176,21 @@ proof (induct xs arbitrary: m)
   qed
 qed simp
 
+lemma gins_None[simp]: "gins k ev xs None = None"
+  by (induct xs) (simp_all add: gins_def gstep_ins_def)
+
+lemma gdel_None[simp]: "gdel k ev xs None = None"
+  by (induct xs) (simp_all add: gdel_def gstep_del_def)
+
 fun gkeys :: "'b gagg \<Rightarrow> 'b list set" where
   "gkeys (GCnt m) = Mapping.keys m"
 | "gkeys (GSum m) = Mapping.keys m"
 | "gkeys (GRank m ty) = Mapping.keys m"
 
+lemma fold_gstep_None[simp]:
+  "fold (gstep_ins k ev) xs None = None" "fold (gstep_del k ev) xs None = None"
+  using gins_None gdel_None by (simp_all add: gins_def gdel_def)
+
+(*<*)
 end
 (*>*)

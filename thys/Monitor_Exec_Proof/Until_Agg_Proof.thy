@@ -312,12 +312,6 @@ qed
 lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
   by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)
 
-lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
-  by (cases a) (simp add: rua.simps)
-
-lemma snd_rua[simp]: "snd (rua a) = snd a"
-  by (cases a) (simp add: rua.simps)
-
 lemma ua_extend_rua:
   "ua_extend args p w ts0 win rest bend (ucc cc) ax
    = (case uua_extend args p w ts0 win rest bend cc ax of

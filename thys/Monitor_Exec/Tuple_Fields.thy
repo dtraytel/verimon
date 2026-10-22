@@ -116,5 +116,11 @@ definition uagg :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.t
               | Some G \<Rightarrow> take pos g @ eval_agg_op \<omega> (uagg_values f G) # drop pos g)
           ` Mapping.keys groups))"
 
+lemma uagg_values:
+  "uagg_values f G = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. umeval_trm f x = v) G))) ` umeval_trm f ` G"
+  unfolding uagg_values_def Let_def keys_cluster
+  by (intro image_cong[OF refl]) (simp add: lookup_cluster_Some)
+
+(*<*)
 end
 (*>*)

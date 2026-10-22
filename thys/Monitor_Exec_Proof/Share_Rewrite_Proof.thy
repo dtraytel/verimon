@@ -319,15 +319,6 @@ next
     using 7(1) wty_formula_AndsD[OF 7(2)] by (auto intro!: wty_formula.Ands)
 qed (erule wty_formula.cases; auto intro: wty_formula.intros)+
 
-lemma fvi_share_opt[simp]: "Formula.fvi b (share_opt \<phi>) = Formula.fvi b \<phi>"
-  by (simp add: share_opt_def Let_def)
-
-lemma nfv_share_opt[simp]: "Formula.nfv (share_opt \<phi>) = Formula.nfv \<phi>"
-  by (simp add: share_opt_def Let_def)
-
-lemma sat_share_opt[simp]: "Formula.sat \<sigma> V v i (share_opt \<phi>) = Formula.sat \<sigma> V v i \<phi>"
-  by (simp add: share_opt_def Let_def)
-
 lemma progress_share_opt_empty[simp]:
   "progress \<sigma> Map.empty (share_opt \<phi>) j = progress \<sigma> Map.empty \<phi> j"
   by (simp add: share_opt_def Let_def progress_share_rw)

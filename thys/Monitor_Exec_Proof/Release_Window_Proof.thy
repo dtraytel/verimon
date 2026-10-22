@@ -55,9 +55,6 @@ lemma snd_eout: "snd (eout x) = eunion x"
 lemma erel_init: "erel I eraux_init []"
   by (auto simp: erel_def erel'_def eraux_init_def sw_rel_empty intro!: exI[of _ "[]"])
 
-lemma fst_eraux_update[simp]: "fst (eraux_update args msk l r nt aux) = nt"
-  by (simp add: eraux_update_def Let_def split: prod.splits)
-
 lemma takeWhile_zip_fst: "length xs = length ys \<Longrightarrow>
     takeWhile (\<lambda>x. P (fst x)) (zip xs ys) = take (length (takeWhile P xs)) (zip xs ys)"
   by (induct xs arbitrary: ys) (auto simp: Suc_length_conv)
@@ -235,9 +232,6 @@ proof -
   ultimately show ?thesis
     by (simp add: eval_until_takeWhile ys aux' o erel_def split_beta)
 qed
-
-lemma length_eupdate_release[simp]: "length (eupdate_release args msk l r nt L) = Suc (length L)"
-  by (simp add: eupdate_release_def)
 
 lemma erel_update:
   fixes L :: "(ts \<times> 'b list set \<times> 'b list set) list"

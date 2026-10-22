@@ -218,6 +218,15 @@ termination eof
   by (relation "measure (\<lambda>(n, ks, cs, \<phi>). size \<phi>)")
     (auto simp: termination_simp dest!: set_zip_rightD)
 
+lemma Rep_mbuf_t_empty[simp]: "Rep_mbuf_t mbuf_t_empty = []"
+  by (rule mbuf_t_empty.rep_eq)
+
+lemma Rep_mbuf_t_empty_append[simp]: "Rep_mbuf_t (mbuf_t_empty @@ xs) = xs"
+  by (simp add: mbuf_t_append.rep_eq)
+
+lemma rbufS_init[simp]: "rbufS init_mebuf2S = init_mbuf2S"
+  by simp
+
 section \<open>The executable monitor's correctness theorem, on the compiled state\<close>
 
 text \<open>

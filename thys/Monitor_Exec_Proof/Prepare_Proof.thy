@@ -29,18 +29,6 @@ text \<open>
 
 text \<open>Changing the formula's type annotations changes none of its column lists.\<close>
 
-lemma fvi_list_map_formula[simp]:
-  "Formula.fvi_list b (Formula.formula.map_formula g \<phi>) = Formula.fvi_list b \<phi>"
-proof (induction b \<phi> rule: Formula.fvi_list.induct)
-  case (20 b I r)
-  then show ?case
-    by (induction r) auto
-next
-  case (21 b I r)
-  then show ?case
-    by (induction r) auto
-qed (auto simp: fold_map comp_def cong: fold_cong)
-
 lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
   by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def wty_share_opt
     mmonitorable_share_opt)
