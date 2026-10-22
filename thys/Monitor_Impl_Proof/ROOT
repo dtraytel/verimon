@@ -11,7 +11,6 @@ session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
     Optimized_Since_Proof
     Optimized_Until_Proof
     Optimized_Trigger_Proof
-    Optimized_Agg_Proof
     Optimized_Agg_Temporal_Proof
     Optimized_Until_Deque_Proof
     Monitor_Impl_Proof

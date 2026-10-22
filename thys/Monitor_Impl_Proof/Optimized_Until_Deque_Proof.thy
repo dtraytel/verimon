@@ -613,9 +613,6 @@ lemma set_concat_until_pairs_list:
     \<Union>(until_cand a1_map L R pos tp len ` set xs) \<union> (if inz then {tp} \<times> set xs else {})"
   by (cases inz) (auto simp: set_until_pairs_list)
 
-lemma ID_ccompare_etuple_dq: "ID CCOMPARE(event_data tuple) \<noteq> None"
-  by (simp add: ccompare_list_def ccompare_option_def ccompare_event_data_def ID_def split: option.splits)
-
 lemma set_csorted_list_of_set_etuple: "finite (X :: event_data table) \<Longrightarrow> set (csorted_list_of_set X) = X"
   using ID_ccompare_etuple_dq by (subst csorted_list_of_set_split) auto
 

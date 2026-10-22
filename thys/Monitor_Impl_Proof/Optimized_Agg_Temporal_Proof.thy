@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Agg_Temporal_Proof
-  imports "Monitor_Impl.Optimized_Agg_Temporal" Optimized_Since_Proof Optimized_Until_Proof Optimized_Agg_Proof
+  imports "Monitor_Impl.Optimized_Agg_Temporal" Optimized_Since_Proof Optimized_Until_Proof "Monitor_Impl.Optimized_Agg_Valid"
 begin
 (*>*)
 

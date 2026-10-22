@@ -12,6 +12,7 @@ session Monitor_Impl (AFP) = MFODL_Monitor +
     Optimized_Join
     Wf_Table
     Optimized_Agg
+    Optimized_Agg_Valid
     Optimized_Common
     Optimized_Since
     Optimized_Until

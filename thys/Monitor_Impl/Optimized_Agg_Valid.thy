@@ -1,6 +1,6 @@
 (*<*)
-theory Optimized_Agg_Proof
-  imports "Monitor_Impl.Optimized_Agg"
+theory Optimized_Agg_Valid
+  imports Optimized_Agg
 begin
 (*>*)
 
