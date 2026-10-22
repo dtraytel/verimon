@@ -18,9 +18,9 @@ introduction rule per production, with the semantic actions as values.
 | `MFODL_Grammar` (`.`) | `MFODL_Syntax` | The syntax tree: MonPoly's `MFOTL.formula` with named variables |
 | | `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
 | `MFODL_Parser` (`Parser`) | `MFODL_Lexer` | An executable model of MonPoly's `src/formula_lexer.mll` (not verified) |
-| | `MFODL_Post` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
+| | `Surface_Postprocessing` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
 | | `MFODL_Parser` | The parser `mfodl_parse`, its correctness, and `parse_formula` = lexer + parser + post-processing |
-| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Lexer_Code` | Code equations for the lexer |
+| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Efficient_Lexer` | Code equations for the lexer |
 | | `MFODL_Parser_Code` | Examples checked by evaluation |
 
 The sessions are separate because the `grammar` and `parser` commands are slow

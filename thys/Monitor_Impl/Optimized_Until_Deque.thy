@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Until_Deque
-  imports Optimized_Agg_Temporal "Monitor_DS.Deque"
+  imports Optimized_Agg_Temporal "Monitor_Data_Structures.Deque"
 begin
 (*>*)
 
@@ -12,7 +12,7 @@ text \<open>
   @{text tstp_map} (the time stamp of every time point). Their keys always form the contiguous
   ranges @{term "{tp - len..tp}"} and @{term "{tp - len..<tp}"}: entries are removed at the
   smallest key and added at the largest one. We replace both by the deques of
-  @{theory Monitor_DS.Deque} (two lists with cached lengths) with constant-time access at both
+  @{theory Monitor_Data_Structures.Deque} (two lists with cached lengths) with constant-time access at both
   ends, and connect the resulting structure to the original one by a simulation relation, so that
   the existing invariant proofs are reused.
 \<close>

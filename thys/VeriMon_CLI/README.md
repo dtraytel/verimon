@@ -7,7 +7,7 @@ command line:
 - the formula file is parsed by the verified parser (session `MFODL_Parser`);
 - the signature file is read by a verified reader (theory `Signature`);
 - the parsed formula is converted into the monitor's formula as MonPoly's front
-  end does (theory `Formula_Conv`);
+  end does (theory `Surface_Conversion`);
 - the monitor is started (`vinit`, theory `MFODL_Monitor_Exec.Log_Monitor`)
   and runs on the log in chunks (`vfeed_chunk`, `vfinish`);
 - the verdicts and messages are worded as MonPoly words them (theories
@@ -22,16 +22,16 @@ errors in the log by line and column.
 | Theory | Content |
 |---|---|
 | `Signature` | Signature files: grammar `G_sig` over the log lexer's tokens, its language `sig_lang`, the reader `read_sig` with MonPoly's messages, and `read_sig_correct` |
-| `Formula_Conv` | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax`, as MonPoly's front end applied it for VeriMon 1), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
+| `Surface_Conversion` | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax`, as MonPoly's front end applied it for VeriMon 1), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
 | `CLI_Options` | MonPoly's options and `Arg.parse`'s messages: `parse_command`, `config` |
 | `CLI_Output` | Verdicts (`show_results`), timestamps (`-unix`), MonPoly's tuple order, and the messages for errors in the log |
 | `CLI` | `cli_main` |
-| `CLI_Proof` (session `VeriMon_CLI_Proof`) | The correctness theorems `cli_run`, `verimon_correct` and `verimon_correct_online` |
-| `CLI_Code` | The code export (`src/verimon_code.ml`) |
+| `CLI_Correctness` (session `VeriMon_CLI_Proof`) | The correctness theorems `cli_run`, `verimon_correct` and `verimon_correct_online` |
+| `CLI_Export` | The code export (`src/verimon_code.ml`) |
 
 ## Correctness
 
-`CLI_Proof.verimon_correct`: if `cli_main` starts the monitor on the contents of
+`CLI_Correctness.verimon_correct`: if `cli_main` starts the monitor on the contents of
 the formula file and the signature file, then
 
 - the formula file is lexed into tokens that the grammar of MonPoly's formulas
@@ -50,7 +50,7 @@ the formula file and the signature file, then
   well-typed trace `σ` that extends `π`, where `φ'` is `φ` with the inferred
   types.
 
-`CLI_Proof.verimon_correct_online` states the same online, as the driver runs the
+`CLI_Correctness.verimon_correct_online` states the same online, as the driver runs the
 monitor. After the chunks read so far:
 
 - the outputs so far contain an error exactly when the bytes read so far
@@ -71,7 +71,7 @@ for example, whether `SUM` is an integer or a floating point sum), so the
 semantics is that of `φ'`.
 
 Not covered: the driver's printing of the verdicts (`verdict_out`), the
-location of errors in the log, what is output after the first error, and the four functions that `CLI_Code` implements in OCaml (strings of
+location of errors in the log, what is output after the first error, and the four functions that `CLI_Export` implements in OCaml (strings of
 characters as byte strings, decimal representation of integers, and the test
 whether a string is quoted).
 
@@ -89,7 +89,7 @@ Exporting the code alone needs only `isabelle build -e -d . VeriMon_CLI`.
 
 The parser's tables are large: under `Code_Target_Nat`, natural number
 literals would be exported as calls of `nat_of_integer` that ocamlopt compiles
-into code, and it fails with a stack overflow. `CLI_Code` prints them as
+into code, and it fails with a stack overflow. `CLI_Export` prints them as
 constructor applications (`natlit`), which OCaml compiles into static data.
 
 ## Performance

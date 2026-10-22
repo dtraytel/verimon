@@ -1,6 +1,6 @@
 (*<*)
 theory Since_Agg
-  imports Window Frame_Aux Agg_Gen
+  imports Closed_Left_Windows Exec_Since Exec_Agg
 begin
 (*>*)
 
@@ -378,7 +378,7 @@ text \<open>
   The kernel's structure keys a group by @{const agg_key}, which at the ascending frame is the
   tuple's suffix after the bound columns, and reads the value by the shifted term, which there
   is the term itself.  The structure @{typ "event_data gagg"} of
-  @{theory Monitor_Exec.Agg_Gen} reads both off the tuple directly, and
+  @{theory Monitor_Exec.Exec_Agg} reads both off the tuple directly, and
   @{text Rk} maps it to the kernel's.  The kernel's steps are the steps below under
   @{text Rk}, and so are the folds, the initial structure and the result.
 \<close>
@@ -584,7 +584,7 @@ qed
 subsection \<open>The window, with the aggregate\<close>
 
 text \<open>
-  The window of @{theory Monitor_Exec.Window} again, with the aggregate carried along:
+  The window of @{theory Monitor_Exec.Closed_Left_Windows} again, with the aggregate carried along:
   the two scans update it with every table that enters or leaves, the reset on a failed left
   operand starts it afresh, and the result is the aggregate's rather than the union.  The
   structure's validity is the window's, at a frame whose columns are all of the node's, together
@@ -675,7 +675,7 @@ text \<open>
 subsection \<open>The count mapping\<close>
 
 text \<open>
-  The count structure of @{theory Monitor_Exec.Window} keeps the tuples' counts in a
+  The count structure of @{theory Monitor_Exec.Closed_Left_Windows} keeps the tuples' counts in a
   mapping and their keys in a set beside it, so that the plain window can hand out its union in
   one step.  The fused window never hands out that union -- it hands out the aggregate, and reads
   the count structure only to learn which tuples enter the window and which leave it.  The

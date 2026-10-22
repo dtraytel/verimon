@@ -3,10 +3,10 @@ VeriMon_Parsers
 MFOTL_Monitor_Devel
 MFODL_Logic
 MFODL_Frontend
-Monitor_DS
+Monitor_Data_Structures
 Generic_Join_Devel
-MFODL_Monitor
-MFODL_Monitor_Proof
+Monitor_Algorithm
+Monitor_Algorithm_Proof
 Monitor_Impl
 Monitor_Impl_Proof
 Monitor_Exec

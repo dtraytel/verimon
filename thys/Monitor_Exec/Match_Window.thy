@@ -1,6 +1,6 @@
 (*<*)
 theory Match_Window
-  imports Frame_Aux Until_Gen
+  imports Exec_Since Exec_Until
 begin
 (*>*)
 

@@ -5,7 +5,7 @@ session VeriMon_CLI = Monitor_Exec +
     "The verified monitor with MonPoly's command line: the verified formula parser (session
      MFODL_Parser), the signature reader (session Log_Parser) and the conversion of the parsed
      formula (session MFODL_Frontend), and the monitor on the log (session Monitor_Exec),
-     composed with the decisions of MonPoly's front end; CLI_Code is the code export of the
+     composed with the decisions of MonPoly's front end; CLI_Export is the code export of the
      program verimon (src/verimon_code.ml). Definitions only: the end-to-end theorems are in
      session VeriMon_CLI_Proof."
   options [document = false, timeout = 0]
@@ -16,6 +16,6 @@ session VeriMon_CLI = Monitor_Exec +
     CLI_Options
     CLI_Output
     CLI
-    CLI_Code
+    CLI_Export
   export_files (in ".") [2]
-    "VeriMon_CLI.CLI_Code:code/**"
+    "VeriMon_CLI.CLI_Export:code/**"

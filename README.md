@@ -175,10 +175,10 @@ The formalization
 | `thys/MFOTL_Monitor_Devel` | `MFOTL_Monitor_Devel` | Traces, intervals, tables, event data, the abstract monitor (the logic's base) |
 | `thys/MFODL_Logic` | `MFODL_Logic` | MFODL: syntax, semantics, typing, safety and monitorability, rewriting, VeriMon's preparation, the specification of a monitor |
 | `thys/MFODL_Frontend` | `MFODL_Frontend` | From parse trees to typed formulas, independent of the parsers |
-| `thys/Monitor_DS` | `Monitor_DS` | Generic data structures: queues, deques, order-statistic trees, clusters, facts on mappings, sliding-window aggregation |
+| `thys/Monitor_Data_Structures` | `Monitor_Data_Structures` | Generic data structures: queues, deques, order-statistic trees, clusters, facts on mappings, sliding-window aggregation |
 | `thys/Generic_Join_Devel` | `Generic_Join_Devel` | Multi-way joins |
-| `thys/MFODL_Monitor` | `MFODL_Monitor` | The monitoring algorithm, in a locale over its auxiliary structures and joins |
-| `thys/MFODL_Monitor_Proof` | `MFODL_Monitor_Proof` | Progress, the algorithm's invariant and correctness |
+| `thys/Monitor_Algorithm` | `Monitor_Algorithm` | The monitoring algorithm, in a locale over its auxiliary structures and joins |
+| `thys/Monitor_Algorithm_Proof` | `Monitor_Algorithm_Proof` | Progress, the algorithm's invariant and correctness |
 | `thys/Monitor_Impl` | `Monitor_Impl` | The concrete auxiliary structures and joins and the algorithm's instance with them (definitions and code equations) |
 | `thys/Monitor_Impl_Proof` | `Monitor_Impl_Proof` | The invariants of the concrete structures; the instance meets the algorithm's assumptions |
 | `thys/Monitor_Exec` | `Monitor_Exec` | The executable monitor, the monitor on the bytes of a log, and the code-generator setup (definitions and code equations) |
@@ -204,8 +204,8 @@ checks all theories and exports the generated code, which is in the repository a
 equations only, so `isabelle build -e -d . VeriMon_CLI` exports the code without checking
 the correctness proofs. The sessions form one chain: the formula parser, `VeriMon_Parsers`,
 the code sessions from `MFOTL_Monitor_Devel` to `VeriMon_CLI`, and on top of them the proof
-sessions from `MFODL_Monitor_Proof` to `VeriMon_CLI_Proof`; the small sessions
-`MFODL_Syntax`, `Log_Parser`, `MFODL_Frontend`, `Monitor_DS` and `Generic_Join_Devel` also
+sessions from `Monitor_Algorithm_Proof` to `VeriMon_CLI_Proof`; the small sessions
+`MFODL_Syntax`, `Log_Parser`, `MFODL_Frontend`, `Monitor_Data_Structures` and `Generic_Join_Devel` also
 build on their own and are checked again where the chain imports them.
 
 

@@ -1,6 +1,6 @@
-; The code generated from the Isabelle/HOL formalization (thys/VeriMon_CLI, theory CLI_Code):
+; The code generated from the Isabelle/HOL formalization (thys/VeriMon_CLI, theory CLI_Export):
 ; the formula parser, the signature reader, the log parser and the monitor in one module, with
-; the few functions CLI_Code implements in OCaml (verimon_runtime.ml). It is not meant to be
+; the few functions CLI_Export implements in OCaml (verimon_runtime.ml). It is not meant to be
 ; edited, so its (many, harmless) compiler warnings are silenced.
 (library
   (name verimon_code)

@@ -796,7 +796,7 @@ subsubsection \<open> Fresh predicates for frozen snapshots \<close>
 text \<open> Several rewrite rules below propagate a range restriction from a conjunct @{term \<alpha>}
 into a temporal operator. Instead of copying @{term \<alpha>} under an opposite temporal operator,
 which overapproximates @{term \<alpha>}'s satisfactions and may delay a monitor's evaluation of
-the formula (its progress, see the session MFODL_Monitor_Proof), we freeze @{term \<alpha>} at the
+the formula (its progress, see the session Monitor_Algorithm_Proof), we freeze @{term \<alpha>} at the
 current time-point into a fresh predicate @{term q} with
 @{term "Frz q \<alpha> \<psi>"} and use @{term q} inside the temporal operator in @{term \<psi>}.
 To guarantee freshness, @{term q} is chosen to differ from all predicate names occurring in
@@ -956,7 +956,7 @@ The rules that would copy a conjunct under an opposite temporal operator (introd
 future dependencies for past operators and delaying a monitor's evaluation of future operators)
 have been replaced by rules using the freeze operator (see Krstic and Traytel: "From Harbin with
 Love: Freezing MFOTL"), which do not delay a monitor (they preserve the progress defined in the
-session MFODL_Monitor_Proof). *)
+session Monitor_Algorithm_Proof). *)
 function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
   where
 (*1*)  "rewrite (And \<alpha> (Or \<beta> \<gamma>)) t =
@@ -1041,7 +1041,7 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 (*6 first, then 8*)
 (* the Same cases freeze \<alpha> (resp. \<gamma>), which necessarily holds at the current time-point;
    the Swapped cases are restricted to intervals containing 0, so that they do not delay a
-   monitor (they preserve the progress defined in MFODL_Monitor_Proof) *)
+   monitor (they preserve the progress defined in Monitor_Algorithm_Proof) *)
 | "rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same in
               if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
@@ -1056,7 +1056,7 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
               in fix_r (Since l I r) t)"
 
 (*7 first*) (* the Swapped case (9) has been removed as it would delay a monitor (it does not
-   preserve the progress defined in MFODL_Monitor_Proof) *)
+   preserve the progress defined in Monitor_Algorithm_Proof) *)
 | "rewrite (Until (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same;
                   r =      if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once I \<alpha>) \<beta>) Same

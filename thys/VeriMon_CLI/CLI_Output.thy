@@ -13,7 +13,7 @@ text \<open>
   list of @{typ string8} pieces, which the driver writes one after the other.
 
   Three functions on the monitor's values are implemented by OCaml in the code (theory
-  @{text CLI_Code}): @{text str8_of_integer} by Zarith's @{text Z.to_string},
+  @{text CLI_Export}): @{text str8_of_integer} by Zarith's @{text Z.to_string},
   @{text str8_quoted} by a test of the first and last byte, and the printer of floating point
   numbers, which is a parameter (MonPoly's @{text "%g"}).
 \<close>

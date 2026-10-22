@@ -1,6 +1,6 @@
 (*<*)
 theory Trigger_Window
-  imports Until_Gen "Monitor_DS.Sliding_Window_Agg" Release_Window
+  imports Exec_Until "Monitor_Data_Structures.Sliding_Window_Agg" Release_Window
 begin
 (*>*)
 

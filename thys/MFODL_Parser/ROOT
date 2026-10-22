@@ -24,5 +24,5 @@ session MFODL_Parser_Code in "Parser/Code" = MFODL_Parser +
   description
     "The lexer's code equations, and examples of the verified parser checked by evaluation."
   theories
-    MFODL_Lexer_Code
-    MFODL_Parser_Code
+    MFODL_Efficient_Lexer
+    MFODL_Parser_Examples

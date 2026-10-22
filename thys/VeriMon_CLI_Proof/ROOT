@@ -8,4 +8,4 @@ session VeriMon_CLI_Proof = Monitor_Exec_Proof +
      denotes no prefix."
   options [document = false]
   theories
-    CLI_Proof
+    CLI_Correctness

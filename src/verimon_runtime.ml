@@ -1,4 +1,4 @@
-(* The OCaml functions that the code of thys/VeriMon_CLI is printed with (theory CLI_Code), besides
+(* The OCaml functions that the code of thys/VeriMon_CLI is printed with (theory CLI_Export), besides
    Zarith's and the standard library's. *)
 
 let digits = Bytes.create 20

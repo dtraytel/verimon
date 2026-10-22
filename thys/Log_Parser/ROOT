@@ -15,7 +15,7 @@ session Log_Parser = "HOL-Library" +
     Log_Parser
     Log_Stream
     Log_Filter
-    Log_Exec
-    Log_Values
-    Log_Code
-    Signature
+    Log_Byte_Parser
+    Log_Integers
+    Log_OCaml
+    Signature_Reader

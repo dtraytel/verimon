@@ -1,7 +1,7 @@
 theory Optimized_Agg
-  imports "MFODL_Monitor.Monitor"
-  "Monitor_DS.Order_Statistic_Tree"
-  "Monitor_DS.Tree_List"
+  imports "Monitor_Algorithm.Monitor"
+  "Monitor_Data_Structures.Order_Statistic_Tree"
+  "Monitor_Data_Structures.Tree_List"
 begin
 
 

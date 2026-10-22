@@ -11,7 +11,7 @@ session MFODL_Logic = MFOTL_Monitor_Devel +
     Regex
     Formula
     Release_Rewriting
-    Frz_Locality
+    Freeze_Locality
     Safety
     Typing
     Rewriting

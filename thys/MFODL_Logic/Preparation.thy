@@ -16,7 +16,7 @@ text \<open>A past operator with a negated right operand, @{term "Formula.Since 
   by replaying the operator for every time point. If the interval contains 0, the dual
   @{term "Formula.Neg (Formula.Trigger (Formula.Neg \<phi>) I \<psi>)"} is equivalent, a monitor can
   evaluate it as far as the since operator (it has the same progress, see the session
-  MFODL_Monitor_Proof), and it is safe in a conjunction with a formula that restricts its free
+  Monitor_Algorithm_Proof), and it is safe in a conjunction with a formula that restricts its free
   variables: the negation is the difference with the trigger, whose tables are contained in those of
   @{term \<psi>}. This is the unnesting of a correlated @{text "NOT EXISTS"} into an anti-join, which
   needs no freezing. The negation of the left operand removes a double negation

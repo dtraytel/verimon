@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Monitor_Online
-  imports Log_Monitor_Proof
+  imports Log_Monitor_Correctness
 begin
 (*>*)
 
@@ -904,7 +904,7 @@ lemma Mt_pnil:
   using emonitor_Mt[OF assms prefix_of_items_Nil] by (simp add: emonitor_Rep pnil.rep_eq flatten_verdicts_def)
 
 text \<open>For an input that is still being read: the verdicts output so far are those of the entries
-  the streaming parser has output (@{thm [source] Log_Exec.efeed_chunks_online}).\<close>
+  the streaming parser has output (@{thm [source] Log_Byte_Parser.efeed_chunks_online}).\<close>
 
 theorem vfeed_chunks_online:
   fixes ss

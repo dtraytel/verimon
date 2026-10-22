@@ -184,8 +184,8 @@ fun mmulti_join_neg :: "nat list \<Rightarrow> 'a table \<Rightarrow> (nat list 
 text \<open>
   The choice between the two evaluation strategies is left open in the formalization: the
   constant @{text use_generic_join} is unspecified, and the correctness of @{text mmulti_join}
-  (theory @{text Optimized_Join_Proof}) is proved for both of its values. The generated code
-  reads it from a mutable flag (see theory @{text Code_Opt}), which the front end sets from the
+  (theory @{text Optimized_Join_Correctness}) is proved for both of its values. The generated code
+  reads it from a mutable flag (see theory @{text Efficient_Instance}), which the front end sets from the
   command line option @{text "-generic_join"}.
 \<close>
 

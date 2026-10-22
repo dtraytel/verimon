@@ -1,0 +1,9 @@
+chapter AFP
+
+session Monitor_Algorithm (AFP) = MFODL_Logic +
+  description
+    "The monitoring algorithm: its state, minit and meval over abstract operations of the
+     auxiliary structures and abstract joins (locale maux_ops), and the specification these
+     operations have to meet (locale maux)."
+  theories
+    Monitor

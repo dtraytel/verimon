@@ -10,8 +10,8 @@ section \<open>Choosing the structure at the ascending frame\<close>
 
 text \<open>
   The executable Since and Until nodes carry one of two structures: the general one of
-  @{theory Monitor_Exec.Frame_Aux}, or the sliding window of
-  @{theory Monitor_Exec.Window} where the left operand is closed (and, for the Until,
+  @{theory Monitor_Exec.Exec_Since}, or the sliding window of
+  @{theory Monitor_Exec.Closed_Left_Windows} where the left operand is closed (and, for the Until,
   the interval contains zero).  The choice is made once, when the node is built, from the
   arguments alone; the operations dispatch on it, and the relation to the kernel's abstract
   auxiliary list is the disjunction of the two structures' relations.  The five Since lemmas and

@@ -8,15 +8,15 @@ session Monitor_Exec = Monitor_Impl +
      code-generator setup of VeriMon's code export.  Definitions only: their correctness is in
      session Monitor_Exec_Proof."
   sessions
-    Monitor_DS
+    Monitor_Data_Structures
     Log_Parser
   theories
-    Tuple_Fields
-    Frame
-    Frame_Aux
-    Until_Gen
-    Window
-    Agg_Gen
+    Short_Tuples
+    Exec_Tables
+    Exec_Since
+    Exec_Until
+    Closed_Left_Windows
+    Exec_Agg
     Since_Agg
     Until_Agg
     Agg_Cache
@@ -24,20 +24,20 @@ session Monitor_Exec = Monitor_Impl +
     Window_Dispatch
     Release_Window
     Trigger_Window
-    Eval
-    Idx_Code
-    ITable
-    IWindow
-    IEval
-    Correct
-    Compile
-    Frz_Rewrite
-    Share_Rewrite
-    Push_Rewrite
-    Tuple_Code
-    Mono_Sweep
-    Agg_Code
-    Map_Upd_Code
-    RBT_Code
-    Mono_Hot
+    Exec_Eval
+    Efficient_Index
+    Indexed_Tables
+    Indexed_Windows
+    Indexed_Eval
+    Exec_Monitor
+    Exec_Compiler
+    Freeze_Hoisting
+    Release_Sharing
+    Exec_Preparation
+    Monomorphic_Exec
+    Monomorphic_Remainder
+    Efficient_Agg
+    Efficient_Map_Updates
+    Efficient_RBT
+    Monomorphic_Hot_Spots
     Log_Monitor

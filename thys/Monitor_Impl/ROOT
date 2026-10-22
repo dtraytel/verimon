@@ -1,12 +1,12 @@
 chapter AFP
 
-session Monitor_Impl (AFP) = MFODL_Monitor +
+session Monitor_Impl (AFP) = Monitor_Algorithm +
   description
     "The concrete auxiliary structures and joins of the monitoring algorithm, and its instance
      default_maux; the code-generator setup the instance needs."
   sessions
     Generic_Join_Devel
-    Monitor_DS
+    Monitor_Data_Structures
     "HOL-Data_Structures"
   theories
     Optimized_Join
@@ -19,6 +19,6 @@ session Monitor_Impl (AFP) = MFODL_Monitor +
     Optimized_Trigger
     Optimized_Agg_Temporal
     Optimized_Until_Deque
-    Monitor_Impl
-    Code_Opt
-    Monomorphic_Code
+    Monitor_Instance
+    Efficient_Instance
+    Monomorphic_Instance

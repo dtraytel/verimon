@@ -2,29 +2,30 @@ chapter AFP
 
 session Monitor_Exec_Proof = Monitor_Impl_Proof +
   description
-    "The executable monitor simulates the kernel (Kernel_Call and the theories *_Proof) and so
-     inherits its correctness; Log_Monitor_Online states it for the online interface."
+    "The executable monitor simulates the kernel (Good_Kernel_Calls and the theories
+     *_Simulation, *_Valid and *_Correctness) and so inherits its correctness;
+     Log_Monitor_Online states it for the online interface."
   theories
-    Kernel_Call
-    Frame_Proof
-    Frame_Aux_Proof
-    Until_Gen_Proof
-    Window_Proof
-    Since_Agg_Proof
-    Until_Agg_Proof
-    Agg_Cache_Proof
-    Match_Window_Proof
-    Window_Dispatch_Proof
-    Release_Window_Proof
-    Trigger_Window_Proof
-    Eval_Proof
-    ITable_Proof
-    IWindow_Proof
-    IEval_Proof
-    Correct_Proof
-    Compile_Proof
-    Frz_Rewrite_Proof
-    Share_Rewrite_Proof
-    Push_Rewrite_Proof
-    Log_Monitor_Proof
+    Good_Kernel_Calls
+    Exec_Tables_Simulation
+    Exec_Since_Simulation
+    Exec_Until_Simulation
+    Closed_Left_Windows_Valid
+    Since_Agg_Simulation
+    Until_Agg_Simulation
+    Agg_Cache_Simulation
+    Match_Window_Simulation
+    Window_Dispatch_Simulation
+    Release_Window_Simulation
+    Trigger_Window_Simulation
+    Exec_Eval_Simulation
+    Indexed_Tables_Simulation
+    Indexed_Windows_Simulation
+    Indexed_Eval_Simulation
+    Exec_Monitor_Correctness
+    Exec_Compiler_Correctness
+    Freeze_Hoisting_Correctness
+    Release_Sharing_Correctness
+    Exec_Preparation_Correctness
+    Log_Monitor_Correctness
     Log_Monitor_Online

@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Monitor
-  imports Push_Rewrite Tuple_Code "Log_Parser.Log_Values" "Log_Parser.Log_Code"
+  imports Exec_Preparation Monomorphic_Exec "Log_Parser.Log_Integers" "Log_Parser.Log_OCaml"
 begin
 (*>*)
 
@@ -23,7 +23,7 @@ lemma string8_of_bytes_inject[simp]: "string8_of_bytes a = string8_of_bytes b \<
   by (metis Rep_bytes_inject Rep_string8_of_bytes)
 
 text \<open>Trusted: both types are printed as OCaml's strings, a character list as the string of the
-  characters' codes (@{theory Log_Parser.Log_Code} prints @{typ char} so; the printings of
+  characters' codes (@{theory Log_Parser.Log_OCaml} prints @{typ char} so; the printings of
   @{theory MFOTL_Monitor_Devel.Event_Data} compare strings byte-wise, as the characters' codes
   are compared), so the conversion is the identity.\<close>
 
@@ -167,7 +167,7 @@ definition lsig_lookup_fun :: "lsig \<Rightarrow> Formula.name \<times> nat \<Ri
 
 subsection \<open>Converting events\<close>
 
-text \<open>A field of a given type. Integers are read as in @{theory Log_Parser.Log_Values}; floats
+text \<open>A field of a given type. Integers are read as in @{theory Log_Parser.Log_Integers}; floats
   by a parameter @{text pf}, the platform's reader, about which nothing is assumed.\<close>
 
 definition conv_field :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty \<Rightarrow> bytes \<Rightarrow> event_data option" where

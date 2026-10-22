@@ -7,4 +7,4 @@ session MFODL_Frontend = MFODL_Logic +
   sessions
     MFODL_Syntax
   theories
-    Formula_Conv
+    Surface_Conversion

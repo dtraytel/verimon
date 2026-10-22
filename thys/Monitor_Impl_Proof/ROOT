@@ -1,17 +1,17 @@
 chapter AFP
 
-session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
+session Monitor_Impl_Proof (AFP) = Monitor_Algorithm_Proof +
   description
     "The concrete auxiliary structures meet their specifications (the valid_* invariants), and
      the concrete instance default_maux of the monitoring algorithm is an instance of maux."
   sessions
     Generic_Join_Devel
   theories
-    Optimized_Common_Proof
-    Optimized_Since_Proof
-    Optimized_Until_Proof
-    Optimized_Trigger_Proof
-    Optimized_Agg_Temporal_Proof
-    Optimized_Until_Deque_Proof
-    Optimized_Join_Proof
-    Monitor_Impl_Proof
+    Optimized_Common_Facts
+    Optimized_Since_Valid
+    Optimized_Until_Valid
+    Optimized_Trigger_Valid
+    Optimized_Agg_Temporal_Valid
+    Optimized_Until_Deque_Valid
+    Optimized_Join_Correctness
+    Monitor_Instance_Valid
