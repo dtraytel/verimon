@@ -9,7 +9,7 @@ begin
 section \<open>Monomorphisation of the remaining operations\<close>
 
 text \<open>Monomorphic copies of the operations that the generated code still reaches with a
-  dictionary at a closed type; they are not hot.\<close>
+  dictionary at a closed type.\<close>
 
 subsection \<open>Dictionaries of closed types\<close>
 
@@ -64,7 +64,7 @@ val dicts = ["nat_dict_simps", "ed_dict_simps", "mregex_dict_simps", "s8_dict_si
              "etuple_dict_simps"]
 \<close>
 
-subsection \<open>Operations on natural numbers\<close>
+subsection \<open>Operations on numbers and tuples\<close>
 
 setup \<open>mono
   [("Set.member", "nat_member", ["nat"]),
@@ -77,8 +77,6 @@ setup \<open>mono
 
 setup \<open>Monomorphize.box_cmd
   [("atLeastLessThan", "nat_atLeastLessThan_v", ["nat"])]\<close>
-
-subsection \<open>Operations on tuples\<close>
 
 setup \<open>mono
   [("wf_table_of_set_args", "ed_wf_table_of_set_args", ["event_data"])]

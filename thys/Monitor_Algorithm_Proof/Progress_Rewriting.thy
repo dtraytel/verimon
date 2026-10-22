@@ -4,9 +4,13 @@ theory Progress_Rewriting
 begin
 (*>*)
 
-unbundle MFODL_notation \<comment> \<open> enable notation \<close>
 
-subsection \<open> Progress and safety \<close>
+section \<open> Progress under rewriting \<close>
+
+unbundle MFODL_notation
+
+
+subsection \<open> Multi-way conversion \<close>
 
 lemma safe_progress_get_and: "safe_formula \<phi> \<Longrightarrow>
   Min ((\<lambda>\<phi>. progress \<sigma> P \<phi> j) ` set (get_and_list \<phi>)) = progress \<sigma> P \<phi> j"
@@ -159,7 +163,7 @@ next
       (auto 0 4 simp: safe_atms_def elim!: disjE_Not2 dest: safe_regex_safe_formula)
 qed (auto simp add: nfv_convert_multiway frz_progress_def)
 
-subsection \<open> Progress and the rewritings of the preparation \<close>
+subsection \<open> Normalization \<close>
 
 declare progress_le_gen[simp]
 
@@ -172,8 +176,6 @@ lemma progress_neg_dual[simp]: "progress \<sigma> P (neg_dual \<phi>) j = progre
 lemma progress_dual_since: "progress \<sigma> P (dual_since \<phi>) j = progress \<sigma> P \<phi> j"
   by (induction \<phi> arbitrary: P j rule: dual_since.induct)
     (auto simp: dual_since_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
-
-(* Proofs that normalize does not change the progress of the monitor *)
 
 lemma progress_simplify_terms[simp]: "progress \<sigma> P (simplify_terms \<phi>) j = progress \<sigma> P \<phi> j"
   using [[linarith_split_limit = 17]]
@@ -200,12 +202,13 @@ lemma progress_assoc_and[simp]: "progress \<sigma> P (assoc_and \<phi>) j = prog
 lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
 
-(* Proofs that rewrite does not change the progress of the monitor.
-   The rules that propagate a range restriction \<alpha> into the scope of a temporal operator bind
-   \<alpha>'s current satisfactions to a fresh predicate with the freeze operator (Frz q \<alpha> (\<alpha> \<and> OP (q \<and> \<beta>))).
-   Since \<alpha> is conjoined at the outer level, the frozen predicate q is available whenever the outer
-   conjunction can make progress (lemma progress_Frz_And); hence the progress of the rewritten formula
-   coincides with the original one (lemma progress_rewrite). *)
+
+
+subsection \<open> Rewriting \<close>
+
+text \<open>The rules that push a range restriction into a temporal operator freeze its current
+  satisfactions; the frozen predicate is ready whenever the outer conjunction makes progress.\<close>
+
 lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
 proof (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)
   case (Ands \<phi>s)
@@ -675,7 +678,7 @@ qed (auto simp: once_def always_def eventually_def historically_def
 lemma progress_rrewrite: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (rrewrite \<phi>) j = progress \<sigma> P \<phi> j"
   by (simp add: rrewrite_def progress_rewrite project_embed)
 
-unbundle MFODL_no_notation \<comment> \<open> enable notation \<close>
+unbundle MFODL_no_notation
 
 (*<*)
 end

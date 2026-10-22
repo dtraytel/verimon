@@ -165,6 +165,8 @@ proof -
       split: option.splits)
 qed
 
+subsection \<open>Joins of indexes\<close>
+
 text \<open>Indexes on the same key columns are joined cluster by cluster, as joined tuples have the
   same key in both operands.\<close>
 
