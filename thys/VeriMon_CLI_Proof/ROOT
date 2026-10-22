@@ -1,0 +1,14 @@
+chapter AFP
+
+session VeriMon_CLI_Proof = Monitor_Exec_Proof +
+  description
+    "The end-to-end theorems of the verified monitor with MonPoly's command line: on the formula
+     and the signature it reads, the program verimon outputs the verdicts the formula's
+     specification prescribes for every prefix the log denotes, and an error on every log that
+     denotes no prefix."
+  options [document = false]
+  sessions
+    MFODL_Frontend
+    VeriMon_CLI
+  theories
+    CLI_Proof
