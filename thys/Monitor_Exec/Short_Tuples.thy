@@ -16,7 +16,7 @@ type_synonym utable = "event_data list set"
 subsection \<open>Sorted list of a table\<close>
 
 text \<open>
-  Unlike @{const csorted_list_of_set}, the wrapper is specified on infinite sets, so statements
+  Unlike @{const csorted_list_of_set}, @{text csl} is empty on infinite sets, so statements
   about a walk need no finiteness assumption.
 \<close>
 
