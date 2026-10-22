@@ -96,57 +96,7 @@ fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "push_ex (Formula.Until \<phi> I \<psi>) = Formula.Until (push_ex \<phi>) I (push_ex \<psi>)"
 | "push_ex \<phi> = \<phi>"
 
-lemma push_ex_And:
-  "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
-     then Formula.And \<phi> \<psi> else and_cstr (push_ex \<phi>) (push_ex \<psi>))"
-  by (cases \<psi>) simp_all
-
 declare push_ex.simps(4)[simp del]
-
-subsection \<open>The comparison's move\<close>
-
-subsection \<open>Free variables\<close>
-
-lemma nfv_push_ex[simp]: "Formula.nfv (push_ex \<phi>) = Formula.nfv \<phi>"
-  by (simp add: Formula.nfv_def)
-
-subsection \<open>Satisfaction\<close>
-
-lemma sat_push_ex[simp]: "Formula.sat \<sigma> V v i (push_ex \<phi>) = Formula.sat \<sigma> V v i \<phi>"
-  by (induct \<phi> arbitrary: V v i) (auto simp: push_ex_And split: nat.splits)
-
-subsection \<open>Shapes\<close>
-
-lemma push_ex_Neg_iff:
-  "push_ex \<phi> = Formula.Neg \<psi> \<longleftrightarrow> (\<exists>\<phi>'. \<phi> = Formula.Neg \<phi>' \<and> \<psi> = push_ex \<phi>')"
-  by (cases \<phi>) (auto simp: push_ex_And)
-
-lemma remove_neg_push_ex[simp]: "remove_neg (push_ex \<phi>) = push_ex (remove_neg \<phi>)"
-  by (cases \<phi>) (auto simp: push_ex_And)
-
-lemma is_Trigger_push_ex[simp]: "Formula.is_Trigger (push_ex \<phi>) = Formula.is_Trigger \<phi>"
-  and is_Release_push_ex[simp]: "Formula.is_Release (push_ex \<phi>) = Formula.is_Release \<phi>"
-  by (cases \<phi>; simp add: push_ex_And)+
-
-subsection \<open>Safety\<close>
-
-subsection \<open>Future-boundedness, monitorability and relevant events\<close>
-
-lemma future_bounded_push_ex[simp]: "Safety.future_bounded (push_ex \<phi>) = Safety.future_bounded \<phi>"
-  by (induct \<phi>) (auto simp: push_ex_And list.pred_map o_def cong: list.pred_cong)
-
-lemma mmonitorable_push_ex[simp]: "mmonitorable (push_ex \<phi>) = mmonitorable \<phi>"
-  by (simp add: mmonitorable_def)
-
-subsection \<open>Progress\<close>
-
-lemma progress_push_ex[simp]: "progress \<sigma> P (push_ex \<phi>) j = progress \<sigma> P \<phi> j"
-  by (induct \<phi> arbitrary: P) (auto simp: push_ex_And o_def cong: map_cong)
-
-lemma pprogress_push_ex[simp]: "pprogress (push_ex \<phi>) = pprogress \<phi>"
-  by (simp add: pprogress_def fun_eq_iff)
-
-subsection \<open>Typing\<close>
 
 subsection \<open>The rewritten formula\<close>
 
@@ -165,38 +115,6 @@ text \<open>
 definition eprep :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "eprep \<phi> = share_opt (push_ex (frz_opt \<phi>))"
 
-lemma nfv_eprep[simp]: "Formula.nfv (eprep \<phi>) = Formula.nfv \<phi>"
-  by (simp add: eprep_def)
-
-lemma sat_eprep[simp]: "Formula.sat \<sigma> V v i (eprep \<phi>) = Formula.sat \<sigma> V v i \<phi>"
-  by (simp add: eprep_def)
-
-lemma pprogress_eprep[simp]: "pprogress (eprep \<phi>) = pprogress \<phi>"
-  by (simp add: pprogress_def fun_eq_iff eprep_def)
-
-lemma mmonitorable_eprep: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (eprep \<phi>)"
-  by (simp add: eprep_def mmonitorable_share_opt mmonitorable_frz_opt)
-
-subsection \<open>Reordering the verdicts' columns\<close>
-
-text \<open>Two formulas with the same number and set of free variables, the same satisfaction
-  relation and the same progress have the same verdicts, up to the order of their columns.\<close>
-
-context
-  fixes \<phi> \<psi> :: "ty Formula.formula" and S :: sig and E :: tyenv
-  assumes fb: "future_bounded_mfodl \<phi> S E" "future_bounded_mfodl \<psi> S E"
-    and fv: "Formula.fv \<psi> = Formula.fv \<phi>" and nfv: "Formula.nfv \<psi> = Formula.nfv \<phi>"
-    and sat: "\<And>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<psi> = Formula.sat \<sigma> Map.empty v i \<phi>"
-    and pp: "pprogress \<psi> = pprogress \<phi>"
-begin
-
-end
-
-subsection \<open>The executable monitor on the rewritten formula\<close>
-
-lemma fv_list_eprep_ecols: "ecols (Formula.fv_list (eprep \<phi>)) = ecols (Formula.fv_list \<phi>)"
-  by (rule ecols_cong) simp
-
 context verimon_spec
 begin
 
@@ -208,11 +126,5 @@ text \<open>The front end's entry point: the executable monitor started on the r
 definition eminit_push :: "ty Formula.formula \<Rightarrow> emstate" where
   "eminit_push \<phi> = eminit_safe (eprep \<phi>)"
 
-lemma eminit_push_eq:
-  "eminit_push \<phi>
-   = eof_state (Formula.nfv \<phi>) (Formula.fv_list (eprep \<phi>))
-       (ecols (Formula.fv_list (eprep \<phi>))) (minit_safe (eprep \<phi>))"
-  by (simp add: eminit_push_def eminit_safe_def)
-(*<*)
 end
 (*>*)

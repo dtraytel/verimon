@@ -242,6 +242,12 @@ definition igjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b list s
      (case acc of (A, tm) \<Rightarrow> (isub (set_of_idx (mfilter_keys (\<not> pos) Y M)) A,
         mapping_delete_set tm (set_of_idx (mfilter_keys (\<not> pos) Y M)))))"
 
+lemma fold_idel_buckets:
+  "fold (\<lambda>p (A, tm). (isub (snd p) A, mapping_delete_set tm (snd p))) xs (A, tm)
+   = (isub (\<Union>(snd ` set xs)) A, mapping_delete_set tm (\<Union>(snd ` set xs)))"
+  by (induct xs arbitrary: A tm)
+    (auto simp: isub_isub mapping_delete_set_Un[symmetric] mapping_delete_set_empty)
+
 lemma igjoin_idx_code[code]:
   fixes t :: "('k :: ccompare, 'b list set) mapping_rbt"
   shows "igjoin_idx pos Y (RBT_Mapping t) acc = (case ID CCOMPARE('k) of
@@ -339,9 +345,6 @@ definition iuw_step :: "args \<Rightarrow> ts \<Rightarrow> iuwaux \<Rightarrow>
                 cc' = icnt_del (fst (snd e)) cc;
                 bend' = (if Queue.is_empty win'' then True else bend)
             in (tl_queue nts, win'', rest, len - 1, bend', cc', snd cc # dn)))))"
-
-lemma snd_icnt_abs[simp]: "snd (icnt_abs cc) = iset (snd cc)"
-  by (simp add: icnt_abs_def)
 
 function iuw_shift :: "args \<Rightarrow> ts \<Rightarrow> iuwaux \<Rightarrow> iuwaux" where
   "iuw_shift args nt aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>

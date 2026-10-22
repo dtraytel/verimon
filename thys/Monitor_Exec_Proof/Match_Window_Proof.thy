@@ -47,6 +47,11 @@ lemma eproj_dmsk:
   using emsk_args_dproj[OF emsk_args_dargs[OF s1 s2 sub, of undefined], of a] l
   by (simp add: emsk_def)
 
+text \<open>The window's lookup and tabulation are the kernel's.\<close>
+
+lemma glookup_lookup: "glookup = lookup"
+  by (simp add: glookup_def Monitor.lookup_def empty_table_def)
+
 lemma gmrtabulate_mrtabulate: "gmrtabulate xs f = mrtabulate xs f"
   by transfer (simp add: empty_table_def)
 
@@ -64,6 +69,8 @@ proof -
   qed simp
   then show ?thesis unfolding mrtabulate.abs_eq by simp
 qed
+
+subsection \<open>The lax epsilon\<close>
 
 lemma join_same:
   assumes d: "distinct cs" and tA: "table cs A" and tB: "table cs B"
@@ -227,6 +234,8 @@ qed
 
 end
 
+subsection \<open>The past-match window\<close>
+
 lemma emrd_rel_table:
   "emrd_rel ks cs aux daux \<Longrightarrow> (t, X) \<in> set daux \<Longrightarrow> table cs (lookup X ms)"
   by (induct rule: emrd_rel_induct) (auto simp: table_etabc)
@@ -295,6 +304,8 @@ lemma etabc_gupdate_matchP:
   unfolding gupdate_matchP_eq[OF rel] by (rule etabc_update_matchP[OF rel])
 
 end
+
+subsection \<open>The future-match window\<close>
 
 lemma geval_matchF_eval_matchF: "geval_matchF I mr nt aux = eval_matchF I mr nt aux"
   by (induct aux rule: eval_matchF.induct) simp_all

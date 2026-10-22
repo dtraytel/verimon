@@ -57,35 +57,73 @@ definition cnt_rep :: "(event_data tuple \<Rightarrow> nat) \<Rightarrow> cntset
      (\<forall>x. Mapping.lookup (fst cc) x = (if f x = 0 then None else Some (f x))) \<and>
      snd cc = {x. 0 < f x}"
 
-lemma cnt_rep_empty: "cnt_rep (\<lambda>_. 0) (Mapping.empty, {})"
-  by (simp add: cnt_rep_def)
+lemma lookup_delete_if:
+  "Mapping.lookup (Mapping.delete t c) x = (if x = t then None else Mapping.lookup c x)"
+  by (cases "x = t") simp_all
+
+lemma cnt_rep_add1:
+  assumes "cnt_rep f cc"
+  shows "cnt_rep (f(t := f t + 1)) (cnt_add1 t cc)"
+proof (cases cc)
+  case (Pair c s)
+  have L: "\<And>x. Mapping.lookup c x = (if f x = 0 then None else Some (f x))"
+    and S: "s = {x. 0 < f x}" using assms Pair by (auto simp: cnt_rep_def)
+  show ?thesis
+  proof (cases "Mapping.lookup c t")
+    case None
+    then have ft: "f t = 0" using L[of t] by (auto split: if_splits)
+    show ?thesis unfolding cnt_rep_def cnt_add1_def Pair None
+      by (auto simp: Mapping.lookup_update' L S ft)
+  next
+    case (Some k)
+    then have ft: "f t = k" and k: "k \<noteq> 0" using L[of t] by (auto split: if_splits)
+    show ?thesis unfolding cnt_rep_def cnt_add1_def Pair Some
+      by (auto simp: Mapping.lookup_update' L S ft k)
+  qed
+qed
+
+lemma cnt_rep_fold_add1:
+  "cnt_rep f cc \<Longrightarrow> distinct xs \<Longrightarrow>
+     cnt_rep (\<lambda>x. if x \<in> set xs then f x + 1 else f x) (fold cnt_add1 xs cc)"
+proof (induct xs arbitrary: f cc)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x xs)
+  have r: "cnt_rep (f(x := f x + 1)) (cnt_add1 x cc)" by (rule cnt_rep_add1[OF Cons.prems(1)])
+  have "cnt_rep (\<lambda>y. if y \<in> set xs then (f(x := f x + 1)) y + 1 else (f(x := f x + 1)) y)
+      (fold cnt_add1 xs (cnt_add1 x cc))"
+    by (rule Cons.hyps[OF r]) (use Cons.prems(2) in simp)
+  moreover have "(\<lambda>y. if y \<in> set xs then (f(x := f x + 1)) y + 1 else (f(x := f x + 1)) y)
+      = (\<lambda>y. if y \<in> set (x # xs) then f y + 1 else f y)"
+    using Cons.prems(2) by (auto simp: fun_eq_iff)
+  ultimately show ?case by simp
+qed
+
+lemma csorted_list_of_set_etuple:
+  "finite (X :: event_data table) \<Longrightarrow>
+     set (csorted_list_of_set X) = X \<and> distinct (csorted_list_of_set X)"
+  using ID_ccompare_etuple_dq by (subst csorted_list_of_set_split) auto
+
+lemma cnt_rep_add:
+  assumes "cnt_rep f cc" and "finite T"
+  shows "cnt_rep (\<lambda>x. if x \<in> T then f x + 1 else f x) (cnt_add T cc)"
+  using cnt_rep_fold_add1[OF assms(1), of "csorted_list_of_set T"]
+    csorted_list_of_set_etuple[OF assms(2)]
+  unfolding cnt_add_def csl_finite[OF assms(2)] by simp
 
 text \<open>The count function of a list of tables: how many of them contain a tuple.\<close>
 
 definition cnt_of :: "event_data table list \<Rightarrow> event_data tuple \<Rightarrow> nat" where
   "cnt_of Ts x = length (filter (\<lambda>T. x \<in> T) Ts)"
 
-lemma cnt_of_Nil: "cnt_of [] = (\<lambda>_. 0)"
-  by (simp add: cnt_of_def fun_eq_iff)
-
 abbreviation cnt_inv :: "event_data table list \<Rightarrow> cntset \<Rightarrow> bool" where
   "cnt_inv Ts cc \<equiv> cnt_rep (cnt_of Ts) cc"
-
-lemma cnt_inv_empty: "cnt_inv [] (Mapping.empty, {})"
-  unfolding cnt_of_Nil by (rule cnt_rep_empty)
-
-lemma cnt_inv_set: "cnt_inv Ts cc \<Longrightarrow> snd cc = \<Union> (set Ts)"
-  by (auto simp: cnt_rep_def cnt_of_def filter_empty_conv)
-
-subsection \<open>Two facts about the closed left operand\<close>
 
 text \<open>The tables of a list at one timestamp.\<close>
 
 definition tbls_at :: "ts \<Rightarrow> (ts \<times> event_data table) list \<Rightarrow> event_data table" where
   "tbls_at u es = \<Union> {rel. (u, rel) \<in> set es}"
-
-lemma foldr_Un_set: "foldr (\<union>) ys {} = \<Union> (set ys)"
-  by (induct ys) auto
 
 subsection \<open>The Since structure for a closed left operand\<close>
 
@@ -159,8 +197,6 @@ definition sw_add_new_table :: "args \<Rightarrow> event_data table \<Rightarrow
 definition sw_result :: "args \<Rightarrow> swaux \<Rightarrow> event_data table" where
   "sw_result args aux = (case aux of (t, pend, win, cc) \<Rightarrow> snd cc)"
 
-subsubsection \<open>What the two scans do to the queues\<close>
-
 subsubsection \<open>Validity\<close>
 
 text \<open>
@@ -188,9 +224,6 @@ definition valid_sw :: "args \<Rightarrow> ts \<Rightarrow> swaux \<Rightarrow> 
      (\<forall>u. tbls_at u (linearize pend @ linearize win) = tbls_at u auxlist) \<and>
      (\<forall>e \<in> set auxlist. fst e \<le> cur \<and> memR (args_ivl args) (cur - fst e) \<and>
         table (args_R args) (snd e)))"
-
-lemma valid_sw_init: "valid_sw args 0 (sw_init args) []"
-  by (simp add: valid_sw_def sw_init_def sw_inv_def empty_queue_rep cnt_inv_empty)
 
 subsection \<open>The Until structure for a closed left operand\<close>
 
@@ -295,9 +328,6 @@ fun uw_abs :: "args \<Rightarrow> uw_entry list \<Rightarrow> event_data muaux" 
 | "uw_abs args ((t, R, b) # es) =
      (t, uw_a1 args (b # map (snd \<circ> snd) es), uw_a2 (args_ivl args) t ((t, R, b) # es)) # uw_abs args es"
 
-lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
-  by (induct es rule: uw_abs.induct) simp_all
-
 text \<open>The abstract list of the expired entries is what the kernel's evaluation pops.\<close>
 
 subsubsection \<open>Extending the window\<close>
@@ -310,9 +340,6 @@ fun uw_ext :: "\<I> \<Rightarrow> ts \<Rightarrow> bool \<Rightarrow> uw_entry l
 | "uw_ext I ts0 True [] = []"
 | "uw_ext I ts0 True (e # rl) =
      (if memR I (fst e - ts0) then e # uw_ext I ts0 (snd (snd e)) rl else [])"
-
-lemma uw_ext_prefix: "\<exists>sfx. rl = uw_ext I ts0 bend rl @ sfx"
-  by (induct I ts0 bend rl rule: uw_ext.induct) (auto simp: fun_eq_iff)
 
 subsubsection \<open>The window invariant\<close>
 
@@ -327,11 +354,6 @@ definition uw_win :: "\<I> \<Rightarrow> ts \<Rightarrow> uw_entry list \<Righta
      (\<forall>e \<in> set wl. memR I (fst e - ts0)) \<and>
      (\<forall>e \<in> set (butlast wl). snd (snd e)) \<and>
      bend = (wl = [] \<or> snd (snd (last wl)))"
-
-lemma uw_win_Nil: "uw_win I ts0 [] True"
-  by (simp add: uw_win_def)
-
-text \<open>After the extension the window is the whole run the answer is the union of.\<close>
 
 subsubsection \<open>Validity\<close>
 
@@ -357,13 +379,8 @@ definition valid_uw :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> 
       (\<exists>ex. auxlist = ex @ uw_abs args es \<and> map proj_thd ex = rev dn \<and>
          (\<forall>e \<in> set ex. \<not> memR (args_ivl args) (cur - fst e)))))"
 
-lemma valid_uw_init: "valid_uw args 0 (uw_init args) []"
-  by (simp add: valid_uw_def uw_init_def empty_queue_rep cnt_inv_empty uw_win_Nil)
-
 fun uw_len :: "uwaux \<Rightarrow> nat" where
   "uw_len (nts, win, rest, len, bend, cc, dn) = len"
-
-text \<open>The shift pops the pending time points that no later one can affect, in order.\<close>
 
 end
 (*>*)

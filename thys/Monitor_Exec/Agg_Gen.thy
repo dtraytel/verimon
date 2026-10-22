@@ -156,7 +156,25 @@ fun gres :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> nat \<Rightarrow
          in EFloat aggval) m
      | _ \<Rightarrow> {}))"
 
-subsection \<open>Folds that drop the structure\<close>
+lemma fold_flag_False:
+  assumes "\<And>t m. S t (False, m) = (False, m)"
+  shows "fold S xs (False, m) = (False, m)"
+  using assms by (induct xs) simp_all
+
+lemma fold_flag:
+  assumes F: "\<And>t m. S t (False, m) = (False, m)"
+    and N: "\<And>t. St t None = None"
+    and C: "\<And>t m. St t (Some (C m)) = (case S t (True, m) of (v, m') \<Rightarrow> if v then Some (C m') else None)"
+  shows "fold St xs (Some (C m)) = (case fold S xs (True, m) of (v, m') \<Rightarrow> if v then Some (C m') else None)"
+proof (induct xs arbitrary: m)
+  case (Cons x xs)
+  have NN: "fold St ys None = None" for ys by (induct ys) (simp_all add: N)
+  show ?case
+  proof (cases "S x (True, m)")
+    case (Pair v m')
+    then show ?thesis using Cons C by (cases v) (simp_all add: NN fold_flag_False[OF F])
+  qed
+qed simp
 
 fun gkeys :: "'b gagg \<Rightarrow> 'b list set" where
   "gkeys (GCnt m) = Mapping.keys m"

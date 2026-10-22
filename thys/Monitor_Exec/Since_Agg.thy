@@ -69,14 +69,252 @@ fun eagg_args :: "eaggp \<Rightarrow> nat \<Rightarrow> aggargs" where
       aggargs_g0 = g0, aggargs_y = pos, aggargs_\<omega> = \<omega>, aggargs_tys = replicate k Formula.TInt,
       aggargs_f = shift_trm (k + pos) f\<rparr>"
 
+lemma fv_shift_trm:
+  "Formula.fv_trm (shift_trm b f) = (\<lambda>x. if x < b then x else Suc x) ` Formula.fv_trm f"
+  by (induct f) auto
+
+lemma map_add_upt': "map (\<lambda>c. c + k) [a..<b] = [a + k..<b + k]"
+  by (induct b) auto
+
+lemma upt_split: "a \<le> b \<Longrightarrow> b \<le> c \<Longrightarrow> [a..<b] @ [b..<c] = [a..<c]"
+  using upt_add_eq_append[of a b "c - b"] by simp
+
+lemma agg_cols_eagg_gcols:
+  assumes "k \<le> w" and "pos \<le> w - k"
+  shows "agg_cols k (eagg_gcols (g0, \<omega>, f, k, pos) w) = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
+proof -
+  have 1: "map (\<lambda>c. c + k) [0..<pos] = [k..<k + pos]" by (simp add: map_add_upt' add.commute)
+  have 2: "map (\<lambda>c. c + k) [Suc pos..<Suc (w - k)] = [Suc (k + pos)..<Suc w]"
+    using assms by (simp add: map_add_upt' add.commute del: upt_Suc)
+  have 3: "[0..<k] @ [k..<k + pos] = [0..<k + pos]" by (rule upt_split) simp_all
+  show ?thesis unfolding eagg_gcols.simps map_append 1 2 append_assoc[symmetric] 3 ..
+qed
+
+lemma col_pos_append:
+  "col_pos (xs @ ys) c = (if c \<in> set xs then col_pos xs c else length xs + col_pos ys c)"
+  by (induct xs) auto
+
+lemma col_pos_upt: "a \<le> c \<Longrightarrow> c < b \<Longrightarrow> col_pos [a..<b] c = c - a"
+  by (induct "b - a" arbitrary: a) (auto simp: upt_conv_Cons)
+
+lemma col_pos_shift:
+  "x < w \<Longrightarrow> b \<le> w \<Longrightarrow>
+   col_pos ([0..<b] @ [Suc b..<Suc w]) (if x < b then x else Suc x) = x"
+  by (auto simp: col_pos_append col_pos_upt)
+
+lemma reindex_shift_trm:
+  "Formula.fv_trm f \<subseteq> {0..<w} \<Longrightarrow> b \<le> w \<Longrightarrow>
+   reindex_trm ([0..<b] @ [Suc b..<Suc w]) (shift_trm b f) = f"
+  by (induct f) (simp_all add: col_pos_shift del: upt_Suc)
+
+lemma ins_pos_eagg_gcols: "ins_pos ([0..<pos] @ [Suc pos..<Suc m]) pos = pos"
+proof -
+  have "filter (\<lambda>c. c < pos) [0..<pos] = [0..<pos]" by (rule filter_True) simp
+  moreover have "filter (\<lambda>c. c < pos) [Suc pos..<Suc m] = []"
+    by (rule filter_False) (auto simp del: upt_Suc)
+  ultimately show ?thesis by (simp add: ins_pos_def del: upt_Suc)
+qed
+
+lemma sorted_wrt_eagg_gcols: "sorted_wrt (<) ([0..<pos] @ [Suc pos..<Suc m])"
+  by (auto simp: sorted_wrt_append simp del: upt_Suc)
+
+lemma merge_cols_eagg_gcols:
+  assumes "pos \<le> m"
+  shows "merge_cols ([0..<pos] @ [Suc pos..<Suc m]) [pos] = [0..<Suc m]"
+proof -
+  have nin: "pos \<notin> set ([0..<pos] @ [Suc pos..<Suc m])" by (auto simp del: upt_Suc)
+  have "[0..<pos] @ pos # [Suc pos..<Suc m] = [0..<pos] @ [pos..<Suc m]"
+    using assms by (simp add: upt_conv_Cons del: upt_Suc)
+  also have "\<dots> = [0..<Suc m]" using assms by (intro upt_split) simp_all
+  finally show ?thesis
+    unfolding merge_cols_single[OF sorted_wrt_eagg_gcols nin] ins_pos_eagg_gcols
+    by (simp del: upt_Suc)
+qed
+
+lemma shift_cols_agg_cols: "shift_cols k (agg_cols k G) = G"
+proof -
+  have "filter (\<lambda>x. k \<le> x) (agg_cols k G) = map (\<lambda>c. c + k) G"
+    by (auto simp: filter_empty_conv intro: filter_True)
+  then show ?thesis by (simp add: shift_cols_def comp_def)
+qed
+
+lemma eagg_ccols_props:
+  assumes "eagg_ok p w"
+  shows "sorted_wrt (<) (eagg_ccols p w)" "distinct (eagg_ccols p w)"
+    "length (eagg_ccols p w) = w"
+proof -
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p)
+  have kw: "k \<le> w" and pw: "pos \<le> w - k" using assms by (auto simp: p)
+  have kpw: "k + pos \<le> w" using kw pw by arith
+  have cc: "eagg_ccols p w = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
+    unfolding p eagg_ccols.simps by (rule agg_cols_eagg_gcols[OF kw pw])
+  show s: "sorted_wrt (<) (eagg_ccols p w)" unfolding cc
+    by (auto simp: sorted_wrt_append simp del: upt_Suc)
+  show "distinct (eagg_ccols p w)" using s by (simp add: strict_sorted_iff)
+  show "length (eagg_ccols p w) = w" unfolding cc using kpw by (simp del: upt_Suc)
+qed
+
 abbreviation ewf_table :: "nat \<Rightarrow> 'b list set \<Rightarrow> bool" where
   "ewf_table w T \<equiv> \<forall>x \<in> T. length x = w"
+
+lemma agg_key_dagg:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w" and t: "length t = w"
+  shows "agg_key k (eagg_ccols (g0, \<omega>, f, k, pos) w) t = drop k t"
+proof -
+  let ?cc = "eagg_ccols (g0, \<omega>, f, k, pos) w"
+  note P = eagg_ccols_props[OF ok]
+  have kw: "k \<le> w" using ok by simp
+  have f: "filter (\<lambda>x. k \<le> x) ?cc = drop k ?cc"
+    by (auto simp: filter_empty_conv intro: filter_True)
+  have wt: "wf_tuple ?cc t" using t P(3) by (simp add: wf_tuple_def)
+  show ?thesis unfolding agg_key_def f
+  proof (rule nth_equalityI)
+    show "length (restrict (drop k ?cc) ?cc t) = length (drop k t)" using P(3) t by simp
+  next
+    fix i assume "i < length (restrict (drop k ?cc) ?cc t)"
+    then have i: "i < w - k" using P(3) by simp
+    have ki: "k + i < length ?cc" using i kw P(3) by linarith
+    have "restrict (drop k ?cc) ?cc t ! i = tup_get ?cc t (drop k ?cc ! i)"
+      by (rule nth_restrict) (use i P(3) in simp)
+    also have "drop k ?cc ! i = ?cc ! (k + i)" by (rule nth_drop) (use kw P(3) in simp)
+    also have "tup_get ?cc t (?cc ! (k + i)) = t ! (k + i)" by (rule tup_get_nth[OF P(2) wt ki])
+    also have "\<dots> = drop k t ! i" using kw t by simp
+    finally show "restrict (drop k ?cc) ?cc t ! i = drop k t ! i" .
+  qed
+qed
+
+lemma meval_shift_dagg:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w" and t: "length t = w"
+  shows "meval_trm (eagg_ccols (g0, \<omega>, f, k, pos) w) (shift_trm (k + pos) f) t = umeval_trm f t"
+proof -
+  let ?cc = "eagg_ccols (g0, \<omega>, f, k, pos) w"
+  note P = eagg_ccols_props[OF ok]
+  have kw: "k \<le> w" and pw: "pos \<le> w - k" and fv: "Formula.fv_trm f \<subseteq> {0..<w}" using ok by auto
+  have kpw: "k + pos \<le> w" using kw pw by arith
+  have cc: "?cc = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
+    unfolding eagg_ccols.simps by (rule agg_cols_eagg_gcols[OF kw pw])
+  have fv': "Formula.fv_trm (shift_trm (k + pos) f) \<subseteq> set ?cc"
+    unfolding cc fv_shift_trm using fv kpw by (auto simp del: upt_Suc)
+  have r: "reindex_trm ?cc (shift_trm (k + pos) f) = f"
+    unfolding cc by (rule reindex_shift_trm[OF fv kpw])
+  have i: "restrict ?cc ?cc t = t" using t P by (simp add: restrict_idle wf_tuple_def)
+  show ?thesis using umeval_trm_reindex[OF fv', of ?cc t] unfolding r i ..
+qed
 
 text \<open>The kernel puts the result column in front of the group key; the executable order puts it at
   its place among the group's columns.\<close>
 
 definition slot :: "nat \<Rightarrow> 'b list \<Rightarrow> 'b list" where
   "slot p x = take p (tl x) @ hd x # drop p (tl x)"
+
+lemma restrict_slot:
+  assumes g: "length g = m" and p: "p \<le> m"
+  shows "restrict [0..<Suc m] (p # [0..<p] @ [Suc p..<Suc m]) (v # g) = slot p (v # g)"
+proof (rule nth_equalityI)
+  let ?G = "p # [0..<p] @ [Suc p..<Suc m]"
+  have d: "distinct ?G" by (auto simp del: upt_Suc)
+  have l: "length ?G = Suc m" using p by (simp del: upt_Suc)
+  have wt: "wf_tuple ?G (v # g)" using g l by (simp add: wf_tuple_def del: upt_Suc)
+  show "length (restrict [0..<Suc m] ?G (v # g)) = length (slot p (v # g))"
+    using g p by (simp add: slot_def del: upt_Suc)
+  fix i assume "i < length (restrict [0..<Suc m] ?G (v # g))"
+  then have i: "i < Suc m" by (simp del: upt_Suc)
+  have nr: "restrict [0..<Suc m] ?G (v # g) ! i = tup_get ?G (v # g) i"
+    using i by (simp add: nth_restrict del: upt_Suc)
+  consider (eq) "i = p" | (lt) "i < p" | (gt) "p < i" by linarith
+  then show "restrict [0..<Suc m] ?G (v # g) ! i = slot p (v # g) ! i"
+  proof cases
+    case eq
+    have "?G ! 0 = i" using eq by simp
+    then show ?thesis unfolding nr using tup_get_nth[OF d wt, of 0] l eq g p
+      by (simp add: slot_def nth_append del: upt_Suc)
+  next
+    case lt
+    have "?G ! Suc i = i" using lt by (simp add: nth_append del: upt_Suc)
+    then show ?thesis unfolding nr using tup_get_nth[OF d wt, of "Suc i"] l lt g p i
+      by (simp add: slot_def nth_append del: upt_Suc)
+  next
+    case gt
+    have "?G ! i = i" using gt i p
+      by (cases i) (auto simp: nth_append simp del: upt_Suc)
+    then show ?thesis unfolding nr using tup_get_nth[OF d wt, of i] l gt g p i
+      by (cases i) (auto simp: slot_def nth_append nth_Cons' min_def simp del: upt_Suc)
+  qed
+qed
+
+lemma length_filter_eagg_ccols:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w"
+  shows "length (filter (\<lambda>x. k \<le> x) (eagg_ccols (g0, \<omega>, f, k, pos) w)) = w - k"
+proof -
+  have "filter (\<lambda>x. k \<le> x) (eagg_ccols (g0, \<omega>, f, k, pos) w) = drop k (eagg_ccols (g0, \<omega>, f, k, pos) w)"
+    by (auto simp: filter_empty_conv intro: filter_True)
+  then show ?thesis using eagg_ccols_props(3)[OF ok] by simp
+qed
+
+lemma eval_agg_shape:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w"
+    and x: "x \<in> eval_agg (eagg_ccols (g0, \<omega>, f, k, pos) w) g0 \<omega> (replicate k Formula.TInt) f' D"
+  shows "\<exists>v g. x = v # g \<and> length g = w - k"
+proof (cases "g0 \<and> D = empty_table")
+  case True
+  then have "w - k = 0" using ok by simp
+  then show ?thesis using x True by (simp add: eval_agg_def singleton_table_def)
+next
+  case False
+  let ?cc = "eagg_ccols (g0, \<omega>, f, k, pos) w"
+  obtain d v where "x = v # agg_key k ?cc d"
+    using x False by (auto simp: eval_agg_def Let_def simp del: eagg_ccols.simps)
+  moreover have "length (agg_key k ?cc d) = w - k"
+    using length_filter_eagg_ccols[OF ok] by (simp add: agg_key_def del: eagg_ccols.simps)
+  ultimately show ?thesis by blast
+qed
+
+lemma eagg_p_eval_aggargs:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w" and D: "ewf_table w D"
+  shows "eagg_p (g0, \<omega>, f, k, pos) D = slot pos ` eval_aggargs (eagg_args (g0, \<omega>, f, k, pos) w) D"
+proof -
+  let ?p = "(g0, \<omega>, f, k, pos)"
+  define G where "G = eagg_gcols ?p w"
+  define cc where "cc = agg_cols k G"
+  have kw: "k \<le> w" and pw: "pos \<le> w - k" and fv: "Formula.fv_trm f \<subseteq> {0..<w}"
+    and g0: "g0 \<Longrightarrow> w = k" using ok by auto
+  have kpw: "k + pos \<le> w" using kw pw by arith
+  have ccd: "cc = eagg_ccols ?p w" by (simp add: cc_def G_def)
+  note P = eagg_ccols_props[OF ok, folded ccd]
+  have ccE: "cc = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
+    unfolding cc_def G_def by (rule agg_cols_eagg_gcols[OF kw pw])
+  have GE: "G = [0..<pos] @ [Suc pos..<Suc (w - k)]" by (simp add: G_def)
+  have fr: "eframe cc (agg_cols k G)" using P by (simp add: eframe_def cc_def[symmetric])
+  have tb: "table cc D" using D P(3) by (simp add: table_def wf_tuple_def)
+  have yg: "pos \<notin> set G" unfolding GE by (auto simp del: upt_Suc)
+  have fv': "Formula.fv_trm (shift_trm (k + pos) f) \<subseteq> set cc"
+    unfolding ccE fv_shift_trm using fv kpw by (auto simp del: upt_Suc)
+  have g0': "g0 \<Longrightarrow> G = []" unfolding GE using g0 pw by simp
+  note uea = uagg_eval_agg[of cc "replicate k Formula.TInt" G D "shift_trm (k + pos) f" pos g0 \<omega>,
+      simplified length_replicate, OF fr tb fv' yg g0']
+  have 1: "reindex_trm (agg_cols k G) (shift_trm (k + pos) f) = f"
+    unfolding cc_def[symmetric] ccE by (rule reindex_shift_trm[OF fv kpw])
+  have 2: "ins_pos G pos = pos" unfolding GE by (rule ins_pos_eagg_gcols)
+  have 3: "etabc cc (agg_cols k G) D = D"
+    using tb P(2) unfolding cc_def[symmetric]
+    by (force simp: etabc_def table_def restrict_idle)
+  have 4: "shift_cols k cc = G" unfolding cc_def by (rule shift_cols_agg_cols)
+  have 5: "merge_cols G [pos] = [0..<Suc (w - k)]" unfolding GE by (rule merge_cols_eagg_gcols[OF pw])
+  define E where "E = eval_agg cc g0 \<omega> (replicate k Formula.TInt) (shift_trm (k + pos) f) D"
+  have main: "uagg g0 \<omega> f k pos D = etabc (pos # G) [0..<Suc (w - k)] E"
+    using uea unfolding 1 2 3 4 5 E_def .
+  have "etabc (pos # G) [0..<Suc (w - k)] E = slot pos ` E"
+    unfolding etabc_def
+  proof (rule image_cong[OF refl])
+    fix x assume "x \<in> E"
+    then obtain v g where x: "x = v # g" and lg: "length g = w - k"
+      using eval_agg_shape[OF ok, of x] unfolding E_def ccd by blast
+    show "restrict [0..<Suc (w - k)] (pos # G) x = slot pos x"
+      unfolding x GE by (rule restrict_slot[OF lg pw])
+  qed
+  then show ?thesis using main unfolding E_def ccd
+    by (simp add: eval_aggargs_def del: eagg_ccols.simps)
+qed
 
 subsection \<open>The aggregate alongside the count set\<close>
 
@@ -108,6 +346,32 @@ definition kag_del :: "eaggp \<Rightarrow> nat \<Rightarrow> event_data table \<
 definition kag_inv :: "eaggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> bool" where
   "kag_inv p w cc ax \<longleftrightarrow> valid_maggaux' (eagg_args p w) ax (snd cc)"
 
+lemma cnt_rep_snd_add: "cnt_rep f cc \<Longrightarrow> finite T \<Longrightarrow> snd (cnt_add T cc) = snd cc \<union> T"
+  using cnt_rep_add[of f cc T] unfolding cnt_rep_def by auto
+
+lemma kag_inv_init: "kag_inv p w (Mapping.empty, {}) (kag_init p w)"
+  using valid_init_maggaux[of "eagg_args p w"]
+  by (auto simp: kag_inv_def kag_init_def split: prod.splits)
+
+lemma kag_inv_ins:
+  assumes cr: "cnt_rep f cc" and fT: "finite T" and inv: "kag_inv p w cc ax"
+  shows "kag_inv p w (cnt_add T cc) (kag_ins p w T cc ax)"
+proof (cases ax)
+  case None
+  then show ?thesis by (simp add: kag_inv_def kag_ins_def)
+next
+  case (Some a)
+  let ?X = "snd cc" and ?Y = "cnt_enter T cc"
+  have v: "valid_maggaux (eagg_args p w) a ?X" using inv by (simp add: kag_inv_def Some)
+  have fY: "finite ?Y" using fT by (simp add: cnt_enter_def)
+  have dj: "?X \<inter> ?Y = {}" by (auto simp: cnt_enter_def)
+  have XY: "?X \<union> ?Y = snd (cnt_add T cc)"
+    unfolding cnt_rep_snd_add[OF cr fT] cnt_enter_def by auto
+  show ?thesis
+    using valid_insert_maggaux[OF v fY dj] unfolding XY
+    by (auto simp: kag_inv_def kag_ins_def Some split: prod.splits)
+qed
+
 subsection \<open>The aggregate over the window's own tuples\<close>
 
 text \<open>
@@ -124,18 +388,111 @@ fun Rk :: "event_data gagg \<Rightarrow> aggaux" where
 | "Rk (GSum m) = SumAux m"
 | "Rk (GRank m ty) = RankAux (m, ty)"
 
+lemma insert_cnt_Rk:
+  assumes "agg_key (length (aggargs_tys args)) (aggargs_cols args) t = drop k t"
+  shows "insert_cnt args t = gi_cnt k t"
+  using assms by (intro ext) (auto simp: Let_def)
+
+lemma insert_sum_Rk:
+  assumes "agg_key (length (aggargs_tys args)) (aggargs_cols args) t = drop k t"
+    and "meval_trm (aggargs_cols args) (aggargs_f args) t = ev t"
+  shows "insert_sum args t = gi_sum k ev t"
+  using assms by (intro ext) (auto simp: Let_def)
+
+lemma insert_rank_Rk:
+  assumes "agg_key (length (aggargs_tys args)) (aggargs_cols args) t = drop k t"
+    and "meval_trm (aggargs_cols args) (aggargs_f args) t = ev t"
+  shows "insert_rank args ty t = gi_rank k ev ty t"
+  using assms by (intro ext) (auto simp: Let_def)
+
+lemma fold_set_list:
+  assumes F: "comp_fun_commute_on UNIV F" and d: "distinct xs"
+  shows "Finite_Set.fold F b (set xs) = fold F xs b"
+proof -
+  have "Finite_Set.fold F b (set xs) = fold F (remdups xs) b"
+    by (rule comp_fun_commute_on.fold_set_fold_remdups[OF F]) simp
+  then show ?thesis by (simp only: distinct_remdups_id[OF d])
+qed
+
 lemma cfc_insert_cnt: "comp_fun_commute_on UNIV (insert_cnt args)"
   using insert_cnt_comm by unfold_locales (auto simp: fun_eq_iff)
 lemma cfc_insert_sum: "comp_fun_commute_on UNIV (insert_sum args)"
   using insert_sum_comm by unfold_locales (auto simp: fun_eq_iff)
 lemma cfc_insert_rank: "comp_fun_commute_on UNIV (insert_rank args ty)"
   using insert_rank_comm by unfold_locales (auto simp: fun_eq_iff)
-lemma cfc_delete_cnt: "comp_fun_commute_on UNIV (delete_cnt args)"
-  using delete_cnt_comm by unfold_locales (auto simp: fun_eq_iff)
-lemma cfc_delete_sum: "comp_fun_commute_on UNIV (delete_sum args)"
-  using delete_sum_comm by unfold_locales (auto simp: fun_eq_iff)
-lemma cfc_delete_rank: "comp_fun_commute_on UNIV (delete_rank args ty)"
-  using delete_rank_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma insert_maggaux'_Rk_gen:
+  assumes d: "distinct xs"
+    and tup: "\<And>t. t \<in> set xs \<Longrightarrow> agg_key (length (aggargs_tys args)) (aggargs_cols args) t = drop k t \<and>
+       meval_trm (aggargs_cols args) (aggargs_f args) t = ev t"
+  shows "insert_maggaux' args (set xs) (map_option Rk ax) = map_option Rk (gins k ev xs ax)"
+proof -
+  have c: "fold (insert_cnt args) xs s' = fold (gi_cnt k) xs s'" for s'
+    by (rule fold_cong) (simp_all add: insert_cnt_Rk tup)
+  have sm: "fold (insert_sum args) xs s' = fold (gi_sum k ev) xs s'" for s'
+    by (rule fold_cong) (simp_all add: insert_sum_Rk tup)
+  have r: "fold (insert_rank args ty) xs s' = fold (gi_rank k ev ty) xs s'" for ty s'
+    by (rule fold_cong) (simp_all add: insert_rank_Rk tup)
+  have fc: "fold (gstep_ins k ev) xs (Some (GCnt m)) =
+      (case fold (gi_cnt k) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GCnt m') else None)" for m
+    by (rule fold_flag) (simp_all add: gstep_ins_def)
+  have fs: "fold (gstep_ins k ev) xs (Some (GSum m)) =
+      (case fold (gi_sum k ev) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GSum m') else None)" for m
+    by (rule fold_flag) (simp_all add: gstep_ins_def)
+  have fr: "fold (gstep_ins k ev) xs (Some (GRank m ty)) =
+      (case fold (gi_rank k ev ty) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GRank m' ty) else None)"
+    for m ty
+    by (rule fold_flag[where C = "\<lambda>m. GRank m ty"]) (simp_all add: gstep_ins_def)
+  show ?thesis
+  proof (cases ax)
+    case (Some a)
+    show ?thesis
+    proof (cases a)
+      case (GCnt m)
+      show ?thesis
+        unfolding Some GCnt gins_def fc
+        by (simp add: fold_set_list[OF cfc_insert_cnt d] c split: prod.splits)
+    next
+      case (GSum m)
+      show ?thesis
+        unfolding Some GSum gins_def fs
+        by (simp add: fold_set_list[OF cfc_insert_sum d] sm split: prod.splits)
+    next
+      case (GRank m ty)
+      show ?thesis
+        unfolding Some GRank gins_def fr
+        by (simp add: fold_set_list[OF cfc_insert_rank d] r split: prod.splits)
+    qed
+  qed simp
+qed
+
+lemma init_maggaux'_Rk:
+  "init_maggaux' (eagg_args (g0, \<omega>, f, k, pos) w) = map_option Rk (ginit \<omega>)"
+  by (simp add: ginit_def split: prod.splits Formula.agg_type.splits ty.splits)
+
+lemma gmr_slot: "gmr p id f m = slot p ` get_map_result m f"
+  unfolding gmr_def get_map_result_def image_image
+  by (intro image_cong refl) (auto simp: slot_def Mapping.keys_dom_lookup split: option.splits)
+
+lemma slot_singleton_table: "slot p ` singleton_table x = {[x]}"
+  by (simp add: singleton_table_def slot_def)
+
+lemma result_maggaux_Rk:
+  assumes v: "valid_maggaux (eagg_args (g0, \<omega>, f, k, pos) w) (Rk a) X"
+  shows "gres g0 \<omega> pos id a = slot pos ` result_maggaux (eagg_args (g0, \<omega>, f, k, pos) w) (Rk a)"
+proof (cases a)
+  case (GCnt m)
+  then show ?thesis by (simp add: gmr_slot slot_singleton_table)
+next
+  case (GSum m)
+  have "fst \<omega> = Formula.Agg_Sum \<or> fst \<omega> = Formula.Agg_Avg"
+    using v by (simp add: GSum Let_def del: valid_aggmap_def)
+  then show ?thesis using GSum by (auto simp: gmr_slot slot_singleton_table case_prod_beta)
+next
+  case (GRank m ty)
+  have "fst \<omega> = Formula.Agg_Min \<or> fst \<omega> = Formula.Agg_Max \<or> fst \<omega> = Formula.Agg_Med"
+    using v by (simp add: GRank Let_def del: valid_aggmap_def)
+  then show ?thesis using GRank by (auto simp: gmr_slot slot_singleton_table)
+qed
 
 text \<open>The window's aggregate: the structure over the window's own tuples, fed with the sorted
   list of what enters and what leaves, and read with the result column filled in.  Its
@@ -161,6 +518,68 @@ definition ag_res :: "eaggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow>
 
 definition ag_inv :: "eaggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> egagg option \<Rightarrow> bool" where
   "ag_inv p w cc ax \<longleftrightarrow> kag_inv p w cc (map_option Rk ax)"
+
+lemma csl_etuple:
+  "finite (T :: event_data table) \<Longrightarrow> set (csl T) = T \<and> distinct (csl T)"
+  using csorted_list_of_set_etuple by (simp add: csl_finite)
+
+lemma ag_ins_Rk:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w" and fT: "finite T" and T: "ewf_table w T"
+  shows "map_option Rk (ag_ins (g0, \<omega>, f, k, pos) w T cc ax)
+    = kag_ins (g0, \<omega>, f, k, pos) w T cc (map_option Rk ax)"
+proof -
+  let ?xs = "filter (\<lambda>t. t \<notin> snd cc) (csl T)"
+  have s: "set ?xs = cnt_enter T cc" and d: "distinct ?xs"
+    using csl_etuple[OF fT] by (auto simp: cnt_enter_def)
+  have tup: "t \<in> set ?xs \<Longrightarrow> agg_key (length (aggargs_tys (eagg_args (g0, \<omega>, f, k, pos) w)))
+      (aggargs_cols (eagg_args (g0, \<omega>, f, k, pos) w)) t = drop k t \<and>
+     meval_trm (aggargs_cols (eagg_args (g0, \<omega>, f, k, pos) w))
+      (aggargs_f (eagg_args (g0, \<omega>, f, k, pos) w)) t = umeval_trm f t" for t
+    using T csl_etuple[OF fT] agg_key_dagg[OF ok] meval_shift_dagg[OF ok]
+    by (simp del: eagg_ccols.simps)
+  show ?thesis
+    unfolding ag_ins_def kag_ins_def prod.case
+    using insert_maggaux'_Rk_gen[OF d tup, of ax] unfolding s by simp
+qed
+
+lemma ag_inv_init: "ag_inv p w (Mapping.empty, {}) (ag_init p w)"
+proof -
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p)
+  show ?thesis
+    using kag_inv_init[of p w] unfolding kag_init_def p init_maggaux'_Rk
+    by (simp add: ag_inv_def ag_init_def)
+qed
+
+lemma ag_inv_ins:
+  assumes cr: "cnt_rep f cc" and fT: "finite T" and ok: "eagg_ok p w"
+    and T: "ewf_table w T" and S: "ewf_table w (snd cc)" and inv: "ag_inv p w cc ax"
+  shows "ag_inv p w (cnt_add T cc) (ag_ins p w T cc ax)"
+proof -
+  obtain g0 \<omega> f' k pos where p: "p = (g0, \<omega>, f', k, pos)" by (cases p)
+  show ?thesis
+    using kag_inv_ins[OF cr fT inv[unfolded ag_inv_def]]
+    unfolding ag_inv_def p ag_ins_Rk[OF ok[unfolded p] fT T] .
+qed
+
+lemma ag_res_inv:
+  assumes inv: "ag_inv p w cc ax" and ok: "eagg_ok p w" and S: "ewf_table w (snd cc)"
+  shows "ag_res p w cc ax = eagg_p p (snd cc)"
+proof (cases ax)
+  case None
+  then show ?thesis by (simp add: ag_res_def)
+next
+  case (Some a)
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p)
+  have v: "valid_maggaux (eagg_args p w) (Rk a) (snd cc)"
+    using inv by (simp add: ag_inv_def kag_inv_def Some)
+  have "ag_res p w cc ax = slot pos ` result_maggaux (eagg_args p w) (Rk a)"
+    using result_maggaux_Rk[OF v[unfolded p]] by (simp add: ag_res_def Some p)
+  also have "\<dots> = slot pos ` eval_aggargs (eagg_args p w) (snd cc)"
+    by (simp only: valid_result_maggaux[OF v])
+  also have "\<dots> = eagg_p p (snd cc)"
+    unfolding p by (rule eagg_p_eval_aggargs[OF ok[unfolded p] S, symmetric])
+  finally show ?thesis .
+qed
 
 subsection \<open>The window, with the aggregate\<close>
 
@@ -244,10 +663,6 @@ definition valid_sa :: "args \<Rightarrow> eaggp \<Rightarrow> ts \<Rightarrow> 
      valid_sw args cur w auxlist \<and> length (args_R args) = args_n args \<and>
      eagg_ok p (args_n args) \<and> ag_inv p (args_n args) (sw_cc w) ax)"
 
-subsubsection \<open>The scans, and what the window's validity says about its tables\<close>
-
-subsubsection \<open>Validity\<close>
-
 section \<open>The executable fused Since window\<close>
 
 text \<open>
@@ -327,12 +742,6 @@ definition uqok :: "uconstr option \<Rightarrow> event_data list \<Rightarrow> b
 definition ufilt :: "uconstr option \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
   "ufilt q X = Set.filter (uqok q) X"
 
-lemma uqok_None[simp]: "uqok None = (\<lambda>_. True)"
-  by (simp add: uqok_def)
-
-lemma ufilt_None[simp]: "ufilt None = id"
-  by (simp add: ufilt_def fun_eq_iff)
-
 text \<open>The result writes the aggregate into each group and keeps what passes the node's guard.
   The fused form walks the mapping's entries -- the key and its value together, so no lookup --
   and inserts the node's own tuple straight into the answer.\<close>
@@ -340,6 +749,11 @@ text \<open>The result writes the aggregate into each group and keeps what passe
 definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow>
     (event_data list, 'b) mapping \<Rightarrow> event_data list set" where
   "ugmr q p f m = Set.filter q (gmr p (\<lambda>x. x) f m)"
+
+lemma fold_insert_filter_image:
+  "fold (\<lambda>x A. let v = g x in if q v then Set.insert v A else A) xs A
+   = Set.filter q (g ` set xs) \<union> A"
+  by (induct xs arbitrary: A) (auto simp: Let_def)
 
 lemma ugmr_code[code]:
   fixes t :: "(event_data list, 'b) mapping_rbt"

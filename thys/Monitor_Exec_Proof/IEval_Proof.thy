@@ -21,14 +21,24 @@ lemma ib2_eb2[simp]: "ib2 (eb2 b) = b"
 lemma ibn_ebn[simp]: "ibn (ebn b) = b"
   by (simp add: ibn_def ebn_def comp_def map_idI)
 
+lemma length_eands_req[simp]: "length (eands_req ps n) = n"
+  by (cases ps) (simp_all add: eands_req_def)
+
 lemma iset_igands_pos: "iset (igands_pos ps t us) = gands_pos ps (iset t) (map iset us)"
   by (induct ps t us rule: igands_pos.induct) (simp_all add: ijoin_eq)
 
 lemma igmulti_join_eq: "igmulti_join ps ns us = gmulti_join ps ns (map iset us)"
   by (cases us) (simp_all add: igmulti_join_def gmulti_join_def iset_igands_pos take_map drop_map)
 
+lemma lookup_dabs: "Mapping.lookup (dabs db) k = map_option (map iset) (Mapping.lookup db k)"
+  by (simp add: dabs_def Mapping.lookup_map_values)
+
 lemma dabs_update[simp]: "dabs (Mapping.update k xs db) = Mapping.update k (map iset xs) (dabs db)"
   by (rule mapping_eqI) (simp add: lookup_dabs Mapping.lookup_update')
+
+lemma dabs_demb[simp]: "dabs (demb db) = db"
+  by (rule mapping_eqI) (simp add: lookup_dabs demb_def Mapping.lookup_map_values option.map_comp
+      comp_def option.map_ident)
 
 lemma map_zip_inv:
   "length Q = length L \<Longrightarrow> (\<And>q x. (q, x) \<in> set (zip Q L) \<Longrightarrow> g (f q x) = x) \<Longrightarrow>

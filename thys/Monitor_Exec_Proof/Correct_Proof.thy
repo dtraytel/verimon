@@ -6,7 +6,17 @@ begin
 
 
 
+section \<open>The executable monitor inherits the kernel's correctness theorems\<close>
+
 subsection \<open>The concrete monitor is a @{locale verimon}\<close>
+
+sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
+  valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux
+    add_new_table_mmasaux result_mmasaux
+  valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq length_muaux_dq eval_muaux_dq
+  valid_mmtaux init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join
+  by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
+
 
 lemma eannotate_eq:
   "eannotate i tq vs acc = (i', tq', vs') \<Longrightarrow>
@@ -27,6 +37,14 @@ proof (induct vs arbitrary: i tq acc i' tq' vs')
     show ?thesis using Cons(1)[OF step] lt by simp
   qed
 qed simp
+
+text \<open>The indices a state keeps do not change what it computes: two states that agree once their
+  indices are forgotten (@{text eforget}) give the same verdicts at every step, and agree again
+  after it.  So the indices can be chosen when the monitor starts (@{text eindex}).\<close>
+
+definition eforget :: "emstate \<Rightarrow> nat \<times> nat \<times> eformula \<times> nat \<times> cols \<times> ts mbuf_t" where
+  "eforget st = (emstate_i st, emstate_j st, eabs (emstate_m st), emstate_n st, emstate_cs st,
+     emstate_t st)"
 
 lemma eforget_eindex[simp]: "eforget (eindex ix st) = eforget st"
   by (simp add: eforget_def eindex_def)
@@ -62,6 +80,22 @@ qed simp
 lemma emonitor_eindex[simp]: "emonitor (eindex ix st) \<pi> = emonitor st \<pi>"
   unfolding emonitor_def emsteps_stateless.rep_eq by (rule emsteps0_stateless_eforget) simp
 
+
+subsection \<open>The state relation\<close>
+
+text \<open>
+  Two states are related when their bookkeeping agrees and their formulas are related by
+  @{const esim} at the column lists @{term ks} (the kernel's) and @{term cs} (the executable one the
+  state records), with the timestamp bound of @{const esim} being the last timestamp the two have
+  been fed.
+\<close>
+
+definition emsim_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow>
+    emstate \<Rightarrow> bool" where
+  "emsim_state n ks cs tw st dst \<longleftrightarrow>
+     emstate_i dst = mstate_i st \<and> emstate_j dst = mstate_j st \<and>
+     Rep_mbuf_t (emstate_t dst) = mstate_t st \<and> mstate_n st = n \<and> emstate_n dst = n \<and>
+     emstate_cs dst = cs \<and> esim n ks cs tw (eabs (emstate_m dst)) (mstate_m st)"
 
 lemma enumerate_zip_map:
   "List.enumerate i (zip us (map f xs))
@@ -123,6 +157,8 @@ qed
 lemma emsim_state_dframe: "emsim_state n ks cs tw st dst \<Longrightarrow> eframe ks cs"
   unfolding emsim_state_def by (auto dest: esim_dframe)
 
+
+subsection \<open>The whole prefix\<close>
 
 text \<open>
   The timestamp bound of @{const esim} is the last timestamp of the prefix read so far: each step
@@ -187,10 +223,21 @@ proof -
     by (rule emsteps0_stateless_rel[OF _ wfm srt _ fin]) (use r in \<open>simp_all add: last_ts.rep_eq pnil.rep_eq\<close>)
 qed
 
+subsection \<open>The verdicts are the narrowing of the kernel's\<close>
+
 lemma map_etabw_etabc:
   "eframe ks cs \<Longrightarrow> \<forall>(i, t, X) \<in> set V. table ks X \<Longrightarrow>
    map (\<lambda>(i, t, X). (i, t, etabw ks cs X)) (map (\<lambda>(i, t, X). (i, t, etabc ks cs X)) V) = V"
   by (induct V) (auto simp: etabw_dtabc)
+
+subsection \<open>The correctness theorems, transferred\<close>
+
+text \<open>
+  Nothing about the executable representation is left in these statements: they are the kernel's own
+  collected results with @{const emonitor} in place of the kernel's monitor and the verdict
+  tables widened back.  The simulation is what carries them across, and the only thing it asks of
+  the caller is a related initial state.
+\<close>
 
 context verimon_spec
 begin

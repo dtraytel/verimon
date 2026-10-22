@@ -6,6 +6,8 @@ begin
 
 
 
+subsection \<open>It tracks the plain window\<close>
+
 text \<open>The fused operations differ from @{const uw_extend}, @{const uw_step} and
   @{const uw_shift} only in the extra component and in what is pushed onto the list of finished
   answers.  The first lemmas say so: everything but that list steps identically.\<close>
@@ -307,6 +309,9 @@ proof -
   qed
 qed
 
+lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
+  by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)
+
 lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
   by (cases a) (simp add: rua.simps)
 
@@ -418,5 +423,9 @@ proof -
     by (simp add: ua_eval_def uua_eval_def rua.simps uuwm.simps s)
 qed
 
+lemma rua_init: "rua (uua_init args p) = ua_init args p"
+  by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc)
+
+(*<*)
 end
 (*>*)

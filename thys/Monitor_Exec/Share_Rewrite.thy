@@ -80,22 +80,5 @@ text \<open>As for the frozen predicates, the rewrite is applied only when its r
 definition share_opt :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "share_opt \<phi> = (let \<phi>' = share_rw \<phi> in if mmonitorable_exec \<phi>' then \<phi>' else \<phi>)"
 
-subsection \<open>The shared predicate\<close>
-
-lemma not_contains_pred_preds: "\<not> occurs pn \<phi> \<Longrightarrow> \<not> contains_pred pn \<phi>"
-  by (induct pn \<phi> rule: contains_pred.induct) auto
-
-lemma sat_Release_cong:
-  assumes "\<And>v j. Formula.sat \<sigma> V v j \<phi> = Formula.sat \<sigma> V' v j \<phi>'"
-    "\<And>v j. Formula.sat \<sigma> V v j \<psi> = Formula.sat \<sigma> V' v j \<psi>'"
-  shows "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>) = Formula.sat \<sigma> V' v i (Formula.Release \<phi>' I \<psi>')"
-  using assms by simp
-
-subsection \<open>The rewrite of the whole formula\<close>
-
-lemma mmonitorable_share_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (share_opt \<phi>)"
-  by (simp add: share_opt_def Let_def mmonitorable_exec_mmonitorable)
-
-(*<*)
 end
 (*>*)

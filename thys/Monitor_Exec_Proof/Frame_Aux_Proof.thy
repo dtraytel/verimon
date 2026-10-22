@@ -6,6 +6,8 @@ begin
 
 
 
+section \<open>The executable Since and Until structures\<close>
+
 text \<open>
   The temporal structures run over the ascending columns @{term "eargs cs_R cs_L args"}: a stored
   tuple is a tuple over the right operand's columns @{term cs_R}, and the probe table is the left
@@ -15,6 +17,8 @@ text \<open>
   single pass over the tuple.  This theory adds an index on that projection and proves the
   resulting structures equal to the verified ones.
 \<close>
+
+subsection \<open>The executable index under the semi-join\<close>
 
 text \<open>
   Restricting the index to the surviving keys is the index of the surviving tuples: a bucket
@@ -38,44 +42,31 @@ proof -
   then show ?thesis by (simp add: mapping_eqI)
 qed
 
+subsection \<open>Maintaining the index incrementally\<close>
+
+text \<open>
+  The structure adds and removes whole tables at a time, so the index is maintained by combining
+  it with the index of the added table, and by subtracting the index of the removed one bucket by
+  bucket.
+\<close>
+
 lemma eidx_empty[simp]: "eidx msk {} = Mapping.empty"
   by (intro mapping_eqI) (simp add: lookup_eidx)
-
-lemma eidx_union_eq: "eidx msk (S \<union> A) = eidx_union (eidx msk S) (eidx msk A)"
-proof -
-  have "Mapping.lookup (eidx msk (S \<union> A)) k
-      = Mapping.lookup (eidx_union (eidx msk S) (eidx msk A)) k" for k
-  proof -
-    have eS: "k \<notin> eproj msk ` S \<Longrightarrow> {y \<in> S. eproj msk y = k} = {}" by auto
-    have eA: "k \<notin> eproj msk ` A \<Longrightarrow> {y \<in> A. eproj msk y = k} = {}" by auto
-    have u: "{y \<in> S \<union> A. eproj msk y = k}
-        = {y \<in> S. eproj msk y = k} \<union> {y \<in> A. eproj msk y = k}" by auto
-    have iU: "(k \<in> eproj msk ` (S \<union> A)) = (k \<in> eproj msk ` S \<or> k \<in> eproj msk ` A)" by auto
-    show ?thesis
-      by (simp add: eidx_union_def Mapping.lookup_combine lookup_eidx combine_options_def
-          u iU eS eA) blast
-  qed
-  then show ?thesis by (simp add: mapping_eqI)
-qed
 
 text \<open>Only the buckets that the subtrahend touches are dropped when they empty: a bucket at a key
   the subtrahend does not have is left as it is.  On a clustering, which has no empty buckets, the
   two readings agree; the executable version of the subtraction, which only visits the
   subtrahend's keys, realises this one exactly.\<close>
 
-lemma eidx_minus_eq: "eidx msk (S - D) = eidx_minus (eidx msk S) (eidx msk D)"
-proof -
-  have "Mapping.lookup (eidx msk (S - D)) k
-      = Mapping.lookup (eidx_minus (eidx msk S) (eidx msk D)) k" for k
-  proof -
-    have b: "{y \<in> S. eproj msk y = k} - ebucket (eidx msk D) k = {y \<in> S - D. eproj msk y = k}"
-      by (auto simp: ebucket_def lookup_eidx split: if_splits)
-    show ?thesis
-      by (auto simp: eidx_minus_def Mapping.lookup_filter Mapping.lookup_map_values lookup_eidx b
-          split: option.splits if_splits intro: rev_image_eqI)
-  qed
-  then show ?thesis by (simp add: mapping_eqI)
-qed
+subsection \<open>The mask of the left operand's columns among the right operand's\<close>
+
+lemma length_mrg_left_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     length (mrg_left_key (mrg_plan cs1 cs2)) = length cs1"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+lemma mrg_left_key_MRgt: "mrg_left_key (map (\<lambda>_. MRgt) ds) = []"
+  by (induct ds) auto
 
 lemma mrg_plan_Cons_cases:
   fixes c d :: nat
@@ -163,6 +154,11 @@ lemma emsk_args_empty: "emsk_args args msk \<Longrightarrow> (args_L args = []) 
 lemma emsk_args_full: "emsk_args args msk \<Longrightarrow> (args_L args = args_R args) = (\<forall>i \<in> set msk. i)"
   by (simp add: emsk_args_def mrg_left_key_all_True)
 
+lemma emsk_args_dargs:
+  assumes "sorted_wrt (<) cs_R" "sorted_wrt (<) cs_L" "set cs_L \<subseteq> set cs_R"
+  shows "emsk_args (eargs cs_R cs_L args) (mrg_left_key (mrg_plan cs_R cs_L))"
+  using assms by (simp add: emsk_args_def)
+
 text \<open>
   Both indexed tables are determined by the mapping they index, so normalising them away does not
   leave the invariant.
@@ -171,6 +167,11 @@ text \<open>
 lemma valid_mmsaux_norm: "valid_mmsaux args cur aux ys \<Longrightarrow>
     valid_mmsaux args cur (mmsaux_norm args aux) ys"
   by (cases aux) (auto simp: wf_table_sig_args wf_table_of_set_args)
+
+lemma emsk_args_length: "emsk_args args msk \<Longrightarrow> length msk = length (args_R args)"
+  by (simp add: emsk_args_def length_mrg_left_key)
+
+subsection \<open>What the window's entry and exit do to the keys\<close>
 
 text \<open>
   The two folds that move tables out of and into the window report the tuples they removed and
@@ -224,12 +225,17 @@ lemma fold_upd_set_keys_keys':
   "fold (upd_set_keys Z) ds (m, {}) = (m', Y') \<Longrightarrow> Mapping.keys m' = Mapping.keys m \<union> Y'"
   using fold_upd_set_keys_keys[of Z ds m "{}" m' Y'] by simp
 
+subsection \<open>The executable operations are the verified ones\<close>
+
 lemma emsaux_cases:
   fixes daux :: "'a emsaux"
   obtains t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since
   where "daux = (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
     idx_since, tuple_since)"
   by (metis prod.collapse)
+
+lemma emsaux_of_dinit: "emsaux_of args (einit_msaux args msk) = init_mmsaux args"
+  by (simp add: einit_msaux_def wf_table_of_set_args_def)
 
 lemma emsaux_inv_dinit: "emsaux_inv args msk (einit_msaux args msk)"
   by (simp add: einit_msaux_def)
@@ -264,6 +270,13 @@ lemma valid_dmsauxI:
   shows "valid_emsaux args msk cur daux ys"
   unfolding valid_emsaux_def assms(2)
   by (rule conjI[OF valid_mmsaux_norm[OF assms(1)] assms(3)])
+
+lemma valid_dmsauxD:
+  "valid_emsaux args msk cur daux ys \<Longrightarrow> valid_mmsaux args cur (emsaux_of args daux) ys"
+  by (simp add: valid_emsaux_def)
+
+lemma valid_emsaux_inv: "valid_emsaux args msk cur daux ys \<Longrightarrow> emsaux_inv args msk daux"
+  by (simp add: valid_emsaux_def)
 
 lemma valid_eshift_end:
   assumes "valid_emsaux args msk cur daux ys" and "nt \<ge> cur"
@@ -341,6 +354,14 @@ lemma valid_eresult_msaux:
     = foldr (\<union>) [rel. (t, rel) \<leftarrow> ys, memL (args_ivl args) (cur - t)] {}"
   by (simp add: eresult_msaux_eq valid_result_mmsaux[OF valid_dmsauxD])
 
+subsection \<open>The join is the verified join\<close>
+
+lemma eproj_all_False: "\<forall>i \<in> set msk. \<not> i \<Longrightarrow> length as = length msk \<Longrightarrow> eproj msk as = []"
+  by (induct msk as rule: eproj.induct) auto
+
+lemma eproj_all_True_mask: "\<forall>i \<in> set msk. i \<Longrightarrow> length as = length msk \<Longrightarrow> eproj msk as = as"
+  by (induct msk as rule: eproj.induct) auto
+
 lemma Mapping_filter_True: "Mapping.filter (\<lambda>_ _. True) m = m"
   by (intro mapping_eqI) (simp add: Mapping.lookup_filter split: option.splits)
 
@@ -352,6 +373,12 @@ lemma mapping_delete_set_filter:
   by (intro mapping_eqI)
      (auto simp: delete_set_lookup Mapping.lookup_filter Mapping.keys_dom_lookup
        split: option.splits)
+
+text \<open>
+  Whichever branch it takes, the executable join filters both mappings by the executable test, and the
+  window's table follows the mapping it indexes.  That is the verified join's abstract form
+  (@{const join_mmsaux_abs}).
+\<close>
 
 lemma ejoin_msaux_abs:
   assumes v: "valid_emsaux args msk cur (t, gc, m, dp, di, ti, ii, tui, idxs, tus) ys"
@@ -498,6 +525,8 @@ next
       using noneF False unfolding mm by (auto simp: Let_def fi fs ki ks)
   qed
 qed
+
+subsection \<open>The join's validity\<close>
 
 lemma mmsaux_cases:
   fixes aux :: "'a mmsaux"
@@ -742,6 +771,10 @@ lemma valid_eresult_msaux_lz:
   unfolding valid_emsaux_lz_def
   by (cases daux rule: emsaux_cases) (auto dest: valid_eresult_msaux split: if_splits)
 
+lemma eframe_sub:
+  "eframe kR cR \<Longrightarrow> eframe kL cL \<Longrightarrow> set kL \<subseteq> set kR \<Longrightarrow> set cL \<subseteq> set cR"
+  by (simp add: eframe_def)
+
 lemma esaux'_init:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
   shows "esaux' kR cR cL args 0 (einit_msaux (eargs cR cL args) (emsk cR cL)) []"
@@ -824,6 +857,8 @@ proof -
     by (rule valid_eresult_msaux_lz[OF d])
   then show ?thesis by (simp add: etabc_result)
 qed
+
+section \<open>The executable Until structure\<close>
 
 text \<open>
   The Until structure needs far less than the Since one.  Only one of its components mentions
@@ -981,13 +1016,24 @@ proof -
   then show ?thesis using vd r w by (auto simp: euaux'_def)
 qed
 
+lemma length_etabcs[simp]: "length (etabcs kss css rels) = length rels"
+  by (simp add: etabcs_def)
+
+lemma nth_etabcs[simp]: "i < length rels \<Longrightarrow> etabcs kss css rels ! i = etabc (kss ! i) (css ! i) (rels ! i)"
+  by (simp add: etabcs_def)
+
 lemma wf_atomsD:
   assumes "wf_atoms ks kss css rels" "i < length rels"
   shows "eframe (kss ! i) (css ! i)" "set (kss ! i) \<subseteq> set ks" "table (kss ! i) (rels ! i)"
   using assms by (auto simp: wf_atoms_def)
 
+lemma table_unit_table_Nil: "table ks unit_table \<Longrightarrow> ks = []"
+  by (simp add: table_def unit_table_def)
+
 lemma etabc_eq_empty_table[simp]: "etabc ks cs T = empty_table \<longleftrightarrow> T = empty_table"
   by (simp add: etabc_empty_iff empty_table_def)
+
+subsection \<open>The lax epsilon\<close>
 
 lemma table_eps_lax:
   assumes wf: "wf_atoms ks kss css rels"
@@ -1043,6 +1089,8 @@ next
     by (simp add: etabc_join_sub[OF fK fK subset_refl t1 t2])
 qed simp
 
+subsection \<open>The strict epsilons\<close>
+
 text \<open>
   Unlike the lax one, a strict epsilon does not carry a guard, and its value is a table over the
   node's columns only because the regular expression is safe.  This is the column part of the
@@ -1072,6 +1120,8 @@ lemma table_leps_strict:
   using qtable_l\<epsilon>_strict[OF assms(1-4), where R = "{}"] assms(5)
   by (simp add: qtable_mem_restr_empty)
 
+text \<open>A tested atom is moved to the node's column order; the executable one is already in it.\<close>
+
 lemma etabc_reorder:
   assumes fK: "eframe ks cs" and f: "eframe k c" and e: "set k = set ks" and t: "table k T"
   shows "etabc ks cs (reorder ks k T) = reorder cs c (etabc k c T)"
@@ -1084,9 +1134,6 @@ proof -
   show ?thesis
     unfolding r cc reorder_def using etabc_restrict[OF fk e[symmetric] t] by simp
 qed
-
-lemma lr: "wfrels rels \<Longrightarrow> length \<psi>s = length rels"
-  by (simp add: list_all2_lengthD)
 
 lemma wf_atoms: "wfrels rels \<Longrightarrow> wf_atoms ks (map Formula.fv_list \<psi>s) css rels"
   using lc fa sub by (auto simp: wf_atoms_def list_all2_conv_all_nth)
@@ -1213,6 +1260,8 @@ next
 qed
 
 end
+
+subsection \<open>The derivatives\<close>
 
 text \<open>
   The two derivatives read the previous firing's tabulation, which the node keeps reordered, and

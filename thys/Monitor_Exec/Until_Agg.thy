@@ -97,8 +97,6 @@ definition ua_eval :: "args \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> 
      (case ua_shift args p w nt a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
        (rev dn, ((nts, win, rest, len, bend, cc, []), ax)))"
 
-subsection \<open>It tracks the plain window\<close>
-
 subsection \<open>What it is valid for\<close>
 
 text \<open>The fused window is related to a plain one that has taken the same steps: the same seven
@@ -139,9 +137,6 @@ fun uuwm :: "uuwauxm \<Rightarrow> uwaux" where
   "uuwm (nts, win, rest, len, bend, cc, dn) = (nts, win, rest, len, bend, ucc cc, dn)"
 
 declare uuwm.simps[simp del]
-
-lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
-  by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)
 
 function uua_extend :: "args \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uw_entry queue \<Rightarrow> uw_entry queue \<Rightarrow> bool \<Rightarrow>
     ucnt \<Rightarrow> ugagg option \<Rightarrow>
@@ -217,9 +212,5 @@ fun rua :: "uuwagg \<Rightarrow> uwagg" where
 
 declare rua.simps[simp del]
 
-lemma rua_init: "rua (uua_init args p) = ua_init args p"
-  by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc)
-
-(*<*)
 end
 (*>*)

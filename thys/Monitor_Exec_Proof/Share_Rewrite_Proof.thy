@@ -6,6 +6,11 @@ begin
 
 
 
+subsection \<open>The shared predicate\<close>
+
+lemma not_contains_pred_preds: "\<not> occurs pn \<phi> \<Longrightarrow> \<not> contains_pred pn \<phi>"
+  by (induct pn \<phi> rule: contains_pred.induct) auto
+
 lemma tabulate_map_upt: "tabulate f x n = map f [x..<x + n]"
   by (induct n arbitrary: x) (auto simp: upt_rec)
 
@@ -133,11 +138,19 @@ qed (auto intro: wty_formula.intros)
 lemma wty_fresh: "S, E \<turnstile> \<phi> \<Longrightarrow> \<not> occurs pn \<phi> \<Longrightarrow> S(pn \<mapsto> x), E \<turnstile> \<phi>"
   by (rule wty_fresh'[OF _ _ refl])
 
+lemma sat_Release_cong:
+  assumes "\<And>v j. Formula.sat \<sigma> V v j \<phi> = Formula.sat \<sigma> V' v j \<phi>'"
+    "\<And>v j. Formula.sat \<sigma> V v j \<psi> = Formula.sat \<sigma> V' v j \<psi>'"
+  shows "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>) = Formula.sat \<sigma> V' v i (Formula.Release \<phi>' I \<psi>')"
+  using assms by simp
+
 lemma progress_Release_cong:
   assumes "progress \<sigma> P \<phi> j = progress \<sigma> P' \<phi>' j" "progress \<sigma> P \<psi> j = progress \<sigma> P' \<psi>' j"
   shows "progress \<sigma> P (Formula.Release \<phi> I \<psi>) j = progress \<sigma> P' (Formula.Release \<phi>' I \<psi>') j"
   using assms by (simp add: release_safe_bounded_def always_safe_bounded_def Formula.eventually_def
     Formula.once_def)
+
+subsection \<open>The rewrite of the whole formula\<close>
 
 lemma fvi_share_rw[simp]: "Formula.fvi b (share_rw \<phi>) = Formula.fvi b \<phi>"
   by (induct \<phi> arbitrary: b rule: share_rw.induct)
@@ -322,5 +335,9 @@ lemma progress_share_opt_empty[simp]:
 lemma wty_share_opt: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> share_opt \<phi>"
   by (simp add: share_opt_def Let_def wty_share_rw)
 
+lemma mmonitorable_share_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (share_opt \<phi>)"
+  by (simp add: share_opt_def Let_def mmonitorable_exec_mmonitorable)
+
+(*<*)
 end
 (*>*)

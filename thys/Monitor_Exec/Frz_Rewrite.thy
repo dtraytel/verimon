@@ -166,21 +166,5 @@ text \<open>Out of an existential quantifier the conjunct is taken whether or no
 
 declare hoist.simps(8)[simp del]
 
-text \<open>The frozen predicate's progress is either the whole prefix or none of it, and the whole
-  prefix when the flag is set.\<close>
-
-subsection \<open>The rewrite of the whole formula\<close>
-
-text \<open>Outside the bound predicates, every predicate is known at every time point of the
-  prefix or at none of them; a formula that never lags then has the whole prefix as its
-  progress.\<close>
-
-definition full_env :: "(Formula.name \<times> nat) list \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> nat) \<Rightarrow> nat \<Rightarrow> bool" where
-  "full_env B P j \<longleftrightarrow> (\<forall>pn. pn \<notin> set B \<longrightarrow> P pn = None \<or> P pn = Some j)"
-
-lemma mmonitorable_frz_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (frz_opt \<phi>)"
-  by (simp add: frz_opt_def Let_def mmonitorable_exec_mmonitorable)
-
-(*<*)
 end
 (*>*)

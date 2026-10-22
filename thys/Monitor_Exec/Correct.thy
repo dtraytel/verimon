@@ -6,16 +6,6 @@ begin
 
 
 
-section \<open>The executable monitor inherits the kernel's correctness theorems\<close>
-
-sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
-  valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux
-    add_new_table_mmasaux result_mmasaux
-  valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq length_muaux_dq eval_muaux_dq
-  valid_mmtaux init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join
-  by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
-
-
 subsection \<open>The executable state machine\<close>
 
 text \<open>
@@ -85,45 +75,8 @@ lift_definition emsteps_stateless :: "Formula.prefix \<Rightarrow> emstate \<Rig
 definition emonitor :: "emstate \<Rightarrow> Formula.prefix \<Rightarrow> (nat \<times> ts \<times> event_data table) list" where
   "emonitor st \<pi> = emsteps_stateless \<pi> st"
 
-text \<open>The indices a state keeps do not change what it computes: two states that agree once their
-  indices are forgotten (@{text eforget}) give the same verdicts at every step, and agree again
-  after it.  So the indices can be chosen when the monitor starts (@{text eindex}).\<close>
-
-definition eforget :: "emstate \<Rightarrow> nat \<times> nat \<times> eformula \<times> nat \<times> cols \<times> ts mbuf_t" where
-  "eforget st = (emstate_i st, emstate_j st, eabs (emstate_m st), emstate_n st, emstate_cs st,
-     emstate_t st)"
-
 definition eindex :: "ipolicy \<Rightarrow> emstate \<Rightarrow> emstate" where
   "eindex ix st = st\<lparr>emstate_m := eemb ix [] (eabs (emstate_m st))\<rparr>"
-
-subsection \<open>The state relation\<close>
-
-text \<open>
-  Two states are related when their bookkeeping agrees and their formulas are related by
-  @{const esim} at the column lists @{term ks} (the kernel's) and @{term cs} (the executable one the
-  state records), with the timestamp bound of @{const esim} being the last timestamp the two have
-  been fed.
-\<close>
-
-definition emsim_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow>
-    emstate \<Rightarrow> bool" where
-  "emsim_state n ks cs tw st dst \<longleftrightarrow>
-     emstate_i dst = mstate_i st \<and> emstate_j dst = mstate_j st \<and>
-     Rep_mbuf_t (emstate_t dst) = mstate_t st \<and> mstate_n st = n \<and> emstate_n dst = n \<and>
-     emstate_cs dst = cs \<and> esim n ks cs tw (eabs (emstate_m dst)) (mstate_m st)"
-
-subsection \<open>The whole prefix\<close>
-
-subsection \<open>The verdicts are the narrowing of the kernel's\<close>
-
-subsection \<open>The correctness theorems, transferred\<close>
-
-text \<open>
-  Nothing about the executable representation is left in these statements: they are the kernel's own
-  collected results with @{const emonitor} in place of the kernel's monitor and the verdict
-  tables widened back.  The simulation is what carries them across, and the only thing it asks of
-  the caller is a related initial state.
-\<close>
 
 context verimon_spec
 begin

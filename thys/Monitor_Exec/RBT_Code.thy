@@ -256,10 +256,31 @@ function bh_le_g :: "('a, 'b) rbt \<Rightarrow> ('c, 'd) rbt \<Rightarrow> bool"
 termination
   by (relation "measure (\<lambda>(t1, t2). size t1 + size t2)") auto
 
+lemma bh_le_g_correct: "bh_le_g t1 t2 \<longleftrightarrow> bheight t1 \<le> bheight t2"
+  by (induction t1 t2 rule: bh_le_g.induct) auto
+
 fun bh_lt_g :: "integer \<Rightarrow> ('a, 'b) rbt \<Rightarrow> bool" where
   "bh_lt_g k RBT_Impl.Empty = (0 < k)"
 | "bh_lt_g k (Branch RBT_Impl.R l a b r) = bh_lt_g k l"
 | "bh_lt_g k (Branch RBT_Impl.B l a b r) = (if k \<le> 0 then False else bh_lt_g (k - 1) l)"
+
+lemma bh_lt_g_correct: "bh_lt_g k t \<longleftrightarrow> integer_of_nat (bheight t) < k"
+proof (induction k t rule: bh_lt_g.induct)
+  case (3 k l a b r)
+  show ?case
+  proof (cases "k \<le> 0")
+    case True
+    have "k \<le> 0" by (rule True)
+    also have "(0::integer) \<le> 1 + of_nat (bheight l)"
+      by simp
+    finally have "k \<le> 1 + of_nat (bheight l)" .
+    then show ?thesis using True by (simp add: integer_of_nat_eq_of_nat not_less)
+  next
+    case False
+    then show ?thesis using 3
+      by (simp add: integer_of_nat_eq_of_nat less_diff_eq add.commute)
+  qed
+qed (auto simp: integer_of_nat_eq_of_nat)
 
 text \<open>The library's two tests, and the three joins, through the comparisons.  The union and the
   intersection come with code equations that compute both heights up front, and are given their

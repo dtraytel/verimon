@@ -6,59 +6,41 @@ begin
 
 
 
-lemma Rep_string8_of_bytes[simp]: "Rep_string8 (string8_of_bytes b) = Rep_bytes b"
-  by (simp add: string8_of_bytes_def Abs_string8_inverse)
+text \<open>
+  This theory composes the verified log parser of session Log_Parser with the verified executable
+  monitor, into the monitor that @{text "-verified"} runs on a log: @{text vinit} prepares the
+  formula and starts the monitor, @{text vfeed_chunk} reads a chunk of the log, and
+  @{text vfinish} the end of the log. The parser skips the events of the predicates that the
+  signature declares but whose names do not occur freely in the formula
+  (@{theory Log_Parser.Log_Filter}); the time points it outputs are converted by the signature
+  into the monitor's databases and fed to @{const emstep}.
 
-lemma string8_of_bytes_inject[simp]: "string8_of_bytes a = string8_of_bytes b \<longleftrightarrow> a = b"
-  by (metis Rep_bytes_inject Rep_string8_of_bytes)
+  The main theorem, @{text verimon_log.vrun_log} (theory @{text Log_Monitor_Online}), states that for the bytes of a log that
+  denotes a prefix -- its items are those the parser reads (@{const parse_log}, which accepts
+  exactly the logs of the grammar, @{thm [source] parse_log_correct}), they are entries, their
+  timestamps are natural numbers that do not decrease, and their events are those of the
+  signature with fields of the declared types (@{text log_prefix}) -- the monitor reports no
+  error, and its verdicts are those that the specification of the formula prescribes for the
+  prefix (@{text Mt}, as in @{thm [source] verimon_prepare.eminit_verimon_mverdicts}).
+  @{text verimon_log.vrun_filtered} states the same for the logs whose events of the other
+  declared predicates are arbitrary, and that the monitor reports an error on every other log;
+  @{text verimon_log.Mt_preds} states that the verdicts do not depend on these events.
+  @{text verimon_log.vfeed_chunks_online}, @{text verimon_log.vfeed_chunks_log} and
+  @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read, from
+  the initial state; theory @{text Log_Monitor_Online} states it for the online interface, chunk
+  by chunk: an invariant relates the state to the bytes read and the prefix they denote, and a
+  chunk after which they still denote a prefix preserves it and outputs exactly the verdicts that
+  the specification prescribes for the longer prefix and not for the shorter one.
+  The theorems say nothing about which error is reported, what is output after the first error,
+  nor about the verdicts output together with it, for the same chunk; for that chunk, the driver
+  outputs the verdicts of its longest prefix whose outputs have no error, which the theorems
+  cover.
 
-lemma Rep_bytes_of_string8[simp]: "Rep_bytes (bytes_of_string8 s) = Rep_string8 s"
-  by (simp add: bytes_of_string8_def Abs_bytes_inverse)
-
-lemma hashcode_char_code: "hashcode (c :: char) = Uint32_signed (integer_of_char c)"
-proof -
-  have "0 \<le> (of_char c :: int) \<and> of_char c < (256 :: int)"
-    using nat_of_char_less_256[of c] unfolding of_nat_of_char[where 'a=int, symmetric] by simp
-  then have "\<not> (integer_of_char c < - 0x80000000 \<or> integer_of_char c \<ge> 0x80000000)"
-    including integer.lifting unfolding integer_of_char_def by transfer simp
-  then show ?thesis
-    unfolding hashcode_char_def Uint32_signed_def integer_of_char_def
-    including integer.lifting by (simp, transfer, simp)
-qed
-
-lemma nat_of_integer_Suc: "0 \<le> i \<Longrightarrow> nat_of_integer (i + 1) = Suc (nat_of_integer i)"
-  including integer.lifting by transfer (simp add: Suc_nat_eq_nat_zadd1)
-
-lemma nat_of_integer_less: "0 \<le> i \<Longrightarrow> i < integer_of_nat m \<Longrightarrow> nat_of_integer i < m"
-  including integer.lifting by transfer simp
-
-lemma nat_of_integer_ge: "\<not> i < integer_of_nat m \<Longrightarrow> m \<le> nat_of_integer i"
-  including integer.lifting by transfer simp
-
-lemma hash_bytes_foldl:
-  "0 \<le> i \<Longrightarrow> n = bytes_length s \<Longrightarrow>
-   hash_bytes s n i h = foldl (\<lambda>h c. h * hc_mult + hashcode c) h (drop (nat_of_integer i) (Rep_bytes s))"
-proof (induction s n i h rule: hash_bytes.induct)
-  case (1 s n i h)
-  show ?case
-  proof (cases "i < n")
-    case True
-    have k: "nat_of_integer i < length (Rep_bytes s)"
-      using True 1(2,3) by (simp add: bytes_length_def nat_of_integer_less)
-    have "drop (nat_of_integer i) (Rep_bytes s) =
-      Rep_bytes s ! nat_of_integer i # drop (nat_of_integer (i + 1)) (Rep_bytes s)"
-      using Cons_nth_drop_Suc[OF k] 1(2) by (simp add: nat_of_integer_Suc)
-    then show ?thesis
-      using True 1 by (subst hash_bytes.simps)
-        (simp add: bytes_at_def hashcode_char_code[unfolded hashcode_char_def] del: hash_bytes.simps)
-  next
-    case False
-    then have "length (Rep_bytes s) \<le> nat_of_integer i"
-      using 1(3) by (simp add: bytes_length_def nat_of_integer_ge)
-    then show ?thesis
-      using False by (subst hash_bytes.simps) simp
-  qed
-qed
+  The theorems take the reader of floats as a parameter, about which nothing is assumed: the
+  front end passes OCaml's @{text float_of_string_opt}. That the generated code computes these
+  functions rests on the code printings: those of @{theory Log_Parser.Log_Code}, of the
+  monitor's session (strings, floats, integers and containers), and the two below.
+\<close>
 
 lemma lsig_lookup_length: "lsig_lookup S (p, n) = Some tys \<Longrightarrow> length tys = n"
   by (induction S) (auto simp: lsig_lookup_def split: if_splits)
@@ -93,11 +75,69 @@ qed
 lemma lsig_lookup_fun[simp]: "lsig_lookup_fun S = lsig_lookup S"
   by (simp add: lsig_lookup_fun_def index_lookup_lsig_index)
 
+subsection \<open>What an entry denotes\<close>
+
+text \<open>The specification of the conversion, on the strings of the grammar
+  (@{theory Log_Parser.Log_Grammar}): a field is read by its type, an event is one of the
+  signature, with as many fields as its predicate has arguments, and an entry is a time point
+  whose timestamp is a natural number (@{const nat_of_string}). A command denotes no time point.\<close>
+
+definition field_of_string :: "(string \<Rightarrow> double option) \<Rightarrow> ty \<Rightarrow> string \<Rightarrow> event_data option" where
+  "field_of_string pf t f = (case t of
+     TInt \<Rightarrow> map_option (EInt \<circ> integer_of_int) (int_of_string f)
+   | TFloat \<Rightarrow> map_option EFloat (pf f)
+   | TString \<Rightarrow> Some (EString (Abs_string8 f)))"
+
+definition event_of_string :: "(string \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> string \<times> string list \<Rightarrow> Formula.event option" where
+  "event_of_string pf S e = (case e of (p, fs) \<Rightarrow>
+     (case lsig_lookup S (Abs_string8 p, length fs) of
+       None \<Rightarrow> None
+     | Some tys \<Rightarrow> map_option (Pair (Abs_string8 p)) (those (map2 (field_of_string pf) tys fs))))"
+
+definition tp_of_item :: "(string \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> string item \<Rightarrow> (Formula.database \<times> nat) option" where
+  "tp_of_item pf S it = (case it of
+     Entry ts evs \<Rightarrow> (case (nat_of_string ts, those (map (event_of_string pf S) evs)) of
+       (Some t, Some xs) \<Rightarrow> Some (set xs, t)
+     | _ \<Rightarrow> None)
+   | Command c args \<Rightarrow> None)"
+
+text \<open>The prefix a list of time points denotes if its timestamps do not decrease.\<close>
+
+lift_definition prefix_of_list :: "('a \<times> nat) list \<Rightarrow> 'a prefix" is
+  "\<lambda>xs. if sorted (map snd xs) then xs else []"
+  by auto
+
 lemma Rep_prefix_of_list: "sorted (map snd xs) \<Longrightarrow> Rep_prefix (prefix_of_list xs) = xs"
   by (simp add: prefix_of_list.rep_eq)
 
+text \<open>The prefix that a list of items denotes, followed by a last time point with no events at
+  timestamp @{text t} if @{text "fin = Some t"}; @{const None} if an item denotes no time point
+  or the timestamps decrease. The prefix a log denotes, with the events of the predicates that
+  @{text K} accepts, is that of its items (@{const parse_log}).\<close>
+
+definition prefix_of_items :: "(string \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> nat option \<Rightarrow> string item list \<Rightarrow>
+    Formula.prefix option" where
+  "prefix_of_items pf S fin items = (case those (map (tp_of_item pf S) items) of
+     None \<Rightarrow> None
+   | Some tps \<Rightarrow> (let tps' = tps @ (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [({}, t)]) in
+       if sorted (map snd tps') then Some (prefix_of_list tps') else None))"
+
+definition log_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> nat option \<Rightarrow> string \<Rightarrow>
+    Formula.prefix option" where
+  "log_prefix K pf S fin s = Option.bind (parse_log s) (\<lambda>items. prefix_of_items pf S fin (map (filter_item K) items))"
+
+subsubsection \<open>The conversion implements the specification\<close>
+
+text \<open>A function on byte strings as one on strings.\<close>
+
+definition sf :: "(bytes \<Rightarrow> 'a) \<Rightarrow> string \<Rightarrow> 'a" where
+  "sf f s = f (Abs_bytes s)"
+
 lemma sf_Rep[simp]: "sf f (Rep_bytes x) = f x"
   by (simp add: sf_def Rep_bytes_inverse)
+
+definition opt_of_sum :: "'a + 'b \<Rightarrow> 'b option" where
+  "opt_of_sum x = (case x of Inl _ \<Rightarrow> None | Inr y \<Rightarrow> Some y)"
 
 lemma opt_of_sum_simps[simp]: "opt_of_sum (Inl a) = None" "opt_of_sum (Inr b) = Some b"
   "opt_of_sum (map_sum f g x) = map_option g (opt_of_sum x)"
@@ -114,6 +154,9 @@ proof (induction pf tys fs i rule: conv_fields.induct)
   then show ?case
     by (auto simp: conv_field_string split: option.splits)
 qed auto
+
+abbreviation abs_event :: "bytes \<times> bytes list \<Rightarrow> string \<times> string list" where
+  "abs_event \<equiv> map_prod Rep_bytes (map Rep_bytes)"
 
 lemma conv_event_string: "opt_of_sum (conv_event pf (lsig_lookup S) e) = event_of_string (sf pf) S (abs_event e)"
 proof -
@@ -143,148 +186,7 @@ proof (induction evs)
   qed
 qed simp
 
-lemma conv_events_acc: "conv_events_acc pf L acc es = map_sum id ((@) (rev acc)) (conv_events pf L es)"
-  by (induction pf L acc es rule: conv_events_acc.induct) (auto simp: map_sum_def split: sum.splits)
-
-text \<open>The tuples of a table are sorted, without duplicates, before the table is built, so that
-  the tree is built in one pass. The merge sort below merges the runs of increasing elements of
-  the list, so that a sorted list is one run, and is tail recursive, since a time point may hold
-  many events: merging onto an accumulator reverses the order, so a round of merges turns lists
-  that increase into lists that decrease, and the next round merges those with the comparator
-  turned around. It drops duplicates as it merges, and is proved to sort strictly, so that the
-  tree can be built without checking that it is.\<close>
-
-lemma comparator_converse:
-  assumes "comparator c"
-  shows "comparator (\<lambda>x y. c y x)"
-proof
-  fix x y z
-  show "invert_order (c y x) = c x y"
-    by (rule comparator.sym[OF assms])
-  show "c y x = order.Eq \<Longrightarrow> x = y"
-    using comparator.weak_eq[OF assms, of y x] by simp
-  show "c y x = order.Lt \<Longrightarrow> c z y = order.Lt \<Longrightarrow> c z x = order.Lt"
-    using comparator.comp_trans[OF assms, of z y x] by simp
-qed
-
-lemma set_cmerge: "comparator c \<Longrightarrow> set (cmerge c xs ys) = set xs \<union> set ys"
-  by (induction c xs ys rule: cmerge.induct) (auto split: order.splits dest: comparator.weak_eq)
-
-lemma sorted_cmerge: "comparator c \<Longrightarrow> sorted_wrt (lt_of_comp c) xs \<Longrightarrow> sorted_wrt (lt_of_comp c) ys \<Longrightarrow>
-  sorted_wrt (lt_of_comp c) (cmerge c xs ys)"
-proof (induction c xs ys rule: cmerge.induct)
-  case (3 c x xs y ys)
-  have tr: "lt_of_comp c a b \<Longrightarrow> lt_of_comp c b d \<Longrightarrow> lt_of_comp c a d" for a b d
-    using comparator.comp_trans[OF 3(4), of a b d] by (simp add: comparator.Lt_lt_conv[OF 3(4)])
-  note conv = comparator.Lt_lt_conv[OF 3(4)] comparator.Gt_lt_conv[OF 3(4)] comparator.eq_Eq_conv[OF 3(4)]
-  from 3 show ?case
-    by (auto simp: set_cmerge conv split: order.splits intro: tr)
-qed simp_all
-
-lemma cmerge_rev: "cmerge_rev c acc xs ys = rev (cmerge c xs ys) @ acc"
-  by (induction c acc xs ys rule: cmerge_rev.induct) (auto simp: fold_Cons_rev split: order.splits)
-
-lemma length_cmerge_pairs: "length (cmerge_pairs c acc xss) = length acc + (length xss + 1) div 2"
-  by (induction c acc xss rule: cmerge_pairs.induct) auto
-
-lemma set_cmerge_pairs: "comparator c \<Longrightarrow> \<Union> (set ` set (cmerge_pairs c acc xss)) = \<Union> (set ` set (acc @ xss))"
-  by (induction c acc xss rule: cmerge_pairs.induct) (auto simp: cmerge_rev set_cmerge)
-
-lemma sorted_rev_converse:
-  "sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp c) xs"
-  "sorted_wrt (lt_of_comp c) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) xs"
-proof -
-  have L: "lt_of_comp (\<lambda>x y. c y x) = (\<lambda>a b. lt_of_comp c b a)"
-    by (simp add: fun_eq_iff lt_of_comp_def)
-  show "sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp c) xs"
-    unfolding L sorted_wrt_rev by (rule refl)
-  show "sorted_wrt (lt_of_comp c) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) xs"
-    unfolding L sorted_wrt_rev by (rule refl)
-qed
-
-lemma sorted_cmerge_pairs: "comparator c \<Longrightarrow> \<forall>a \<in> set xss. sorted_wrt (lt_of_comp c) a \<Longrightarrow>
-    \<forall>a \<in> set acc. sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) a \<Longrightarrow>
-    \<forall>a \<in> set (cmerge_pairs c acc xss). sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) a"
-proof (induction c acc xss rule: cmerge_pairs.induct)
-  case (1 c acc a b r)
-  then show ?case
-    using sorted_cmerge[of c a b] by (simp add: cmerge_rev sorted_rev_converse)
-qed (simp_all add: sorted_rev_converse)
-
-lemma cmerge_all: "comparator c \<Longrightarrow> \<forall>a \<in> set xss. sorted_wrt (lt_of_comp (if d then (\<lambda>x y. c y x) else c)) a \<Longrightarrow>
-  set (cmerge_all c d xss) = \<Union> (set ` set xss) \<and> sorted_wrt (lt_of_comp c) (cmerge_all c d xss)"
-proof (induction c d xss rule: cmerge_all.induct)
-  case (2 c d a)
-  then show ?case
-    by (cases d) (simp_all add: sorted_rev_converse)
-next
-  case (3 c d a b r)
-  let ?c = "if d then (\<lambda>x y. c y x) else c"
-  have comp: "comparator ?c"
-    using 3(2) comparator_converse[OF 3(2)] by (cases d) simp_all
-  have conv: "(\<lambda>x y. ?c y x) = (if \<not> d then (\<lambda>x y. c y x) else c)"
-    by auto
-  have "\<forall>a \<in> set (cmerge_pairs ?c [] (a # b # r)). sorted_wrt (lt_of_comp (if \<not> d then (\<lambda>x y. c y x) else c)) a"
-    using sorted_cmerge_pairs[OF comp, of "a # b # r" "[]"] 3(3) unfolding conv by simp
-  with 3(1)[OF 3(2)] set_cmerge_pairs[OF comp, of "[]" "a # b # r"] show ?case
-    by simp
-qed simp
-
-lemma sorted_runs_tc: "comparator c \<Longrightarrow> sorted_wrt (lt_of_comp c) (rev (x # cur)) \<Longrightarrow>
-  \<forall>a \<in> set acc. sorted_wrt (lt_of_comp c) a \<Longrightarrow> \<forall>a \<in> set (runs_tc c x cur acc ys). sorted_wrt (lt_of_comp c) a"
-proof (induction c x cur acc ys rule: runs_tc.induct)
-  case (2 c x cur acc y ys)
-  show ?case
-  proof (cases "c x y = order.Lt")
-    case True
-    have "lt_of_comp c z y" if "z \<in> set (x # cur)" for z
-    proof -
-      have "z = x \<or> lt_of_comp c z x"
-        using that 2(4) by (auto simp: sorted_wrt_append)
-      then show ?thesis
-        using True comparator.comp_trans[OF 2(3), of z x y] by (auto simp: comparator.Lt_lt_conv[OF 2(3)])
-    qed
-    then have "sorted_wrt (lt_of_comp c) (rev (y # x # cur))"
-      using 2(4) by (simp add: sorted_wrt_append)
-    with True 2 show ?thesis
-      by simp
-  next
-    case False
-    have A: "\<forall>a \<in> set (rev (x # cur) # acc). sorted_wrt (lt_of_comp c) a"
-      using 2(4,5) by simp
-    have S: "sorted_wrt (lt_of_comp c) (rev [y])"
-      by simp
-    have R: "runs_tc c x cur acc (y # ys) = runs_tc c y [] (rev (x # cur) # acc) ys"
-      using False by simp
-    show ?thesis
-      unfolding R by (rule 2(2)[OF False 2(3) S A])
-  qed
-qed simp
-
-lemma set_runs_tc: "\<Union> (set ` set (runs_tc c x cur acc ys)) = Set.insert x (set cur \<union> \<Union> (set ` set acc) \<union> set ys)"
-  by (induction c x cur acc ys rule: runs_tc.induct) auto
-
-lemma csort:
-  assumes "comparator c"
-  shows "set (csort c xs) = set xs" and "sorted_wrt (lt_of_comp c) (csort c xs)"
-proof -
-  have "set (csort c xs) = set xs \<and> sorted_wrt (lt_of_comp c) (csort c xs)"
-  proof (cases xs)
-    case (Cons x ys)
-    have "\<forall>a \<in> set (runs_tc c x [] [] ys). sorted_wrt (lt_of_comp c) a"
-      by (rule sorted_runs_tc[OF assms]) simp_all
-    then have "set (cmerge_all c False (runs_tc c x [] [] ys)) = \<Union> (set ` set (runs_tc c x [] [] ys)) \<and>
-      sorted_wrt (lt_of_comp c) (cmerge_all c False (runs_tc c x [] [] ys))"
-      using cmerge_all[OF assms, of "runs_tc c x [] [] ys" False] by simp
-    then show ?thesis
-      unfolding Cons csort_def set_runs_tc by simp
-  qed (simp add: csort_def)
-  then show "set (csort c xs) = set xs" and "sorted_wrt (lt_of_comp c) (csort c xs)"
-    by simp_all
-qed
-
-lemma add_ev_code: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
-  by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: str8_eq_def prod_eq_iff)
+text \<open>The groups have distinct keys, and each holds the tuples of its key.\<close>
 
 lemma map_of_add_ev:
   "map_of (add_ev (p, vs) g) k =
@@ -376,82 +278,32 @@ proof (rule mapping_eqI)
   qed
 qed
 
-lemma map_t[simp]: "map_t f xs = map f xs"
-proof -
-  have "fold (\<lambda>x acc. f x # acc) xs acc = rev (map f xs) @ acc" for acc
-    by (induction xs arbitrary: acc) auto
-  then show ?thesis
-    by (simp add: map_t_def)
-qed
-
-text \<open>The tree of a table is built by @{const rbtreeify}, whose generated code computes with the
-  natural numbers of the generated code, which wrap the integers. The copy below computes with the
-  integers directly, and is proved to build the same tree.\<close>
-
-lemma nat_of_integer_half: "\<not> n \<le> 0 \<Longrightarrow> n \<noteq> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
-  "\<not> n \<le> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
-  including integer.lifting by (transfer, auto)+
-
-lemma integer_of_nat_rbt_simps:
-  "integer_of_nat n \<le> 0 \<longleftrightarrow> n = 0" "integer_of_nat n \<le> 1 \<longleftrightarrow> n = 0 \<or> n = 1"
-  "integer_of_nat n = 1 \<longleftrightarrow> n = 1"
-  "Code_Numeral.divmod_abs (integer_of_nat n) 2 = (integer_of_nat (n div 2), integer_of_nat (n mod 2))"
-  "integer_of_nat m = 0 \<longleftrightarrow> m = 0"
-  by (simp_all add: integer_eq_iff less_eq_integer.rep_eq divmod_abs_def integer_of_nat.rep_eq
-      zdiv_int zmod_int le_Suc_eq)
-
-lemma rbtreeify_fi: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
-  and rbtreeify_gi: "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-proof -
-  have fg: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs \<and>
-      rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs" for n and kvs :: "('a \<times> 'b) list"
-  proof (induction n arbitrary: kvs rule: less_induct)
-    case (less n kvs)
-    consider "n = 0" | "n = 1" | "1 < n"
-      by linarith
-    then show ?case
-    proof cases
-      case 3
-      then have ne: "n \<noteq> 0" "n \<noteq> 1" and lt: "n div 2 < n"
-        by simp_all
-      show ?thesis
-      proof
-        show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
-          by (subst rbtreeify_fi.simps, subst rbtreeify_f.simps)
-            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case)
-        show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-          by (subst rbtreeify_gi.simps, subst rbtreeify_g.simps)
-            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case simp_thms)
-      qed
-    qed (simp_all add: rbtreeify_fi.simps rbtreeify_gi.simps rbtreeify_f.simps rbtreeify_g.simps
-      integer_of_nat_rbt_simps)
-  qed
-  show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
-    using fg by simp
-  show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-    using fg by simp
-qed
-
-lemma ilen: "ilen acc xs = acc + integer_of_nat (length xs)"
-  by (induction acc xs rule: ilen.induct) (simp_all add: integer_of_nat_eq_of_nat)
-
-lemma rbtreeify_i: "rbtreeify_i kvs = rbtreeify kvs"
-proof -
-  have "ilen 1 kvs = integer_of_nat (Suc (length kvs))"
-    by (simp add: ilen integer_of_nat_eq_of_nat)
-  then show ?thesis
-    by (simp add: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
-qed
-
-text \<open>The tables of a time point are built with this sort and tree construction. The groups
-  hold their tuples in the reverse order of the log; the code reverses them before sorting them,
-  so that tuples that come sorted in the log are sorted in linear time.\<close>
+lemma set_free_preds[simp]: "set (free_preds \<phi>) = Rewriting.preds \<phi>"
+  by (induction \<phi> rule: free_preds.induct) (auto simp: fv_regex_alt)
 
 lemma vskip_fun: "vskip_fun xs q \<longleftrightarrow> q \<in> set xs"
   by (auto simp: vskip_fun_def str8_eq_def list_ex_iff)
 
-lemma vitems_acc: "vitems_acc cf xs z acc = (case vitems cf xs z of (vs, z') \<Rightarrow> (rev acc @ vs, z'))"
-  by (induction cf xs z acc rule: vitems_acc.induct) (auto split: prod.splits)
+definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list \<times> nat" where
+  "conv_entry cf ts evs = (case bnat_of ts of
+     None \<Rightarrow> Inl (VE_TIMESTAMP ts)
+   | Some t \<Rightarrow> map_sum id (\<lambda>xs. (xs, t)) (conv_events (vc_pf cf) (vc_lookup cf) evs))"
+
+text \<open>For the theorems: the whole input, in chunks, and the verdicts in the output.\<close>
+
+fun vfeed_chunks :: "vconf \<Rightarrow> bytes list \<Rightarrow> vstate \<Rightarrow> vout list \<times> vstate" where
+  "vfeed_chunks cf [] z = ([], z)"
+| "vfeed_chunks cf (s # ss) z = (case vfeed_chunk cf s z of (vs1, st1) \<Rightarrow>
+     (case vfeed_chunks cf ss st1 of (vs2, st2) \<Rightarrow> (vs1 @ vs2, st2)))"
+
+definition vrun :: "vconf \<Rightarrow> nat option \<Rightarrow> vstate \<Rightarrow> bytes list \<Rightarrow> vout list" where
+  "vrun cf fin z ss = (case vfeed_chunks cf ss z of (vs, z') \<Rightarrow> vs @ vfinish cf fin z')"
+
+definition vverdicts :: "vout list \<Rightarrow> (nat \<times> ts \<times> utable) list" where
+  "vverdicts xs = concat (map (\<lambda>x. case x of VO_VERDICTS vs \<Rightarrow> vs | VO_ERROR _ _ \<Rightarrow> []) xs)"
+
+definition has_verror :: "vout list \<Rightarrow> bool" where
+  "has_verror xs \<longleftrightarrow> (\<exists>pos e. VO_ERROR pos e \<in> set xs)"
 
 lemma vverdicts_simps[simp]:
   "vverdicts [] = []"
@@ -466,6 +318,19 @@ lemma has_verror_simps[simp]:
   "has_verror (xs @ ys) \<longleftrightarrow> has_verror xs \<or> has_verror ys"
   by (auto simp: has_verror_def split: vout.splits)
 
+subsection \<open>Correctness\<close>
+
+subsubsection \<open>The executable monitor on a list of time points\<close>
+
+fun usteps :: "(Formula.event list \<times> nat) list \<Rightarrow> emstate \<Rightarrow> (nat \<times> ts \<times> utable) list \<times> emstate" where
+  "usteps [] ust = ([], ust)"
+| "usteps ((xs, t) # tps) ust = (case emstep (build_db xs, t) ust of (vs1, ust1) \<Rightarrow>
+     (case usteps tps ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
+
+lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, ust1) \<Rightarrow>
+  (case usteps tps2 ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
+  by (induction tps1 ust rule: usteps.induct) (auto split: prod.splits)
+
 lemma usteps_dmsteps0:
   "fst (usteps tps ust) = emsteps0_stateless (map (apfst set) tps) (ust)"
 proof (induction tps arbitrary: ust)
@@ -479,6 +344,11 @@ proof (induction tps arbitrary: ust)
   then show ?case
     using Cons.IH[of ust1] u by (cases "usteps tps ust1") (simp add: tp)
 qed simp
+
+subsubsection \<open>Items\<close>
+
+definition conv_item :: "vconf \<Rightarrow> bytes item \<Rightarrow> (Formula.event list \<times> nat) option" where
+  "conv_item cf x = (case x of Entry ts evs \<Rightarrow> opt_of_sum (conv_entry cf ts evs) | Command c args \<Rightarrow> None)"
 
 lemma conv_item_string:
   assumes "vc_lookup cf = lsig_lookup (vc_lsig cf)"
@@ -526,6 +396,9 @@ proof (induction cf xs z rule: vitems.induct)
       by (auto split: prod.splits vout.splits)
   qed (use v in \<open>auto simp: vitem_def split: prod.splits\<close>)
 qed simp
+
+text \<open>Without errors, the items are converted and their timestamps do not decrease, and the
+  verdicts are those of the monitor on the time points.\<close>
 
 lemma vitems_ok:
   assumes "oks xs = Some es" "vitems cf xs (ust, lt) = (vs, z')" "\<not> has_verror vs"
@@ -652,6 +525,8 @@ proof -
     by (simp_all add: wty_prefix.rep_eq pfinite.rep_eq)
 qed
 
+subsubsection \<open>The time points of the items\<close>
+
 lemma sorted_snoc_last: "sorted ((a :: nat) # ys) \<Longrightarrow> sorted ((a # ys) @ [t]) \<longleftrightarrow> last (a # ys) \<le> t"
 proof (induction ys arbitrary: a)
   case (Cons y ys)
@@ -664,6 +539,11 @@ lemma those_conv_item:
   shows "those (map (tp_of_item (sf (vc_pf cf)) (vc_lsig cf)) (abs_items es)) =
     map_option (map (apfst set)) (those (map (conv_item cf) es))"
   by (simp add: comp_def conv_item_string[OF assms, symmetric] those_map_option[symmetric])
+
+definition fin_tps :: "nat option \<Rightarrow> (Formula.event list \<times> nat) list" where
+  "fin_tps fin = (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [([], t)])"
+
+subsection \<open>The verdicts depend only on the events of the predicates that occur freely\<close>
 
 text \<open>An event that a formula matches is one of a predicate that occurs freely in it.\<close>
 
@@ -726,6 +606,19 @@ proof -
     by (simp add: Mt_def)
 qed
 
+subsection \<open>From the log to the verdicts\<close>
+
+text \<open>The predicates whose events the parser keeps, as the specification states it, and the
+  verdicts as the specification states them: tuples over the formula's free variables in the
+  order in which @{const Formula.fv_list} lists them.  The executable monitor's tuples are over the
+  same variables in ascending order.\<close>
+
+definition keep_spec :: "bool \<Rightarrow> 't Formula.formula \<Rightarrow> lsig \<Rightarrow> string \<Rightarrow> bool" where
+  "keep_spec filt \<phi> S p \<longleftrightarrow> \<not> filt \<or> Abs_string8 p \<in> fst ` Rewriting.preds \<phi> \<or> Abs_string8 p \<notin> fst ` set S"
+
+definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times> utable) list \<Rightarrow> (nat \<times> ts \<times> event_data table) list" where
+  "vwiden \<phi> = map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))"
+
 lemma vinit_Inr:
   assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
   obtains ust where "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" "z = (einit, ust, 0)"
@@ -735,6 +628,8 @@ lemma vinit_Inr:
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
   by (auto simp: fun_eq_iff sk_def vkeep_def vskip_fun vskip_def Let_def keep_spec_def string8_of_bytes_def
       Abs_bytes_inverse)
+text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>
+
 lemma those_map_cong: "those (map f xs) = Some ys \<Longrightarrow> (\<And>x y. f x = Some y \<Longrightarrow> g x = Some (h y)) \<Longrightarrow>
   those (map g xs) = Some (map h ys)"
   by (induction xs arbitrary: ys) (auto split: option.splits)
@@ -782,6 +677,12 @@ proof -
     by (simp add: prefix_of_items_def \<pi> comp_def del: map_append split: option.splits)
 qed
 
+text \<open>The signature, as the specification of the prepared formula uses it.\<close>
+
+locale verimon_log = verimon_prepare rw "lsig_tsig S" \<phi>
+  for rw :: bool and S :: lsig and \<phi> :: "tysym Formula.formula"
+begin
+
 lemma map_sig_lsig: "map_sig (convert_tysym o check_subst) (lsig_tsig S) = lsig_lookup S"
 proof -
   have "convert_tysym (check_subst (TCst x)) = x" for x
@@ -797,6 +698,9 @@ begin
 interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
   "map_sig (convert_tysym o check_subst) (lsig_tsig S)" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
+
+text \<open>The verdicts depend only on the events of the predicates that occur freely in the
+  formula.\<close>
 
 theorem Mt_preds:
   assumes "wty_prefix (lsig_lookup S) \<pi>" "wty_prefix (lsig_lookup S) \<pi>'"
@@ -815,6 +719,8 @@ qed
 end
 
 end
+
+text \<open>The monitor starts only if the assumptions of the locale hold.\<close>
 
 lemma vinit_verimon_log:
   assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"

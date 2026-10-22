@@ -37,6 +37,15 @@ definition mkr :: "nat \<Rightarrow> 'b list \<Rightarrow> 'b \<Rightarrow> 'b l
 lemma length_mkr[simp]: "length (mkr p g v) = Suc (length g)"
   by (simp add: mkr_def)
 
+lemma mkr_eq_iff: "mkr p g v = mkr p g' v' \<longleftrightarrow> g = g' \<and> v = v'"
+proof
+  assume eq: "mkr p g v = mkr p g' v'"
+  then have len: "length g = length g'" using length_mkr[of p g v] length_mkr[of p g' v'] by simp
+  then have "take p g = take p g' \<and> v # drop p g = v' # drop p g'"
+    using eq unfolding mkr_def by (subst (asm) append_eq_append_conv) auto
+  then show "g = g' \<and> v = v'" by (metis append_take_drop_id list.inject)
+qed simp
+
 fun gval :: "ty Formula.agg_op \<Rightarrow> 'b gagg \<Rightarrow> 'b list \<Rightarrow> event_data option" where
   "gval \<omega> (GCnt m) g = map_option (\<lambda>k. EInt (integer_of_int k)) (Mapping.lookup m g)"
 | "gval \<omega> (GSum m) g = (case fst \<omega> of
@@ -58,12 +67,85 @@ fun gval :: "ty Formula.agg_op \<Rightarrow> 'b gagg \<Rightarrow> 'b list \<Rig
 definition gvset :: "ty Formula.agg_op \<Rightarrow> nat \<Rightarrow> event_data gagg \<Rightarrow> event_data list set" where
   "gvset \<omega> p a = {mkr p g v | g v. gval \<omega> a g = Some v}"
 
+lemma gmr_mkr: "gmr p (\<lambda>x. x) f m = {mkr p g v | g v. map_option f (Mapping.lookup m g) = Some v}"
+  unfolding gmr_def mkr_def[symmetric]
+proof (intro set_eqI iffI)
+  fix x
+  assume "x \<in> (\<lambda>g. case Mapping.lookup m g of Some i \<Rightarrow> mkr p g (f i) | None \<Rightarrow> g) ` Mapping.keys m"
+  then obtain g i where "Mapping.lookup m g = Some i" "x = mkr p g (f i)"
+    by (auto simp: Mapping.keys_dom_lookup)
+  then show "x \<in> {mkr p g v |g v. map_option f (Mapping.lookup m g) = Some v}" by auto
+next
+  fix x
+  assume "x \<in> {mkr p g v |g v. map_option f (Mapping.lookup m g) = Some v}"
+  then obtain g i where g: "Mapping.lookup m g = Some i" "x = mkr p g (f i)" by auto
+  then have "g \<in> Mapping.keys m" by (simp add: Mapping.keys_dom_lookup domI)
+  with g show "x \<in> (\<lambda>g. case Mapping.lookup m g of Some i \<Rightarrow> mkr p g (f i) | None \<Rightarrow> g) ` Mapping.keys m"
+    by (auto intro!: rev_image_eqI[of g])
+qed
+
+lemma gres_gvset: "gres g0 \<omega> p (\<lambda>x. x) a =
+    (if g0 \<and> gkeys a = {} then {[eval_agg_op \<omega> {}]} else gvset \<omega> p a)"
+  by (cases a) (auto simp: gvset_def gmr_mkr split: Formula.agg_type.splits)
+
+lemma gval_gstep_ins: "gstep_ins k ev t (Some a) = Some a' \<Longrightarrow> h \<noteq> drop k t \<Longrightarrow>
+    gval \<omega> a' h = gval \<omega> a h"
+  by (cases a) (auto simp: gstep_ins_def Let_def lookup_update' split: prod.splits option.splits
+      if_splits event_data.splits type.splits list_aux.splits Formula.agg_type.splits)
+
+lemma gval_gstep_del: "gstep_del k ev t (Some a) = Some a' \<Longrightarrow> h \<noteq> drop k t \<Longrightarrow>
+    gval \<omega> a' h = gval \<omega> a h"
+  by (cases a) (auto simp: gstep_del_def Let_def lookup_update' lookup_delete split: prod.splits
+      option.splits if_splits event_data.splits type.splits list_aux.splits Formula.agg_type.splits)
+
 definition cupd :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> event_data list \<Rightarrow> event_data option \<Rightarrow>
     event_data option \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
   "cupd Q p g ov nv C = (if ov = nv then C else
      (let C' = (case ov of Some v \<Rightarrow> if Q (mkr p g v) then Set.remove (mkr p g v) C else C
                 | None \<Rightarrow> C) in
       case nv of Some v \<Rightarrow> if Q (mkr p g v) then Set.insert (mkr p g v) C' else C' | None \<Rightarrow> C'))"
+
+lemma cupd_upd: "cupd Q p g (F g) y (Set.filter Q {mkr p h v | h v. F h = Some v}) =
+    Set.filter Q {mkr p h v | h v. fun_upd F g y h = Some v}"
+proof -
+  have split: "{mkr p h v | h v. G h = Some v} =
+      {mkr p h v | h v. h \<noteq> g \<and> F h = Some v} \<union> (case G g of Some v \<Rightarrow> {mkr p g v} | None \<Rightarrow> {})"
+    if G: "\<And>h. h \<noteq> g \<Longrightarrow> G h = F h" for G
+  proof (intro set_eqI iffI)
+    fix x
+    assume "x \<in> {mkr p h v | h v. G h = Some v}"
+    then obtain h v where x: "x = mkr p h v" "G h = Some v" by blast
+    then show "x \<in> {mkr p h v | h v. h \<noteq> g \<and> F h = Some v} \<union>
+        (case G g of Some v \<Rightarrow> {mkr p g v} | None \<Rightarrow> {})"
+      using G by (cases "h = g") auto
+  next
+    fix x
+    assume "x \<in> {mkr p h v | h v. h \<noteq> g \<and> F h = Some v} \<union>
+        (case G g of Some v \<Rightarrow> {mkr p g v} | None \<Rightarrow> {})"
+    then show "x \<in> {mkr p h v | h v. G h = Some v}"
+      using G by (auto simp: mkr_eq_iff split: option.splits)
+  qed
+  have out: "mkr p g v \<notin> {mkr p h v | h v. h \<noteq> g \<and> F h = Some v}" for v
+    by (auto simp: mkr_eq_iff)
+  show ?thesis
+    unfolding split[of F, OF refl] split[of "fun_upd F g y", simplified]
+    using out by (auto simp: cupd_def Let_def mkr_eq_iff split: option.splits if_splits)
+qed
+
+lemma cupd_gvset:
+  assumes "\<And>h. h \<noteq> g \<Longrightarrow> gval \<omega> a' h = gval \<omega> a h"
+  shows "cupd Q p g (gval \<omega> a g) (gval \<omega> a' g) (Set.filter Q (gvset \<omega> p a)) =
+    Set.filter Q (gvset \<omega> p a')"
+proof -
+  have eq: "gval \<omega> a' = fun_upd (gval \<omega> a) g (gval \<omega> a' g)"
+    using assms by (auto simp: fun_eq_iff)
+  have "cupd Q p g (gval \<omega> a g) (gval \<omega> a' g) (Set.filter Q (gvset \<omega> p a)) =
+      Set.filter Q {mkr p h v | h v. fun_upd (gval \<omega> a) g (gval \<omega> a' g) h = Some v}"
+    unfolding gvset_def by (rule cupd_upd)
+  also have "\<dots> = Set.filter Q (gvset \<omega> p a')"
+    unfolding gvset_def eq[symmetric] ..
+  finally show ?thesis .
+qed
 
 subsection \<open>The counts and the aggregate, in one pass\<close>
 
@@ -86,10 +168,55 @@ definition cnt_del_fold :: "(event_data list \<Rightarrow> 'b \<Rightarrow> 'b) 
      | Some k \<Rightarrow> (if k \<le> 1 then (Mapping.delete t c, if k = 1 then F t acc else acc)
                  else (Mapping.update t (k - 1) c, acc))) xs (c, b)"
 
+lemma lookup_ucnt_add1_other: "u \<noteq> t \<Longrightarrow> Mapping.lookup (ucnt_add1 t c) u = Mapping.lookup c u"
+  by (simp add: ucnt_add1_def lookup_update' split: option.splits)
+
+lemma lookup_ucnt_del1_other: "u \<noteq> t \<Longrightarrow> Mapping.lookup (ucnt_del1 t c) u = Mapping.lookup c u"
+  by (simp add: ucnt_del1_def lookup_update' lookup_delete split: option.splits)
+
+lemma fold_filter_if: "fold F (filter P xs) b = fold (\<lambda>t acc. if P t then F t acc else acc) xs b"
+  by (induct xs arbitrary: b) simp_all
+
+lemma cnt_ins_fold_eq:
+  "distinct xs \<Longrightarrow> cnt_ins_fold F xs c b =
+     (fold ucnt_add1 xs c, fold F (filter (\<lambda>t. Mapping.lookup c t = None) xs) b)"
+proof (induct xs arbitrary: c b)
+  case (Cons t xs)
+  have same: "\<And>b'. fold (\<lambda>u acc. if Mapping.lookup (ucnt_add1 t c) u = None then F u acc else acc) xs b'
+      = fold (\<lambda>u acc. if Mapping.lookup c u = None then F u acc else acc) xs b'"
+    using Cons.prems by (intro fold_cong refl) (metis distinct.simps(2) lookup_ucnt_add1_other)
+  show ?case
+    using Cons same
+    by (auto simp: cnt_ins_fold_def ucnt_add1_def fold_filter_if split: option.splits)
+qed (simp add: cnt_ins_fold_def)
+
+lemma cnt_del_fold_eq:
+  "distinct xs \<Longrightarrow> cnt_del_fold F xs c b =
+     (fold ucnt_del1 xs c, fold F (filter (\<lambda>t. Mapping.lookup c t = Some 1) xs) b)"
+proof (induct xs arbitrary: c b)
+  case (Cons t xs)
+  have same: "\<And>b'. fold (\<lambda>u acc. if Mapping.lookup (ucnt_del1 t c) u = Some 1 then F u acc else acc) xs b'
+      = fold (\<lambda>u acc. if Mapping.lookup c u = Some 1 then F u acc else acc) xs b'"
+    using Cons.prems by (intro fold_cong refl) (metis distinct.simps(2) lookup_ucnt_del1_other)
+  show ?case
+    using Cons same
+    by (auto simp: cnt_del_fold_def ucnt_del1_def fold_filter_if split: option.splits)
+qed (simp add: cnt_del_fold_def)
+
+lemma distinct_csl_edl: "distinct (csl (X :: event_data list set))"
+proof (cases "finite X")
+  case True
+  then show ?thesis
+    using ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
+qed (simp add: csl_infinite)
+
 subsection \<open>The aggregate with its result\<close>
 
 definition gcache :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> ugagg \<Rightarrow> event_data list set" where
   "gcache q p a = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> Set.filter (uqok q) (gvset \<omega> pos a))"
+
+lemma gcache_ugres: "gcache q p a = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) False \<omega> pos a)"
+  by (simp add: gcache_def ugres_def gres_gvset split: prod.splits)
 
 text \<open>The table pays where a group's aggregate rarely changes with a tuple, which is MIN and MAX:
   for them a tuple changes its group's value only when it is the group's extreme.  The count, the
@@ -112,6 +239,10 @@ type_synonym 'a nmap = "(event_data list, 'a \<times> ucnt) mapping"
 definition nflat :: "nat \<Rightarrow> 'a nmap \<Rightarrow> ucnt" where
   "nflat k M = Mapping.Mapping (\<lambda>t. case Mapping.lookup M (drop k t) of None \<Rightarrow> None
      | Some aI \<Rightarrow> Mapping.lookup (snd aI) t)"
+
+lemma lookup_nflat: "Mapping.lookup (nflat k M) t = (case Mapping.lookup M (drop k t) of None \<Rightarrow> None
+     | Some aI \<Rightarrow> Mapping.lookup (snd aI) t)"
+  unfolding nflat_def by (simp add: Mapping.lookup.abs_eq)
 
 definition nsumm :: "'a nmap \<Rightarrow> (event_data list, 'a) mapping" where
   "nsumm M = Mapping.map_values (\<lambda>_ v. fst v) M"
@@ -138,10 +269,70 @@ definition ndel :: "nat \<Rightarrow> (event_data list \<Rightarrow> 'a \<Righta
           if Mapping.is_empty I' then Mapping.delete g M else Mapping.update g (sd t a, I') M)
         else Mapping.update g (a, Mapping.update t (m - 1) I) M)))"
 
+lemma nflat_nins: "nflat k (nins k si su t M) = ucnt_add1 t (nflat k M)"
+  by (rule mapping_eqI)
+    (auto simp: lookup_nflat nins_def ucnt_add1_def Let_def lookup_update'
+      split: option.splits prod.splits)
+
 definition gupd :: "nat \<Rightarrow> (event_data list \<Rightarrow> 'a) \<Rightarrow> (event_data list \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow>
     event_data list \<Rightarrow> (event_data list, 'a) mapping \<Rightarrow> (event_data list, 'a) mapping" where
   "gupd k si su t m = (let g = drop k t in case Mapping.lookup m g of
      None \<Rightarrow> Mapping.update g (si t) m | Some a \<Rightarrow> Mapping.update g (su t a) m)"
+
+lemma nsumm_nins: "nsumm (nins k si su t M) =
+    (if Mapping.lookup (nflat k M) t = None then gupd k si su t (nsumm M) else nsumm M)"
+  by (rule mapping_eqI)
+    (auto simp: lookup_nflat lookup_nsumm nins_def gupd_def Let_def lookup_update'
+      split: option.splits prod.splits)
+
+lemma nflat_ndel: "nflat k (ndel k sd t M) = ucnt_del1 t (nflat k M)"
+proof (rule mapping_eqI)
+  fix u
+  show "Mapping.lookup (nflat k (ndel k sd t M)) u = Mapping.lookup (ucnt_del1 t (nflat k M)) u"
+  proof (cases "Mapping.lookup M (drop k t)")
+    case None
+    then show ?thesis
+      by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def split: option.splits)
+  next
+    case (Some aI)
+    obtain a I where aI: "aI = (a, I)" by (cases aI)
+    show ?thesis
+    proof (cases "Mapping.lookup I t")
+      case None
+      then show ?thesis using Some aI
+        by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def split: option.splits)
+    next
+      case (Some m)
+      show ?thesis
+      proof (cases "m \<le> 1")
+        case True
+        show ?thesis
+        proof (cases "Mapping.is_empty (Mapping.delete t I)")
+          case True
+          then have "Mapping.lookup I u = None" if "u \<noteq> t"
+          proof -
+            have "Mapping.lookup (Mapping.delete t I) u = None"
+              using True by (simp add: Mapping.is_empty_def Mapping.keys_dom_lookup)
+            with that show ?thesis by (simp add: lookup_delete)
+          qed
+          then show ?thesis using \<open>Mapping.lookup M (drop k t) = Some aI\<close> aI Some \<open>m \<le> 1\<close> True
+            by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def lookup_delete lookup_update'
+                split: option.splits)
+        next
+          case False
+          then show ?thesis using \<open>Mapping.lookup M (drop k t) = Some aI\<close> aI Some \<open>m \<le> 1\<close>
+            by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def lookup_delete lookup_update'
+                split: option.splits)
+        qed
+      next
+        case False
+        then show ?thesis using \<open>Mapping.lookup M (drop k t) = Some aI\<close> aI Some
+          by (auto simp: lookup_nflat ndel_def ucnt_del1_def Let_def lookup_delete lookup_update'
+              split: option.splits)
+      qed
+    qed
+  qed
+qed
 
 text \<open>The summary of a group, when its tuples leave: the step of the aggregate's deletion.  Its
   agreement with the summaries rests on the invariant: every tuple lies in its own group, every
@@ -160,6 +351,180 @@ definition ninv :: "nat \<Rightarrow> ('a \<Rightarrow> nat) \<Rightarrow> 'a nm
 lemma ninv_empty[simp]: "ninv k nc Mapping.empty"
   by (simp add: ninv_def)
 
+lemma keys_lookup_Some: "Mapping.lookup I t = Some m \<Longrightarrow> t \<in> Mapping.keys I"
+  by (simp add: Mapping.keys_dom_lookup domI)
+
+lemma is_empty_delete_iff:
+  assumes "finite (Mapping.keys I)" "t \<in> Mapping.keys I"
+  shows "Mapping.is_empty (Mapping.delete t I) \<longleftrightarrow> card (Mapping.keys I) = 1"
+proof -
+  have "Mapping.keys (Mapping.delete t I) = Mapping.keys I - {t}" by simp
+  then show ?thesis using assms
+    by (auto simp: Mapping.is_empty_def card_Suc_eq card_1_singleton_iff)
+qed
+
+lemma nsumm_ndel:
+  assumes inv: "ninv k nc M"
+  shows "nsumm (ndel k sd t M) =
+    (if Mapping.lookup (nflat k M) t = Some 1 then gdn k sd nc t (nsumm M) else nsumm M)"
+proof (cases "Mapping.lookup M (drop k t)")
+  case None
+  then show ?thesis by (simp add: ndel_def lookup_nflat)
+next
+  case (Some aI)
+  obtain a I where aI: "aI = (a, I)" by (cases aI)
+  have MI: "Mapping.lookup M (drop k t) = Some (a, I)" using Some aI by simp
+  have fin: "finite (Mapping.keys I)" and cnt: "nc a = card (Mapping.keys I)"
+    and pos: "\<And>u m. Mapping.lookup I u = Some m \<Longrightarrow> 1 \<le> m"
+    using inv MI unfolding ninv_def by blast+
+  show ?thesis
+  proof (cases "Mapping.lookup I t")
+    case None
+    then show ?thesis using MI by (simp add: ndel_def lookup_nflat)
+  next
+    case (Some m)
+    have tI: "t \<in> Mapping.keys I" using Some by (rule keys_lookup_Some)
+    show ?thesis
+    proof (cases "m \<le> 1")
+      case True
+      then have m1: "m = 1" using pos[OF Some] by simp
+      have e: "Mapping.is_empty (Mapping.delete t I) \<longleftrightarrow> nc a = 1"
+        using is_empty_delete_iff[OF fin tI] cnt by simp
+      show ?thesis
+        by (rule mapping_eqI)
+          (use MI Some m1 e in \<open>auto simp: ndel_def lookup_nflat gdn_def lookup_nsumm Let_def
+            lookup_delete lookup_update' split: option.splits\<close>)
+    next
+      case False
+      then show ?thesis
+        by (intro mapping_eqI)
+          (use MI Some in \<open>auto simp: ndel_def lookup_nflat lookup_nsumm lookup_update'\<close>)
+    qed
+  qed
+qed
+
+lemma ninv_nins:
+  assumes inv: "ninv k nc M" and si: "nc (si t) = 1" and su: "\<And>a. nc (su t a) = Suc (nc a)"
+  shows "ninv k nc (nins k si su t M)"
+  unfolding ninv_def
+proof (rule conjI)
+  show "finite (Mapping.keys (nins k si su t M))"
+    using inv by (auto simp: ninv_def nins_def Let_def split: option.splits prod.splits)
+next
+  show "\<forall>g a I. Mapping.lookup (nins k si su t M) g = Some (a, I) \<longrightarrow>
+     (\<forall>t \<in> Mapping.keys I. drop k t = g) \<and> finite (Mapping.keys I) \<and>
+     nc a = card (Mapping.keys I) \<and> (\<forall>t m. Mapping.lookup I t = Some m \<longrightarrow> 1 \<le> m)"
+  proof (intro allI impI)
+  fix g a' I'
+  assume L: "Mapping.lookup (nins k si su t M) g = Some (a', I')"
+  show "(\<forall>u \<in> Mapping.keys I'. drop k u = g) \<and> finite (Mapping.keys I') \<and>
+      nc a' = card (Mapping.keys I') \<and> (\<forall>u m. Mapping.lookup I' u = Some m \<longrightarrow> 1 \<le> m)"
+  proof (cases "g = drop k t")
+    case False
+    then have "Mapping.lookup M g = Some (a', I')"
+      using L by (auto simp: nins_def Let_def lookup_update' split: option.splits)
+    then show ?thesis using inv unfolding ninv_def by blast
+  next
+    case gt: True
+    show ?thesis
+    proof (cases "Mapping.lookup M g")
+      case None
+      then show ?thesis using L gt si by (auto simp: nins_def Let_def lookup_update' split: if_splits)
+    next
+      case (Some aI)
+      obtain a I where aI: "aI = (a, I)" by (cases aI)
+      have MI: "Mapping.lookup M g = Some (a, I)" using Some aI by simp
+      have grp: "\<forall>u \<in> Mapping.keys I. drop k u = g" and fin: "finite (Mapping.keys I)"
+        and cnt: "nc a = card (Mapping.keys I)" and pos: "\<And>u m. Mapping.lookup I u = Some m \<Longrightarrow> 1 \<le> m"
+        using inv MI unfolding ninv_def by blast+
+      show ?thesis
+      proof (cases "Mapping.lookup I t")
+        case None
+        then have "t \<notin> Mapping.keys I" by (simp add: Mapping.keys_dom_lookup domIff)
+        then show ?thesis using L gt MI None grp fin cnt pos su
+          by (auto simp: nins_def Let_def lookup_update' split: if_splits)
+      next
+        case (Some m)
+        have tI: "t \<in> Mapping.keys I" using Some by (rule keys_lookup_Some)
+        have aI': "a' = a" "I' = Mapping.update t (m + 1) I"
+          using L gt MI Some by (auto simp: nins_def Let_def lookup_update')
+        have ks: "Mapping.keys I' = Mapping.keys I" using tI by (auto simp: aI')
+        show ?thesis
+          unfolding ks using grp fin cnt pos aI' by (auto simp: lookup_update' split: if_splits)
+      qed
+    qed
+  qed
+qed
+qed
+
+lemma ninv_ndel:
+  assumes inv: "ninv k nc M" and sd: "\<And>a. nc (sd t a) = nc a - 1"
+  shows "ninv k nc (ndel k sd t M)"
+  unfolding ninv_def
+proof (rule conjI)
+  show "finite (Mapping.keys (ndel k sd t M))"
+    using inv by (auto simp: ninv_def ndel_def Let_def split: option.splits prod.splits)
+next
+  show "\<forall>g a I. Mapping.lookup (ndel k sd t M) g = Some (a, I) \<longrightarrow>
+     (\<forall>t \<in> Mapping.keys I. drop k t = g) \<and> finite (Mapping.keys I) \<and>
+     nc a = card (Mapping.keys I) \<and> (\<forall>t m. Mapping.lookup I t = Some m \<longrightarrow> 1 \<le> m)"
+  proof (intro allI impI)
+  fix g a' I'
+  assume L: "Mapping.lookup (ndel k sd t M) g = Some (a', I')"
+  show "(\<forall>u \<in> Mapping.keys I'. drop k u = g) \<and> finite (Mapping.keys I') \<and>
+      nc a' = card (Mapping.keys I') \<and> (\<forall>u m. Mapping.lookup I' u = Some m \<longrightarrow> 1 \<le> m)"
+  proof (cases "g = drop k t")
+    case False
+    then have "Mapping.lookup M g = Some (a', I')"
+      using L by (auto simp: ndel_def Let_def lookup_update' lookup_delete split: option.splits if_splits)
+    then show ?thesis using inv unfolding ninv_def by blast
+  next
+    case gt: True
+    show ?thesis
+    proof (cases "Mapping.lookup M g")
+      case None
+      then show ?thesis using L gt by (simp add: ndel_def)
+    next
+      case (Some aI)
+      obtain a I where aI: "aI = (a, I)" by (cases aI)
+      have MI: "Mapping.lookup M g = Some (a, I)" using Some aI by simp
+      have grp: "\<forall>u \<in> Mapping.keys I. drop k u = g" and fin: "finite (Mapping.keys I)"
+        and cnt: "nc a = card (Mapping.keys I)" and pos: "\<And>u m. Mapping.lookup I u = Some m \<Longrightarrow> 1 \<le> m"
+        using inv MI unfolding ninv_def by blast+
+      show ?thesis
+      proof (cases "Mapping.lookup I t")
+        case None
+        then show ?thesis using L gt MI grp fin cnt pos by (simp add: ndel_def)
+      next
+        case (Some m)
+        have tI: "t \<in> Mapping.keys I" using Some by (rule keys_lookup_Some)
+        show ?thesis
+        proof (cases "m \<le> 1")
+          case True
+          have ne: "\<not> Mapping.is_empty (Mapping.delete t I)"
+            using L gt MI Some True by (auto simp: ndel_def Let_def lookup_delete split: if_splits)
+          then have aI': "a' = sd t a" "I' = Mapping.delete t I"
+            using L gt MI Some True by (auto simp: ndel_def Let_def lookup_update')
+          have ks: "Mapping.keys I' = Mapping.keys I - {t}" by (simp add: aI')
+          show ?thesis
+            unfolding ks
+            using grp fin cnt pos tI sd[of a] aI'
+            by (auto simp: card_Diff_singleton lookup_delete split: if_splits)
+        next
+          case False
+          then have aI': "a' = a" "I' = Mapping.update t (m - 1) I"
+            using L gt MI Some by (auto simp: ndel_def Let_def lookup_update')
+          have ks: "Mapping.keys I' = Mapping.keys I" using tI by (auto simp: aI')
+          show ?thesis
+            unfolding ks
+            using grp fin cnt pos False aI' by (auto simp: lookup_update' split: if_splits)
+        qed
+      qed
+    qed
+  qed
+qed
+qed
+
 text \<open>The count set read off in full, for the rare step that has to go back to the flat
   structure: every group's tuples, inserted one by one.\<close>
 
@@ -168,6 +533,71 @@ definition nflat_x :: "'a nmap \<Rightarrow> ucnt" where
      | Some aI \<Rightarrow> fold (\<lambda>t c. case Mapping.lookup (snd aI) t of None \<Rightarrow> c
          | Some n \<Rightarrow> Mapping.update t n c) (csl (Mapping.keys (snd aI))) c)
      (csl (Mapping.keys M)) Mapping.empty"
+
+lemma lookup_fold_inner:
+  "Mapping.lookup (fold (\<lambda>t c. case Mapping.lookup I t of None \<Rightarrow> c
+     | Some n \<Rightarrow> Mapping.update t n c) xs c) u =
+   (if u \<in> set xs \<and> Mapping.lookup I u \<noteq> None then Mapping.lookup I u else Mapping.lookup c u)"
+  by (induct xs arbitrary: c) (auto simp: lookup_update' split: option.splits)
+
+lemma in_keys_lookup: "u \<in> Mapping.keys m \<longleftrightarrow> Mapping.lookup m u \<noteq> None"
+  by (simp add: Mapping.keys_dom_lookup domIff)
+
+lemma lookup_fold_outer:
+  fixes M :: "'x nmap"
+  assumes grp: "\<And>g a I u. Mapping.lookup M g = Some (a, I) \<Longrightarrow> u \<in> Mapping.keys I \<Longrightarrow> drop k u = g"
+    and fin: "\<And>g a I. Mapping.lookup M g = Some (a, I) \<Longrightarrow> finite (Mapping.keys I)"
+  shows "Mapping.lookup (fold (\<lambda>g c. case Mapping.lookup M g of None \<Rightarrow> c
+     | Some aI \<Rightarrow> fold (\<lambda>t c. case Mapping.lookup (snd aI) t of None \<Rightarrow> c
+         | Some n \<Rightarrow> Mapping.update t n c) (csl (Mapping.keys (snd aI))) c) gs c) u =
+   (if drop k u \<in> set gs then (case Mapping.lookup M (drop k u) of None \<Rightarrow> Mapping.lookup c u
+      | Some aI \<Rightarrow> (if Mapping.lookup (snd aI) u \<noteq> None then Mapping.lookup (snd aI) u
+         else Mapping.lookup c u)) else Mapping.lookup c u)"
+proof (induct gs arbitrary: c)
+  case (Cons g gs)
+  show ?case
+  proof (cases "Mapping.lookup M g")
+    case None
+    then show ?thesis using Cons by (auto split: option.splits)
+  next
+    case (Some aI)
+    obtain a I where aI: "aI = (a, I)" by (cases aI)
+    have finI: "finite (Mapping.keys I)" using fin[of g a I] Some aI by simp
+    have ks: "set (csl (Mapping.keys I)) = Mapping.keys I" by (rule set_csl_ed[OF finI])
+    have other: "Mapping.lookup I u = None" if "drop k u \<noteq> g"
+    proof (rule ccontr)
+      assume "Mapping.lookup I u \<noteq> None"
+      then have "u \<in> Mapping.keys I" by (simp add: in_keys_lookup)
+      with grp[of g a I u] Some aI that show False by simp
+    qed
+    have c': "\<And>c. Mapping.lookup (fold (\<lambda>t c. case Mapping.lookup I t of None \<Rightarrow> c
+        | Some n \<Rightarrow> Mapping.update t n c) (csl (Mapping.keys I)) c) u =
+      (if Mapping.lookup I u \<noteq> None then Mapping.lookup I u else Mapping.lookup c u)"
+      unfolding lookup_fold_inner ks by (simp add: in_keys_lookup)
+    show ?thesis
+      using Cons.hyps other Some aI c' by (cases "drop k u = g") (auto split: option.splits)
+  qed
+qed simp
+
+lemma nflat_x:
+  assumes "ninv k nc M"
+  shows "nflat_x M = nflat k M"
+proof (rule mapping_eqI)
+  fix u
+  have finM: "finite (Mapping.keys M)" using assms by (simp add: ninv_def)
+  have grp: "\<And>g a I u. Mapping.lookup M g = Some (a, I) \<Longrightarrow> u \<in> Mapping.keys I \<Longrightarrow> drop k u = g"
+    and fin: "\<And>g a I. Mapping.lookup M g = Some (a, I) \<Longrightarrow> finite (Mapping.keys I)"
+    using assms unfolding ninv_def by blast+
+  have "Mapping.lookup (nflat_x M) u =
+    (if drop k u \<in> set (csl (Mapping.keys M)) then (case Mapping.lookup M (drop k u) of
+        None \<Rightarrow> Mapping.lookup Mapping.empty u
+      | Some aI \<Rightarrow> (if Mapping.lookup (snd aI) u \<noteq> None then Mapping.lookup (snd aI) u
+         else Mapping.lookup Mapping.empty u)) else Mapping.lookup Mapping.empty u)"
+    unfolding nflat_x_def by (rule lookup_fold_outer[OF grp fin])
+  then show "Mapping.lookup (nflat_x M) u = Mapping.lookup (nflat k M) u"
+    by (auto simp: set_csl_ed[OF finM] lookup_nflat in_keys_lookup
+        split: option.splits)
+qed
 
 subsection \<open>The two instances: the count and the count with the sum\<close>
 
@@ -182,11 +612,34 @@ definition cdel :: "(event_data list \<Rightarrow> 'b \<Rightarrow> 'b) \<Righta
      | Some k \<Rightarrow> (if k \<le> 1 then (Mapping.delete t c, if k = 1 then F t acc else acc)
                  else (Mapping.update t (k - 1) c, acc))))"
 
+lemma cins_eq: "cins F t (c, acc) = (ucnt_add1 t c, if Mapping.lookup c t = None then F t acc else acc)"
+  by (simp add: cins_def ucnt_add1_def split: option.splits)
+
+lemma cdel_eq: "cdel F t (c, acc) = (ucnt_del1 t c, if Mapping.lookup c t = Some 1 then F t acc else acc)"
+  by (auto simp: cdel_def ucnt_del1_def split: option.splits)
+
 definition ival :: "event_data \<Rightarrow> integer" where
   "ival e = (case e of EInt i \<Rightarrow> i | _ \<Rightarrow> 0)"
 
 definition is_eint :: "event_data \<Rightarrow> bool" where
   "is_eint e = (case e of EInt i \<Rightarrow> True | _ \<Rightarrow> False)"
+
+lemma gstep_ins_GCnt: "gstep_ins k ev t (Some (GCnt m)) = Some (GCnt (gupd k (\<lambda>_. 1) (\<lambda>_ a. Suc a) t m))"
+  by (simp add: gstep_ins_def gupd_def Let_def split: option.splits)
+
+lemma gstep_del_GCnt: "gstep_del k ev t (Some (GCnt m)) = Some (GCnt (gdn k (\<lambda>_ a. a - 1) id t m))"
+  by (simp add: gstep_del_def gdn_def Let_def split: option.splits)
+
+lemma gstep_ins_GSum: "gstep_ins k ev t (Some (GSum m)) = (if is_eint (ev t)
+    then Some (GSum (gupd k (\<lambda>t. (1, ival (ev t))) (\<lambda>t a. (Suc (fst a), snd a + ival (ev t))) t m))
+    else None)"
+  by (auto simp: gstep_ins_def gupd_def Let_def is_eint_def ival_def split: option.splits event_data.splits)
+
+lemma gstep_del_GSum: "Mapping.lookup m (drop k t) \<noteq> None \<Longrightarrow>
+  gstep_del k ev t (Some (GSum m)) = (if is_eint (ev t)
+    then Some (GSum (gdn k (\<lambda>t a. (fst a - 1, snd a - ival (ev t))) fst t m))
+    else None)"
+  by (auto simp: gstep_del_def gdn_def Let_def is_eint_def ival_def split: option.splits event_data.splits)
 
 subsection \<open>The representation: flat, or grouped for a count or a sum\<close>
 
@@ -218,6 +671,9 @@ fun rflat_x :: "ucrep \<Rightarrow> ucnt" where
 | "rflat_x (UNCnt M) = nflat_x M"
 | "rflat_x (UNSum M) = nflat_x M"
 
+lemma rflat_x: "rinv k R \<Longrightarrow> rflat_x R = rcnt k R"
+  by (cases R) (simp_all add: nflat_x)
+
 fun rins :: "nat \<Rightarrow> (event_data list \<Rightarrow> event_data) \<Rightarrow> event_data list \<Rightarrow> ucrep \<Rightarrow> ucrep" where
   "rins k ev t (UFlat c ax) = (case cins (gstep_ins k ev) t (c, ax) of (c', ax') \<Rightarrow> UFlat c' ax')"
 | "rins k ev t (UNCnt M) = UNCnt (nins k (\<lambda>_. 1) (\<lambda>_ a. Suc a) t M)"
@@ -232,17 +688,116 @@ fun rdel :: "nat \<Rightarrow> (event_data list \<Rightarrow> event_data) \<Righ
      then UNSum (ndel k (\<lambda>t a. (fst a - 1, snd a - ival (ev t))) t M)
      else UFlat (ucnt_del1 t (nflat_x M)) None)"
 
+lemma rins:
+  assumes "rinv k R"
+  shows "(rcnt k (rins k ev t R), rax (rins k ev t R)) = cins (gstep_ins k ev) t (rcnt k R, rax R)"
+    and "rinv k (rins k ev t R)"
+proof -
+  have "(rcnt k (rins k ev t R), rax (rins k ev t R)) = cins (gstep_ins k ev) t (rcnt k R, rax R) \<and>
+      rinv k (rins k ev t R)"
+  proof (cases R)
+    case (UFlat c ax)
+    then show ?thesis by (simp split: prod.splits)
+  next
+    case (UNCnt M)
+    have inv: "ninv k id M" using assms UNCnt by simp
+    show ?thesis
+      using UNCnt ninv_nins[OF inv, of "\<lambda>_. 1" t "\<lambda>_ a. Suc a"]
+      by (simp add: cins_eq nflat_nins nsumm_nins gstep_ins_GCnt)
+  next
+    case (UNSum M)
+    have inv: "ninv k fst M" using assms UNSum by simp
+    show ?thesis
+    proof (cases "is_eint (ev t) \<or> Mapping.lookup (nflat k M) t \<noteq> None")
+      case True
+      then show ?thesis
+        using UNSum ninv_nins[OF inv, of "\<lambda>t. (1, ival (ev t))" t "\<lambda>t a. (Suc (fst a), snd a + ival (ev t))"]
+        by (auto simp: cins_eq nflat_nins nsumm_nins gstep_ins_GSum)
+    next
+      case False
+      then show ?thesis using UNSum by (simp add: cins_eq nflat_x[OF inv] gstep_ins_GSum)
+    qed
+  qed
+  then show "(rcnt k (rins k ev t R), rax (rins k ev t R)) = cins (gstep_ins k ev) t (rcnt k R, rax R)"
+    and "rinv k (rins k ev t R)" by simp_all
+qed
+
+lemma lookup_nsumm_nflat: "Mapping.lookup (nflat k M) t \<noteq> None \<Longrightarrow> Mapping.lookup (nsumm M) (drop k t) \<noteq> None"
+  by (auto simp: lookup_nflat lookup_nsumm split: option.splits)
+
+lemma rdel:
+  assumes "rinv k R"
+  shows "(rcnt k (rdel k ev t R), rax (rdel k ev t R)) = cdel (gstep_del k ev) t (rcnt k R, rax R)"
+    and "rinv k (rdel k ev t R)"
+proof -
+  have "(rcnt k (rdel k ev t R), rax (rdel k ev t R)) = cdel (gstep_del k ev) t (rcnt k R, rax R) \<and>
+      rinv k (rdel k ev t R)"
+  proof (cases R)
+    case (UFlat c ax)
+    then show ?thesis by (simp split: prod.splits)
+  next
+    case (UNCnt M)
+    have inv: "ninv k id M" using assms UNCnt by simp
+    show ?thesis
+      using UNCnt ninv_ndel[OF inv, of "\<lambda>_ a. a - 1" t]
+      by (simp add: cdel_eq nflat_ndel nsumm_ndel[OF inv] gstep_del_GCnt)
+  next
+    case (UNSum M)
+    have inv: "ninv k fst M" using assms UNSum by simp
+    show ?thesis
+    proof (cases "is_eint (ev t) \<or> Mapping.lookup (nflat k M) t \<noteq> Some 1")
+      case True
+      then show ?thesis
+        using UNSum ninv_ndel[OF inv, of "\<lambda>t a. (fst a - 1, snd a - ival (ev t))" t]
+          lookup_nsumm_nflat[of k M t]
+        by (auto simp: cdel_eq nflat_ndel nsumm_ndel[OF inv] gstep_del_GSum)
+    next
+      case False
+      then show ?thesis using UNSum lookup_nsumm_nflat[of k M t]
+        by (simp add: cdel_eq nflat_x[OF inv] gstep_del_GSum)
+    qed
+  qed
+  then show "(rcnt k (rdel k ev t R), rax (rdel k ev t R)) = cdel (gstep_del k ev) t (rcnt k R, rax R)"
+    and "rinv k (rdel k ev t R)" by simp_all
+qed
+
+lemma fold_rins:
+  "rinv k R \<Longrightarrow> (rcnt k (fold (rins k ev) xs R), rax (fold (rins k ev) xs R)) =
+     fold (cins (gstep_ins k ev)) xs (rcnt k R, rax R) \<and> rinv k (fold (rins k ev) xs R)"
+proof (induct xs arbitrary: R)
+  case (Cons t xs)
+  show ?case using Cons.hyps[OF rins(2)[OF Cons.prems]] rins(1)[OF Cons.prems] by simp
+qed simp
+
+lemma fold_rdel:
+  "rinv k R \<Longrightarrow> (rcnt k (fold (rdel k ev) xs R), rax (fold (rdel k ev) xs R)) =
+     fold (cdel (gstep_del k ev)) xs (rcnt k R, rax R) \<and> rinv k (fold (rdel k ev) xs R)"
+proof (induct xs arbitrary: R)
+  case (Cons t xs)
+  show ?case using Cons.hyps[OF rdel(2)[OF Cons.prems]] rdel(1)[OF Cons.prems] by simp
+qed simp
+
 definition ek :: "eaggp \<Rightarrow> nat" where
   "ek p = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> k)"
 
+lemma nflat_empty[simp]: "nflat k Mapping.empty = Mapping.empty"
+  by (rule mapping_eqI) (simp add: lookup_nflat)
+
 lemma nsumm_empty[simp]: "nsumm Mapping.empty = Mapping.empty"
   by (rule mapping_eqI) (simp add: lookup_nsumm)
+
+lemma is_empty_eq_empty: "Mapping.is_empty m \<longleftrightarrow> m = Mapping.empty"
+  by (metis Mapping.is_empty_empty Mapping.keys_empty Mapping.is_empty_def mapping_eqI
+      in_keys_lookup ex_in_conv)
 
 definition urmk :: "eaggp \<Rightarrow> ucnt \<Rightarrow> ugagg option \<Rightarrow> ucrep" where
   "urmk p c ax = (if \<not> cachedp p \<and> Mapping.is_empty c then (case ax of
       Some (GCnt m) \<Rightarrow> if Mapping.is_empty m then UNCnt Mapping.empty else UFlat c ax
     | Some (GSum m) \<Rightarrow> if Mapping.is_empty m then UNSum Mapping.empty else UFlat c ax
     | _ \<Rightarrow> UFlat c ax) else UFlat c ax)"
+
+lemma urmk: "rcnt k (urmk p c ax) = c" "rax (urmk p c ax) = ax" "rinv k (urmk p c ax)"
+  by (auto simp: urmk_def is_empty_eq_empty split: option.splits gagg.splits)
 
 text \<open>The cache: its key (the constraint and the aggregation it was made for), the
   representation and the result table.  The representation is grouped at the key's group arity
@@ -288,8 +843,76 @@ definition cstep :: "(nat \<Rightarrow> (event_data list \<Rightarrow> event_dat
 definition cinv :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> ugagg option \<times> event_data list set \<Rightarrow> bool" where
   "cinv q p axC = (\<forall>a. fst axC = Some a \<longrightarrow> snd axC = gcache q p a)"
 
+lemma cstep_cinv:
+  assumes loc: "\<And>\<omega> k ev t a a' h. S k ev t (Some a) = Some a' \<Longrightarrow> h \<noteq> drop k t \<Longrightarrow>
+      gval \<omega> a' h = gval \<omega> a h"
+    and inv: "cinv q p axC"
+  shows "cinv q p (cstep S q p t axC)"
+proof -
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p) auto
+  obtain ax C where axC: "axC = (ax, C)" by (cases axC)
+  show ?thesis
+  proof (cases ax)
+    case None
+    then show ?thesis by (simp add: cstep_def cinv_def p axC)
+  next
+    case (Some a)
+    then have C: "C = gcache q p a" using inv by (simp add: cinv_def axC)
+    show ?thesis
+    proof (cases "S k (umeval_trm f) t (Some a)")
+      case None
+      then show ?thesis using Some by (simp add: cstep_def cinv_def p axC)
+    next
+      case (Some a')
+      then show ?thesis using \<open>ax = Some a\<close> C cupd_gvset[OF loc[OF Some], where Q = "uqok q" and p = pos]
+        by (simp add: cstep_def cinv_def p axC gcache_def)
+    qed
+  qed
+qed
+
+lemma cstep_ins_cinv: "cinv q p axC \<Longrightarrow> cinv q p (cstep gstep_ins q p t axC)"
+  by (rule cstep_cinv) (auto intro: gval_gstep_ins)
+
+lemma cstep_del_cinv: "cinv q p axC \<Longrightarrow> cinv q p (cstep gstep_del q p t axC)"
+  by (rule cstep_cinv) (auto intro: gval_gstep_del)
+
+lemma fold_cstep_cinv:
+  "(\<And>t axC. cinv q p axC \<Longrightarrow> cinv q p (S t axC)) \<Longrightarrow> cinv q p axC \<Longrightarrow> cinv q p (fold S xs axC)"
+  by (induct xs arbitrary: axC) simp_all
+
 text \<open>The window's two steps on the counts, the aggregate and its result, in one pass each.  A
   structure built for another node (its key differs) is rebuilt instead.\<close>
+
+lemma cnt_ins_fold_cinv:
+  assumes "\<forall>a. ax = Some a \<longrightarrow> C = gcache q p a"
+    and "cnt_ins_fold (cstep gstep_ins q p) (csl X) c (ax, C) = (c', ax', C')"
+  shows "\<forall>a. ax' = Some a \<longrightarrow> C' = gcache q p a"
+proof -
+  have c0: "cinv q p (ax, C)" using assms(1) by (simp add: cinv_def)
+  have f: "cinv q p (fold (cstep gstep_ins q p) xs (ax, C))" for xs
+    using fold_cstep_cinv[OF cstep_ins_cinv c0] .
+  from assms(2) have "fold (cstep gstep_ins q p) (filter (\<lambda>t. Mapping.lookup c t = None) (csl X)) (ax, C) =
+      (ax', C')"
+    by (simp add: cnt_ins_fold_eq[OF distinct_csl_edl])
+  with f[of "filter (\<lambda>t. Mapping.lookup c t = None) (csl X)"] show ?thesis by (simp add: cinv_def)
+qed
+
+lemma cnt_del_fold_cinv:
+  assumes "\<forall>a. ax = Some a \<longrightarrow> C = gcache q p a"
+    and "cnt_del_fold (cstep gstep_del q p) (csl X) c (ax, C) = (c', ax', C')"
+  shows "\<forall>a. ax' = Some a \<longrightarrow> C' = gcache q p a"
+proof -
+  have c0: "cinv q p (ax, C)" using assms(1) by (simp add: cinv_def)
+  have f: "cinv q p (fold (cstep gstep_del q p) xs (ax, C))" for xs
+    using fold_cstep_cinv[OF cstep_del_cinv c0] .
+  from assms(2) have "fold (cstep gstep_del q p) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl X)) (ax, C) =
+      (ax', C')"
+    by (simp add: cnt_del_fold_eq[OF distinct_csl_edl])
+  with f[of "filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl X)"] show ?thesis by (simp add: cinv_def)
+qed
+
+lemma cset_gcache: "ax = Some a \<Longrightarrow> cset q p ax = gcache q p a"
+  by (simp add: cset_def)
 
 lift_definition uc_step_ins :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
     ucache \<Rightarrow> ucache" is
@@ -343,6 +966,15 @@ lift_definition uc_step_ins :: "uconstr option \<Rightarrow> eaggp \<Rightarrow>
   qed
   done
 
+lemma uc_rep_inv: "rinv (ek (snd (uc_key x))) (uc_rep x)"
+  by transfer auto
+
+lemma uc_cnt_rep: "uc_cnt x = rcnt (ek (snd (uc_key x))) (uc_rep x)"
+  by transfer auto
+
+lemma uc_ax_rep: "uc_ax x = rax (uc_rep x)"
+  by transfer auto
+
 lift_definition uc_step_del :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
     ucache \<Rightarrow> ucache" is
   "\<lambda>q p w X x. case x of (key, R, C) \<Rightarrow> (if cachedp p then (if key = (q, p)
@@ -395,6 +1027,9 @@ lift_definition uc_step_del :: "uconstr option \<Rightarrow> eaggp \<Rightarrow>
   qed
   done
 
+
+lifting_update mapping.lifting
+
 subsection \<open>The result, read off\<close>
 
 fun gempty :: "'b gagg \<Rightarrow> bool" where
@@ -413,6 +1048,10 @@ text \<open>The result read off the grouped representation directly, without the
 
 definition nis_empty :: "'a nmap \<Rightarrow> bool" where
   "nis_empty M = Mapping.is_empty M"
+
+lemma ugmr_map_values: "ugmr q p f (Mapping.map_values (\<lambda>_ v. g v) m) = ugmr q p (\<lambda>v. f (g v)) m"
+  unfolding ugmr_def gmr_def keys_map_values lookup_map_values
+  by (rule arg_cong[where f = "Set.filter q"], rule image_cong) (auto split: option.splits)
 
 lemma is_empty_nsumm[simp]: "Mapping.is_empty (nsumm M) \<longleftrightarrow> Mapping.is_empty M"
   by (simp add: nsumm_def Mapping.is_empty_def)

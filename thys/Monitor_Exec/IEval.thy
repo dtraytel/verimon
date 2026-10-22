@@ -96,9 +96,6 @@ definition eands_req :: "ejoin_plan list \<Rightarrow> nat \<Rightarrow> bool li
   "eands_req ps n = take n ((case ps of [] \<Rightarrow> [[]] | p # _ \<Rightarrow> [jreq_l p True]) @
      map (\<lambda>p. jreq_r p True) ps @ replicate n [])"
 
-lemma length_eands_req[simp]: "length (eands_req ps n) = n"
-  by (cases ps) (simp_all add: eands_req_def)
-
 fun igands_pos :: "ejoin_plan list \<Rightarrow> itable \<Rightarrow> itable list \<Rightarrow> itable" where
   "igands_pos [] t us = t"
 | "igands_pos (p # ps) t [] = t"
@@ -132,13 +129,6 @@ definition dabs :: "idatabase \<Rightarrow> database" where
 
 definition demb :: "database \<Rightarrow> idatabase" where
   "demb db = Mapping.map_values (\<lambda>_. map itab) db"
-
-lemma lookup_dabs: "Mapping.lookup (dabs db) k = map_option (map iset) (Mapping.lookup db k)"
-  by (simp add: dabs_def Mapping.lookup_map_values)
-
-lemma dabs_demb[simp]: "dabs (demb db) = db"
-  by (rule mapping_eqI) (simp add: lookup_dabs demb_def Mapping.lookup_map_values option.map_comp
-      comp_def option.map_ident)
 
 fun is_pred :: "Formula.name \<times> nat \<Rightarrow> ('b2, 'bn, 'ba, 'bs, 'bu, 'p) geformula \<Rightarrow> bool" where
   "is_pred pm (EPredS e ar) = ((e, ar) = pm)"

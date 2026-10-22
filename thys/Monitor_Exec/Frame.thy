@@ -29,6 +29,11 @@ text \<open>A ascending frame: the kernel's column list of a table, and the same
 definition eframe :: "cols \<Rightarrow> cols \<Rightarrow> bool" where
   "eframe ks cs \<longleftrightarrow> distinct ks \<and> sorted_wrt (<) cs \<and> set cs = set ks"
 
+lemma eframeD:
+  assumes "eframe ks cs"
+  shows "distinct ks" "sorted_wrt (<) cs" "set cs = set ks" "distinct cs"
+  using assms by (auto simp: eframe_def strict_sorted_iff)
+
 text \<open>The executable projection by a mask, used between ascending frames.\<close>
 
 fun eproj :: "bool list \<Rightarrow> 'b list \<Rightarrow> 'b list" where
@@ -45,7 +50,17 @@ definition etabc :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightar
 definition etabw :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
   "etabw ks cs D = restrict ks cs ` D"
 
-text \<open>A frame that is already ascending is left alone.\<close>
+lemma restrict_map: "restrict cs ks x = map (tup_get ks x) cs"
+  by (simp add: restrict_def)
+
+lemma restrict_inv:
+  assumes "eframe ks cs" "wf_tuple ks x"
+  shows "restrict ks cs (restrict cs ks x) = x"
+  using assms by (simp add: eframe_def restrict_restrict restrict_idle)
+
+lemma inj_on_restrict:
+  "eframe ks cs \<Longrightarrow> inj_on (restrict cs ks) {x. wf_tuple ks x}"
+  by (rule inj_onI) (metis mem_Collect_eq restrict_inv)
 
 subsection \<open>Merging two column lists\<close>
 
@@ -75,14 +90,8 @@ fun ejoin1 :: "mrg list \<Rightarrow> 'b list \<Rightarrow> 'b list \<Rightarrow
     (if x = y then map_option (Cons x) (ejoin1 p xs ys) else None)"
 | "ejoin1 (m # p) xs ys = None"
 
-subsection \<open>Agreement with the kernel's join\<close>
-
-text \<open>The kernel's join of two tuples reads every column of the result from the side that has
-  it.\<close>
-
-text \<open>The short join of two tables is the short form of the kernel's join.\<close>
-
-text \<open>A kernel table read in another order of its columns has the same executable form.\<close>
+lemma merge_cols_Nil2: "merge_cols cs [] = cs"
+  by (induct cs) auto
 
 subsection \<open>Projecting a short tuple onto a sublist of its columns\<close>
 
@@ -94,11 +103,6 @@ fun mrg_left_key :: "mrg list \<Rightarrow> bool list" where
 
 definition no_right :: "mrg list \<Rightarrow> bool" where
   "no_right p = list_all (\<lambda>m. m \<noteq> MRgt) p"
-
-lemma no_right_mrg_plan:
-  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
-     no_right (mrg_plan cs1 cs2) = (set cs2 \<subseteq> set cs1)"
-  by (induct cs1 cs2 rule: mrg_plan.induct) (auto simp: no_right_def list_all_iff)
 
 subsection \<open>The join when one operand's columns are among the other's\<close>
 
@@ -124,12 +128,6 @@ fun mrg_swap :: "mrg \<Rightarrow> mrg" where
 | "mrg_swap MRgt = MLft"
 | "mrg_swap MBth = MBth"
 
-lemma mrg_right_key_swap: "mrg_right_key p = mrg_left_key (map mrg_swap p)"
-  by (induct p rule: mrg_right_key.induct) auto
-
-lemma no_left_swap: "no_left p = no_right (map mrg_swap p)"
-  by (induct p) (auto simp: no_left_def no_right_def elim: mrg_swap.elims)
-
 subsection \<open>The general join: an index on the shared columns\<close>
 
 text \<open>
@@ -144,9 +142,6 @@ fun emerge :: "mrg list \<Rightarrow> 'b list \<Rightarrow> 'b list \<Rightarrow
 | "emerge (MRgt # p) xs (y # ys) = y # emerge p xs ys"
 | "emerge (MBth # p) (x # xs) (y # ys) = x # emerge p xs ys"
 | "emerge (m # p) xs ys = []"
-
-text \<open>The join of two short tuples succeeds exactly when they agree on the shared columns, and
-  then it is the test-free merge.\<close>
 
 definition gindex_step :: "bool list \<Rightarrow> 'b list \<Rightarrow>
     ('b list, 'b list list) mapping \<Rightarrow> ('b list, 'b list list) mapping" where
@@ -184,9 +179,6 @@ definition ggen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool lis
 definition bucket :: "(event_data tuple, event_data tuple list) mapping \<Rightarrow>
     event_data tuple \<Rightarrow> event_data tuple list" where
   "bucket m k = (case Mapping.lookup m k of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
-
-text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
-  columns, merged.\<close>
 
 subsection \<open>Dispatching on the shape of the two column lists\<close>
 
@@ -265,19 +257,10 @@ fun kands_neg :: "cols \<Rightarrow> 'a table \<Rightarrow> (cols \<times> 'a ta
   "kands_neg acc t [] = t"
 | "kands_neg acc t ((k, u) # us) = kands_neg acc (join acc t False k u) us"
 
-lemma set_kands_cols: "set (kands_cols acc kss) = set acc \<union> (\<Union>k \<in> set kss. set k)"
-  by (induct kss arbitrary: acc) auto
-
-lemma distinct_kands_cols:
-  "distinct acc \<Longrightarrow> \<forall>k \<in> set kss. distinct k \<Longrightarrow> distinct (kands_cols acc kss)"
-  by (induct kss arbitrary: acc) auto
-
 text \<open>An operand of the multi-way join: its kernel columns, its ascending columns, and its table.\<close>
 
 definition wf_operand :: "cols \<Rightarrow> cols \<Rightarrow> event_data table \<Rightarrow> bool" where
   "wf_operand k c U \<longleftrightarrow> eframe k c \<and> table k U \<and> finite U"
-
-text \<open>The kernel's multi-way join is the left-to-right fold, read in its own column order.\<close>
 
 section \<open>Aggregation over short tuples\<close>
 
@@ -299,6 +282,13 @@ fun reindex_trm :: "cols \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm" wh
 | "reindex_trm cs (Formula.F2i a) = Formula.F2i (reindex_trm cs a)"
 | "reindex_trm cs (Formula.I2f a) = Formula.I2f (reindex_trm cs a)"
 
+lemma col_pos_nth: "c \<in> set cs \<Longrightarrow> map f cs ! col_pos cs c = f c"
+  by (induct cs) auto
+
+lemma umeval_trm_reindex:
+  "Formula.fv_trm t \<subseteq> set cs' \<Longrightarrow> umeval_trm (reindex_trm cs' t) (restrict cs' cs x) = meval_trm cs t x"
+  by (induct t) (auto simp: restrict_map col_pos_nth)
+
 subsection \<open>The group key is a suffix of the short tuple\<close>
 
 text \<open>
@@ -312,14 +302,212 @@ text \<open>
 abbreviation agg_cols :: "nat \<Rightarrow> cols \<Rightarrow> cols" where
   "agg_cols m gcols \<equiv> [0..<m] @ map (\<lambda>c. c + m) gcols"
 
+lemma agg_cols_sortedD: "sorted_wrt (<) (agg_cols m gcols) \<Longrightarrow> sorted_wrt (<) gcols"
+  by (auto simp: sorted_wrt_append sorted_wrt_map)
+
+lemma set_shift_agg_cols:
+  "set cs = set (agg_cols m gcols) \<Longrightarrow> set (shift_cols m cs) = set gcols"
+  by (force simp: set_shift_cols image_iff)
+
+lemma eframe_shift_cols:
+  assumes "eframe cs (agg_cols m gcols)"
+  shows "eframe (shift_cols m cs) gcols"
+  using eframeD(1,2)[OF assms] set_shift_agg_cols[OF eframeD(3)[OF assms, symmetric]]
+  unfolding eframe_def by (simp add: distinct_shift_cols agg_cols_sortedD)
+
+lemma tup_get_agg_key_shift:
+  assumes "c \<in> set cs" "k \<le> c"
+  shows "tup_get (shift_cols k cs) (agg_key k cs x) (c - k) = tup_get cs x c"
+proof -
+  have "tup_get (shift_cols k cs) (agg_key k cs x) (c - k) =
+      tup_get (filter (\<lambda>x. k \<le> x) cs) (agg_key k cs x) c"
+    unfolding shift_cols_def using assms by (intro tup_get_map) (auto simp: inj_on_def)
+  also have "\<dots> = tup_get cs x c"
+    unfolding agg_key_def using assms by (simp add: tup_get_restrict)
+  finally show ?thesis .
+qed
+
+lemma wf_tuple_agg_key_shift: "wf_tuple (shift_cols k cs) (agg_key k cs x)"
+  by (simp add: agg_key_def shift_cols_def wf_tuple_def)
+
+lemma drop_restrict_agg:
+  assumes "set (agg_cols m gcols) \<subseteq> set cs"
+  shows "drop m (restrict (agg_cols m gcols) cs x) = restrict gcols (shift_cols m cs) (agg_key m cs x)"
+proof -
+  have "drop m (restrict (agg_cols m gcols) cs x) = map (\<lambda>c. tup_get cs x (c + m)) gcols"
+    by (simp add: restrict_map)
+  also have "\<dots> = restrict gcols (shift_cols m cs) (agg_key m cs x)"
+    unfolding restrict_map
+  proof (rule map_cong[OF refl])
+    fix c assume "c \<in> set gcols"
+    then have "c + m \<in> set cs" using assms by auto
+    then show "tup_get cs x (c + m) = tup_get (shift_cols m cs) (agg_key m cs x) c"
+      using tup_get_agg_key_shift[of "c + m" cs m x] by simp
+  qed
+  finally show ?thesis .
+qed
+
 subsection \<open>Writing the aggregate into the group key\<close>
 
 definition ins_pos :: "cols \<Rightarrow> nat \<Rightarrow> nat" where
   "ins_pos cs y = length (filter (\<lambda>c. c < y) cs)"
 
-subsection \<open>The aggregated values do not change\<close>
+lemma merge_cols_single:
+  "sorted_wrt (<) cs \<Longrightarrow> y \<notin> set cs \<Longrightarrow>
+     merge_cols cs [y] = take (ins_pos cs y) cs @ y # drop (ins_pos cs y) cs"
+proof (induct cs)
+  case (Cons c cs)
+  show ?case
+  proof (cases "c < y")
+    case True
+    then show ?thesis using Cons by (simp add: ins_pos_def)
+  next
+    case False
+    then have yc: "y < c" using Cons(3) by auto
+    then have "filter (\<lambda>d. d < y) (c # cs) = []" using Cons(2)
+      by (force simp: filter_empty_conv)
+    then show ?thesis using yc False by (simp add: ins_pos_def merge_cols_Nil2)
+  qed
+qed (simp add: ins_pos_def)
 
-subsection \<open>Aggregation over short tuples agrees with the kernel's\<close>
+lemma restrict_merge_single:
+  assumes s: "sorted_wrt (<) gcols" and yg: "y \<notin> set gcols"
+  shows "restrict (merge_cols gcols [y]) (y # ks) (v # k)
+       = take (ins_pos gcols y) (restrict gcols ks k) @ v # drop (ins_pos gcols y) (restrict gcols ks k)"
+proof -
+  let ?p = "ins_pos gcols y"
+  have upd: "tup_get (y # ks) (v # k) c = tup_get ks k c" if "c \<in> set gcols" for c
+    using that yg by (auto simp: tup_get_Cons)
+  have "restrict (merge_cols gcols [y]) (y # ks) (v # k)
+      = map (tup_get (y # ks) (v # k)) (take ?p gcols @ y # drop ?p gcols)"
+    by (simp add: restrict_map merge_cols_single[OF s yg])
+  also have "\<dots> = map (tup_get ks k) (take ?p gcols) @ v # map (tup_get ks k) (drop ?p gcols)"
+  proof -
+    have t: "map (tup_get (y # ks) (v # k)) (take ?p gcols) = map (tup_get ks k) (take ?p gcols)"
+      by (rule map_cong[OF refl]) (auto dest: in_set_takeD intro!: upd)
+    have d: "map (tup_get (y # ks) (v # k)) (drop ?p gcols) = map (tup_get ks k) (drop ?p gcols)"
+      by (rule map_cong[OF refl]) (auto dest: in_set_dropD intro!: upd)
+    show ?thesis using t d by (simp add: tup_get_Cons)
+  qed
+  also have "\<dots> = take ?p (restrict gcols ks k) @ v # drop ?p (restrict gcols ks k)"
+    by (simp add: restrict_map take_map drop_map)
+  finally show ?thesis .
+qed
+
+lemma drop_restrict_agg_eq_iff:
+  assumes f: "eframe cs (agg_cols m gcols)"
+  shows "(drop m (restrict (agg_cols m gcols) cs x) = drop m (restrict (agg_cols m gcols) cs x'))
+       = (agg_key m cs x = agg_key m cs x')"
+proof -
+  have sub: "set (agg_cols m gcols) \<subseteq> set cs" using eframeD(3)[OF f] by simp
+  note i = inj_on_restrict[OF eframe_shift_cols[OF f]]
+  show ?thesis
+    unfolding drop_restrict_agg[OF sub]
+  proof
+    assume "restrict gcols (shift_cols m cs) (agg_key m cs x) = restrict gcols (shift_cols m cs) (agg_key m cs x')"
+    then show "agg_key m cs x = agg_key m cs x'"
+      by (rule inj_onD[OF i]) (simp_all add: wf_tuple_agg_key_shift)
+  qed simp
+qed
+
+lemma etabc_agg_group:
+  assumes f: "eframe cs (agg_cols m gcols)"
+  shows "Set.filter (\<lambda>z. drop m z = drop m (restrict (agg_cols m gcols) cs x0))
+           (etabc cs (agg_cols m gcols) rel)
+       = etabc cs (agg_cols m gcols) (Set.filter (\<lambda>x. agg_key m cs x = agg_key m cs x0) rel)"
+  unfolding etabc_def using drop_restrict_agg_eq_iff[OF f] by auto
+
+lemma uagg_values_etabc:
+  assumes f: "eframe cs (agg_cols m gcols)" and tG: "table cs G"
+    and fv: "Formula.fv_trm f \<subseteq> set cs"
+  shows "uagg_values (reindex_trm (agg_cols m gcols) f) (etabc cs (agg_cols m gcols) G)
+       = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. meval_trm cs f x = v) G))) ` meval_trm cs f ` G"
+proof -
+  let ?cc = "agg_cols m gcols"
+  let ?r = "restrict ?cc cs"
+  let ?g = "reindex_trm ?cc f"
+  have ev: "umeval_trm ?g (?r x) = meval_trm cs f x" for x
+    using fv eframeD(3)[OF f] by (intro umeval_trm_reindex) simp
+  have inj: "inj_on ?r G"
+    by (rule inj_on_subset[OF inj_on_restrict[OF f]]) (use tG in \<open>auto simp: table_def\<close>)
+  have img: "umeval_trm ?g ` ?r ` G = meval_trm cs f ` G"
+    unfolding image_image by (intro image_cong[OF refl] ev)
+  show ?thesis
+    unfolding uagg_values etabc_def img
+  proof (intro image_cong[OF refl])
+    fix v :: event_data
+    have fil: "Set.filter (\<lambda>z. umeval_trm ?g z = v) (?r ` G) = ?r ` Set.filter (\<lambda>x. meval_trm cs f x = v) G"
+      by (auto simp: ev)
+    have inj': "inj_on ?r (Set.filter (\<lambda>x. meval_trm cs f x = v) G)"
+      by (rule inj_on_subset[OF inj]) auto
+    show "(v, ecard (Set.filter (\<lambda>z. umeval_trm ?g z = v) (?r ` G)))
+        = (v, ecard (Set.filter (\<lambda>x. meval_trm cs f x = v) G))"
+      unfolding fil ecard_image[OF inj'] by (rule refl)
+  qed
+qed
+
+theorem uagg_eval_agg:
+  assumes f: "eframe cs (agg_cols (length tys) gcols)" and t: "table cs rel"
+    and fv: "Formula.fv_trm f \<subseteq> set cs" and yg: "y \<notin> set gcols"
+    and g0: "g0 \<Longrightarrow> gcols = []"
+  shows "uagg g0 \<omega> (reindex_trm (agg_cols (length tys) gcols) f) (length tys) (ins_pos gcols y)
+           (etabc cs (agg_cols (length tys) gcols) rel)
+       = etabc (y # shift_cols (length tys) cs) (merge_cols gcols [y]) (eval_agg cs g0 \<omega> tys f rel)"
+proof -
+  let ?m = "length tys"
+  let ?cc = "agg_cols ?m gcols"
+  let ?r = "restrict ?cc cs"
+  let ?S = "shift_cols ?m cs"
+  let ?g = "reindex_trm ?cc f"
+  let ?p = "ins_pos gcols y"
+  let ?A = "\<lambda>x. eval_agg_op \<omega> ((\<lambda>x''. (meval_trm cs f x'', ecard (Set.filter
+      (\<lambda>x'. meval_trm cs f x' = meval_trm cs f x'')
+      (Set.filter (\<lambda>x'. agg_key ?m cs x' = agg_key ?m cs x) rel)))) `
+      Set.filter (\<lambda>x'. agg_key ?m cs x' = agg_key ?m cs x) rel)"
+  have sg: "sorted_wrt (<) gcols" using eframeD(2)[OF f] by (rule agg_cols_sortedD)
+  have sub: "set ?cc \<subseteq> set cs" using eframeD(3)[OF f] by simp
+  show ?thesis
+  proof (cases "g0 \<and> rel = empty_table")
+    case True
+    then have e: "rel = {}" and g: "g0" by (auto simp: empty_table_def)
+    have mc: "merge_cols gcols [y] = [y]" using g0[OF g] by simp
+    show ?thesis
+      using True e g by (simp add: uagg_def eval_agg_def etabc_def singleton_table_def mc
+          restrict_map tup_get_Cons empty_table_def)
+  next
+    case False
+    then have ne: "\<not> (g0 \<and> Set.is_empty (?r ` rel))"
+      by (auto simp: empty_table_def)
+    have "uagg g0 \<omega> ?g ?m ?p (etabc cs ?cc rel)
+        = (\<lambda>k. take ?p k @ eval_agg_op \<omega>
+          (uagg_values ?g (Set.filter (\<lambda>z. drop ?m z = k) (?r ` rel))) # drop ?p k)
+          ` (drop ?m ` ?r ` rel)"
+      unfolding uagg_def etabc_def Let_def keys_cluster using ne
+      by (auto simp: lookup_cluster_Some intro!: image_cong)
+    also have "\<dots> = (\<lambda>x. restrict (merge_cols gcols [y]) (y # ?S) (?A x # agg_key ?m cs x)) ` rel"
+      unfolding image_image
+    proof (intro image_cong[OF refl])
+      fix x assume x: "x \<in> rel"
+      let ?gr = "Set.filter (\<lambda>x'. agg_key ?m cs x' = agg_key ?m cs x) rel"
+      have k: "drop ?m (?r x) = restrict gcols ?S (agg_key ?m cs x)"
+        by (rule drop_restrict_agg[OF sub])
+      have grp: "Set.filter (\<lambda>z. drop ?m z = drop ?m (?r x)) (?r ` rel) = ?r ` ?gr"
+        using etabc_agg_group[OF f, of x rel] unfolding etabc_def .
+      have tgr: "table cs ?gr" using t by (auto simp: table_def)
+      have av: "uagg_values ?g (?r ` ?gr) = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x'. meval_trm cs f x' = v) ?gr)))
+          ` meval_trm cs f ` ?gr"
+        using uagg_values_etabc[OF f tgr fv] unfolding etabc_def .
+      show "take ?p (drop ?m (?r x)) @ eval_agg_op \<omega>
+              (uagg_values ?g (Set.filter (\<lambda>z. drop ?m z = drop ?m (?r x)) (?r ` rel)))
+              # drop ?p (drop ?m (?r x))
+          = restrict (merge_cols gcols [y]) (y # ?S) (?A x # agg_key ?m cs x)"
+        unfolding grp av unfolding restrict_merge_single[OF sg yg] k image_image by (rule refl)
+    qed
+    also have "\<dots> = etabc (y # ?S) (merge_cols gcols [y]) (eval_agg cs g0 \<omega> tys f rel)"
+      unfolding etabc_def eval_agg_def Let_def if_not_P[OF False] by (simp add: image_image)
+    finally show ?thesis .
+  qed
+qed
 
 section \<open>Predicates, relations, and the existential\<close>
 
@@ -327,16 +515,6 @@ subsection \<open>Turning a set of columns into a column list\<close>
 
 definition set_cols :: "nat set \<Rightarrow> cols" where
   "set_cols A = csorted_list_of_set A"
-
-lemma set_cols:
-  assumes "finite A"
-  shows "sorted_wrt (<) (set_cols A)" "set (set_cols A) = A"
-  using assms unfolding set_cols_def
-  by (subst csorted_list_of_set_split;
-      auto simp: ccompare_nat_def ID_Some ord_defs strict_sorted_iff)+
-
-lemma eframe_set_cols: "distinct ks \<Longrightarrow> eframe ks (set_cols (set ks))"
-  by (simp add: eframe_def set_cols)
 
 subsection \<open>A predicate whose arguments are distinct variables in ascending order\<close>
 
@@ -375,18 +553,6 @@ text \<open>
 definition eargs :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> args" where
   "eargs cs_R cs_L args = init_args (args_ivl args) (length cs_R) cs_L cs_R (args_pos args) None"
 
-lemma eargs_simps[simp]:
-  "args_ivl (eargs cs_R cs_L args) = args_ivl args"
-  "args_n (eargs cs_R cs_L args) = length cs_R"
-  "args_L (eargs cs_R cs_L args) = cs_L"
-  "args_R (eargs cs_R cs_L args) = cs_R"
-  "args_pos (eargs cs_R cs_L args) = args_pos args"
-  "args_agg (eargs cs_R cs_L args) = None"
-  by (simp_all add: eargs_def init_args_def)
-
-text \<open>A join whose right operand's columns are among the left one's keeps the left one's columns;
-  it commutes with the reordering.\<close>
-
 subsection \<open>The Since structure's auxiliary list\<close>
 
 definition eauxlist :: "cols \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set) list" where
@@ -398,38 +564,6 @@ definition eauxlist3 :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow
     (ts \<times> 'b list set \<times> 'b list set) list" where
   "eauxlist3 kL cL kR cR aux = map (\<lambda>(t, a1, a2). (t, etabc kL cL a1, etabc kR cR a2)) aux"
 
-section \<open>Buffers of reordered tables\<close>
-
-subsection \<open>The multi-way buffer\<close>
-
-text \<open>
-  @{const mbufn_take} lines up one table per conjunct, and each conjunct has its own column list,
-  so the morphism is a list of reorderings applied slotwise.  The step condition is relational for
-  the same reason as @{thm [source] mbuf2t_take_rel_ts}, and it is restricted to tables drawn from
-  fixed sets @{term Ss}, one per slot, because the tables the operands produce have to be well
-  formed for the multi-way join theorem to apply and the buffer only ever shrinks.
-\<close>
-
-lemma length_map2_map[simp]: "length hs = length buf \<Longrightarrow> length (map2 map hs buf) = length buf"
-  by simp
-
-lemma map2_map_empty_iff:
-  "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
-  by (induct hs buf rule: list_induct2) auto
-
-lemma map2_map_nil_iff: "length hs = length buf \<Longrightarrow> (map2 map hs buf = []) = (buf = [])"
-  by (induct hs buf rule: list_induct2) auto
-
-subsection \<open>Leftovers of the shift buffer\<close>
-
-section \<open>The unit and empty tables\<close>
-
-lemma etabc_unit_table: "etabc [] [] unit_table = unit_table"
-  by (simp add: etabc_def unit_table_def)
-
-text \<open>Hence a negation node, whose operand has no columns at all, only has to look at
-  emptiness -- which the reordering preserves in both directions.\<close>
-
 section \<open>The multi-way join the monitor runs\<close>
 
 text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for
@@ -439,9 +573,6 @@ definition gmulti_join :: "ejoin_plan list \<Rightarrow> ejoin_plan list \<Right
     'b list set" where
   "gmulti_join ps ns us = (case us of [] \<Rightarrow> {}
      | t # r \<Rightarrow> gands_neg ns (gands_pos ps t (take (length ps) r)) (drop (length ps) r))"
-
-lemma length_eands_plans[simp]: "length (eands_plans acc css) = length css"
-  by (induct css arbitrary: acc) auto
 
 section \<open>Comparisons on short tuples\<close>
 
@@ -467,8 +598,6 @@ text \<open>A Since structure joins its left operand into the running tables: th
 definition emb_plan :: "cols \<Rightarrow> cols \<Rightarrow> nat option list" where
   "emb_plan cs_R cs_L = map (\<lambda>c. if c \<in> set cs_L then Some (col_pos cs_L c) else None) cs_R"
 
-section \<open>The assignment, the time point and the timestamp\<close>
-
 text \<open>The operand's column list is the node's without the assigned column, and putting the
   latter back is the merge the theorem above asks for.\<close>
 
@@ -481,19 +610,6 @@ text \<open>
 
 definition mtrm_ecols :: "mtrm \<Rightarrow> cols" where
   "mtrm_ecols mt = (case mt of MVar v \<Rightarrow> [v] | MConst c \<Rightarrow> [])"
-
-section \<open>The verified Trigger structure over ascending columns\<close>
-
-lemma nth_eauxlist3:
-  "i < length auxlist \<Longrightarrow> eauxlist3 kL cL kR cR auxlist ! i =
-     (fst (auxlist ! i), etabc kL cL (fst (snd (auxlist ! i))), etabc kR cR (snd (snd (auxlist ! i))))"
-  by (simp add: eauxlist3_def case_prod_beta)
-
-lemma length_eauxlist3[simp]: "length (eauxlist3 kL cL kR cR auxlist) = length auxlist"
-  by (simp add: eauxlist3_def)
-
-text \<open>The structure over ascending columns, related to the kernel's through the abstract
-  auxiliary list they are both valid for, exactly as for the Since and the Until.\<close>
 
 section \<open>An index for the executable semi-join\<close>
 
@@ -511,6 +627,10 @@ definition eidx :: "bool list \<Rightarrow> 'b list set \<Rightarrow> ('b list, 
 definition esemi_idx :: "bool list \<Rightarrow> bool \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow> 'b list set \<Rightarrow>
     'b list set" where
   "esemi_idx msk pos idx X = set_of_idx (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) idx)"
+
+lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
+  (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
+  unfolding eidx_def by transfer auto
 
 end
 (*>*)

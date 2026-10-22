@@ -6,6 +6,8 @@ begin
 
 
 
+subsection \<open>The summaries\<close>
+
 lemma ecomp_alt: "ecomp (a1, r1) (a2, r2) = (a1 \<inter> a2, r1 \<union> (a1 \<inter> r2))"
   by (auto simp: ecomp_def)
 
@@ -39,6 +41,8 @@ lemma edisj_esum_of: "edisj (esum_of args msk l r)"
 lemma eout_esum_of: "eout (esum_of args msk l r) = (esemi msk (\<not> args_pos args) r l, r)"
   by (auto simp: esum_of_eq eout_def esemi_def)
 
+text \<open>An entry the list updates is the composition of its summary with the new point's.\<close>
+
 lemma eout_ecomp_esum_of:
   assumes "edisj x"
   shows "(esemi msk (\<not> args_pos args) (fst (eout x) \<inter> r) l, snd (eout x) - (fst (eout x) - r)) =
@@ -47,6 +51,9 @@ lemma eout_ecomp_esum_of:
 
 lemma snd_eout: "snd (eout x) = eunion x"
   by (simp add: eout_def eunion_def)
+
+lemma erel_init: "erel I eraux_init []"
+  by (auto simp: erel_def erel'_def eraux_init_def sw_rel_empty intro!: exI[of _ "[]"])
 
 lemma fst_eraux_update[simp]: "fst (eraux_update args msk l r nt aux) = nt"
   by (simp add: eraux_update_def Let_def split: prod.splits)
@@ -328,5 +335,9 @@ proof -
   qed
   then show ?thesis by (simp add: upd erel_def)
 qed
+lemma erelease_rel_init: "erelease_rel kR cR I tw 0 [] eraux_init []"
+  by (simp add: erelease_rel_def eauxlist3_def erel_init) (simp add: eraux_init_def)
+
+(*<*)
 end
 (*>*)

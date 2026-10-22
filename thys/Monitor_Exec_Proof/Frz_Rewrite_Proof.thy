@@ -326,6 +326,9 @@ lemma frz_split_progress_const:
   using frz_split_progress[OF assms(1,2)] progress_frz_pred[of pn q P k \<sigma> j] assms(3) frz_split_pred[OF assms(1)]
   by auto
 
+text \<open>The frozen predicate's progress is either the whole prefix or none of it, and the whole
+  prefix when the flag is set.\<close>
+
 lemma progress_hoist:
   assumes "pred_mapping (\<lambda>x. x \<le> j) P" "P pn = Some k" "k = 0 \<or> k = j" "fl \<Longrightarrow> k = j"
   shows "progress \<sigma> P (hoist fl pn \<phi>) j = progress \<sigma> P \<phi> j"
@@ -676,6 +679,8 @@ proof -
   finally show ?thesis .
 qed
 
+subsection \<open>The rewrite of the whole formula\<close>
+
 lemma fvi_frz_rw[simp]: "Formula.fvi b (frz_rw B \<phi>) = Formula.fvi b \<phi>"
   by (induct B \<phi> arbitrary: b rule: frz_rw.induct) (auto simp: Let_def)
 
@@ -703,6 +708,13 @@ proof (induct B \<phi> arbitrary: V v i rule: frz_rw.induct)
   ultimately show ?case
     by (simp add: Let_def)
 qed (auto split: nat.splits)
+
+text \<open>Outside the bound predicates, every predicate is known at every time point of the
+  prefix or at none of them; a formula that never lags then has the whole prefix as its
+  progress.\<close>
+
+definition full_env :: "(Formula.name \<times> nat) list \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> nat) \<Rightarrow> nat \<Rightarrow> bool" where
+  "full_env B P j \<longleftrightarrow> (\<forall>pn. pn \<notin> set B \<longrightarrow> P pn = None \<or> P pn = Some j)"
 
 lemma full_env_Cons_upd: "full_env B P j \<Longrightarrow> full_env (pn # B) (P(pn \<mapsto> x)) j"
   by (auto simp: full_env_def)
@@ -826,5 +838,9 @@ lemma progress_frz_opt_empty[simp]: "progress \<sigma> Map.empty (frz_opt \<phi>
 lemma wty_frz_opt: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> frz_opt \<phi>"
   by (simp add: frz_opt_def Let_def wty_frz_rw)
 
+lemma mmonitorable_frz_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (frz_opt \<phi>)"
+  by (simp add: frz_opt_def Let_def mmonitorable_exec_mmonitorable)
+
+(*<*)
 end
 (*>*)

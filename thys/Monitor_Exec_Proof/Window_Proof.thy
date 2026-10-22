@@ -6,30 +6,8 @@ begin
 
 
 
-lemma lookup_delete_if:
-  "Mapping.lookup (Mapping.delete t c) x = (if x = t then None else Mapping.lookup c x)"
-  by (cases "x = t") simp_all
-
-lemma cnt_rep_add1:
-  assumes "cnt_rep f cc"
-  shows "cnt_rep (f(t := f t + 1)) (cnt_add1 t cc)"
-proof (cases cc)
-  case (Pair c s)
-  have L: "\<And>x. Mapping.lookup c x = (if f x = 0 then None else Some (f x))"
-    and S: "s = {x. 0 < f x}" using assms Pair by (auto simp: cnt_rep_def)
-  show ?thesis
-  proof (cases "Mapping.lookup c t")
-    case None
-    then have ft: "f t = 0" using L[of t] by (auto split: if_splits)
-    show ?thesis unfolding cnt_rep_def cnt_add1_def Pair None
-      by (auto simp: Mapping.lookup_update' L S ft)
-  next
-    case (Some k)
-    then have ft: "f t = k" and k: "k \<noteq> 0" using L[of t] by (auto split: if_splits)
-    show ?thesis unfolding cnt_rep_def cnt_add1_def Pair Some
-      by (auto simp: Mapping.lookup_update' L S ft k)
-  qed
-qed
+lemma cnt_rep_empty: "cnt_rep (\<lambda>_. 0) (Mapping.empty, {})"
+  by (simp add: cnt_rep_def)
 
 lemma cnt_rep_del1:
   assumes "cnt_rep f cc"
@@ -62,24 +40,6 @@ proof (cases cc)
   qed
 qed
 
-lemma cnt_rep_fold_add1:
-  "cnt_rep f cc \<Longrightarrow> distinct xs \<Longrightarrow>
-     cnt_rep (\<lambda>x. if x \<in> set xs then f x + 1 else f x) (fold cnt_add1 xs cc)"
-proof (induct xs arbitrary: f cc)
-  case Nil
-  then show ?case by simp
-next
-  case (Cons x xs)
-  have r: "cnt_rep (f(x := f x + 1)) (cnt_add1 x cc)" by (rule cnt_rep_add1[OF Cons.prems(1)])
-  have "cnt_rep (\<lambda>y. if y \<in> set xs then (f(x := f x + 1)) y + 1 else (f(x := f x + 1)) y)
-      (fold cnt_add1 xs (cnt_add1 x cc))"
-    by (rule Cons.hyps[OF r]) (use Cons.prems(2) in simp)
-  moreover have "(\<lambda>y. if y \<in> set xs then (f(x := f x + 1)) y + 1 else (f(x := f x + 1)) y)
-      = (\<lambda>y. if y \<in> set (x # xs) then f y + 1 else f y)"
-    using Cons.prems(2) by (auto simp: fun_eq_iff)
-  ultimately show ?case by simp
-qed
-
 lemma cnt_rep_fold_del1:
   "cnt_rep f cc \<Longrightarrow> distinct xs \<Longrightarrow>
      cnt_rep (\<lambda>x. if x \<in> set xs then f x - 1 else f x) (fold cnt_del1 xs cc)"
@@ -98,18 +58,6 @@ next
   ultimately show ?case by simp
 qed
 
-lemma csorted_list_of_set_etuple:
-  "finite (X :: event_data table) \<Longrightarrow>
-     set (csorted_list_of_set X) = X \<and> distinct (csorted_list_of_set X)"
-  using ID_ccompare_etuple_dq by (subst csorted_list_of_set_split) auto
-
-lemma cnt_rep_add:
-  assumes "cnt_rep f cc" and "finite T"
-  shows "cnt_rep (\<lambda>x. if x \<in> T then f x + 1 else f x) (cnt_add T cc)"
-  using cnt_rep_fold_add1[OF assms(1), of "csorted_list_of_set T"]
-    csorted_list_of_set_etuple[OF assms(2)]
-  unfolding cnt_add_def csl_finite[OF assms(2)] by simp
-
 lemma cnt_rep_del:
   assumes "cnt_rep f cc" and "finite T"
   shows "cnt_rep (\<lambda>x. if x \<in> T then f x - 1 else f x) (cnt_del T cc)"
@@ -117,11 +65,17 @@ lemma cnt_rep_del:
     csorted_list_of_set_etuple[OF assms(2)]
   unfolding cnt_del_def csl_finite[OF assms(2)] by simp
 
+lemma cnt_of_Nil: "cnt_of [] = (\<lambda>_. 0)"
+  by (simp add: cnt_of_def fun_eq_iff)
+
 lemma cnt_of_snoc: "cnt_of (Ts @ [T]) = (\<lambda>x. if x \<in> T then cnt_of Ts x + 1 else cnt_of Ts x)"
   by (simp add: cnt_of_def fun_eq_iff)
 
 lemma cnt_of_tl: "cnt_of Ts = (\<lambda>x. if x \<in> T then cnt_of (T # Ts) x - 1 else cnt_of (T # Ts) x)"
   by (simp add: cnt_of_def fun_eq_iff)
+
+lemma cnt_inv_empty: "cnt_inv [] (Mapping.empty, {})"
+  unfolding cnt_of_Nil by (rule cnt_rep_empty)
 
 lemma cnt_inv_snoc: "cnt_inv Ts cc \<Longrightarrow> finite T \<Longrightarrow> cnt_inv (Ts @ [T]) (cnt_add T cc)"
   unfolding cnt_of_snoc by (rule cnt_rep_add)
@@ -148,6 +102,11 @@ proof (induct Us arbitrary: cc)
     by (rule Cons.hyps) (use Cons.prems in simp)
   then show ?case by simp
 qed simp
+
+lemma cnt_inv_set: "cnt_inv Ts cc \<Longrightarrow> snd cc = \<Union> (set Ts)"
+  by (auto simp: cnt_rep_def cnt_of_def filter_empty_conv)
+
+subsection \<open>Two facts about the closed left operand\<close>
 
 lemma not_memR_mono: "cur \<le> nt \<Longrightarrow> \<not> memR I (cur - a) \<Longrightarrow> \<not> memR I (nt - a)"
   using memR_antimono[of I "nt - a" "cur - a"] diff_le_mono by blast
@@ -190,6 +149,9 @@ lemma tbls_at_append: "tbls_at u (xs @ ys) = tbls_at u xs \<union> tbls_at u ys"
 lemma tbls_at_map_empty: "tbls_at u (map (\<lambda>(t, rel). (t, {})) es) = {}"
   by (auto simp: tbls_at_def)
 
+lemma foldr_Un_set: "foldr (\<union>) ys {} = \<Union> (set ys)"
+  by (induct ys) auto
+
 lemma set_filter_comp:
   "set [rel. (t, rel) \<leftarrow> xs, P t] = {rel. \<exists>t. (t, rel) \<in> set xs \<and> P t}"
 proof (induct xs)
@@ -224,6 +186,8 @@ proof (induct xs)
     then show ?thesis using False by (simp add: filter_empty_conv filter_id_conv)
   qed
 qed simp
+
+subsubsection \<open>What the two scans do to the queues\<close>
 
 lemma sw_move_rep:
   "linearize pend = pl \<Longrightarrow> sw_move args nt pend win cc = (pend', win', cc') \<Longrightarrow>
@@ -297,6 +261,9 @@ next
     from Cons(1)[OF lt this] show ?thesis using False by simp
   qed
 qed
+
+lemma valid_sw_init: "valid_sw args 0 (sw_init args) []"
+  by (simp add: valid_sw_def sw_init_def sw_inv_def empty_queue_rep cnt_inv_empty)
 
 lemma valid_sw_add_new_ts:
   assumes v: "valid_sw args cur aux auxlist" and nt: "cur \<le> nt"
@@ -610,6 +577,9 @@ proof -
   then show ?thesis unfolding r foldr_Un_filter .
 qed
 
+lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
+  by (induct es rule: uw_abs.induct) simp_all
+
 text \<open>Appending an entry to a run extends every answer by the new table exactly when the new
   timestamp is in range from the run's start and the left operand held throughout the run.\<close>
 
@@ -713,6 +683,9 @@ next
       (simp_all add: a2 Un_ac)
 qed
 
+lemma uw_ext_prefix: "\<exists>sfx. rl = uw_ext I ts0 bend rl @ sfx"
+  by (induct I ts0 bend rl rule: uw_ext.induct) (auto simp: fun_eq_iff)
+
 lemma uw_ext_range: "e \<in> set (uw_ext I ts0 bend rl) \<Longrightarrow> memR I (fst e - ts0)"
   by (induct I ts0 bend rl rule: uw_ext.induct) (auto split: if_splits)
 
@@ -770,6 +743,9 @@ next
   qed
 qed
 
+lemma uw_win_Nil: "uw_win I ts0 [] True"
+  by (simp add: uw_win_def)
+
 lemma uw_a2_ext_True:
   "uw_a2 I ts0 rl = \<Union> (set (map (fst \<circ> snd) (uw_ext I ts0 True rl)))"
 proof (induct rl)
@@ -777,6 +753,8 @@ proof (induct rl)
   obtain t R b where e: "e = (t, R, b)" by (cases e)
   show ?case unfolding e using Cons by (cases b; cases "memR I (t - ts0)") auto
 qed simp
+
+text \<open>After the extension the window is the whole run the answer is the union of.\<close>
 
 lemma uw_win_a2:
   assumes w: "uw_win I ts0 wl bend"
@@ -838,6 +816,9 @@ next
   show ?thesis using w ex wl_last False uw_ext_range[of _ I ts0 bend rl]
     unfolding uw_win_def ex_def[symmetric] by (auto simp: butlast_append)
 qed
+
+lemma valid_uw_init: "valid_uw args 0 (uw_init args) []"
+  by (simp add: valid_uw_def uw_init_def empty_queue_rep cnt_inv_empty uw_win_Nil)
 
 text \<open>One step: the oldest pending time point's answer is its abstract entry's.\<close>
 
@@ -1016,6 +997,8 @@ qed
 
 lemma uw_len_step: "uw_len (uw_step args ts0 (nts, win, rest, len, bend, cc, dn)) = len - 1"
   by (simp add: uw_step_def Let_def split: prod.splits option.splits)
+
+text \<open>The shift pops the pending time points that no later one can affect, in order.\<close>
 
 lemma valid_uw_shift:
   assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"

@@ -14,10 +14,6 @@ text \<open>A table is used throughout with the two properties every theorem abo
 abbreviation (input) ftable :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool" where
   "ftable A X \<equiv> table A X \<and> finite X"
 
-lemma emsk_args_distinct_R: "emsk_args args msk \<Longrightarrow> distinct (args_R args)"
-  by (simp add: emsk_args_def strict_sorted_iff)
-
-
 subsection \<open>The interval side condition\<close>
 
 text \<open>
@@ -31,9 +27,6 @@ text \<open>
 
 definition tok :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool" where
   "tok cR cL args \<longleftrightarrow> mem (args_ivl args) 0 \<or> (cL = cR \<and> args_pos args)"
-
-lemma tok_mem0: "mem (args_ivl args) 0 \<Longrightarrow> tok cR cL args"
-  by (simp add: tok_def)
 
 subsection \<open>The structure as a sliding window\<close>
 
@@ -84,11 +77,6 @@ definition tw_result :: "'b twaux \<Rightarrow> 'b list set" where
 definition tw_empty :: "'b twaux \<Rightarrow> bool" where
   "tw_empty ax = sw_null (snd (snd ax))"
 
-subsection \<open>The summaries\<close>
-
-lemma sw_assoc_Un: "sw_assoc (\<union>)"
-  by (simp add: sw_assoc_def Un_assoc)
-
 definition tphi :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list \<Rightarrow> bool" where
   "tphi args msk l x \<longleftrightarrow> (eproj msk x \<in> l) = args_pos args"
 
@@ -110,9 +98,6 @@ definition trel :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> 
      sw_rel tcomp id (snd (snd ax))
        (map (tent args msk) (filter (\<lambda>x. memL (args_ivl args) (cur - fst x)) D))"
 
-lemma trel_init: "trel args msk 0 (tw_init args msk) []"
-  by (simp add: trel_def tw_init_def sw_rel_empty)
-
 subsection \<open>The trigger node's structure\<close>
 
 definition etw :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data twaux \<Rightarrow>
@@ -120,10 +105,6 @@ definition etw :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols
   "etw kL cL kR cR args cur daux auxlist \<longleftrightarrow>
      (\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r) \<and> tok cR cL args \<and>
      trel (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
-
-lemma etw_init: "etw kL cL kR cR args 0 (tw_init (eargs cR cL args) (emsk cR cL)) []"
-  if "tok cR cL args"
-  using that by (simp add: etw_def eauxlist3_def trel_init)
 
 end
 (*>*)

@@ -53,6 +53,9 @@ fun nth_def :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" whe
 | "nth_def (x # xs) 0 z = x"
 | "nth_def (x # xs) (Suc k) z = nth_def xs k z"
 
+lemma nth_def_eq: "nth_def xs k z = (if k < length xs then xs ! k else z)"
+  by (induct xs k z rule: nth_def.induct) auto
+
 lemma dq_nth_l_code[code]:
   "dq_nth_l d k z = (if k < dq_nf d then nth_def (dq_f d) k z
      else nth_def (dq_b d) (dq_nb d - 1 - (k - dq_nf d)) z)"
@@ -177,14 +180,6 @@ fun fix_res :: "'b gmuaux \<Rightarrow> 'b gmuaux" where
      (tp, tss, tables, len, Mapping.keys (dq_hd_s a2_dq Mapping.empty), a1_map,
       a2_dq, tstp_dq, dn)"
 
-lemma fix_res_ginit_dq[simp]: "fix_res (ginit_dq args) = ginit_dq args"
-  by (simp add: ginit_dq_def dq_hd_s_def dq_push_def dq_empty_def)
-
-subsection \<open>Agreement with the kernel's structure\<close>
-
-lemma ginit_dq_eq: "ginit_dq args = (init_dq args :: event_data mmuaux_dq)"
-  by (simp add: ginit_dq_def init_dq_def)
-
 text \<open>The insertion.  The kernel's fold carries the result along with the table and the nested
   deque, and adds a tuple to it exactly when the tuple is entered into the front entry; so if
   the result starts as the key set of the front entry, it stays that.\<close>
@@ -194,8 +189,6 @@ definition lift_acc :: "'b guntil_acc \<Rightarrow> 'b list set \<times> ('b lis
 
 definition qacc :: "nat \<Rightarrow> 'b guntil_acc \<Rightarrow> bool" where
   "qacc n acc \<longleftrightarrow> dq_inv (snd acc) \<and> dq_len (snd acc) = n \<and> 0 < n"
-
-subsection \<open>The shape follows from the kernel's invariant\<close>
 
 end
 (*>*)

@@ -119,12 +119,6 @@ lemma iset_ieresult: "iset (ieresult_msaux a) = eresult_msaux args (ims_abs a)"
 lemma ims_abs_ensure[simp]: "ims_abs (iems_ensure msks a) = ims_abs a"
   by (cases a rule: iemsaux_cases) simp
 
-lemma fold_idel_buckets:
-  "fold (\<lambda>p (A, tm). (isub (snd p) A, mapping_delete_set tm (snd p))) xs (A, tm)
-   = (isub (\<Union>(snd ` set xs)) A, mapping_delete_set tm (\<Union>(snd ` set xs)))"
-  by (induct xs arbitrary: A tm)
-    (auto simp: isub_isub mapping_delete_set_Un[symmetric] mapping_delete_set_empty)
-
 lemma iuw_abs_tuple[simp]:
   "iuw_abs (nts, win, rest, len, bend, cc, dn) = (nts, win, rest, len, bend, icnt_abs cc, map iset dn)"
   by (simp add: iuw_abs_def)
@@ -141,6 +135,9 @@ proof (induct args ts0 win rest bend cc rule: iuw_extend.induct)
     by (subst uw_extend.simps, subst iuw_extend.simps)
       (use 1 in \<open>auto simp: icnt_abs_add split: prod.splits option.splits\<close>)
 qed
+
+lemma snd_icnt_abs[simp]: "snd (icnt_abs cc) = iset (snd cc)"
+  by (simp add: icnt_abs_def)
 
 lemma iuw_abs_step: "iuw_abs (iuw_step args ts0 aux) = uw_step args ts0 (iuw_abs aux)"
 proof -

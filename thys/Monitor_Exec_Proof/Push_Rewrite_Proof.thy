@@ -9,6 +9,13 @@ begin
 text \<open>The conjunction's equation with its case distinction folded into a test, so that the
   lemmas below can go by structural induction without splitting over every constructor.\<close>
 
+lemma push_ex_And:
+  "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
+     then Formula.And \<phi> \<psi> else and_cstr (push_ex \<phi>) (push_ex \<psi>))"
+  by (cases \<psi>) simp_all
+
+subsection \<open>The comparison's move\<close>
+
 text \<open>The move keeps the conjunction's operands and only regroups them; its result is a
   conjunction or a multiway conjunction.\<close>
 
@@ -127,15 +134,27 @@ proof (cases rule: and_cstr_cases[of X c])
     unfolding 2(5) by (rule wty_formula.Ands)
 qed (use assms in simp)
 
+subsection \<open>Free variables\<close>
+
 lemma fvi_ex_into[simp]: "Formula.fvi b (ex_into t \<phi>) = Formula.fvi (Suc b) \<phi>"
   by (induct t \<phi> arbitrary: b rule: ex_into.induct) auto
 
 lemma fvi_push_ex[simp]: "Formula.fvi b (push_ex \<phi>) = Formula.fvi b \<phi>"
   by (induct \<phi> arbitrary: b) (auto simp: push_ex_And)
 
+lemma nfv_push_ex[simp]: "Formula.nfv (push_ex \<phi>) = Formula.nfv \<phi>"
+  by (simp add: Formula.nfv_def)
+
+subsection \<open>Satisfaction\<close>
+
 lemma sat_ex_into[simp]:
   "Formula.sat \<sigma> V v i (ex_into t \<phi>) = (\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>)"
   by (induct t \<phi> arbitrary: v i rule: ex_into.induct) auto
+
+lemma sat_push_ex[simp]: "Formula.sat \<sigma> V v i (push_ex \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (induct \<phi> arbitrary: V v i) (auto simp: push_ex_And split: nat.splits)
+
+subsection \<open>Shapes\<close>
 
 text \<open>The safety conditions look at a few syntactic shapes of their operands: comparisons,
   assignments and negations.  The quantifier's step never produces one of them, and the rest of
@@ -156,6 +175,10 @@ lemma ex_into_shapes[simp]:
   "ex_into t \<phi> \<noteq> Formula.Less t1 t2"
   "ex_into t \<phi> \<noteq> Formula.LessEq t1 t2"
   using ex_into_shape[of t \<phi>] by (elim disjE exE; simp add: safe_assignment_def)+
+
+lemma push_ex_Neg_iff:
+  "push_ex \<phi> = Formula.Neg \<psi> \<longleftrightarrow> (\<exists>\<phi>'. \<phi> = Formula.Neg \<phi>' \<and> \<psi> = push_ex \<phi>')"
+  by (cases \<phi>) (auto simp: push_ex_And)
 
 lemma push_ex_comparison:
   "push_ex \<phi> = Formula.Eq t1 t2 \<longleftrightarrow> \<phi> = Formula.Eq t1 t2"
@@ -180,6 +203,13 @@ next
     using and_cstr_shapes(2)[of X "push_ex \<phi>1" "push_ex \<psi>"] by (simp add: push_ex_And safe_assignment_def)
 qed (simp_all add: push_ex_And safe_assignment_def)
 
+lemma remove_neg_push_ex[simp]: "remove_neg (push_ex \<phi>) = push_ex (remove_neg \<phi>)"
+  by (cases \<phi>) (auto simp: push_ex_And)
+
+lemma is_Trigger_push_ex[simp]: "Formula.is_Trigger (push_ex \<phi>) = Formula.is_Trigger \<phi>"
+  and is_Release_push_ex[simp]: "Formula.is_Release (push_ex \<phi>) = Formula.is_Release \<phi>"
+  by (cases \<phi>; simp add: push_ex_And)+
+
 lemma safe_And_not_TR:
   "\<not> Formula.is_Trigger \<psi> \<Longrightarrow> \<not> Formula.is_Release \<psi> \<Longrightarrow>
    safe_formula (Formula.And \<phi> \<psi>) = (safe_formula \<phi> \<and>
@@ -191,6 +221,8 @@ lemma case_Neg_push_ex:
   "(case push_ex \<phi> of Formula.Neg \<psi> \<Rightarrow> f \<psi> | _ \<Rightarrow> False)
    = (case \<phi> of Formula.Neg \<psi> \<Rightarrow> f (push_ex \<psi>) | _ \<Rightarrow> False)"
   by (simp add: case_Neg_iff push_ex_Neg_iff) blast
+
+subsection \<open>Safety\<close>
 
 lemma safe_ex_into[simp]: "safe_formula (ex_into t \<phi>) = (safe_formula \<phi> \<and> 0 \<in> Formula.fv \<phi>)"
   by (induct t \<phi> rule: ex_into.induct) auto
@@ -250,9 +282,17 @@ proof (induct \<phi> rule: measure_induct_rule[where f = size])
   qed (simp_all add: less)
 qed
 
+subsection \<open>Future-boundedness, monitorability and relevant events\<close>
+
 lemma future_bounded_ex_into[simp]:
   "Safety.future_bounded (ex_into t \<phi>) = Safety.future_bounded \<phi>"
   by (induct t \<phi> rule: ex_into.induct) auto
+
+lemma future_bounded_push_ex[simp]: "Safety.future_bounded (push_ex \<phi>) = Safety.future_bounded \<phi>"
+  by (induct \<phi>) (auto simp: push_ex_And list.pred_map o_def cong: list.pred_cong)
+
+lemma mmonitorable_push_ex[simp]: "mmonitorable (push_ex \<phi>) = mmonitorable \<phi>"
+  by (simp add: mmonitorable_def)
 
 lemma matches_ex_into[simp]:
   "Safety.matches v (ex_into t \<phi>) e = (\<exists>z. Safety.matches (z # v) \<phi> e)"
@@ -261,8 +301,18 @@ lemma matches_ex_into[simp]:
 lemma matches_push_ex[simp]: "Safety.matches v (push_ex \<phi>) e = Safety.matches v \<phi> e"
   by (induct \<phi> arbitrary: v e) (auto simp: push_ex_And)
 
+subsection \<open>Progress\<close>
+
 lemma progress_ex_into[simp]: "progress \<sigma> P (ex_into t \<phi>) j = progress \<sigma> P \<phi> j"
   by (induct t \<phi> arbitrary: P rule: ex_into.induct) (simp_all add: Formula.TT_def)
+
+lemma progress_push_ex[simp]: "progress \<sigma> P (push_ex \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct \<phi> arbitrary: P) (auto simp: push_ex_And o_def cong: map_cong)
+
+lemma pprogress_push_ex[simp]: "pprogress (push_ex \<phi>) = pprogress \<phi>"
+  by (simp add: pprogress_def fun_eq_iff)
+
+subsection \<open>Typing\<close>
 
 lemma wty_ex_into: "S, case_nat t E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> ex_into t \<phi>"
 proof (induct t \<phi> arbitrary: E rule: ex_into.induct)
@@ -282,8 +332,25 @@ lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile>
 lemma fvi_eprep[simp]: "Formula.fvi b (eprep \<phi>) = Formula.fvi b \<phi>"
   by (simp add: eprep_def)
 
+lemma nfv_eprep[simp]: "Formula.nfv (eprep \<phi>) = Formula.nfv \<phi>"
+  by (simp add: eprep_def)
+
+lemma sat_eprep[simp]: "Formula.sat \<sigma> V v i (eprep \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (simp add: eprep_def)
+
+lemma pprogress_eprep[simp]: "pprogress (eprep \<phi>) = pprogress \<phi>"
+  by (simp add: pprogress_def fun_eq_iff eprep_def)
+
 lemma wty_eprep: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> eprep \<phi>"
   by (simp add: eprep_def wty_share_opt wty_push_ex wty_frz_opt)
+
+lemma mmonitorable_eprep: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (eprep \<phi>)"
+  by (simp add: eprep_def mmonitorable_share_opt mmonitorable_frz_opt)
+
+subsection \<open>Reordering the verdicts' columns\<close>
+
+text \<open>Two formulas with the same number and set of free variables, the same satisfaction
+  relation and the same progress have the same verdicts, up to the order of their columns.\<close>
 
 context
   fixes \<phi> \<psi> :: "ty Formula.formula" and S :: sig and E :: tyenv
@@ -340,9 +407,14 @@ lemma flatten_verdicts_map_comp:
     (\<lambda>(i, t, v). (i, t, f v)) ` flatten_verdicts (map (\<lambda>(i, t, X). (i, t, g X)) Vs)"
   by (auto simp: flatten_verdicts_def image_UN image_image split_beta)
 
+subsection \<open>The executable monitor on the rewritten formula\<close>
+
 text \<open>The executable state is compiled from the rewritten formula at its own column list, but the
   ascending columns are the free variables in ascending order, which the rewriting does not change.
   So the executable verdicts, read at the columns of @{term \<phi>}, are those of @{term \<phi>}.\<close>
+
+lemma fv_list_eprep_ecols: "ecols (Formula.fv_list (eprep \<phi>)) = ecols (Formula.fv_list \<phi>)"
+  by (rule ecols_cong) simp
 
 context verimon_spec
 begin
@@ -379,5 +451,11 @@ qed
 
 end
 
+lemma eminit_push_eq:
+  "eminit_push \<phi>
+   = eof_state (Formula.nfv \<phi>) (Formula.fv_list (eprep \<phi>))
+       (ecols (Formula.fv_list (eprep \<phi>))) (minit_safe (eprep \<phi>))"
+  by (simp add: eminit_push_def eminit_safe_def)
+(*<*)
 end
 (*>*)

@@ -42,6 +42,12 @@ fun del_max_p :: "'a wbt \<Rightarrow> 'a \<times> 'a wbt" where
      Leaf \<Rightarrow> (a, l)
    | Node _ _ _ \<Rightarrow> let (x, r') = del_max_p r in (x, balanceR l a r'))"
 
+lemma split_min_p_eq: "t \<noteq> Leaf \<Longrightarrow> split_min_p t = split_min t"
+  by (induction t rule: split_min_p.induct) (auto split: tree.split)
+
+lemma del_max_p_eq: "t \<noteq> Leaf \<Longrightarrow> del_max_p t = del_max t"
+  by (induction t rule: del_max_p.induct) (auto split: tree.split)
+
 definition combine_p :: "'a wbt \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
   "combine_p l r = (case l of
      Leaf \<Rightarrow> r
@@ -53,6 +59,9 @@ definition combine_p :: "'a wbt \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
          else
            let (rMin, r') = split_min_p r in balanceR l rMin r'))"
 
+lemma combine_p_eq: "wbt l \<Longrightarrow> wbt r \<Longrightarrow> combine_p l r = Order_Statistic_Tree.combine l r"
+  by (cases l; cases r) (simp_all add: combine_p_def split_min_p_eq del_max_p_eq)
+
 fun delete_p :: "'a::linorder \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
   "delete_p _ Leaf = Leaf"
 | "delete_p x (Node l (a, _) r) =
@@ -60,6 +69,9 @@ fun delete_p :: "'a::linorder \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
        LT \<Rightarrow> balanceL (delete_p x l) a r
      | GT \<Rightarrow> balanceR l a (delete_p x r)
      | EQ \<Rightarrow> combine_p l r)"
+
+lemma delete_p_eq: "wbt t \<Longrightarrow> delete_p x t = delete x t"
+  by (induction x t rule: delete_p.induct) (simp_all add: combine_p_eq)
 
 lemma tree_remove_code[code]: "Rep_wf_wbt (tree_remove x t) = delete_p x (Rep_wf_wbt t)"
   using Rep_wf_wbt[of t] by (simp add: tree_remove.rep_eq delete_p_eq)
@@ -78,8 +90,26 @@ fun wbt_max :: "'a wbt \<Rightarrow> 'a" where
   "wbt_max Leaf = [] ! 0"
 | "wbt_max (Node _ (a, _) r) = (case r of Leaf \<Rightarrow> a | Node _ _ _ \<Rightarrow> wbt_max r)"
 
+lemma select_0: "wbt t \<Longrightarrow> select t 0 = wbt_min t"
+proof (induction t)
+  case (Node l x r)
+  then show ?case by (cases x; cases l) auto
+qed simp
+
+lemma select_last: "wbt t \<Longrightarrow> select t (size_wbt t - 1) = wbt_max t"
+proof (induction t)
+  case (Node l x r)
+  then show ?case by (cases x; cases r) auto
+qed simp
+
 lift_definition tree_min :: "'a::linorder wf_wbt \<Rightarrow> 'a" is wbt_min .
 lift_definition tree_max :: "'a::linorder wf_wbt \<Rightarrow> 'a" is wbt_max .
+
+lemma tree_select_0: "tree_select t 0 = tree_min t"
+  by transfer (simp add: select_0)
+
+lemma tree_select_last: "tree_select t (tree_size t - 1) = tree_max t"
+  by transfer (metis select_last)
 
 definition get_edata_min :: "list_aux \<Rightarrow> event_data" where
   "get_edata_min k = get_edata_list k 0"
@@ -162,9 +192,63 @@ lemma uagg_gen_code[code]:
           ` Mapping.keys groups))"
   by (simp add: uagg_gen_def uagg_def)
 
+lemma uagg_gins:
+  assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w" and fX: "finite X" and w: "\<forall>t\<in>X. length t = w"
+    and a: "gins k (umeval_trm f) (csl X) (ginit \<omega>) = Some a"
+  shows "gres g0 \<omega> pos (\<lambda>x. x) a = uagg g0 \<omega> f k pos X"
+proof -
+  let ?p = "(g0, \<omega>, f, k, pos)"
+  let ?cc = "(Mapping.empty, {}) :: cntset"
+  have cr: "cnt_rep (\<lambda>_. 0) ?cc"
+    by (simp add: cnt_rep_def)
+  have inv: "ag_inv ?p w (cnt_add X ?cc) (ag_ins ?p w X ?cc (ag_init ?p w))"
+    by (rule ag_inv_ins[OF cr fX ok w _ ag_inv_init]) simp
+  have snd: "snd (cnt_add X ?cc) = X"
+    using cnt_rep_snd_add[OF cr fX] by simp
+  have ins: "ag_ins ?p w X ?cc (ag_init ?p w) = Some a"
+    using a by (simp add: ag_ins_def ag_init_def)
+  have "ag_res ?p w (cnt_add X ?cc) (Some a) = eagg_p ?p X"
+    using ag_res_inv[OF inv ok] snd w ins by simp
+  then show ?thesis
+    by (simp add: ag_res_def id_def)
+qed
+
 definition uagg_g :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
     event_data list set \<Rightarrow> event_data list set" where
   "uagg_g = uagg"
+
+lemma uagg_g_eq:
+  "uagg_g g0 \<omega> f k pos X = (let xs = csl X in case xs of
+       [] \<Rightarrow> uagg_gen g0 \<omega> f k pos X
+     | t # _ \<Rightarrow> (let w = length t in
+         if eagg_ok (g0, \<omega>, f, k, pos) w \<and> list_all (\<lambda>u. length u = w) xs
+         then (case gins k (umeval_trm f) xs (ginit \<omega>) of
+                 Some a \<Rightarrow> gres g0 \<omega> pos (\<lambda>x. x) a
+               | None \<Rightarrow> uagg_gen g0 \<omega> f k pos X)
+         else uagg_gen g0 \<omega> f k pos X))"
+proof (cases "csl X")
+  case (Cons t ts)
+  then have fX: "finite X"
+    using csl_infinite by fastforce
+  then have s: "set (csl X) = X"
+    by (rule set_csl_ed)
+  show ?thesis
+  proof (cases "eagg_ok (g0, \<omega>, f, k, pos) (length t) \<and> list_all (\<lambda>u. length u = length t) (csl X)")
+    case True
+    then have w: "\<forall>u\<in>X. length u = length t"
+      using s by (simp add: list_all_iff)
+    show ?thesis
+    proof (cases "gins k (umeval_trm f) (csl X) (ginit \<omega>)")
+      case (Some a)
+      then show ?thesis
+        using True uagg_gins[OF _ fX w Some] by (simp add: Let_def Cons uagg_g_def)
+    qed (use True Cons in \<open>simp add: Let_def uagg_gen_def uagg_g_def\<close>)
+  next
+    case False
+    then show ?thesis
+      by (simp only: Cons Let_def list.case if_False uagg_gen_def uagg_g_def)
+  qed
+qed (simp add: uagg_gen_def uagg_g_def)
 
 text \<open>An aggregation the structure cannot represent at all (@{const ginit}) goes straight to
   @{const uagg}'s own equation, without the checks.\<close>

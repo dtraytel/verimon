@@ -65,8 +65,6 @@ definition eraux_eval :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightar
      (cur, outs, s) \<Rightarrow> (outs, (cur, [], s)))"
 
 
-subsection \<open>The summaries\<close>
-
 abbreviation efold :: "'b esum list \<Rightarrow> 'b esum option" where
   "efold \<equiv> sw_fold ecomp"
 
@@ -75,8 +73,6 @@ definition eout :: "'b esum \<Rightarrow> 'b list set \<times> 'b list set" wher
 
 definition edisj :: "'b esum \<Rightarrow> bool" where
   "edisj x \<longleftrightarrow> fst x \<inter> snd x = {}"
-
-text \<open>An entry the list updates is the composition of its summary with the new point's.\<close>
 
 subsection \<open>The structure refines the list\<close>
 
@@ -100,9 +96,6 @@ definition erel' :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> 
 definition erel :: "\<I> \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
   "erel I aux L = erel' I (fst aux) aux L"
 
-lemma erel_init: "erel I eraux_init []"
-  by (auto simp: erel_def erel'_def eraux_init_def sw_rel_empty intro!: exI[of _ "[]"])
-
 subsection \<open>The release node's structure\<close>
 
 text \<open>
@@ -118,9 +111,5 @@ definition erelease_rel :: "cols \<Rightarrow> cols \<Rightarrow> \<I> \<Rightar
      erel I daux (eauxlist3 kR cR kR cR aux) \<and> fst daux \<le> t \<and> t \<le> tw \<and>
      sorted nts \<and> (\<forall>u \<in> set nts. fst daux \<le> u \<and> u \<le> tw)"
 
-lemma erelease_rel_init: "erelease_rel kR cR I tw 0 [] eraux_init []"
-  by (simp add: erelease_rel_def eauxlist3_def erel_init) (simp add: eraux_init_def)
-
-(*<*)
 end
 (*>*)

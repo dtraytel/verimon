@@ -1,6 +1,6 @@
 (*<*)
 theory Tuple_Fields
-  imports "Monitor_Impl.Code_Opt"
+  imports "Monitor_Impl.Code_Opt" "Monitor_Impl.Monitor_Impl" "Monitor_Impl.Optimized_Agg_Valid"
 begin
 (*>*)
 
@@ -34,8 +34,17 @@ text \<open>
 definition csl :: "'a :: ccompare set \<Rightarrow> 'a list" where
   "csl X = (if finite X then csorted_list_of_set X else [])"
 
+lemma csl_finite: "finite X \<Longrightarrow> csl X = csorted_list_of_set X"
+  by (simp add: csl_def)
+
+lemma csl_infinite: "\<not> finite X \<Longrightarrow> csl X = []"
+  by (simp add: csl_def)
+
 lemma ID_ccompare_ed: "ID CCOMPARE(event_data list) \<noteq> None"
   by (simp add: ccompare_list_def ccompare_event_data_def ID_def split: option.splits)
+
+lemma set_csl_ed: "finite (X :: event_data list set) \<Longrightarrow> set (csl X) = X"
+  using ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 
 subsection \<open>Term evaluation\<close>
 

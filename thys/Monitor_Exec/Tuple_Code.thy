@@ -277,6 +277,15 @@ lemma ed_image_rbt[code]:
   unfolding ed_image_def ed_insert_def
   by (simp add: Set_image_code(1) ID_ccompare_etuple ccomp_etuple ID_ceq_etuple comp_def)
 
+text \<open>The match of a predicate's table against the atom's terms is an image followed by
+  @{const Option.these}, which the generated code ran through the generic set operations with
+  their dictionaries; on a tree it is one fold that inserts the matches.\<close>
+
+lemma these_image_fold:
+  "fold (\<lambda>x acc. case u x of None \<Rightarrow> acc | Some f \<Rightarrow> Set.insert (h f) acc) xs A
+   = A \<union> Option.these ((\<lambda>x. map_option h (u x)) ` set xs)"
+  by (induct xs arbitrary: A) (auto split: option.splits)
+
 lemma umatch_table_rbt[code]:
   "umatch_table tms cs (RBT_set rbt) = RBT_Set2.fold (\<lambda>x acc. case umatch tms x of None \<Rightarrow> acc
      | Some f \<Rightarrow> ed_insert (map (\<lambda>c. the (f c)) cs) acc) rbt {}"

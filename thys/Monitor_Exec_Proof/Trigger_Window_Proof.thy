@@ -6,6 +6,13 @@ begin
 
 
 
+lemma emsk_args_distinct_R: "emsk_args args msk \<Longrightarrow> distinct (args_R args)"
+  by (simp add: emsk_args_def strict_sorted_iff)
+
+
+lemma tok_mem0: "mem (args_ivl args) 0 \<Longrightarrow> tok cR cL args"
+  by (simp add: tok_def)
+
 subsection \<open>The read is a finite table\<close>
 
 text \<open>The read of the trigger structure is a finite table over the right operand's columns.
@@ -121,8 +128,13 @@ next
   qed
 qed
 
+subsection \<open>The summaries\<close>
+
 lemma sw_assoc_tcomp: "sw_assoc tcomp"
   by (simp add: sw_assoc_def tcomp_def ecomp_assoc)
+
+lemma sw_assoc_Un: "sw_assoc (\<union>)"
+  by (simp add: sw_assoc_def Un_assoc)
 
 lemma sw_fold_Un: "sw_fold (\<union>) xs = (if xs = [] then None else Some (\<Union> (set xs)))"
   by (induct xs) (auto simp: sw_comp_def split: option.splits if_splits)
@@ -199,6 +211,9 @@ lemma trel_split:
   shows "D = filter (\<lambda>x. memL I (c - fst x)) D @ filter (\<lambda>x. \<not> memL I (c - fst x)) D"
   using sorted_takeWhile_filter[OF s, of "\<lambda>t. memL I (c - t)"] memL_ts_anti
   by (metis takeWhile_dropWhile_id)
+
+lemma trel_init: "trel args msk 0 (tw_init args msk) []"
+  by (simp add: trel_def tw_init_def sw_rel_empty)
 
 lemma tw_push:
   "sw_rel tcomp id W X \<Longrightarrow> sw_rel tcomp id (tw_push args msk nt mv W)
@@ -505,6 +520,10 @@ proof -
   qed
   show ?thesis unfolding res tr using tW pend by blast
 qed
+
+lemma etw_init: "etw kL cL kR cR args 0 (tw_init (eargs cR cL args) (emsk cR cL)) []"
+  if "tok cR cL args"
+  using that by (simp add: etw_def eauxlist3_def trel_init)
 
 lemma etw_update:
   assumes v: "etw kL cL kR cR args cur daux auxlist" and nt: "cur \<le> nt"
