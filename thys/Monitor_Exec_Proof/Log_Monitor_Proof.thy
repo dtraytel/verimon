@@ -6,6 +6,15 @@ begin
 
 
 
+lemma Rep_string8_of_bytes[simp]: "Rep_string8 (string8_of_bytes b) = Rep_bytes b"
+  by (simp add: string8_of_bytes_def Abs_string8_inverse)
+
+lemma string8_of_bytes_inject[simp]: "string8_of_bytes a = string8_of_bytes b \<longleftrightarrow> a = b"
+  by (metis Rep_bytes_inject Rep_string8_of_bytes)
+
+lemma Rep_bytes_of_string8[simp]: "Rep_bytes (bytes_of_string8 s) = Rep_string8 s"
+  by (simp add: bytes_of_string8_def Abs_bytes_inverse)
+
 lemma hashcode_char_code: "hashcode (c :: char) = Uint32_signed (integer_of_char c)"
 proof -
   have "0 \<le> (of_char c :: int) \<and> of_char c < (256 :: int)"
@@ -81,8 +90,18 @@ proof (rule ext)
     by (induction S) (auto split: if_splits)
 qed
 
+lemma lsig_lookup_fun[simp]: "lsig_lookup_fun S = lsig_lookup S"
+  by (simp add: lsig_lookup_fun_def index_lookup_lsig_index)
+
 lemma Rep_prefix_of_list: "sorted (map snd xs) \<Longrightarrow> Rep_prefix (prefix_of_list xs) = xs"
   by (simp add: prefix_of_list.rep_eq)
+
+lemma sf_Rep[simp]: "sf f (Rep_bytes x) = f x"
+  by (simp add: sf_def Rep_bytes_inverse)
+
+lemma opt_of_sum_simps[simp]: "opt_of_sum (Inl a) = None" "opt_of_sum (Inr b) = Some b"
+  "opt_of_sum (map_sum f g x) = map_option g (opt_of_sum x)"
+  by (auto simp: opt_of_sum_def split: sum.splits)
 
 lemma conv_field_string: "conv_field pf t f = field_of_string (sf pf) t (Rep_bytes f)"
   by (cases t) (simp_all add: conv_field_def field_of_string_def bint_of_correct string8_of_bytes_def
@@ -126,8 +145,6 @@ qed simp
 
 lemma conv_events_acc: "conv_events_acc pf L acc es = map_sum id ((@) (rev acc)) (conv_events pf L es)"
   by (induction pf L acc es rule: conv_events_acc.induct) (auto simp: map_sum_def split: sum.splits)
-
-subsection \<open>Sorting\<close>
 
 text \<open>The tuples of a table are sorted, without duplicates, before the table is built, so that
   the tree is built in one pass. The merge sort below merges the runs of increasing elements of
@@ -269,8 +286,6 @@ qed
 lemma add_ev_code: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
   by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: str8_eq_def prod_eq_iff)
 
-text \<open>The groups have distinct keys, and each holds the tuples of its key.\<close>
-
 lemma map_of_add_ev:
   "map_of (add_ev (p, vs) g) k =
    (if k = (p, length vs) then Some (vs # (case map_of g k of None \<Rightarrow> [] | Some xs \<Rightarrow> xs)) else map_of g k)"
@@ -361,7 +376,13 @@ proof (rule mapping_eqI)
   qed
 qed
 
-subsection \<open>Building the tables faster\<close>
+lemma map_t[simp]: "map_t f xs = map f xs"
+proof -
+  have "fold (\<lambda>x acc. f x # acc) xs acc = rev (map f xs) @ acc" for acc
+    by (induction xs arbitrary: acc) auto
+  then show ?thesis
+    by (simp add: map_t_def)
+qed
 
 text \<open>The tree of a table is built by @{const rbtreeify}, whose generated code computes with the
   natural numbers of the generated code, which wrap the integers. The copy below computes with the
@@ -426,21 +447,24 @@ text \<open>The tables of a time point are built with this sort and tree constru
   hold their tuples in the reverse order of the log; the code reverses them before sorting them,
   so that tuples that come sorted in the log are sorted in linear time.\<close>
 
-lemma comparator_edl: "comparator ed_comparator"
-  by (rule ID_ccompare'[OF ID_ccompare_etuple])
-
-lemma conv_fields_a: "conv_fields_a pf tys fs acc = map_sum id ((@) (rev acc)) (conv_fields pf tys fs (length acc))"
-  by (induction pf tys fs acc rule: conv_fields_a.induct) (auto simp: sum.map_comp comp_def split: option.splits)
-
 lemma vskip_fun: "vskip_fun xs q \<longleftrightarrow> q \<in> set xs"
   by (auto simp: vskip_fun_def str8_eq_def list_ex_iff)
 
 lemma vitems_acc: "vitems_acc cf xs z acc = (case vitems cf xs z of (vs, z') \<Rightarrow> (rev acc @ vs, z'))"
   by (induction cf xs z acc rule: vitems_acc.induct) (auto split: prod.splits)
 
-lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, ust1) \<Rightarrow>
-  (case usteps tps2 ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
-  by (induction tps1 ust rule: usteps.induct) (auto split: prod.splits)
+lemma vverdicts_simps[simp]:
+  "vverdicts [] = []"
+  "vverdicts (VO_VERDICTS vs # xs) = vs @ vverdicts xs"
+  "vverdicts (VO_ERROR pos e # xs) = vverdicts xs"
+  "vverdicts (xs @ ys) = vverdicts xs @ vverdicts ys"
+  by (simp_all add: vverdicts_def)
+
+lemma has_verror_simps[simp]:
+  "\<not> has_verror []"
+  "has_verror (x # xs) \<longleftrightarrow> (case x of VO_VERDICTS _ \<Rightarrow> has_verror xs | VO_ERROR _ _ \<Rightarrow> True)"
+  "has_verror (xs @ ys) \<longleftrightarrow> has_verror xs \<or> has_verror ys"
+  by (auto simp: has_verror_def split: vout.splits)
 
 lemma usteps_dmsteps0:
   "fst (usteps tps ust) = emsteps0_stateless (map (apfst set) tps) (ust)"
@@ -502,9 +526,6 @@ proof (induction cf xs z rule: vitems.induct)
       by (auto split: prod.splits vout.splits)
   qed (use v in \<open>auto simp: vitem_def split: prod.splits\<close>)
 qed simp
-
-text \<open>Without errors, the items are converted and their timestamps do not decrease, and the
-  verdicts are those of the monitor on the time points.\<close>
 
 lemma vitems_ok:
   assumes "oks xs = Some es" "vitems cf xs (ust, lt) = (vs, z')" "\<not> has_verror vs"
@@ -631,8 +652,6 @@ proof -
     by (simp_all add: wty_prefix.rep_eq pfinite.rep_eq)
 qed
 
-subsubsection \<open>The time points of the items\<close>
-
 lemma sorted_snoc_last: "sorted ((a :: nat) # ys) \<Longrightarrow> sorted ((a # ys) @ [t]) \<longleftrightarrow> last (a # ys) \<le> t"
 proof (induction ys arbitrary: a)
   case (Cons y ys)
@@ -645,8 +664,6 @@ lemma those_conv_item:
   shows "those (map (tp_of_item (sf (vc_pf cf)) (vc_lsig cf)) (abs_items es)) =
     map_option (map (apfst set)) (those (map (conv_item cf) es))"
   by (simp add: comp_def conv_item_string[OF assms, symmetric] those_map_option[symmetric])
-
-subsection \<open>The verdicts depend only on the events of the predicates that occur freely\<close>
 
 text \<open>An event that a formula matches is one of a predicate that occurs freely in it.\<close>
 
@@ -669,6 +686,9 @@ proof (induction \<phi> arbitrary: v e)
       by simp
   qed
 qed (fastforce simp: fv_regex_alt)+
+
+lemma preds_map_formula[simp]: "Rewriting.preds (Formula.formula.map_formula f \<phi>) = Rewriting.preds \<phi>"
+  by (induction \<phi>) (auto simp: fv_regex_alt regex.set_map)
 
 lemma pmap_\<Gamma>_pmap_\<Gamma>: "pmap_\<Gamma> f (pmap_\<Gamma> g \<pi>) = pmap_\<Gamma> (f \<circ> g) \<pi>"
   by transfer (auto split: prod.splits)
@@ -715,8 +735,6 @@ lemma vinit_Inr:
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
   by (auto simp: fun_eq_iff sk_def vkeep_def vskip_fun vskip_def Let_def keep_spec_def string8_of_bytes_def
       Abs_bytes_inverse)
-text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>
-
 lemma those_map_cong: "those (map f xs) = Some ys \<Longrightarrow> (\<And>x y. f x = Some y \<Longrightarrow> g x = Some (h y)) \<Longrightarrow>
   those (map g xs) = Some (map h ys)"
   by (induction xs arbitrary: ys) (auto split: option.splits)
@@ -780,9 +798,6 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
   "map_sig (convert_tysym o check_subst) (lsig_tsig S)" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
-text \<open>The verdicts depend only on the events of the predicates that occur freely in the
-  formula.\<close>
-
 theorem Mt_preds:
   assumes "wty_prefix (lsig_lookup S) \<pi>" "wty_prefix (lsig_lookup S) \<pi>'"
     and "pmap_\<Gamma> (\<lambda>D. D \<inter> {e. (fst e, length (snd e)) \<in> Rewriting.preds \<phi>}) \<pi> =
@@ -800,8 +815,6 @@ qed
 end
 
 end
-
-text \<open>The monitor starts only if the assumptions of the locale hold.\<close>
 
 lemma vinit_verimon_log:
   assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"

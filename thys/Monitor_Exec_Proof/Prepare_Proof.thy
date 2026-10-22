@@ -6,6 +6,18 @@ begin
 
 
 
+lemma fvi_list_map_formula[simp]:
+  "Formula.fvi_list b (Formula.formula.map_formula g \<phi>) = Formula.fvi_list b \<phi>"
+proof (induction b \<phi> rule: Formula.fvi_list.induct)
+  case (20 b I r)
+  then show ?case
+    by (induction r) auto
+next
+  case (21 b I r)
+  then show ?case
+    by (induction r) auto
+qed (auto simp: fold_map comp_def cong: fold_cong)
+
 lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
   by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def wty_share_opt
     mmonitorable_share_opt)
@@ -28,9 +40,6 @@ lemma safe_share_opt_\<psi>: "safe_formula (share_opt \<psi>)"
 lemma fvi_\<psi>_mw: "Formula.fvi b (\<psi>_mw mw) = Formula.fvi b \<phi>"
   by (simp add: \<psi>_mw_def fv_convert_multiway fvi_\<psi>)
 
-lemma nfv_\<psi>_mw: "Formula.nfv (\<psi>_mw mw) = Formula.nfv \<phi>"
-  by (simp add: \<psi>_mw_def nfv_convert_multiway nfv_\<psi>)
-
 lemma sat_\<psi>_mw: "Formula.sat \<sigma> V v i (\<psi>_mw mw) = Formula.sat \<sigma> V v i \<psi>"
   by (simp add: \<psi>_mw_def sat_convert_multiway[OF safe_share_opt_\<psi>])
 
@@ -44,13 +53,6 @@ begin
 interpretation verimon_mw: verimon_spec "\<psi>_mw mw" "map_sig (convert_tysym o check_subst) sig"
   "convert_tysym o check_subst o TAny"
   using verimon_spec_\<psi>_mw by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def)
-
-interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
-  "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
-  using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
-
-text \<open>The verdicts of the executable monitor started from the state @{const eminit_verimon} builds
-  are the verdicts the specification of the input formula prescribes.\<close>
 
 theorem eminit_verimon_mverdicts:
   assumes init: "eminit_verimon ix mw rw sig \<phi> = Inr ust"

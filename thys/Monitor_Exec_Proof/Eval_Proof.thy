@@ -19,7 +19,117 @@ text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open
   formula's size -- exactly as the kernel's own evaluator does it.  Evaluation preserves that
   size, which is the fact that makes the measure decrease.\<close>
 
+lemma size_list_cong:
+  "xs = ys \<Longrightarrow> (\<And>x. x \<in> set xs \<Longrightarrow> f x = g x) \<Longrightarrow> size_list f xs = size_list g ys"
+  by (induct xs arbitrary: ys) auto
+
+lemma psize_snd_eeval:
+  "eeval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (eeval j ts db \<phi>)) = size \<phi>"
+proof (induct rule: eeval.pinduct)
+  case (11 j ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>EPrev\<close>\<close>
+  obtain xs \<phi>' where \<phi>': "eeval j ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs buf' nts' where mp: "meprev_next I (buf @@ xs) (nts @@ ts) = (zs, buf', nts')"
+    by (metis prod_cases3)
+  have "size \<phi>' = size \<phi>"
+    using 11(2) \<phi>' by simp
+  then show ?case
+    by (simp add: eeval.psimps(11)[OF 11(1)] \<phi>' mp del: meprev_next.simps)
+next
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) \<comment> \<open>\<^const>\<open>EFrz\<close>\<close>
+  let ?db0 = "Mapping.update (p, m) [] db"
+  obtain xs \<phi>' where \<phi>': "eeval j ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs0 \<psi>' where \<psi>': "eeval j ts ?db0 \<psi> = (zs0, \<psi>')"
+    by fastforce
+  obtain rs \<rho>' where \<rho>': "eeval j ts ?db0 \<rho> = (rs, \<rho>')"
+    by fastforce
+  have s\<phi>: "size \<phi>' = size \<phi>"
+    using 20(2) \<phi>' by simp
+  have s\<psi>: "size \<psi>' = size \<psi>"
+    using 20(3)[OF \<phi>'[symmetric] refl refl] \<psi>' by simp
+  have s\<rho>: "size \<rho>' = size \<rho>"
+    using 20(4)[OF \<phi>'[symmetric] refl refl \<psi>'[symmetric] refl] \<rho>' by simp
+  obtain zo jf fl as lr fd where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, eeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None,
+       case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
+         Some (eeval j ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
+           eeval j ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
+       | _ \<Rightarrow> None)) = (zo, jf, fl, as, lr, fd)"
+    by (metis prod_cases6)
+  obtain ys as' lv' s' sx' \<rho>S' \<rho>E' where lp0: "frz_step size (eeval j) (frz_kops m cS) (p, m)
+      (Mapping.map_values (\<lambda>_ _. []) db) fl d po j jf as xs lr fd sx \<rho>S \<rho>E
+      (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s', sx', \<rho>S', \<rho>E')"
+    by (metis prod_cases7)
+  obtain \<rho>'' w' pR' tq' rb' where s': "s' = (\<rho>'', w', pR', tq', rb')"
+    by (metis prod_cases5)
+  have s\<rho>'': "size \<rho>'' = size \<rho>" and sS: "size \<rho>S' = size \<rho>S" and sE: "size \<rho>E' = size \<rho>E"
+    using frz_step_size[OF lp0] s\<rho> s' by simp_all
+  have "snd (eeval j ts db (EFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)) =
+    EFrz p m \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng
+      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L) sx' cS \<rho>S' \<rho>E'"
+    by (simp only: eeval.psimps(20)[OF 20(1)] \<phi>' \<psi>' \<rho>' st lp0[unfolded s'] Let_def[where s = ?db0]
+        Let_def[where s = "(xs, \<phi>')"] Let_def[where s = "(zs0, \<psi>')"] Let_def[where s = "(rs, \<rho>')"]
+        Let_def[where s = "(zo, jf, fl, as, lr, fd)"]
+        Let_def[where s = "(ys, as', lv', (\<rho>'', w', pR', tq', rb'), sx', \<rho>S', \<rho>E')"]
+        prod.case snd_conv)
+  then show ?case
+    using s\<phi> s\<psi> s\<rho>'' sS sE by simp
+next
+  case (21 j ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>ELetPast\<close>\<close>
+  obtain xs i' buf' \<phi>' where lp:
+    "letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have "size (snd (snd (snd
+      (letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>)))) = size \<phi>"
+    by (rule size_letpast_meval) (simp add: 21(2))
+  then have size_\<phi>': "size \<phi>' = size \<phi>"
+    by (simp add: lp)
+  obtain ys \<psi>' where \<psi>': "eeval j ts (Mapping.update (p, m) xs db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>': "size \<psi>' = size \<psi>"
+    using 21(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
+  show ?case
+    using size_\<phi>' size_\<psi>' by (simp add: eeval.psimps(21)[OF 21(1)] lp \<psi>')
+  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas,
+    since evaluation keeps the node's constructor and its non-formula arguments do not count\<close>
+qed (auto simp only: prod.inject eeval.psimps Let_def snd_conv fst_conv
+    geformula.size list.map map_map o_apply size_list_map size_frz_keep_st cong: size_list_cong
+    split: prod.splits)
+
+lemma total_eeval: "All eeval_dom"
+proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
+  text \<open>The live copy and the replays of @{const EFrz}, as for @{const meval}.\<close>
+  case 23 \<comment> \<open>the live copy, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case 24 \<comment> \<open>the copy of the separable mode with the frozen table, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case 25 \<comment> \<open>the copy of the separable mode with the empty table, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case (26 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E x xa y xb xc xd ya xe
+    xf yb xg xh yc xi yd xj yca xk ycb xl ycc tsa dba \<psi>')
+  have "size yb = size \<rho>"
+    using psize_snd_eeval[of j ts xb \<rho>] 26 by (metis snd_conv)
+  then show ?case
+    using 26 by simp
+qed (auto simp: termination_simp dest!: psize_snd_eeval dest: sym)
+
 lemmas size_snd_eeval = psize_snd_eeval[OF total_eeval[THEN spec]]
+
+lemma esres_Nil[simp]: "esres ks cs args [] []"
+  unfolding esres_def by (intro exI[of _ "[]"]) simp
 
 lemma esres_none:
   assumes "args_agg args = None" and "esres ks cs args zs dzs"
@@ -28,6 +138,9 @@ lemma esres_none:
 
 lemma esresh_id: "esresh ks cs args id zs dzs \<longleftrightarrow> esres ks cs args zs dzs"
   unfolding esresh_def esres_def by simp
+
+lemma esresh_Nil[simp]: "esresh ks cs args h [] []"
+  unfolding esresh_def by (intro exI[of _ "[]"]) simp
 
 lemma esresh_Cons:
   assumes w: "table ks w" and r: "esresh ks cs args h zs dzs"
@@ -63,9 +176,6 @@ qed
 lemma esresh_rev':
   "rev zs = us \<Longrightarrow> rev dzs = dus \<Longrightarrow> esresh ks cs args h zs dzs \<Longrightarrow> esresh ks cs args h us dus"
   using esresh_rev by blast
-
-lemma table_foldr_Un: "list_all (table ks) ws \<Longrightarrow> table ks (foldr (\<union>) ws {})"
-  by (induct ws) (auto simp: table_def)
 
 lemma esresh_result:
   assumes vd: "esxaux' kR cR cL args cur da al"
@@ -285,12 +395,6 @@ proof -
 qed
 
 subsection \<open>The release structure at the ascending frame\<close>
-
-text \<open>
-  The release node steps its structure through the buffer like the Until node, with the
-  timestamp-indexed relation, and reads it with @{const eraux_eval}, which pops the same entries
-  as @{const eval_until} pops from the list the structure stands for.
-\<close>
 
 lemma release_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -663,11 +767,6 @@ proof -
       (subst du, auto simp: eandbuf_def list_all_iff)
 qed
 
-lemma tok_weak:
-  "tok cR cL args \<Longrightarrow> eframe kR cR \<Longrightarrow> eframe kL cL \<Longrightarrow>
-     mem (args_ivl args) 0 \<or> (args_pos args \<and> set kL = set kR)"
-  by (auto simp: tok_def eframe_def)
-
 text \<open>One firing of the fused node's trigger structure.  It differs from the standalone node's
   only in what each step appends: the kernel keeps the read's column list beside its table, and
   the executable side keeps the empty window as @{term None}.\<close>
@@ -864,8 +963,6 @@ text \<open>The fact the relation is designed to hand out at every node.\<close>
 lemma esim_dframe: "esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> eframe ks cs"
   by (erule esim.cases) (auto simp: eframe_def)
 
-section \<open>The simulation\<close>
-
 lemma ebuf2_add:
   assumes b: "ebuf2 k1 c1 k2 c2 buf dbuf"
     and x: "list_all (ftable k1) xs" and y: "list_all (ftable k2) ys"
@@ -891,8 +988,6 @@ proof -
     using mbuf2_take_sub[of f b1 b2 zs d1 d2] t1 buf buf' by auto
   ultimately show ?thesis using d l1 l2 buf' by (auto simp: ebuf2_def list_all_iff)
 qed
-
-subsection \<open>The multi-way buffer of reordered tables\<close>
 
 lemma map2_apply_etabcs:
   "length kss = length as \<Longrightarrow> length css = length as \<Longrightarrow>
@@ -1039,8 +1134,6 @@ proof -
   then show ?thesis using e2 r by auto
 qed
 
-subsection \<open>The queues the nodes keep\<close>
-
 text \<open>A node keeps its buffers in queues, and the relation is stated on the lists they represent.
   Each queue operation commutes with the representation, so a step of a queue is a step of the
   list it represents.\<close>
@@ -1172,12 +1265,6 @@ proof -
   show ?thesis using e l1 l2 l3 by (auto intro!: nth_equalityI)
 qed
 
-text \<open>
-  The operand block shared by the multi-operand nodes: given the induction hypotheses for the
-  operands, their executable steps report the reordered tables, stay related, and the buffer
-  stays related after adding their results.
-\<close>
-
 lemma eeval_operands:
   assumes la: "\<forall>i < length L. esim n (kss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
       (\<forall>j ts. (\<forall>t \<in> set ts. tw \<le> t) \<longrightarrow> (\<forall>db xs \<phi>'.
@@ -1219,8 +1306,6 @@ proof -
       (map Rep_mbuf_t (mebufn_add (map fst (map (eeval j ts db) Ld)) dbuf))"
     unfolding dl by (rule ebufn_eadd[OF bf _ tabs]) (use l2 in simp)
 qed
-
-subsection \<open>One firing of the Since structure\<close>
 
 text \<open>
   One firing of @{const meval_since} on the executable side reports the same windows as one firing on
@@ -1608,8 +1693,6 @@ proof -
   then show ?thesis
     using that step nag2 by simp
 qed
-
-text \<open>One firing of an Until node, likewise.\<close>
 
 lemma euntil_node_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"

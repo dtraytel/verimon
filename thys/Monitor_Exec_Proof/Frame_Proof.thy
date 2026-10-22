@@ -39,13 +39,17 @@ lemma table_etabc: "table cs (etabc ks cs T)"
 lemma etabw_dtabc: "eframe ks cs \<Longrightarrow> table ks T \<Longrightarrow> etabw ks cs (etabc ks cs T) = T"
   by (force simp: etabw_def etabc_def table_def restrict_inv image_image)
 
+lemma etabc_empty[simp]: "etabc ks cs {} = {}"
+  by (simp add: etabc_def)
+
+lemma etabc_empty_iff: "(etabc ks cs T = {}) = (T = {})"
+  by (auto simp: etabc_def)
+
 lemma etabc_Un_img: "etabc ks cs (A \<union> B) = etabc ks cs A \<union> etabc ks cs B"
   by (auto simp: etabc_def)
 
 lemma finite_etabc: "finite T \<Longrightarrow> finite (etabc ks cs T)"
   by (simp add: etabc_def)
-
-text \<open>A frame that is already ascending is left alone.\<close>
 
 lemma etabc_same: "distinct cs \<Longrightarrow> table cs T \<Longrightarrow> etabc cs cs T = T"
   by (force simp: etabc_def table_def restrict_idle)
@@ -107,14 +111,9 @@ next
   qed
 qed
 
-subsection \<open>Agreement with the kernel's join\<close>
-
 lemma eframe_merge:
   "eframe ks1 cs1 \<Longrightarrow> eframe ks2 cs2 \<Longrightarrow> eframe (cols_union ks1 ks2) (merge_cols cs1 cs2)"
   by (auto simp: eframe_def sorted_merge_cols set_merge_cols)
-
-text \<open>The kernel's join of two tuples reads every column of the result from the side that has
-  it.\<close>
 
 lemma tup_get_join1:
   assumes "wf_tuple ks1 x" "join1 ks1 ks2 (x, y) = Some z" "c \<in> set ks1 \<union> set ks2"
@@ -153,8 +152,6 @@ proof -
   qed
 qed
 
-text \<open>The short join of two tables is the short form of the kernel's join.\<close>
-
 lemma etabc_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
     and t1: "table ks1 T"
@@ -179,17 +176,10 @@ proof -
   finally show ?thesis .
 qed
 
-text \<open>A kernel table read in another order of its columns has the same executable form.\<close>
-
 lemma etabc_restrict:
   assumes "eframe ks cs" "set ks' = set ks" "table ks T"
   shows "etabc ks' cs (restrict ks' ks ` T) = etabc ks cs T"
   using assms by (force simp: etabc_def eframe_def image_image restrict_restrict)
-
-lemma no_right_mrg_plan:
-  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
-     no_right (mrg_plan cs1 cs2) = (set cs2 \<subseteq> set cs1)"
-  by (induct cs1 cs2 rule: mrg_plan.induct) (auto simp: no_right_def list_all_iff)
 
 lemma eproj_mrg_left_key:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
@@ -298,12 +288,6 @@ lemma mrg_plan_Nil2: "mrg_plan cs [] = map (\<lambda>_. MLft) cs"
 lemma mrg_plan_swap: "map mrg_swap (mrg_plan cs1 cs2) = mrg_plan cs2 cs1"
   by (induct cs1 cs2 rule: mrg_plan.induct) (auto simp: mrg_plan_Nil2)
 
-lemma mrg_right_key_swap: "mrg_right_key p = mrg_left_key (map mrg_swap p)"
-  by (induct p rule: mrg_right_key.induct) auto
-
-lemma no_left_swap: "no_left p = no_right (map mrg_swap p)"
-  by (induct p) (auto simp: no_left_def no_right_def elim: mrg_swap.elims)
-
 lemma no_left_mrg_plan:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
      no_left (mrg_plan cs1 cs2) = (set cs1 \<subseteq> set cs2)"
@@ -376,9 +360,6 @@ lemma length_filter_mrg_plan_left: "length (filter (\<lambda>m. m \<noteq> MRgt)
 lemma length_filter_mrg_plan_right: "length (filter (\<lambda>m. m \<noteq> MLft) (mrg_plan cs1 cs2)) = length cs2"
   by (induct cs1 cs2 rule: mrg_plan.induct) auto
 
-text \<open>The join of two short tuples succeeds exactly when they agree on the shared columns, and
-  then it is the test-free merge.\<close>
-
 lemma ejoin1_dmerge:
   "length a = length (filter (\<lambda>m. m \<noteq> MRgt) p) \<Longrightarrow>
    length b = length (filter (\<lambda>m. m \<noteq> MLft) p) \<Longrightarrow>
@@ -433,9 +414,6 @@ lemma eprobe_l_fold:
    = acc \<union> (\<Union>y \<in> set ys. (\<lambda>x. emerge p x y) ` set (bucket m (eproj rk y)))"
   by (induct ys arbitrary: acc)
     (auto simp: gprobe_step_l_def bucket_def fold_insert_image split: option.splits)
-
-text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
-  columns, merged.\<close>
 
 lemma ggen_join_eq:
   assumes cA: "set (csl A) = (A :: event_data table)" and cB: "set (csl B) = B"
@@ -571,13 +549,6 @@ next
   qed
 qed
 
-lemma set_kands_cols: "set (kands_cols acc kss) = set acc \<union> (\<Union>k \<in> set kss. set k)"
-  by (induct kss arbitrary: acc) auto
-
-lemma distinct_kands_cols:
-  "distinct acc \<Longrightarrow> \<forall>k \<in> set kss. distinct k \<Longrightarrow> distinct (kands_cols acc kss)"
-  by (induct kss arbitrary: acc) auto
-
 lemma eframe_eands_cols:
   assumes "list_all2 eframe kss css" and "eframe acc c"
   shows "eframe (kands_cols acc kss) (eands_cols c css)"
@@ -674,8 +645,6 @@ proof (induct kcs arbitrary: T Vs)
     using Cons(1)[OF Cons(2) t finite_join[OF Cons(4) fV] rest] Cons(6) res
     by (simp add: j)
 qed simp
-
-text \<open>The kernel's multi-way join is the left-to-right fold, read in its own column order.\<close>
 
 lemma mmulti_join_kands:
   assumes acc: "distinct acc" "table acc T"
@@ -896,8 +865,6 @@ lemma etabc_agg_group:
        = etabc cs (agg_cols m gcols) (Set.filter (\<lambda>x. agg_key m cs x = agg_key m cs x0) rel)"
   unfolding etabc_def using drop_restrict_agg_eq_iff[OF f] by auto
 
-subsection \<open>The aggregated values do not change\<close>
-
 lemma uagg_values_etabc:
   assumes f: "eframe cs (agg_cols m gcols)" and tG: "table cs G"
     and fv: "Formula.fv_trm f \<subseteq> set cs"
@@ -926,8 +893,6 @@ proof -
       unfolding fil ecard_image[OF inj'] by (rule refl)
   qed
 qed
-
-subsection \<open>Aggregation over short tuples agrees with the kernel's\<close>
 
 text \<open>
   The executable aggregation takes the group key as a suffix of the short tuple (of length
@@ -999,18 +964,16 @@ proof -
   qed
 qed
 
-lemma set_cols:
-  assumes "finite A"
-  shows "sorted_wrt (<) (set_cols A)" "set (set_cols A) = A"
-  using assms unfolding set_cols_def
-  by (subst csorted_list_of_set_split;
-      auto simp: ccompare_nat_def ID_Some ord_defs strict_sorted_iff)+
+lemma set_cols_eqI:
+  assumes f: "finite A" and s: "sorted_wrt (<) xs" and e: "set xs = A"
+  shows "xs = set_cols A"
+  by (rule strict_sorted_equal) (use s e set_cols[OF f] in auto)
+
+lemma set_cols_empty: "set_cols {} = []"
+  by (rule set_cols_eqI[symmetric]) simp_all
 
 lemma set_cols_upt: "set_cols {0..<m} = [0..<m]"
   by (rule set_cols_eqI[symmetric]) (simp_all add: strict_sorted_iff)
-
-lemma eframe_set_cols: "distinct ks \<Longrightarrow> eframe ks (set_cols (set ks))"
-  by (simp add: eframe_def set_cols)
 
 subsection \<open>Matching a predicate's arguments\<close>
 
@@ -1073,8 +1036,8 @@ proof -
   qed
 qed
 
-text \<open>A join whose right operand's columns are among the left one's keeps the left one's columns;
-  it commutes with the reordering.\<close>
+lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_args_agg args X = X"
+  by (simp add: eval_args_agg_def)
 
 theorem etabc_join_sub:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -1183,8 +1146,6 @@ proof safe
     using m t1 t2 sub
     by (auto simp: update_until_def aL aR dest!: w intro!: table_Un intro: table_join_sub)
 qed
-
-section \<open>Buffers of reordered tables\<close>
 
 text \<open>
   A buffer never looks inside a tuple: it lines up the tables the operands produce and hands
@@ -1312,13 +1273,6 @@ next
     qed
   qed
 qed
-
-lemma map2_map_empty_iff:
-  "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
-  by (induct hs buf rule: list_induct2) auto
-
-lemma map2_map_nil_iff: "length hs = length buf \<Longrightarrow> (map2 map hs buf = []) = (buf = [])"
-  by (induct hs buf rule: list_induct2) auto
 
 lemma map2_map_hd:
   "length hs = length buf \<Longrightarrow> [] \<notin> set buf \<Longrightarrow>
@@ -1552,16 +1506,12 @@ proof (induct f z buf t0 ts arbitrary: z' w buf' t' ts' w2 buf2 t2 ts2
   qed
 qed
 
-subsection \<open>Leftovers of the shift buffer\<close>
-
 lemma mprev_next_sub: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow> set xs' \<subseteq> set xs"
   by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
     (auto split: prod.splits)
 
-section \<open>The unit and empty tables\<close>
-
-lemma etabc_unit_table: "etabc [] [] unit_table = unit_table"
-  by (simp add: etabc_def unit_table_def)
+lemma etabc_empty_table[simp]: "etabc ks cs empty_table = empty_table"
+  by (simp add: empty_table_def)
 
 lemma map2_append:
   "length as = length xs \<Longrightarrow> map2 f (as @ bs) (xs @ ys) = map2 f as xs @ map2 f bs ys"
@@ -1656,8 +1606,6 @@ proof -
   then show ?thesis unfolding etabc_def by auto
 qed
 
-section \<open>The assignment, the time point and the timestamp\<close>
-
 subsection \<open>Assigning a term to a fresh column\<close>
 
 text \<open>
@@ -1701,8 +1649,6 @@ qed
 theorem umtrm_eval_mtrm: "umtrm mt x = eval_mtrm mt x"
   by (cases mt) (simp_all add: singleton_table_def unit_table_def empty_table_def)
 
-section \<open>The verified Trigger structure over ascending columns\<close>
-
 text \<open>
   The trigger's auxiliary list carries two tables per time point, like the Until's, but the
   structure reads its answer off that list rather than accumulating it, so what has to transport
@@ -1727,11 +1673,6 @@ lemma length_filter_eauxlist3:
   "length (filter (\<lambda>(t, _, _). P t) (eauxlist3 kL cL kR cR auxlist))
      = length (filter (\<lambda>(t, _, _). P t) auxlist)"
   by (induct auxlist) (auto simp: eauxlist3_def)
-
-lemma nth_eauxlist3:
-  "i < length auxlist \<Longrightarrow> eauxlist3 kL cL kR cR auxlist ! i =
-     (fst (auxlist ! i), etabc kL cL (fst (snd (auxlist ! i))), etabc kR cR (snd (snd (auxlist ! i))))"
-  by (simp add: eauxlist3_def case_prod_beta)
 
 theorem etabc_trigger_results:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -1815,9 +1756,6 @@ proof -
     unfolding dsimp ssimp using DS by (simp add: etabc_unit_table)
 qed
 
-text \<open>The structure over ascending columns, related to the kernel's through the abstract
-  auxiliary list they are both valid for, exactly as for the Since and the Until.\<close>
-
 lemma eauxlist3_filter_append:
   "eauxlist3 kL cL kR cR (filter (\<lambda>(t, _). P t) auxlist @ [(nt, l, r)])
      = filter (\<lambda>(t, _). P t) (eauxlist3 kL cL kR cR auxlist) @ [(nt, etabc kL cL l, etabc kR cR r)]"
@@ -1875,8 +1813,32 @@ next
   qed
 qed
 
+lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
+  by transfer (auto simp: ran_def)
+
+lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
+  (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
+  unfolding eidx_def by transfer auto
+
 text \<open>The index computes the semi-join: a stored tuple's bucket survives the restriction exactly
   when the tuple itself survives the filter.\<close>
 
+theorem esemi_idx_dsemi: "esemi_idx msk pos (eidx msk T) X = esemi msk pos T X"
+proof (intro set_eqI iffI)
+  fix y assume "y \<in> esemi_idx msk pos (eidx msk T) X"
+  then show "y \<in> esemi msk pos T X"
+    by (auto simp: esemi_idx_def esemi_def in_set_of_idx Mapping.lookup_filter lookup_eidx
+        split: if_splits option.splits)
+next
+  fix y assume "y \<in> esemi msk pos T X"
+  then have yT: "y \<in> T" and yp: "(eproj msk y \<in> X) = pos" by (auto simp: esemi_def)
+  have "Mapping.lookup (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (eidx msk T)) (eproj msk y)
+      = Some {z \<in> T. eproj msk z = eproj msk y}"
+    using yT yp by (simp add: Mapping.lookup_filter lookup_eidx)
+  then show "y \<in> esemi_idx msk pos (eidx msk T) X"
+    using yT by (auto simp: esemi_idx_def in_set_of_idx)
+qed
+
+(*<*)
 end
 (*>*)

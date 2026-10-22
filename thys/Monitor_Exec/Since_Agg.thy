@@ -124,6 +124,19 @@ fun Rk :: "event_data gagg \<Rightarrow> aggaux" where
 | "Rk (GSum m) = SumAux m"
 | "Rk (GRank m ty) = RankAux (m, ty)"
 
+lemma cfc_insert_cnt: "comp_fun_commute_on UNIV (insert_cnt args)"
+  using insert_cnt_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_insert_sum: "comp_fun_commute_on UNIV (insert_sum args)"
+  using insert_sum_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_insert_rank: "comp_fun_commute_on UNIV (insert_rank args ty)"
+  using insert_rank_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_delete_cnt: "comp_fun_commute_on UNIV (delete_cnt args)"
+  using delete_cnt_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_delete_sum: "comp_fun_commute_on UNIV (delete_sum args)"
+  using delete_sum_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_delete_rank: "comp_fun_commute_on UNIV (delete_rank args ty)"
+  using delete_rank_comm by unfold_locales (auto simp: fun_eq_iff)
+
 text \<open>The window's aggregate: the structure over the window's own tuples, fed with the sorted
   list of what enters and what leaves, and read with the result column filled in.  Its
   invariant is the kernel's, under @{const Rk}.\<close>
@@ -231,6 +244,10 @@ definition valid_sa :: "args \<Rightarrow> eaggp \<Rightarrow> ts \<Rightarrow> 
      valid_sw args cur w auxlist \<and> length (args_R args) = args_n args \<and>
      eagg_ok p (args_n args) \<and> ag_inv p (args_n args) (sw_cc w) ax)"
 
+subsubsection \<open>The scans, and what the window's validity says about its tables\<close>
+
+subsubsection \<open>Validity\<close>
+
 section \<open>The executable fused Since window\<close>
 
 text \<open>
@@ -275,42 +292,6 @@ fun ucc :: "ucnt \<Rightarrow> cntset" where
 
 declare ucc.simps[simp del]
 
-lemma lookup_None_keys: "(Mapping.lookup c t = None) = (t \<notin> Mapping.keys c)"
-  by (simp add: Mapping.keys_dom_lookup domIff)
-
-lemma cnt_add1_ucc: "cnt_add1 t (ucc c) = ucc (ucnt_add1 t c)"
-proof (cases "Mapping.lookup c t")
-  case None
-  then show ?thesis by (simp add: cnt_add1_def ucnt_add1_def ucc.simps)
-next
-  case (Some k)
-  have "t \<in> Mapping.keys c" using Some lookup_None_keys[of c t] by simp
-  with Some show ?thesis by (simp add: cnt_add1_def ucnt_add1_def ucc.simps insert_absorb)
-qed
-
-lemma cnt_del1_ucc: "cnt_del1 t (ucc c) = ucc (ucnt_del1 t c)"
-proof (cases "Mapping.lookup c t")
-  case None
-  then show ?thesis by (simp add: cnt_del1_def ucnt_del1_def ucc.simps)
-next
-  case (Some k)
-  have "t \<in> Mapping.keys c" using Some lookup_None_keys[of c t] by simp
-  with Some show ?thesis
-    by (simp add: cnt_del1_def ucnt_del1_def ucc.simps insert_absorb)
-qed
-
-lemma fold_cnt_add1_ucc: "fold cnt_add1 xs (ucc c) = ucc (fold ucnt_add1 xs c)"
-  by (induct xs arbitrary: c) (simp_all add: cnt_add1_ucc)
-
-lemma fold_cnt_del1_ucc: "fold cnt_del1 xs (ucc c) = ucc (fold ucnt_del1 xs c)"
-  by (induct xs arbitrary: c) (simp_all add: cnt_del1_ucc)
-
-lemma cnt_add_ucc[simp]: "cnt_add T (ucc c) = ucc (ucnt_add T c)"
-  by (simp add: cnt_add_def ucnt_add_def fold_cnt_add1_ucc)
-
-lemma cnt_del_ucc[simp]: "cnt_del T (ucc c) = ucc (ucnt_del T c)"
-  by (simp add: cnt_del_def ucnt_del_def fold_cnt_del1_ucc)
-
 text \<open>What enters the window is what the mapping does not hold yet, and what leaves it is what
   it holds exactly once: both are read off the mapping, one lookup per tuple.\<close>
 
@@ -325,12 +306,6 @@ definition uag_del :: "eaggp \<Rightarrow> nat \<Rightarrow> event_data list set
     ugagg option \<Rightarrow> ugagg option" where
   "uag_del p w T c ax = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
      gdel k (umeval_trm f) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl T)) ax)"
-
-lemma ag_ins_ucc[simp]: "ag_ins p w T (ucc c) ax = uag_ins p w T c ax"
-  by (cases p) (simp add: ag_ins_def uag_ins_def ucc.simps lookup_None_keys)
-
-lemma ag_del_ucc[simp]: "ag_del p w T (ucc c) ax = uag_del p w T c ax"
-  by (cases p) (simp add: ag_del_def uag_del_def ucc.simps)
 
 subsection \<open>The node's guard\<close>
 
@@ -358,9 +333,6 @@ lemma uqok_None[simp]: "uqok None = (\<lambda>_. True)"
 lemma ufilt_None[simp]: "ufilt None = id"
   by (simp add: ufilt_def fun_eq_iff)
 
-lemma ufilt_idem[simp]: "ufilt q (ufilt q X) = ufilt q X"
-  by (auto simp: ufilt_def)
-
 text \<open>The result writes the aggregate into each group and keeps what passes the node's guard.
   The fused form walks the mapping's entries -- the key and its value together, so no lookup --
   and inserts the node's own tuple straight into the answer.\<close>
@@ -368,11 +340,6 @@ text \<open>The result writes the aggregate into each group and keeps what passe
 definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow>
     (event_data list, 'b) mapping \<Rightarrow> event_data list set" where
   "ugmr q p f m = Set.filter q (gmr p (\<lambda>x. x) f m)"
-
-lemma fold_insert_filter_image:
-  "fold (\<lambda>x A. let v = g x in if q v then Set.insert v A else A) xs A
-   = Set.filter q (g ` set xs) \<union> A"
-  by (induct xs arbitrary: A) (auto simp: Let_def)
 
 lemma ugmr_code[code]:
   fixes t :: "(event_data list, 'b) mapping_rbt"
@@ -444,12 +411,5 @@ lemma uag_res_code[code]:
    | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) g0 \<omega> pos a))"
   by (simp add: uag_res_def ugres_def ufilt_def split: option.splits prod.splits)
 
-lemma ag_res_ucc: "ufilt q (ag_res p w (ucc c) ax) = uag_res q p w c ax"
-  by (cases ax; cases p) (simp_all add: uag_res_def ag_res_def ucc.simps id_def)
-
-lemma ag_res_ucc_None[simp]: "ag_res p w (ucc c) ax = uag_res None p w c ax"
-  using ag_res_ucc[of None] by simp
-
-(*<*)
 end
 (*>*)

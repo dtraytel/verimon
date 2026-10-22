@@ -39,6 +39,10 @@ fun rbt_comp_ins_lk :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarr
    | Gt \<Rightarrow> (case rbt_comp_ins_lk F k r of (ov, r') \<Rightarrow> (ov, Branch RBT_Impl.R l x y r'))
    | Eq \<Rightarrow> (Some y, Branch RBT_Impl.R l x (F (Some y)) r))"
 
+text \<open>A key not in the tree is inserted as by the insertion.  A key in it only has its value
+  replaced, which is the tree's @{text map_entry}: the tree keeps its shape and its colours, and
+  the rebalancing on the way up, which the insertion does in any case, is skipped.\<close>
+
 text \<open>The same descent, returning the new value as well, for a caller that reads it.\<close>
 
 fun rbt_comp_ins_lk2 :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> 'b option \<times> 'b \<times> ('a, 'b) rbt"
@@ -57,6 +61,8 @@ fun rbt_comp_ins_lk2 :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightar
    | Eq \<Rightarrow> (let nv = F (Some y) in (Some y, nv, Branch RBT_Impl.R l x nv r)))"
 
 end
+
+subsection \<open>On the lifted trees\<close>
 
 declare [[typedef_overloaded]]
 
@@ -753,6 +759,9 @@ fun ins_at :: "nat \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list"
 | "ins_at (Suc n) v [] = [v]"
 | "ins_at (Suc n) v (x # xs) = x # ins_at n v xs"
 
+lemma ins_at_eq: "ins_at p v g = take p g @ v # drop p g"
+  by (induct p v g rule: ins_at.induct) simp_all
+
 lemma ins_at_code[code]: "ins_at n v g = (if n = 0 then v # g
     else case g of [] \<Rightarrow> [v] | x # xs \<Rightarrow> x # ins_at (n - 1) v xs)"
   by (cases n; cases g) simp_all
@@ -857,6 +866,9 @@ definition mm_step :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow
 
 definition mm_acc :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow> 'c \<Rightarrow> 'c) \<Rightarrow> 'c option \<Rightarrow> 'b list \<Rightarrow> 'c option" where
   "mm_acc ev op ov t = Some (case ov of None \<Rightarrow> ev t | Some u \<Rightarrow> op u (ev t))"
+
+text \<open>The order on @{typ event_data} is total only within each kind of value, and not even there
+  on floats; on integers, the fold over the flattened multiset is the extreme of the integers.\<close>
 
 text \<open>The fold computes, per group, the extreme of the integers of the group's tuples; the
   result table is read off the mapping as the window's is (@{const ugmr}).\<close>

@@ -61,15 +61,6 @@ fun esx_post :: "esaux_x \<Rightarrow> event_data table \<Rightarrow> event_data
 | "esx_post (ESX_win w) = id"
 | "esx_post (ESX_wagg p a) = eagg_p p"
 
-lemma esx_post_add_new_ts[simp]: "esx_post (esx_add_new_ts args nt d) = esx_post d"
-  by (cases d) simp_all
-
-lemma esx_post_join[simp]: "esx_post (esx_join args X d) = esx_post d"
-  by (cases d) simp_all
-
-lemma esx_post_add_new_table[simp]: "esx_post (esx_add_new_table args X d) = esx_post d"
-  by (cases d) simp_all
-
 lemma esx_post_init[simp]: "esx_post (esx_init args msk) = id"
   by (simp add: esx_init_def)
 
@@ -83,15 +74,6 @@ fun esx_agg :: "esaux_x \<Rightarrow> eaggp option" where
   "esx_agg (ESX_gen d) = None"
 | "esx_agg (ESX_win w) = None"
 | "esx_agg (ESX_wagg p a) = Some p"
-
-lemma esx_agg_add_new_ts[simp]: "esx_agg (esx_add_new_ts args nt d) = esx_agg d"
-  by (cases d) simp_all
-
-lemma esx_agg_join[simp]: "esx_agg (esx_join args X d) = esx_agg d"
-  by (cases d) simp_all
-
-lemma esx_agg_add_new_table[simp]: "esx_agg (esx_add_new_table args X d) = esx_agg d"
-  by (cases d) simp_all
 
 lemma esx_agg_init[simp]: "esx_agg (esx_init args msk) = None"
   by (simp add: esx_init_def)
@@ -166,12 +148,6 @@ fun eux_agg :: "euaux_x \<Rightarrow> eaggp option" where
 | "eux_agg (EUX_win w) = None"
 | "eux_agg (EUX_wagg p a) = Some p"
 
-lemma eux_post_add_new[simp]: "eux_post (eux_add_new args msk rel1 rel2 nt d) = eux_post d"
-  by (cases d) simp_all
-
-lemma eux_agg_add_new[simp]: "eux_agg (eux_add_new args msk rel1 rel2 nt d) = eux_agg d"
-  by (cases d) simp_all
-
 lemma eux_post_init[simp]: "eux_post (eux_init args) = id"
   by (simp add: eux_init_def)
 
@@ -183,12 +159,6 @@ lemma eux_post_init_agg[simp]: "eux_post (eux_init_agg args p) = eagg_p p"
 
 lemma eux_agg_init_agg[simp]: "eux_agg (eux_init_agg args p) = Some p"
   by (simp add: eux_init_agg_def)
-
-lemma eux_post_eval[simp]: "eux_post (snd (eux_eval args nt d)) = eux_post d"
-  by (cases d) (simp_all split: prod.splits)
-
-lemma eux_agg_eval[simp]: "eux_agg (snd (eux_eval args nt d)) = eux_agg d"
-  by (cases d) (simp_all split: prod.splits)
 
 definition euxaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> euaux_x \<Rightarrow>
     event_data muaux \<Rightarrow> bool" where
@@ -257,26 +227,14 @@ fun udsx_result :: "args \<Rightarrow> udsaux_x \<Rightarrow> utable" where
 | "udsx_result args (UDSX_win w) = sw_result args w"
 | "udsx_result args (UDSX_wagg p q a) = usc_result q args p a"
 
-lemma usx_q_add_new_ts[simp]: "usx_q (udsx_add_new_ts args nt d) = usx_q d"
-  by (cases d) simp_all
-
-lemma usx_q_join[simp]: "usx_q (udsx_join args X d) = usx_q d"
-  by (cases d) simp_all
-
-lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
-  by (cases d) simp_all
-
 lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
   by (simp add: esx_init_def udsx_init_def)
 
-lemma esx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = esx_init_agg args p"
-  by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsc[symmetric])
-
-lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
-  by (simp add: udsx_init_agg_def)
-
 lemma usx_q_init[simp]: "usx_q (udsx_init args msk) = None"
   by (simp add: udsx_init_def)
+
+text \<open>The structure above reports the node's whole result; this one reports it read through the
+  guard straight away.\<close>
 
 datatype uduaux_x = UDUX_gen "event_data mmuaux_dq" | UDUX_win uwaux | UDUX_wagg eaggp uuwagg
 
@@ -303,6 +261,9 @@ fun udux_eval :: "args \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> uta
 | "udux_eval args nt (UDUX_win w) = (let (zs, w') = uw_eval args nt w in (zs, UDUX_win w'))"
 | "udux_eval args nt (UDUX_wagg p a) =
      (let (zs, a') = uua_eval args p (args_n args) nt a in (zs, UDUX_wagg p a'))"
+
+lemma eux_init_rdux: "eux_init args = rdux (udux_init args)"
+  by (simp add: eux_init_def udux_init_def)
 
 lemma eux_init_agg_rdux: "eux_init_agg args p = rdux (udux_init_agg args p)"
   by (simp add: eux_init_agg_def udux_init_agg_def rua_init)
@@ -347,32 +308,7 @@ fun uedsx_eval_since :: "args \<Rightarrow> utable list \<Rightarrow> uebuf2S \<
         | (None, ts1) \<Rightarrow> (rev rs, (x1 ## xs1, y ## ys', ts1, skew), aux))
       | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
 
-lemma mebuf2t_take_nat:
-  assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"
-  shows "mebuf2t_take f (h z) buf t ts
-    = (case mebuf2t_take g z buf t ts of (z', b) \<Rightarrow> (h z', b))"
-  using assms
-proof (induct g z buf t ts rule: mebuf2t_take.induct)
-  case (1 g z xs ys t0 ts)
-  obtain ot ts' where t: "mbuf_t_cases ts = (ot, ts')" by fastforce
-  obtain ox xs' where x: "mbuf_t_cases xs = (ox, xs')" by fastforce
-  obtain oy ys' where y: "mbuf_t_cases ys = (oy, ys')" by fastforce
-  show ?case
-  proof (cases "ot = None \<or> ox = None \<or> oy = None")
-    case True
-    then show ?thesis
-      using t x y by (subst (1 2) mebuf2t_take.simps) (auto simp del: mebuf2t_take.simps split: option.splits)
-  next
-    case False
-    then obtain t1 x1 y1 where s: "ot = Some t1" "ox = Some x1" "oy = Some y1"
-      by auto
-    have IH: "mebuf2t_take f (h (g x1 y1 t1 z)) (xs', ys') t1 ts' =
-        (case mebuf2t_take g (g x1 y1 t1 z) (xs', ys') t1 ts' of (z', b) \<Rightarrow> (h z', b))"
-      by (rule 1(1)[OF t[symmetric] s(1) x[symmetric] s(2) y[symmetric] s(3) 1(2)])
-    show ?thesis
-      by (subst (1 2) mebuf2t_take.simps) (simp only: t x y s prod.case option.case 1(2) IH)
-  qed
-qed
+subsection \<open>The Until buffer's traversal, and the two buffers of the fused And-Trigger\<close>
 
 end
 (*>*)

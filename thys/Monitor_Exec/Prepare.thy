@@ -29,18 +29,6 @@ text \<open>
 
 text \<open>Changing the formula's type annotations changes none of its column lists.\<close>
 
-lemma fvi_list_map_formula[simp]:
-  "Formula.fvi_list b (Formula.formula.map_formula g \<phi>) = Formula.fvi_list b \<phi>"
-proof (induction b \<phi> rule: Formula.fvi_list.induct)
-  case (20 b I r)
-  then show ?case
-    by (induction r) auto
-next
-  case (21 b I r)
-  then show ?case
-    by (induction r) auto
-qed (auto simp: fold_map comp_def cong: fold_cong)
-
 text \<open>The multiway conversion copies the right operand of a release into its left operand;
   @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies are
   all occurrences of one predicate.\<close>
@@ -50,11 +38,24 @@ definition eminit_verimon where
      map_sum id (\<lambda>\<psi>. eindex ix (eminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>)))
        (prepare_verimon rw sig \<phi>)"
 
+context verimon_prepare
+begin
+
 definition "\<psi>_mw mw = (if mw then convert_multiway (share_opt \<psi>) else \<psi>)"
+
+lemma nfv_\<psi>_mw: "Formula.nfv (\<psi>_mw mw) = Formula.nfv \<phi>"
+  by (simp add: \<psi>_mw_def nfv_convert_multiway nfv_\<psi>)
 
 context
   fixes mw :: bool
 begin
+
+interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
+  "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
+
+text \<open>The verdicts of the executable monitor started from the state @{const eminit_verimon} builds
+  are the verdicts the specification of the input formula prescribes.\<close>
 
 end
 

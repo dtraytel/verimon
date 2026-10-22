@@ -223,22 +223,44 @@ text \<open>The structures the compiler starts the nodes with, read through thei
 lemma Rep_mbuf_t_empty[simp]: "Rep_mbuf_t mbuf_t_empty = []"
   by (rule mbuf_t_empty.rep_eq)
 
-lemma Rep_mbuf_t_empty_append[simp]: "Rep_mbuf_t (mbuf_t_empty @@ xs) = xs"
-  by (simp add: mbuf_t_append.rep_eq)
-
 lemma rbufS_init[simp]: "rbufS init_mebuf2S = init_mbuf2S"
   by simp
 
 lemma rdsx_udsx_init[simp]: "rdsx (udsx_init args msk) = esx_init args msk"
   by (rule esx_init_rdsx[symmetric])
 
+lemma rdux_udux_init[simp]: "rdux (udux_init args) = eux_init args"
+  by (rule eux_init_rdux[symmetric])
+
 lemma rdux_udux_init_agg[simp]: "rdux (udux_init_agg args p) = eux_init_agg args p"
   by (rule eux_init_agg_rdux[symmetric])
 
 subsection \<open>Column lists in ascending order\<close>
 
-lemma ecols_Nil[simp]: "ecols [] = []"
-  by (simp add: ecols_def set_cols_empty)
+lemma set_ecols[simp]: "set (ecols k) = set k"
+  by (simp add: ecols_def set_cols)
+
+lemma eframe_dcols: "distinct k \<Longrightarrow> eframe k (ecols k)"
+  by (simp add: ecols_def eframe_set_cols)
+
+lemma ecols_cong: "set k = set k' \<Longrightarrow> ecols k = ecols k'"
+  by (simp add: ecols_def)
+
+lemma eframe_fv_list: "eframe (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>))"
+  by (rule eframe_dcols[OF distinct_fvi_list])
+
+subsection \<open>The kernel's initial state\<close>
+
+text \<open>The fields of the kernel's initial state, read off @{const minit_safe}.\<close>
+
+lemma minit_safe_state:
+  assumes "mmonitorable \<phi>"
+  shows "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>"
+    and "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
+    and "mstate_i (minit_safe \<phi>) = 0" and "mstate_j (minit_safe \<phi>) = 0"
+    and "mstate_t (minit_safe \<phi>) = []"
+  using assms[unfolded monitorable_formula_code]
+  by (simp_all add: default_maux.minit_safe_def default_maux.minit_def Let_def)
 
 subsection \<open>The nodes the executable fragment does not cover\<close>
 
@@ -255,6 +277,12 @@ abbreviation (input) eofc :: "nat \<Rightarrow> ts \<Rightarrow> ty Formula.form
 
 abbreviation (input) eofz :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> bool" where
   "eofz n \<phi> \<equiv> efail_nodes (eof n (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) (minit0 n \<phi>)) = 0"
+
+subsection \<open>The temporal structures' initial states\<close>
+
+subsection \<open>Aggregations\<close>
+
+subsection \<open>The guard\<close>
 
 section \<open>The executable monitor's correctness theorem, on the compiled state\<close>
 

@@ -6,7 +6,25 @@ begin
 
 
 
+lemma esx_post_add_new_ts[simp]: "esx_post (esx_add_new_ts args nt d) = esx_post d"
+  by (cases d) simp_all
+
+lemma esx_post_join[simp]: "esx_post (esx_join args X d) = esx_post d"
+  by (cases d) simp_all
+
+lemma esx_post_add_new_table[simp]: "esx_post (esx_add_new_table args X d) = esx_post d"
+  by (cases d) simp_all
+
 lemma esx_post_eq: "esx_post d = (case esx_agg d of None \<Rightarrow> id | Some p \<Rightarrow> eagg_p p)"
+  by (cases d) simp_all
+
+lemma esx_agg_add_new_ts[simp]: "esx_agg (esx_add_new_ts args nt d) = esx_agg d"
+  by (cases d) simp_all
+
+lemma esx_agg_join[simp]: "esx_agg (esx_join args X d) = esx_agg d"
+  by (cases d) simp_all
+
+lemma esx_agg_add_new_table[simp]: "esx_agg (esx_add_new_table args X d) = esx_agg d"
   by (cases d) simp_all
 
 lemma esxaux'_tables:
@@ -169,6 +187,18 @@ lemma esx_agg_eval_since:
 lemma eux_post_eq: "eux_post d = (case eux_agg d of None \<Rightarrow> id | Some p \<Rightarrow> eagg_p p)"
   by (cases d) simp_all
 
+lemma eux_post_add_new[simp]: "eux_post (eux_add_new args msk rel1 rel2 nt d) = eux_post d"
+  by (cases d) simp_all
+
+lemma eux_agg_add_new[simp]: "eux_agg (eux_add_new args msk rel1 rel2 nt d) = eux_agg d"
+  by (cases d) simp_all
+
+lemma eux_post_eval[simp]: "eux_post (snd (eux_eval args nt d)) = eux_post d"
+  by (cases d) (simp_all split: prod.splits)
+
+lemma eux_agg_eval[simp]: "eux_agg (snd (eux_eval args nt d)) = eux_agg d"
+  by (cases d) (simp_all split: prod.splits)
+
 lemma euxaux'_tables:
   "euxaux' kL cL kR cR args cur daux auxlist \<Longrightarrow>
      \<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2"
@@ -316,6 +346,21 @@ next
     by (auto simp: euxaux'_def)
 qed
 
+lemma usx_q_add_new_ts[simp]: "usx_q (udsx_add_new_ts args nt d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_join[simp]: "usx_q (udsx_join args X d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
+  by (cases d) simp_all
+
+lemma esx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = esx_init_agg args p"
+  by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsc[symmetric])
+
+lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
+  by (simp add: udsx_init_agg_def)
+
 lemma esx_add_new_ts_rdsx: "esx_add_new_ts args nt (rdsx d) = rdsx (udsx_add_new_ts args nt d)"
   by (cases d) (simp_all add: sa_add_new_ts_rsc)
 
@@ -326,15 +371,9 @@ lemma esx_add_new_table_rdsx:
   "esx_add_new_table args X (rdsx d) = rdsx (udsx_add_new_table args X d)"
   by (cases d) (simp_all add: sa_add_new_table_rsc)
 
-text \<open>The structure above reports the node's whole result; this one reports it read through the
-  guard straight away.\<close>
-
 lemma esx_result_rdsx:
   "usx_q d = q \<Longrightarrow> ufilt q (esx_result args (rdsx d)) = udsx_result args d"
   by (cases d) (auto simp: sa_result_rsc)
-
-lemma eux_init_rdux: "eux_init args = rdux (udux_init args)"
-  by (simp add: eux_init_def udux_init_def)
 
 lemma eux_add_new_rdux:
   "eux_add_new args msk rel1 rel2 nt (rdux d) = rdux (udux_add_new args msk rel1 rel2 nt d)"
@@ -492,7 +531,32 @@ lemma esx_eval_since_rdsx0:
         (zs, buf', aux') \<Rightarrow> (zs, rbufS buf', rdsx aux'))"
   using esx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
 
-subsection \<open>The Until buffer's traversal, and the two buffers of the fused And-Trigger\<close>
+lemma mebuf2t_take_nat:
+  assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"
+  shows "mebuf2t_take f (h z) buf t ts
+    = (case mebuf2t_take g z buf t ts of (z', b) \<Rightarrow> (h z', b))"
+  using assms
+proof (induct g z buf t ts rule: mebuf2t_take.induct)
+  case (1 g z xs ys t0 ts)
+  obtain ot ts' where t: "mbuf_t_cases ts = (ot, ts')" by fastforce
+  obtain ox xs' where x: "mbuf_t_cases xs = (ox, xs')" by fastforce
+  obtain oy ys' where y: "mbuf_t_cases ys = (oy, ys')" by fastforce
+  show ?case
+  proof (cases "ot = None \<or> ox = None \<or> oy = None")
+    case True
+    then show ?thesis
+      using t x y by (subst (1 2) mebuf2t_take.simps) (auto simp del: mebuf2t_take.simps split: option.splits)
+  next
+    case False
+    then obtain t1 x1 y1 where s: "ot = Some t1" "ox = Some x1" "oy = Some y1"
+      by auto
+    have IH: "mebuf2t_take f (h (g x1 y1 t1 z)) (xs', ys') t1 ts' =
+        (case mebuf2t_take g (g x1 y1 t1 z) (xs', ys') t1 ts' of (z', b) \<Rightarrow> (h z', b))"
+      by (rule 1(1)[OF t[symmetric] s(1) x[symmetric] s(2) y[symmetric] s(3) 1(2)])
+    show ?thesis
+      by (subst (1 2) mebuf2t_take.simps) (simp only: t x y s prod.case option.case 1(2) IH)
+  qed
+qed
 
 lemma mbuf2t_take_until:
   "mbuf2t_take (eux_add_new dags msk) (rdux aux) (rbuf2 buf) t (Rep_mbuf_t nts @ ts)

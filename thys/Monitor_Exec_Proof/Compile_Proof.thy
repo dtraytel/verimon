@@ -9,25 +9,14 @@ begin
 lemma efail_nodes_eset_q: "eset_q c d = Some d' \<Longrightarrow> efail_nodes d' = efail_nodes d"
   by (cases d) (auto split: udsaux_x.splits option.splits)
 
-lemma rdux_udux_init[simp]: "rdux (udux_init args) = eux_init args"
-  by (rule eux_init_rdux[symmetric])
+lemma Rep_mbuf_t_empty_append[simp]: "Rep_mbuf_t (mbuf_t_empty @@ xs) = xs"
+  by (simp add: mbuf_t_append.rep_eq)
 
-lemma set_ecols[simp]: "set (ecols k) = set k"
-  by (simp add: ecols_def set_cols)
-
-lemma eframe_dcols: "distinct k \<Longrightarrow> eframe k (ecols k)"
-  by (simp add: ecols_def eframe_set_cols)
-
-lemma ecols_cong: "set k = set k' \<Longrightarrow> ecols k = ecols k'"
-  by (simp add: ecols_def)
+lemma ecols_Nil[simp]: "ecols [] = []"
+  by (simp add: ecols_def set_cols_empty)
 
 lemma ecols_upt: "set k = {0..<m} \<Longrightarrow> ecols k = [0..<m]"
   by (simp add: ecols_def set_cols_upt)
-
-lemma eframe_fv_list: "eframe (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>))"
-  by (rule eframe_dcols[OF distinct_fvi_list])
-
-subsection \<open>The kernel's initial state\<close>
 
 lemma fv_list_and_release_safe_bounded:
   "Formula.fv (Formula.Release \<phi>' I \<psi>') \<subseteq> Formula.fv \<phi> \<Longrightarrow>
@@ -35,17 +24,6 @@ lemma fv_list_and_release_safe_bounded:
      = Formula.fv_list (Formula.And \<phi> (Formula.Release \<phi>' I \<psi>'))"
   by (simp add: and_release_safe_bounded_def release_safe_bounded_def always_safe_bounded_def
       cols_union_subset)
-
-text \<open>The fields of the kernel's initial state, read off @{const minit_safe}.\<close>
-
-lemma minit_safe_state:
-  assumes "mmonitorable \<phi>"
-  shows "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>"
-    and "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
-    and "mstate_i (minit_safe \<phi>) = 0" and "mstate_j (minit_safe \<phi>) = 0"
-    and "mstate_t (minit_safe \<phi>) = []"
-  using assms[unfolded monitorable_formula_code]
-  by (simp_all add: default_maux.minit_safe_def default_maux.minit_def Let_def)
 
 text \<open>A safe formula's initial state is a constant table only for an equality, whose table the
   kernel's correctness proof describes.\<close>
@@ -65,8 +43,6 @@ proof -
   then show ?thesis
     unfolding m eof.simps by (rule EsRel[OF eframe_fv_list])
 qed
-
-subsection \<open>The temporal structures' initial states\<close>
 
 lemma esince_rel_init:
   assumes a: "args = init_args I n kL kR pos agg"
@@ -276,8 +252,6 @@ proof -
       (simp add: sub)
 qed
 
-subsection \<open>Aggregations\<close>
-
 lemma cpos_empty_Nil: "set c \<subseteq> set c' \<Longrightarrow> cpos c' (set c) = {} \<Longrightarrow> c = []"
   by (cases c) (auto simp: cpos_def in_set_conv_nth)
 
@@ -407,8 +381,6 @@ proof -
             c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) rl in \<open>simp_all add: ag\<close>)
   qed
 qed
-
-subsection \<open>The guard\<close>
 
 text \<open>A constraint over a node goes into the node as its guard exactly when the node is a fused
   aggregating Since without one; the node is then related to the kernel's constraint over the

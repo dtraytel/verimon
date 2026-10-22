@@ -6,8 +6,6 @@ begin
 
 
 
-subsection \<open>It tracks the plain window\<close>
-
 text \<open>The fused operations differ from @{const uw_extend}, @{const uw_step} and
   @{const uw_shift} only in the extra component and in what is pushed onto the list of finished
   answers.  The first lemmas say so: everything but that list steps identically.\<close>
@@ -308,6 +306,12 @@ proof -
     show "res = map (eagg_p p) res'" using vres unfolding reseq by (simp add: rev_map)
   qed
 qed
+
+lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
+  by (cases a) (simp add: rua.simps)
+
+lemma snd_rua[simp]: "snd (rua a) = snd a"
+  by (cases a) (simp add: rua.simps)
 
 lemma ua_extend_rua:
   "ua_extend args p w ts0 win rest bend (ucc cc) ax

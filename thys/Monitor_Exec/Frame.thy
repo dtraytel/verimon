@@ -45,11 +45,7 @@ definition etabc :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightar
 definition etabw :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
   "etabw ks cs D = restrict ks cs ` D"
 
-lemma etabc_empty[simp]: "etabc ks cs {} = {}"
-  by (simp add: etabc_def)
-
-lemma etabc_empty_iff: "(etabc ks cs T = {}) = (T = {})"
-  by (auto simp: etabc_def)
+text \<open>A frame that is already ascending is left alone.\<close>
 
 subsection \<open>Merging two column lists\<close>
 
@@ -79,6 +75,15 @@ fun ejoin1 :: "mrg list \<Rightarrow> 'b list \<Rightarrow> 'b list \<Rightarrow
     (if x = y then map_option (Cons x) (ejoin1 p xs ys) else None)"
 | "ejoin1 (m # p) xs ys = None"
 
+subsection \<open>Agreement with the kernel's join\<close>
+
+text \<open>The kernel's join of two tuples reads every column of the result from the side that has
+  it.\<close>
+
+text \<open>The short join of two tables is the short form of the kernel's join.\<close>
+
+text \<open>A kernel table read in another order of its columns has the same executable form.\<close>
+
 subsection \<open>Projecting a short tuple onto a sublist of its columns\<close>
 
 fun mrg_left_key :: "mrg list \<Rightarrow> bool list" where
@@ -89,6 +94,11 @@ fun mrg_left_key :: "mrg list \<Rightarrow> bool list" where
 
 definition no_right :: "mrg list \<Rightarrow> bool" where
   "no_right p = list_all (\<lambda>m. m \<noteq> MRgt) p"
+
+lemma no_right_mrg_plan:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
+     no_right (mrg_plan cs1 cs2) = (set cs2 \<subseteq> set cs1)"
+  by (induct cs1 cs2 rule: mrg_plan.induct) (auto simp: no_right_def list_all_iff)
 
 subsection \<open>The join when one operand's columns are among the other's\<close>
 
@@ -114,6 +124,12 @@ fun mrg_swap :: "mrg \<Rightarrow> mrg" where
 | "mrg_swap MRgt = MLft"
 | "mrg_swap MBth = MBth"
 
+lemma mrg_right_key_swap: "mrg_right_key p = mrg_left_key (map mrg_swap p)"
+  by (induct p rule: mrg_right_key.induct) auto
+
+lemma no_left_swap: "no_left p = no_right (map mrg_swap p)"
+  by (induct p) (auto simp: no_left_def no_right_def elim: mrg_swap.elims)
+
 subsection \<open>The general join: an index on the shared columns\<close>
 
 text \<open>
@@ -128,6 +144,9 @@ fun emerge :: "mrg list \<Rightarrow> 'b list \<Rightarrow> 'b list \<Rightarrow
 | "emerge (MRgt # p) xs (y # ys) = y # emerge p xs ys"
 | "emerge (MBth # p) (x # xs) (y # ys) = x # emerge p xs ys"
 | "emerge (m # p) xs ys = []"
+
+text \<open>The join of two short tuples succeeds exactly when they agree on the shared columns, and
+  then it is the test-free merge.\<close>
 
 definition gindex_step :: "bool list \<Rightarrow> 'b list \<Rightarrow>
     ('b list, 'b list list) mapping \<Rightarrow> ('b list, 'b list list) mapping" where
@@ -165,6 +184,9 @@ definition ggen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool lis
 definition bucket :: "(event_data tuple, event_data tuple list) mapping \<Rightarrow>
     event_data tuple \<Rightarrow> event_data tuple list" where
   "bucket m k = (case Mapping.lookup m k of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
+
+text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
+  columns, merged.\<close>
 
 subsection \<open>Dispatching on the shape of the two column lists\<close>
 
@@ -243,10 +265,19 @@ fun kands_neg :: "cols \<Rightarrow> 'a table \<Rightarrow> (cols \<times> 'a ta
   "kands_neg acc t [] = t"
 | "kands_neg acc t ((k, u) # us) = kands_neg acc (join acc t False k u) us"
 
+lemma set_kands_cols: "set (kands_cols acc kss) = set acc \<union> (\<Union>k \<in> set kss. set k)"
+  by (induct kss arbitrary: acc) auto
+
+lemma distinct_kands_cols:
+  "distinct acc \<Longrightarrow> \<forall>k \<in> set kss. distinct k \<Longrightarrow> distinct (kands_cols acc kss)"
+  by (induct kss arbitrary: acc) auto
+
 text \<open>An operand of the multi-way join: its kernel columns, its ascending columns, and its table.\<close>
 
 definition wf_operand :: "cols \<Rightarrow> cols \<Rightarrow> event_data table \<Rightarrow> bool" where
   "wf_operand k c U \<longleftrightarrow> eframe k c \<and> table k U \<and> finite U"
+
+text \<open>The kernel's multi-way join is the left-to-right fold, read in its own column order.\<close>
 
 section \<open>Aggregation over short tuples\<close>
 
@@ -286,6 +317,10 @@ subsection \<open>Writing the aggregate into the group key\<close>
 definition ins_pos :: "cols \<Rightarrow> nat \<Rightarrow> nat" where
   "ins_pos cs y = length (filter (\<lambda>c. c < y) cs)"
 
+subsection \<open>The aggregated values do not change\<close>
+
+subsection \<open>Aggregation over short tuples agrees with the kernel's\<close>
+
 section \<open>Predicates, relations, and the existential\<close>
 
 subsection \<open>Turning a set of columns into a column list\<close>
@@ -293,13 +328,15 @@ subsection \<open>Turning a set of columns into a column list\<close>
 definition set_cols :: "nat set \<Rightarrow> cols" where
   "set_cols A = csorted_list_of_set A"
 
-lemma set_cols_eqI:
-  assumes f: "finite A" and s: "sorted_wrt (<) xs" and e: "set xs = A"
-  shows "xs = set_cols A"
-  by (rule strict_sorted_equal) (use s e set_cols[OF f] in auto)
+lemma set_cols:
+  assumes "finite A"
+  shows "sorted_wrt (<) (set_cols A)" "set (set_cols A) = A"
+  using assms unfolding set_cols_def
+  by (subst csorted_list_of_set_split;
+      auto simp: ccompare_nat_def ID_Some ord_defs strict_sorted_iff)+
 
-lemma set_cols_empty: "set_cols {} = []"
-  by (rule set_cols_eqI[symmetric]) simp_all
+lemma eframe_set_cols: "distinct ks \<Longrightarrow> eframe ks (set_cols (set ks))"
+  by (simp add: eframe_def set_cols)
 
 subsection \<open>A predicate whose arguments are distinct variables in ascending order\<close>
 
@@ -347,8 +384,8 @@ lemma eargs_simps[simp]:
   "args_agg (eargs cs_R cs_L args) = None"
   by (simp_all add: eargs_def init_args_def)
 
-lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_args_agg args X = X"
-  by (simp add: eval_args_agg_def)
+text \<open>A join whose right operand's columns are among the left one's keeps the left one's columns;
+  it commutes with the reordering.\<close>
 
 subsection \<open>The Since structure's auxiliary list\<close>
 
@@ -360,6 +397,8 @@ subsection \<open>The Until structure's auxiliary list\<close>
 definition eauxlist3 :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow>
     (ts \<times> 'b list set \<times> 'b list set) list" where
   "eauxlist3 kL cL kR cR aux = map (\<lambda>(t, a1, a2). (t, etabc kL cL a1, etabc kR cR a2)) aux"
+
+section \<open>Buffers of reordered tables\<close>
 
 subsection \<open>The multi-way buffer\<close>
 
@@ -374,11 +413,22 @@ text \<open>
 lemma length_map2_map[simp]: "length hs = length buf \<Longrightarrow> length (map2 map hs buf) = length buf"
   by simp
 
+lemma map2_map_empty_iff:
+  "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
+  by (induct hs buf rule: list_induct2) auto
+
+lemma map2_map_nil_iff: "length hs = length buf \<Longrightarrow> (map2 map hs buf = []) = (buf = [])"
+  by (induct hs buf rule: list_induct2) auto
+
+subsection \<open>Leftovers of the shift buffer\<close>
+
+section \<open>The unit and empty tables\<close>
+
+lemma etabc_unit_table: "etabc [] [] unit_table = unit_table"
+  by (simp add: etabc_def unit_table_def)
+
 text \<open>Hence a negation node, whose operand has no columns at all, only has to look at
   emptiness -- which the reordering preserves in both directions.\<close>
-
-lemma etabc_empty_table[simp]: "etabc ks cs empty_table = empty_table"
-  by (simp add: empty_table_def)
 
 section \<open>The multi-way join the monitor runs\<close>
 
@@ -417,6 +467,8 @@ text \<open>A Since structure joins its left operand into the running tables: th
 definition emb_plan :: "cols \<Rightarrow> cols \<Rightarrow> nat option list" where
   "emb_plan cs_R cs_L = map (\<lambda>c. if c \<in> set cs_L then Some (col_pos cs_L c) else None) cs_R"
 
+section \<open>The assignment, the time point and the timestamp\<close>
+
 text \<open>The operand's column list is the node's without the assigned column, and putting the
   latter back is the merge the theorem above asks for.\<close>
 
@@ -430,8 +482,18 @@ text \<open>
 definition mtrm_ecols :: "mtrm \<Rightarrow> cols" where
   "mtrm_ecols mt = (case mt of MVar v \<Rightarrow> [v] | MConst c \<Rightarrow> [])"
 
+section \<open>The verified Trigger structure over ascending columns\<close>
+
+lemma nth_eauxlist3:
+  "i < length auxlist \<Longrightarrow> eauxlist3 kL cL kR cR auxlist ! i =
+     (fst (auxlist ! i), etabc kL cL (fst (snd (auxlist ! i))), etabc kR cR (snd (snd (auxlist ! i))))"
+  by (simp add: eauxlist3_def case_prod_beta)
+
 lemma length_eauxlist3[simp]: "length (eauxlist3 kL cL kR cR auxlist) = length auxlist"
   by (simp add: eauxlist3_def)
+
+text \<open>The structure over ascending columns, related to the kernel's through the abstract
+  auxiliary list they are both valid for, exactly as for the Since and the Until.\<close>
 
 section \<open>An index for the executable semi-join\<close>
 
@@ -450,29 +512,5 @@ definition esemi_idx :: "bool list \<Rightarrow> bool \<Rightarrow> ('b list, 'b
     'b list set" where
   "esemi_idx msk pos idx X = set_of_idx (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) idx)"
 
-lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
-  by transfer (auto simp: ran_def)
-
-lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
-  (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
-  unfolding eidx_def by transfer auto
-
-theorem esemi_idx_dsemi: "esemi_idx msk pos (eidx msk T) X = esemi msk pos T X"
-proof (intro set_eqI iffI)
-  fix y assume "y \<in> esemi_idx msk pos (eidx msk T) X"
-  then show "y \<in> esemi msk pos T X"
-    by (auto simp: esemi_idx_def esemi_def in_set_of_idx Mapping.lookup_filter lookup_eidx
-        split: if_splits option.splits)
-next
-  fix y assume "y \<in> esemi msk pos T X"
-  then have yT: "y \<in> T" and yp: "(eproj msk y \<in> X) = pos" by (auto simp: esemi_def)
-  have "Mapping.lookup (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (eidx msk T)) (eproj msk y)
-      = Some {z \<in> T. eproj msk z = eproj msk y}"
-    using yT yp by (simp add: Mapping.lookup_filter lookup_eidx)
-  then show "y \<in> esemi_idx msk pos (eidx msk T) X"
-    using yT by (auto simp: esemi_idx_def in_set_of_idx)
-qed
-
-(*<*)
 end
 (*>*)

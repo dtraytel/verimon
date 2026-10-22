@@ -6,6 +6,10 @@ begin
 
 
 
+section \<open>The executable Since and Until structures\<close>
+
+subsection \<open>The executable index under the semi-join\<close>
+
 subsection \<open>Maintaining the index incrementally\<close>
 
 text \<open>
@@ -14,29 +18,9 @@ text \<open>
   bucket.
 \<close>
 
-lemma eidx_empty[simp]: "eidx msk {} = Mapping.empty"
-  by (intro mapping_eqI) (simp add: lookup_eidx)
-
 definition eidx_union :: "('b list, 'b list set) mapping \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow>
     ('b list, 'b list set) mapping" where
   "eidx_union = Mapping.combine (\<union>)"
-
-lemma eidx_union_eq: "eidx msk (S \<union> A) = eidx_union (eidx msk S) (eidx msk A)"
-proof -
-  have "Mapping.lookup (eidx msk (S \<union> A)) k
-      = Mapping.lookup (eidx_union (eidx msk S) (eidx msk A)) k" for k
-  proof -
-    have eS: "k \<notin> eproj msk ` S \<Longrightarrow> {y \<in> S. eproj msk y = k} = {}" by auto
-    have eA: "k \<notin> eproj msk ` A \<Longrightarrow> {y \<in> A. eproj msk y = k} = {}" by auto
-    have u: "{y \<in> S \<union> A. eproj msk y = k}
-        = {y \<in> S. eproj msk y = k} \<union> {y \<in> A. eproj msk y = k}" by auto
-    have iU: "(k \<in> eproj msk ` (S \<union> A)) = (k \<in> eproj msk ` S \<or> k \<in> eproj msk ` A)" by auto
-    show ?thesis
-      by (simp add: eidx_union_def Mapping.lookup_combine lookup_eidx combine_options_def
-          u iU eS eA) blast
-  qed
-  then show ?thesis by (simp add: mapping_eqI)
-qed
 
 definition ebucket :: "('b list, 'b list set) mapping \<Rightarrow> 'b list \<Rightarrow> 'b list set" where
   "ebucket d k = (case Mapping.lookup d k of None \<Rightarrow> {} | Some Z \<Rightarrow> Z)"
@@ -46,19 +30,15 @@ definition eidx_minus :: "('b list, 'b list set) mapping \<Rightarrow> ('b list,
   "eidx_minus i d = Mapping.filter (\<lambda>k Y. Mapping.lookup d k = None \<or> Y \<noteq> {})
      (Mapping.map_values (\<lambda>k Y. Y - ebucket d k) i)"
 
-lemma eidx_minus_eq: "eidx msk (S - D) = eidx_minus (eidx msk S) (eidx msk D)"
-proof -
-  have "Mapping.lookup (eidx msk (S - D)) k
-      = Mapping.lookup (eidx_minus (eidx msk S) (eidx msk D)) k" for k
-  proof -
-    have b: "{y \<in> S. eproj msk y = k} - ebucket (eidx msk D) k = {y \<in> S - D. eproj msk y = k}"
-      by (auto simp: ebucket_def lookup_eidx split: if_splits)
-    show ?thesis
-      by (auto simp: eidx_minus_def Mapping.lookup_filter Mapping.lookup_map_values lookup_eidx b
-          split: option.splits if_splits intro: rev_image_eqI)
-  qed
-  then show ?thesis by (simp add: mapping_eqI)
-qed
+subsection \<open>The mask of the left operand's columns among the right operand's\<close>
+
+lemma length_mrg_left_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     length (mrg_left_key (mrg_plan cs1 cs2)) = length cs1"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+lemma mrg_left_key_MRgt: "mrg_left_key (map (\<lambda>_. MRgt) ds) = []"
+  by (induct ds) auto
 
 text \<open>
   The mask and the arguments describe the same frame: both column lists are ascending, the left
@@ -69,6 +49,11 @@ text \<open>
 definition emsk_args :: "args \<Rightarrow> bool list \<Rightarrow> bool" where
   "emsk_args args msk \<longleftrightarrow> sorted_wrt (<) (args_R args) \<and> sorted_wrt (<) (args_L args) \<and>
      set (args_L args) \<subseteq> set (args_R args) \<and> msk = mrg_left_key (mrg_plan (args_R args) (args_L args))"
+
+lemma emsk_args_dargs:
+  assumes "sorted_wrt (<) cs_R" "sorted_wrt (<) cs_L" "set cs_L \<subseteq> set cs_R"
+  shows "emsk_args (eargs cs_R cs_L args) (mrg_left_key (mrg_plan cs_R cs_L))"
+  using assms by (simp add: emsk_args_def)
 
 subsection \<open>The executable Since structure\<close>
 
@@ -122,6 +107,11 @@ fun emsaux_inv :: "args \<Rightarrow> bool list \<Rightarrow> 'a emsaux \<Righta
 definition valid_emsaux :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> 'a emsaux \<Rightarrow> 'a Monitor.msaux \<Rightarrow> bool" where
   "valid_emsaux args msk cur daux ys \<longleftrightarrow>
      valid_mmsaux args cur (emsaux_of args daux) ys \<and> emsaux_inv args msk daux"
+
+lemma emsk_args_length: "emsk_args args msk \<Longrightarrow> length msk = length (args_R args)"
+  by (simp add: emsk_args_def length_mrg_left_key)
+
+subsection \<open>What the window's entry and exit do to the keys\<close>
 
 subsection \<open>The operations that do not probe\<close>
 
@@ -232,12 +222,33 @@ fun egc_join_msaux :: "args \<Rightarrow> 'a table \<Rightarrow> 'a emsaux \<Rig
      else ejoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
        idx_since, tuple_since))"
 
-lemma emsaux_cases:
-  fixes daux :: "'a emsaux"
-  obtains t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since
-  where "daux = (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
-    idx_since, tuple_since)"
-  by (metis prod.collapse)
+subsection \<open>The executable operations are the verified ones\<close>
+
+lemma emsaux_of_dinit: "emsaux_of args (einit_msaux args msk) = init_mmsaux args"
+  by (simp add: einit_msaux_def wf_table_of_set_args_def)
+
+lemma valid_dmsauxD:
+  "valid_emsaux args msk cur daux ys \<Longrightarrow> valid_mmsaux args cur (emsaux_of args daux) ys"
+  by (simp add: valid_emsaux_def)
+
+lemma valid_emsaux_inv: "valid_emsaux args msk cur daux ys \<Longrightarrow> emsaux_inv args msk daux"
+  by (simp add: valid_emsaux_def)
+
+subsection \<open>The join is the verified join\<close>
+
+lemma eproj_all_False: "\<forall>i \<in> set msk. \<not> i \<Longrightarrow> length as = length msk \<Longrightarrow> eproj msk as = []"
+  by (induct msk as rule: eproj.induct) auto
+
+lemma eproj_all_True_mask: "\<forall>i \<in> set msk. i \<Longrightarrow> length as = length msk \<Longrightarrow> eproj msk as = as"
+  by (induct msk as rule: eproj.induct) auto
+
+text \<open>
+  Whichever branch it takes, the executable join filters both mappings by the executable test, and the
+  window's table follows the mapping it indexes.  That is the verified join's abstract form
+  (@{const join_mmsaux_abs}).
+\<close>
+
+subsection \<open>The join's validity\<close>
 
 subsection \<open>A window that starts at the current time point\<close>
 
@@ -298,6 +309,12 @@ definition esaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> a
   "esaux' kR cR cL args cur daux auxlist \<longleftrightarrow>
      (\<forall>(t, rel) \<in> set auxlist. table kR rel) \<and>
      valid_emsaux_lz (eargs cR cL args) (emsk cR cL) cur daux (eauxlist kR cR auxlist)"
+
+lemma eframe_sub:
+  "eframe kR cR \<Longrightarrow> eframe kL cL \<Longrightarrow> set kL \<subseteq> set kR \<Longrightarrow> set cL \<subseteq> set cR"
+  by (simp add: eframe_def)
+
+section \<open>The executable Until structure\<close>
 
 definition euntil_elem_step_dq :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
     (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc_dq \<Rightarrow> 'a until_acc_dq" where
@@ -365,8 +382,14 @@ definition wf_atoms :: "cols \<Rightarrow> cols list \<Rightarrow> cols list \<R
   "wf_atoms ks kss css rels \<longleftrightarrow> length kss = length rels \<and> length css = length rels \<and>
      (\<forall>i < length rels. eframe (kss ! i) (css ! i) \<and> set (kss ! i) \<subseteq> set ks \<and> table (kss ! i) (rels ! i))"
 
-lemma etabc_eq_empty_table[simp]: "etabc ks cs T = empty_table \<longleftrightarrow> T = empty_table"
-  by (simp add: etabc_empty_iff empty_table_def)
+lemma table_unit_table_Nil: "table ks unit_table \<Longrightarrow> ks = []"
+  by (simp add: table_def unit_table_def)
+
+subsection \<open>The lax epsilon\<close>
+
+subsection \<open>The strict epsilons\<close>
+
+text \<open>A tested atom is moved to the node's column order; the executable one is already in it.\<close>
 
 locale eregex_frame =
   fixes ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list"
@@ -383,6 +406,8 @@ abbreviation (input) erels :: "event_data table list \<Rightarrow> event_data ta
 
 end
 
+subsection \<open>The derivatives\<close>
+
 subsection \<open>The past-match structure\<close>
 
 text \<open>
@@ -395,15 +420,6 @@ text \<open>
 definition emrd_rel :: "cols \<Rightarrow> cols \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> bool" where
   "emrd_rel ks cs = list_all2 (\<lambda>(t, X) (t', X'). t = t' \<and>
      (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)))"
-
-lemma emrd_rel_Nil[simp]: "emrd_rel ks cs [] []"
-  by (simp add: emrd_rel_def)
-
-lemma emrd_rel_Cons[simp]:
-  "emrd_rel ks cs ((t, X) # aux) ((t', X') # daux) \<longleftrightarrow> t = t' \<and>
-     (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)) \<and>
-     emrd_rel ks cs aux daux"
-  by (simp add: emrd_rel_def)
 
 locale ematchP_frame = eregex_frame ks cs \<psi>s css
   for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +
@@ -431,16 +447,6 @@ definition emld_rel :: "cols \<Rightarrow> cols \<Rightarrow> ty Formula.formula
   "emld_rel ks cs \<psi>s css = list_all2 (\<lambda>(t, rls, rel) (t', drls, drel). t = t' \<and>
      list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
      drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel)"
-
-lemma emld_rel_Nil[simp]: "emld_rel ks cs \<psi>s css [] []"
-  by (simp add: emld_rel_def)
-
-lemma emld_rel_Cons[simp]:
-  "emld_rel ks cs \<psi>s css ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
-     list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
-     drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel \<and>
-     emld_rel ks cs \<psi>s css aux daux"
-  by (simp add: emld_rel_def)
 
 locale ematchF_frame = eregex_frame ks cs \<psi>s css
   for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +

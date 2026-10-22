@@ -51,9 +51,6 @@ text \<open>
 definition gnth :: "'b list set list \<Rightarrow> nat \<Rightarrow> 'b list set" where
   "gnth xs i = (if i < length xs then xs ! i else {})"
 
-lemma gnth_nth[simp]: "i < length xs \<Longrightarrow> gnth xs i = xs ! i"
-  by (simp add: gnth_def)
-
 definition glookup :: "(mregex, 'b list set) mapping \<Rightarrow> mregex \<Rightarrow> 'b list set" where
   "glookup = Mapping.lookup_default {}"
 
@@ -161,6 +158,13 @@ subsection \<open>The windows at the ascending columns\<close>
 definition emb_msk :: "nat option list \<Rightarrow> bool list" where
   "emb_msk p = map (\<lambda>q. q \<noteq> None) p"
 
+text \<open>The window's lookup and tabulation are the kernel's.\<close>
+
+lemma glookup_lookup: "glookup = lookup"
+  by (simp add: glookup_def Monitor.lookup_def empty_table_def)
+
+subsection \<open>The lax epsilon\<close>
+
 subsection \<open>The strict epsilons\<close>
 
 context eregex_frame
@@ -170,10 +174,14 @@ abbreviation (input) "gmsks \<equiv> map (emsk cs) css"
 
 end
 
+subsection \<open>The past-match window\<close>
+
 context ematchP_frame
 begin
 
 end
+
+subsection \<open>The future-match window\<close>
 
 context ematchF_frame
 begin

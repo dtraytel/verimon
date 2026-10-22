@@ -97,6 +97,8 @@ definition ua_eval :: "args \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> 
      (case ua_shift args p w nt a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
        (rev dn, ((nts, win, rest, len, bend, cc, []), ax)))"
 
+subsection \<open>It tracks the plain window\<close>
+
 subsection \<open>What it is valid for\<close>
 
 text \<open>The fused window is related to a plain one that has taken the same steps: the same seven
@@ -214,12 +216,6 @@ fun rua :: "uuwagg \<Rightarrow> uwagg" where
   "rua (w, ax) = (uuwm w, ax)"
 
 declare rua.simps[simp del]
-
-lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
-  by (cases a) (simp add: rua.simps)
-
-lemma snd_rua[simp]: "snd (rua a) = snd a"
-  by (cases a) (simp add: rua.simps)
 
 lemma rua_init: "rua (uua_init args p) = ua_init args p"
   by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc)

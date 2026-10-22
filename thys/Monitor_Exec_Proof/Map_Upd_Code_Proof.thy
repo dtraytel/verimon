@@ -13,10 +13,6 @@ begin
 lemma fst_rbt_comp_ins_lk: "fst (rbt_comp_ins_lk F k t) = rbt_comp_lookup c t k"
   by (induct F k t rule: rbt_comp_ins_lk.induct) (auto split: order.splits prod.splits option.splits)
 
-text \<open>A key not in the tree is inserted as by the insertion.  A key in it only has its value
-  replaced, which is the tree's @{text map_entry}: the tree keeps its shape and its colours, and
-  the rebalancing on the way up, which the insertion does in any case, is skipped.\<close>
-
 lemma rbt_comp_ins_lk:
   "rbt_comp_ins_lk F k t = (rbt_comp_lookup c t k, case rbt_comp_lookup c t k of
      None \<Rightarrow> rbt_comp_ins c (\<lambda>_ _ nv. nv) k (F None) t
@@ -51,8 +47,6 @@ proof (induct t)
 qed simp
 
 end
-
-subsection \<open>On the lifted trees\<close>
 
 lemma paint_rbt_comp_ins: "RBT_Impl.paint RBT_Impl.B (rbt_comp_ins c (\<lambda>_ _ nv. nv) k v t) = rbt_comp_insert c k v t"
   by (simp add: rbt_comp_insert_def rbt_comp_insert_with_key_def)
@@ -155,9 +149,6 @@ lemma del_lk_eq: "del_lk k t = (RBT_Mapping2.lookup t k, RBT_Mapping2.delete k t
 lemma gval_GRank: "gval \<omega> (GRank m ty) g = (case Mapping.lookup m g of None \<Rightarrow> None | Some l \<Rightarrow> rkval \<omega> l)"
   by (cases "fst \<omega>") (simp_all add: rkval_def split: option.splits)
 
-lemma ins_at_eq: "ins_at p v g = take p g @ v # drop p g"
-  by (induct p v g rule: ins_at.induct) simp_all
-
 lemma lookup_fold_mm_step:
   "Mapping.lookup (fold (mm_step ev op k) xs m) g
    = foldl (mm_acc ev op) (Mapping.lookup m g) (filter (\<lambda>t. drop k t = g) xs)"
@@ -221,9 +212,6 @@ proof -
   show "finite_multiset ?M"
     using fM by (auto simp: finite_multiset_def M)
 qed
-
-text \<open>The order on @{typ event_data} is total only within each kind of value, and not even there
-  on floats; on integers, the fold over the flattened multiset is the extreme of the integers.\<close>
 
 lemma foldl_max_ival: "\<forall>x \<in> set (u # xs). is_eint x \<Longrightarrow>
     foldl max u xs = EInt (foldl max (ival u) (map ival xs))"

@@ -6,6 +6,15 @@ begin
 
 
 
+lemma csl_finite: "finite X \<Longrightarrow> csl X = csorted_list_of_set X"
+  by (simp add: csl_def)
+
+lemma csl_infinite: "\<not> finite X \<Longrightarrow> csl X = []"
+  by (simp add: csl_def)
+
+lemma set_csl_ed: "finite (X :: event_data list set) \<Longrightarrow> set (csl X) = X"
+  using ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
+
 lemma umatch_match: "umatch tms xs = match tms xs"
   by (induct tms xs rule: umatch.induct) auto
 

@@ -16,6 +16,9 @@ lemma dq_hd_s_nth: "dq_inv d \<Longrightarrow> 0 < dq_len d \<Longrightarrow> dq
 lemma dq_nth_l_in: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth_l d k z = dq_nth d k"
   by (auto simp: dq_nth_l_def dq_nth_def dq_inv_def dq_len_def Let_def)
 
+lemma nth_def_eq: "nth_def xs k z = (if k < length xs then xs ! k else z)"
+  by (induct xs k z rule: nth_def.induct) auto
+
 lemma gupd_nested_step_dq_eq:
   assumes inv: "dq_inv dq"
   shows "gupd_nested_step_dq base d f x dq = upd_nested_step_dq base d f x dq"
@@ -34,6 +37,13 @@ proof -
   qed
 qed
 
+lemma ushape_fix_res[simp]: "ushape (fix_res d) = ushape d"
+  and ulen_fix_res[simp]: "ulen (fix_res d) = ulen d"
+  and utp_fix_res[simp]: "utp (fix_res d) = utp d"
+  and ua1_fix_res[simp]: "ua1 (fix_res d) = ua1 d"
+  and glength_fix_res[simp]: "glength_dq args (fix_res d) = glength_dq args d"
+  by (induct d rule: fix_res.induct, simp)+
+
 lemma dq_hd_s_list: "dq_inv d \<Longrightarrow> 0 < dq_len d \<Longrightarrow> dq_hd_s d z = hd (dq_list d)"
   by (simp add: dq_hd_s_nth dq_nth dq_len_list hd_conv_nth)
 
@@ -47,11 +57,6 @@ lemma dq_hd_s_upd_pos:
   "dq_inv d \<Longrightarrow> 0 < k \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_hd_s (dq_upd d k x) z = dq_hd_s d z"
   using dq_hd_s_list[of "dq_upd d k x" z] dq_hd_s_list[of d z]
   by (cases "dq_list d"; cases k) (auto simp: dq_len_upd dq_list_upd dq_len_list)
-
-subsection \<open>Agreement with the kernel's structure\<close>
-
-lemma ginit_dq_eq: "ginit_dq args = (init_dq args :: event_data mmuaux_dq)"
-  by (simp add: ginit_dq_def init_dq_def)
 
 lemma geval_step_dq_eq:
   assumes ag: "args_agg args = None"
@@ -276,8 +281,6 @@ proof -
   show "ushape (gadd_new_dq args msk rel1 rel2 nt d)"
     unfolding ga using q1 invt lt lts by (simp add: dq_len_push append_queue_rep)
 qed
-
-subsection \<open>The shape follows from the kernel's invariant\<close>
 
 lemma evalid_muaux_ushape:
   assumes v: "evalid_muaux args msk cur d auxlist"

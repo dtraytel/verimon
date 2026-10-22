@@ -52,12 +52,6 @@ text \<open>The parser's byte strings and the monitor's strings both represent c
 definition string8_of_bytes :: "bytes \<Rightarrow> string8" where
   "string8_of_bytes b = Abs_string8 (Rep_bytes b)"
 
-lemma Rep_string8_of_bytes[simp]: "Rep_string8 (string8_of_bytes b) = Rep_bytes b"
-  by (simp add: string8_of_bytes_def Abs_string8_inverse)
-
-lemma string8_of_bytes_inject[simp]: "string8_of_bytes a = string8_of_bytes b \<longleftrightarrow> a = b"
-  by (metis Rep_bytes_inject Rep_string8_of_bytes)
-
 text \<open>Trusted: both types are printed as OCaml's strings, a character list as the string of the
   characters' codes (@{theory Log_Parser.Log_Code} prints @{typ char} so; the printings of
   @{theory MFOTL_Monitor_Devel.Event_Data} compare strings byte-wise, as the characters' codes
@@ -85,9 +79,6 @@ text \<open>The hash code of a string (@{theory MFOTL_Monitor_Devel.Event_Data})
 
 definition bytes_of_string8 :: "string8 \<Rightarrow> bytes" where
   "bytes_of_string8 s = Abs_bytes (Rep_string8 s)"
-
-lemma Rep_bytes_of_string8[simp]: "Rep_bytes (bytes_of_string8 s) = Rep_string8 s"
-  by (simp add: bytes_of_string8_def Abs_bytes_inverse)
 
 declare [[code drop: bytes_of_string8]]
 
@@ -155,9 +146,6 @@ text \<open>The lookup the conversion uses: in the list for small signatures, in
 
 definition lsig_lookup_fun :: "lsig \<Rightarrow> Formula.name \<times> nat \<Rightarrow> ty list option" where
   "lsig_lookup_fun S = (if length S < 32 then lsig_lookup S else (let I = lsig_index S in index_lookup I))"
-
-lemma lsig_lookup_fun[simp]: "lsig_lookup_fun S = lsig_lookup S"
-  by (simp add: lsig_lookup_fun_def index_lookup_lsig_index)
 
 subsection \<open>Converting events\<close>
 
@@ -261,15 +249,8 @@ text \<open>A function on byte strings as one on strings.\<close>
 definition sf :: "(bytes \<Rightarrow> 'a) \<Rightarrow> string \<Rightarrow> 'a" where
   "sf f s = f (Abs_bytes s)"
 
-lemma sf_Rep[simp]: "sf f (Rep_bytes x) = f x"
-  by (simp add: sf_def Rep_bytes_inverse)
-
 definition opt_of_sum :: "'a + 'b \<Rightarrow> 'b option" where
   "opt_of_sum x = (case x of Inl _ \<Rightarrow> None | Inr y \<Rightarrow> Some y)"
-
-lemma opt_of_sum_simps[simp]: "opt_of_sum (Inl a) = None" "opt_of_sum (Inr b) = Some b"
-  "opt_of_sum (map_sum f g x) = map_option g (opt_of_sum x)"
-  by (auto simp: opt_of_sum_def split: sum.splits)
 
 abbreviation abs_event :: "bytes \<times> bytes list \<Rightarrow> string \<times> string list" where
   "abs_event \<equiv> map_prod Rep_bytes (map Rep_bytes)"
@@ -314,6 +295,8 @@ fun conv_error :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.na
        | Some (_, tys) \<Rightarrow> (case conv_fields pf tys fs 0 of
            Inl (i, t) \<Rightarrow> Some (VE_FIELD p i t)
          | Inr _ \<Rightarrow> Some (VE_PREDICATE p (length fs)))))"
+
+subsection \<open>Sorting\<close>
 
 fun cmerge :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "cmerge c [] ys = ys"
@@ -377,16 +360,12 @@ fun add_evk :: "Formula.name \<times> nat \<Rightarrow> event_data list \<Righta
 definition build_db :: "Formula.event list \<Rightarrow> udatabase" where
   "build_db evs = fold (\<lambda>(k, xs) db. uinsert_table_into_db k (utable_of_list xs) db) (group_evs evs) uempty_db"
 
+text \<open>The groups have distinct keys, and each holds the tuples of its key.\<close>
+
 definition map_t :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
   "map_t f xs = rev (fold (\<lambda>x acc. f x # acc) xs [])"
 
-lemma map_t[simp]: "map_t f xs = map f xs"
-proof -
-  have "fold (\<lambda>x acc. f x # acc) xs acc = rev (map f xs) @ acc" for acc
-    by (induction xs arbitrary: acc) auto
-  then show ?thesis
-    by (simp add: map_t_def)
-qed
+subsection \<open>Building the tables faster\<close>
 
 function rbtreeify_fi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list"
   and rbtreeify_gi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list" where
@@ -419,6 +398,9 @@ lemma ilen_code[code]: "ilen acc [] = acc" "ilen acc (x # xs) = ilen (idx_succ a
 
 definition rbtreeify_i :: "('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt" where
   "rbtreeify_i kvs = fst (rbtreeify_gi (ilen 1 kvs) kvs)"
+
+lemma comparator_edl: "comparator ed_comparator"
+  by (rule ID_ccompare'[OF ID_ccompare_etuple])
 
 definition urbt_sort :: "event_data list list \<Rightarrow> event_data list set_rbt" where
   "urbt_sort xs = rbt_of_sorted_list (csort ed_comparator xs)"
@@ -454,6 +436,9 @@ fun conv_fields_a :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty list 
      None \<Rightarrow> Inl (length acc, t)
    | Some x \<Rightarrow> conv_fields_a pf ts fs (x # acc))"
 | "conv_fields_a pf _ _ acc = Inr (rev acc)"
+
+lemma conv_fields_a: "conv_fields_a pf tys fs acc = map_sum id ((@) (rev acc)) (conv_fields pf tys fs (length acc))"
+  by (induction pf tys fs acc rule: conv_fields_a.induct) (auto simp: sum.map_comp comp_def split: option.splits)
 
 lemma conv_event_fast[code]: "conv_event pf L e = (case e of (p, fs) \<Rightarrow> let q = string8_of_bytes p; m = nat_of_integer (ilen 0 fs) in
      (case L (q, m) of
@@ -620,13 +605,6 @@ definition vverdicts :: "vout list \<Rightarrow> (nat \<times> ts \<times> utabl
 definition has_verror :: "vout list \<Rightarrow> bool" where
   "has_verror xs \<longleftrightarrow> (\<exists>pos e. VO_ERROR pos e \<in> set xs)"
 
-lemma vverdicts_simps[simp]:
-  "vverdicts [] = []"
-  "vverdicts (VO_VERDICTS vs # xs) = vs @ vverdicts xs"
-  "vverdicts (VO_ERROR pos e # xs) = vverdicts xs"
-  "vverdicts (xs @ ys) = vverdicts xs @ vverdicts ys"
-  by (simp_all add: vverdicts_def)
-
 text \<open>For the driver: the least offset in the input that later outputs may report, except that
   of the pending item -- that of the pending lexeme, if any, and otherwise the number of bytes
   read.\<close>
@@ -634,12 +612,6 @@ text \<open>For the driver: the least offset in the input that later outputs may
 definition vpending :: "vstate \<Rightarrow> integer" where
   "vpending z = (case fst z of (b, l, _) \<Rightarrow> (case l of
      E_SIMPLE xs j t \<Rightarrow> t | E_QUOTED xs j t \<Rightarrow> t | E_ESCAPE xs j t \<Rightarrow> t | _ \<Rightarrow> b))"
-
-lemma has_verror_simps[simp]:
-  "\<not> has_verror []"
-  "has_verror (x # xs) \<longleftrightarrow> (case x of VO_VERDICTS _ \<Rightarrow> has_verror xs | VO_ERROR _ _ \<Rightarrow> True)"
-  "has_verror (xs @ ys) \<longleftrightarrow> has_verror xs \<or> has_verror ys"
-  by (auto simp: has_verror_def split: vout.splits)
 
 subsection \<open>Correctness\<close>
 
@@ -650,16 +622,24 @@ fun usteps :: "(Formula.event list \<times> nat) list \<Rightarrow> emstate \<Ri
 | "usteps ((xs, t) # tps) ust = (case emstep (build_db xs, t) ust of (vs1, ust1) \<Rightarrow>
      (case usteps tps ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
 
+lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, ust1) \<Rightarrow>
+  (case usteps tps2 ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
+  by (induction tps1 ust rule: usteps.induct) (auto split: prod.splits)
+
 subsubsection \<open>Items\<close>
 
 definition conv_item :: "vconf \<Rightarrow> bytes item \<Rightarrow> (Formula.event list \<times> nat) option" where
   "conv_item cf x = (case x of Entry ts evs \<Rightarrow> opt_of_sum (conv_entry cf ts evs) | Command c args \<Rightarrow> None)"
 
+text \<open>Without errors, the items are converted and their timestamps do not decrease, and the
+  verdicts are those of the monitor on the time points.\<close>
+
+subsubsection \<open>The time points of the items\<close>
+
 definition fin_tps :: "nat option \<Rightarrow> (Formula.event list \<times> nat) list" where
   "fin_tps fin = (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [([], t)])"
 
-lemma preds_map_formula[simp]: "Rewriting.preds (Formula.formula.map_formula f \<phi>) = Rewriting.preds \<phi>"
-  by (induction \<phi>) (auto simp: fv_regex_alt regex.set_map)
+subsection \<open>The verdicts depend only on the events of the predicates that occur freely\<close>
 
 subsection \<open>From the log to the verdicts\<close>
 
@@ -674,6 +654,8 @@ definition keep_spec :: "bool \<Rightarrow> 't Formula.formula \<Rightarrow> lsi
 definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times> utable) list \<Rightarrow> (nat \<times> ts \<times> event_data table) list" where
   "vwiden \<phi> = map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) X))"
 
+text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>
+
 text \<open>The signature, as the specification of the prepared formula uses it.\<close>
 
 locale verimon_log = verimon_prepare rw "lsig_tsig S" \<phi>
@@ -684,9 +666,14 @@ context
   fixes mw :: bool
 begin
 
+text \<open>The verdicts depend only on the events of the predicates that occur freely in the
+  formula.\<close>
+
 end
 
 end
+
+text \<open>The monitor starts only if the assumptions of the locale hold.\<close>
 
 end
 (*>*)

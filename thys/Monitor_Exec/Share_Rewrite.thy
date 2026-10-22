@@ -80,41 +80,10 @@ text \<open>As for the frozen predicates, the rewrite is applied only when its r
 definition share_opt :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "share_opt \<phi> = (let \<phi>' = share_rw \<phi> in if mmonitorable_exec \<phi>' then \<phi>' else \<phi>)"
 
+subsection \<open>The shared predicate\<close>
+
 lemma not_contains_pred_preds: "\<not> occurs pn \<phi> \<Longrightarrow> \<not> contains_pred pn \<phi>"
   by (induct pn \<phi> rule: contains_pred.induct) auto
-
-lemma fvi_shr_pred:
-  assumes "\<forall>x\<in>{0..<Formula.nfv \<psi>}. x \<in> Formula.fv \<psi>"
-  shows "Formula.fvi b (shr_pred \<psi>) = Formula.fvi b \<psi>"
-proof (rule set_eqI)
-  fix y
-  have "y \<in> Formula.fvi b (shr_pred \<psi>) \<longleftrightarrow> y + b < Formula.nfv \<psi>"
-  proof
-    assume "y \<in> Formula.fvi b (shr_pred \<psi>)"
-    then show "y + b < Formula.nfv \<psi>"
-      by (auto simp: shr_pred_def split: if_splits)
-  next
-    assume "y + b < Formula.nfv \<psi>"
-    then show "y \<in> Formula.fvi b (shr_pred \<psi>)"
-      by (auto simp: shr_pred_def intro!: bexI[of _ "y + b"])
-  qed
-  also have "\<dots> \<longleftrightarrow> y + b \<in> Formula.fv \<psi>"
-    using assms fvi_less_nfv[of \<psi>] by auto
-  also have "\<dots> \<longleftrightarrow> y \<in> Formula.fvi b \<psi>"
-    by (rule fvi_iff_fv[symmetric])
-  finally show "y \<in> Formula.fvi b (shr_pred \<psi>) \<longleftrightarrow> y \<in> Formula.fvi b \<psi>" .
-qed
-
-lemma sat_shr_pred:
-  assumes "share_ok \<alpha> \<psi>"
-  shows "Formula.sat \<sigma> (V((shr, Formula.nfv \<psi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<psi>)) v i (shr_pred \<psi>) =
-    Formula.sat \<sigma> V v i \<psi>"
-proof -
-  have "Formula.sat \<sigma> V (map ((!) v) [0..<Formula.nfv \<psi>]) i \<psi> = Formula.sat \<sigma> V v i \<psi>"
-    using fvi_less_nfv[of \<psi>] by (intro sat_fv_cong) auto
-  then show ?thesis
-    by (simp add: shr_pred_def o_def)
-qed
 
 lemma sat_Release_cong:
   assumes "\<And>v j. Formula.sat \<sigma> V v j \<phi> = Formula.sat \<sigma> V' v j \<phi>'"
@@ -124,5 +93,9 @@ lemma sat_Release_cong:
 
 subsection \<open>The rewrite of the whole formula\<close>
 
+lemma mmonitorable_share_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (share_opt \<phi>)"
+  by (simp add: share_opt_def Let_def mmonitorable_exec_mmonitorable)
+
+(*<*)
 end
 (*>*)

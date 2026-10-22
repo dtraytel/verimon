@@ -8,10 +8,23 @@ begin
 
 subsection \<open>The split of a conjunction\<close>
 
+lemma is_frz_predD: "is_frz_pred pn q \<Longrightarrow> \<exists>e ts. q = Formula.Pred e ts \<and> (e, length ts) = pn"
+  by (cases q) auto
+
+lemma frz_find_Some:
+  "frz_find pn l = Some (q, r) \<Longrightarrow> is_frz_pred pn q \<and> set l = insert q (set r)"
+  by (induct l arbitrary: r) (auto split: if_splits option.splits)
+
 lemma Min_insert_image:
   assumes "set l = insert q (set r)" "r \<noteq> []"
   shows "Min (f ` set l) = min (f q) (Min (f ` set r))"
   using assms by simp
+
+lemma eval_dec_trm: "0 \<notin> Formula.fv_trm s \<Longrightarrow> Formula.eval_trm v (dec_trm s) = Formula.eval_trm (z # v) s"
+  by (induct s) (auto simp: nth_Cons')
+
+lemma fvi_dec_trm: "0 \<notin> Formula.fv_trm s \<Longrightarrow> Formula.fvi_trm b (dec_trm s) = Formula.fvi_trm (Suc b) s"
+  by (induct s) auto
 
 lemma wty_dec_trm: "case_nat t E \<turnstile> s :: ty \<Longrightarrow> 0 \<notin> Formula.fv_trm s \<Longrightarrow> E \<turnstile> dec_trm s :: ty"
 proof (induct rule: wty_trm.induct)
@@ -19,6 +32,61 @@ proof (induct rule: wty_trm.induct)
   then show ?case
     by (cases x) (auto intro: wty_trm.Var)
 qed (auto intro: wty_trm.intros)
+
+lemma frz_split_Exists_Some:
+  assumes "frz_split pn (Formula.Exists t \<alpha>) = Some (q, \<alpha>')"
+  obtains e ts \<beta> where "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "\<alpha>' = Formula.Exists t \<beta>"
+  using assms by (auto split: option.splits prod.splits formula.splits if_splits)
+
+lemma frz_split_pred: "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> is_frz_pred pn q"
+proof (induct pn \<psi> arbitrary: q r rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "q = Formula.Pred e (map dec_trm ts)"
+    by (rule frz_split_Exists_Some)
+  with 3(1)[OF s(1)] show ?case
+    by simp
+qed (auto split: if_splits option.splits dest: frz_find_Some)
+
+lemma sat_Pred_dec_trm:
+  "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts \<Longrightarrow>
+    Formula.sat \<sigma> V v i (Formula.Pred e (map dec_trm ts)) = Formula.sat \<sigma> V (z # v) i (Formula.Pred e ts)"
+proof -
+  assume "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts"
+  then have eq: "map (Formula.eval_trm v) (map dec_trm ts) = map (Formula.eval_trm (z # v)) ts"
+    by (auto simp: eval_dec_trm list_all_iff)
+  show ?thesis
+    by (simp only: Formula.sat.simps length_map eq)
+qed
+
+lemma frz_split_sat:
+  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow>
+    Formula.sat \<sigma> V v i \<psi> \<longleftrightarrow> Formula.sat \<sigma> V v i q \<and> Formula.sat \<sigma> V v i r"
+proof (induct pn \<psi> arbitrary: q r v rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "r = Formula.Exists t \<beta>"
+    by (rule frz_split_Exists_Some)
+  show ?case
+    using 3(1)[OF s(1)] sat_Pred_dec_trm[OF s(2)] s(3,4) by auto
+qed (auto split: if_splits option.splits dest!: frz_find_Some)
+
+lemma frz_split_fvi:
+  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> Formula.fvi b \<psi> = Formula.fvi b q \<union> Formula.fvi b r"
+proof (induct pn \<psi> arbitrary: q r b rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "r = Formula.Exists t \<beta>"
+    by (rule frz_split_Exists_Some)
+  have "Formula.fvi b q = Formula.fvi (Suc b) (Formula.Pred e ts)"
+    using s(2,3) by (auto simp: fvi_dec_trm list_all_iff)
+  then show ?case
+    using 3(1)[OF s(1)] s(4) by simp
+qed (auto split: if_splits option.splits dest!: frz_find_Some)
 
 lemma frz_split_wty:
   "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> q \<and> S, E \<turnstile> r"
@@ -74,6 +142,53 @@ next
   show ?case
     using 3(1)[OF s(1) 3(3)] s(3,4) by simp
 qed (auto split: if_splits)
+
+lemma hoist_Exists_cases:
+  obtains (None) "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = None"
+    "hoist fl pn (Formula.Exists t \<phi>) = Formula.Exists t (hoist fl pn \<phi>)"
+  | (Some) q \<alpha> where "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = Some (q, \<alpha>)"
+    "hoist fl pn (Formula.Exists t \<phi>) = Formula.And q \<alpha>"
+proof (cases "frz_split pn (Formula.Exists t (hoist fl pn \<phi>))")
+  case None
+  then show thesis
+    by (intro that(1)) (simp_all only: hoist.simps(8) Let_def option.case)
+next
+  case (Some x)
+  then obtain q \<alpha> where "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = Some (q, \<alpha>)"
+    by (cases x) simp
+  then show thesis
+    by (intro that(2)) (simp_all only: hoist.simps(8) Let_def option.case prod.case)
+qed
+
+lemma fvi_hoist[simp]: "Formula.fvi b (hoist fl pn \<phi>) = Formula.fvi b \<phi>"
+proof (induct fl pn \<phi> arbitrary: b rule: hoist.induct)
+  case (1 fl pn \<phi> I \<psi>)
+  have \<phi>: "Formula.fvi b' (hoist fl pn \<phi>) = Formula.fvi b' \<phi>" for b'
+    using 1(2)[OF refl] 1(3)[OF refl _ refl]
+    by (cases "if memL I 0 \<or> fl then frz_split pn (hoist fl pn \<psi>) else None") auto
+  show ?case
+    using 1(1) \<phi> by (auto simp: Let_def split: option.splits if_splits dest!: frz_split_fvi)
+next
+  case (2 fl pn \<phi> I \<psi>)
+  have \<phi>: "Formula.fvi b' (hoist fl pn \<phi>) = Formula.fvi b' \<phi>" for b'
+    using 2(2)[OF refl] 2(3)[OF refl _ refl]
+    by (cases "frz_split pn (hoist fl pn \<psi>)") auto
+  show ?case
+    using 2(1) \<phi> by (auto simp: Let_def split: option.splits dest!: frz_split_fvi)
+next
+  case (8 fl pn t \<phi>)
+  show ?case
+  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
+    case (Some q \<alpha>)
+    have "Formula.fvi b (Formula.Exists t (hoist fl pn \<phi>)) = Formula.fvi b q \<union> Formula.fvi b \<alpha>"
+      by (rule frz_split_fvi[OF Some(1)])
+    then show ?thesis
+      using 8 by (simp only: Some(2) Formula.fvi.simps)
+  qed (use 8 in simp)
+qed (auto simp: Let_def split: option.splits if_splits dest!: frz_split_fvi)
+
+lemma nfv_hoist[simp]: "Formula.nfv (hoist fl pn \<phi>) = Formula.nfv \<phi>"
+  by (simp add: Formula.nfv_def)
 
 lemma wty_frz_split_And:
   assumes "frz_split pn \<psi> = Some (q, \<alpha>)" "S, E \<turnstile> \<psi>" "S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<beta>"
@@ -132,6 +247,76 @@ next
       intro!: wty_frz_split_And dest: frz_split_wty)
 qed (erule wty_formula.cases; auto intro: wty_formula.intros)+
 
+lemma sat_frz_pred_const:
+  assumes "is_frz_pred pn q" "V pn = Some X" "\<forall>w j j'. X w j = X w j'"
+  shows "Formula.sat \<sigma> V v j q = Formula.sat \<sigma> V v i q"
+proof -
+  obtain e ts where "q = Formula.Pred e ts" "(e, length ts) = pn"
+    using is_frz_predD[OF assms(1)] by blast
+  then show ?thesis
+    using assms(2) assms(3)[rule_format, of _ j i] by simp
+qed
+
+lemma frz_split_sat_const:
+  assumes "frz_split pn \<psi> = Some (q, \<alpha>)" "V pn = Some X" "\<forall>w j j'. X w j = X w j'"
+  shows "Formula.sat \<sigma> V v j \<psi> \<longleftrightarrow> Formula.sat \<sigma> V v i q \<and> Formula.sat \<sigma> V v j \<alpha>"
+proof -
+  have "is_frz_pred pn q"
+    by (rule frz_split_pred[OF assms(1)])
+  then show ?thesis
+    using frz_split_sat[OF assms(1)] sat_frz_pred_const[of pn q V X \<sigma> v j i] assms(2,3)
+    by blast
+qed
+
+lemma sat_hoist:
+  assumes "V pn = Some X" "\<forall>w j j'. X w j = X w j'"
+  shows "Formula.sat \<sigma> V v i (hoist fl pn \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  using assms
+proof (induct fl pn \<phi> arbitrary: V v i rule: hoist.induct)
+  case (1 fl pn \<phi> I \<psi>)
+  have \<psi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<psi>) = Formula.sat \<sigma> V v' j \<psi>" for v' j
+    using 1(1)[where V=V] 1(4,5) by blast
+  have \<phi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<phi>) = Formula.sat \<sigma> V v' j \<phi>" for v' j
+    using 1(2)[OF refl, where V=V] 1(3)[OF refl _ refl, where V=V] 1(4,5)
+    by (cases "if memL I 0 \<or> fl then frz_split pn (hoist fl pn \<psi>) else None") auto
+  show ?case
+    using \<psi> \<phi> frz_split_sat_const[where V=V and pn=pn and \<psi>="hoist fl pn \<psi>" and \<sigma>=\<sigma> and v=v and i=i] 1(4,5)
+    by (auto simp: Let_def split: option.splits)
+next
+  case (2 fl pn \<phi> I \<psi>)
+  have \<psi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<psi>) = Formula.sat \<sigma> V v' j \<psi>" for v' j
+    using 2(1)[where V=V] 2(4,5) by blast
+  have \<phi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<phi>) = Formula.sat \<sigma> V v' j \<phi>" for v' j
+    using 2(2)[OF refl, where V=V] 2(3)[OF refl _ refl, where V=V] 2(4,5)
+    by (cases "frz_split pn (hoist fl pn \<psi>)") auto
+  show ?case
+    using \<psi> \<phi> frz_split_sat_const[where V=V and pn=pn and \<psi>="hoist fl pn \<psi>" and \<sigma>=\<sigma> and v=v and i=i] 2(4,5)
+    by (auto simp: Let_def split: option.splits)
+next
+  case (3 fl pn I \<psi>)
+  have \<psi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<psi>) = Formula.sat \<sigma> V v' j \<psi>" for v' j
+    using 3(1)[where V=V] 3(2,3) by blast
+  show ?case
+    using \<psi> frz_split_sat_const[where V=V and pn=pn and \<psi>="hoist fl pn \<psi>" and \<sigma>=\<sigma> and v=v and i=i] 3(2,3)
+    by (auto simp: Let_def split: option.splits)
+next
+  case (8 fl pn t \<phi>)
+  have \<phi>: "Formula.sat \<sigma> V v i (Formula.Exists t (hoist fl pn \<phi>)) = Formula.sat \<sigma> V v i (Formula.Exists t \<phi>)"
+    using 8 by simp
+  show ?case
+  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
+    case (Some q \<alpha>)
+    then show ?thesis
+      using frz_split_sat[OF Some(1), of \<sigma> V v i] \<phi> by simp
+  qed (use \<phi> in simp)
+next
+  case (11 fl pn I \<psi>)
+  have \<psi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<psi>) = Formula.sat \<sigma> V v' j \<psi>" for v' j
+    using 11(1)[where V=V] 11(2,3) by blast
+  show ?case
+    using \<psi> frz_split_sat_const[where V=V and pn=pn and \<psi>="hoist fl pn \<psi>" and \<sigma>=\<sigma> and v=v and i=i] 11(2,3)
+    by (auto simp: Let_def split: option.splits if_splits nat.splits)
+qed auto
 lemma progress_frz_pred: "is_frz_pred pn q \<Longrightarrow> P pn = Some k \<Longrightarrow> progress \<sigma> P q j = k"
   by (cases q) auto
 
@@ -140,9 +325,6 @@ lemma frz_split_progress_const:
   shows "progress \<sigma> P \<psi> j = min k (progress \<sigma> P \<alpha> j)" "progress \<sigma> P q j = k"
   using frz_split_progress[OF assms(1,2)] progress_frz_pred[of pn q P k \<sigma> j] assms(3) frz_split_pred[OF assms(1)]
   by auto
-
-text \<open>The frozen predicate's progress is either the whole prefix or none of it, and the whole
-  prefix when the flag is set.\<close>
 
 lemma progress_hoist:
   assumes "pred_mapping (\<lambda>x. x \<le> j) P" "P pn = Some k" "k = 0 \<or> k = j" "fl \<Longrightarrow> k = j"
@@ -273,6 +455,61 @@ next
 qed auto
 subsection \<open>A frozen predicate at the current time point only\<close>
 
+lemma not_contains_pred_sat_upd:
+  "\<not> contains_pred pn \<psi> \<Longrightarrow> Formula.sat \<sigma> (V(pn \<mapsto> X)) v i \<psi> = Formula.sat \<sigma> (V(pn \<mapsto> Y)) v i \<psi>"
+  by simp
+
+lemma sat_now_only:
+  assumes "now_only pn \<psi>" "\<forall>w. X w i = Y w i"
+  shows "Formula.sat \<sigma> (V(pn \<mapsto> X)) v i \<psi> = Formula.sat \<sigma> (V(pn \<mapsto> Y)) v i \<psi>"
+  using assms
+proof (induct pn \<psi> arbitrary: V v rule: now_only.induct)
+  case 1
+  then show ?case
+    by (auto split: option.splits)
+next
+  case 2
+  then show ?case
+    by auto
+next
+  case 3
+  then show ?case
+    by auto
+next
+  case 4
+  then show ?case
+    by auto
+next
+  case 5
+  then show ?case
+    by auto
+next
+  case 6
+  then show ?case
+    by auto
+next
+  case 7
+  then show ?case
+    by auto
+next
+  case (8 pn e \<phi> \<psi>)
+  show ?case
+  proof (cases "contains_pred pn (Formula.Let e \<phi> \<psi>)")
+    case True
+    with 8(2) have ne: "(e, Formula.nfv \<phi>) \<noteq> pn" and \<phi>: "\<not> contains_pred pn \<phi>" and \<psi>: "now_only pn \<psi>"
+      by auto
+    define Z where "Z = (\<lambda>w j. Formula.sat \<sigma> V w j \<phi>)"
+    have eq: "V(pn \<mapsto> W, (e, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> (V(pn \<mapsto> W)) w j \<phi>) =
+      V((e, Formula.nfv \<phi>) \<mapsto> Z, pn \<mapsto> W)" for W
+      using ne \<phi> by (simp add: Z_def fun_upd_twist)
+    show ?thesis
+      using 8(1)[OF ne \<phi> \<psi> 8(3), where V="V((e, Formula.nfv \<phi>) \<mapsto> Z)"] by (simp only: Formula.sat.simps eq)
+  next
+    case False
+    then show ?thesis
+      by (metis not_contains_pred_sat)
+  qed
+qed (rule not_contains_pred_sat_upd, simp)+
 lemma Min_min_image:
   "finite S \<Longrightarrow> S \<noteq> {} \<Longrightarrow> Min ((\<lambda>x. min (f x) (g x)) ` S) = min (Min (f ` S)) (Min (g ` S))"
   by (induct rule: finite_ne_induct) (auto simp: ac_simps)
@@ -400,6 +637,12 @@ next
       by (rule progress_not_contains_upd[OF _ 8(3)])
   qed
 qed (rule progress_not_contains_upd; simp)+
+lemma sat_Frz_now_only:
+  assumes "now_only (p, Formula.nfv \<phi>) \<psi>"
+  shows "Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>) = Formula.sat \<sigma> V v i (Formula.Let p \<phi> \<psi>)"
+  using sat_now_only[OF assms, where X="\<lambda>w j. Formula.sat \<sigma> V w i \<phi>" and Y="\<lambda>w j. Formula.sat \<sigma> V w j \<phi>"]
+  by simp
+
 lemma progress_Frz_now_only:
   assumes "now_only (p, Formula.nfv \<phi>) \<psi>" "pred_mapping (\<lambda>x. x \<le> j) P"
   shows "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j = progress \<sigma> P (Formula.Let p \<phi> \<psi>) j"
@@ -432,6 +675,34 @@ proof -
     using f[OF a] by (simp add: pn_def a_def)
   finally show ?thesis .
 qed
+
+lemma fvi_frz_rw[simp]: "Formula.fvi b (frz_rw B \<phi>) = Formula.fvi b \<phi>"
+  by (induct B \<phi> arbitrary: b rule: frz_rw.induct) (auto simp: Let_def)
+
+lemma nfv_frz_rw[simp]: "Formula.nfv (frz_rw B \<phi>) = Formula.nfv \<phi>"
+  by (simp add: Formula.nfv_def)
+
+lemma sat_frz_rw[simp]: "Formula.sat \<sigma> V v i (frz_rw B \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+proof (induct B \<phi> arbitrary: V v i rule: frz_rw.induct)
+  case (1 B p \<phi> \<psi>)
+  let ?pn = "(p, Formula.nfv \<phi>)"
+  let ?\<phi>' = "frz_rw B \<phi>"
+  let ?\<psi>' = "hoist (full_now B ?\<phi>') ?pn (frz_rw (?pn # B) \<psi>)"
+  have \<phi>: "Formula.sat \<sigma> V' v' i' ?\<phi>' = Formula.sat \<sigma> V' v' i' \<phi>" for V' v' i'
+    by (rule 1(1)[OF refl])
+  have \<psi>: "Formula.sat \<sigma> V' v' i' (frz_rw (?pn # B) \<psi>) = Formula.sat \<sigma> V' v' i' \<psi>" for V' v' i'
+    by (rule 1(2)[OF refl refl])
+  have h: "Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)) v i ?\<psi>' =
+    Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)) v i (frz_rw (?pn # B) \<psi>)"
+    by (rule sat_hoist) auto
+  have "Formula.sat \<sigma> V v i (Formula.Frz p ?\<phi>' ?\<psi>') = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
+    using h by (simp add: \<phi> \<psi>)
+  moreover have "Formula.sat \<sigma> V v i (Formula.Let p ?\<phi>' ?\<psi>') =
+    Formula.sat \<sigma> V v i (Formula.Frz p ?\<phi>' ?\<psi>')" if "now_only ?pn ?\<psi>'"
+    using sat_Frz_now_only[of p ?\<phi>' ?\<psi>'] that by simp
+  ultimately show ?case
+    by (simp add: Let_def)
+qed (auto split: nat.splits)
 
 lemma full_env_Cons_upd: "full_env B P j \<Longrightarrow> full_env (pn # B) (P(pn \<mapsto> x)) j"
   by (auto simp: full_env_def)
@@ -536,6 +807,15 @@ next
     using 6(1) wty_formula_AndsD[OF 6(2)] by (auto intro!: wty_formula.Ands)
 qed (erule wty_formula.cases; auto intro: wty_formula.intros)+
 
+lemma fvi_frz_opt[simp]: "Formula.fvi b (frz_opt \<phi>) = Formula.fvi b \<phi>"
+  by (simp add: frz_opt_def Let_def)
+
+lemma nfv_frz_opt[simp]: "Formula.nfv (frz_opt \<phi>) = Formula.nfv \<phi>"
+  by (simp add: frz_opt_def Let_def)
+
+lemma sat_frz_opt[simp]: "Formula.sat \<sigma> V v i (frz_opt \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (simp add: frz_opt_def Let_def)
+
 lemma progress_frz_opt:
   "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> full_env [] P j \<Longrightarrow> progress \<sigma> P (frz_opt \<phi>) j = progress \<sigma> P \<phi> j"
   by (simp add: frz_opt_def Let_def progress_frz_rw)
@@ -546,9 +826,5 @@ lemma progress_frz_opt_empty[simp]: "progress \<sigma> Map.empty (frz_opt \<phi>
 lemma wty_frz_opt: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> frz_opt \<phi>"
   by (simp add: frz_opt_def Let_def wty_frz_rw)
 
-lemma mmonitorable_frz_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (frz_opt \<phi>)"
-  by (simp add: frz_opt_def Let_def mmonitorable_exec_mmonitorable)
-
-(*<*)
 end
 (*>*)
