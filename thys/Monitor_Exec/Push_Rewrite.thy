@@ -21,7 +21,7 @@ text \<open>
   @{text push_ex} makes that move everywhere it applies, and the lemmas below show that it
   changes nothing the monitor's specification depends on: the free variables, the satisfaction
   relation, the progress, the relevant events, safety, future-boundedness and typing.  It goes
-  into both operands of a @{text Let}: the rewrite of @{theory MFODL_Monitor_Exec.Frz_Rewrite}
+  into both operands of a @{text Let}: the rewrite of @{theory Monitor_Exec.Frz_Rewrite}
   turns most freezes into one, and its body is where their windows are.  It leaves alone the
   subformulas whose treatment builds new formulas from their operands (@{text LetPast},
   @{text Frz}, the regular expressions, the trigger and release operators, and a conjunction
@@ -191,9 +191,9 @@ subsection \<open>The rewritten formula\<close>
 text \<open>
   The monitor is started on @{term "eprep \<phi>"}: the frozen predicates are taken out of
   the temporal operators and bound with @{const Formula.Let} where they can be
-  (@{theory MFODL_Monitor_Exec.Frz_Rewrite}), the existential quantifiers are moved into the
+  (@{theory Monitor_Exec.Frz_Rewrite}), the existential quantifiers are moved into the
   windows, and the right operand of a release is bound with @{const Formula.Let} so that it is
-  evaluated once (@{theory MFODL_Monitor_Exec.Share_Rewrite}).  Everything the specification of
+  evaluated once (@{theory Monitor_Exec.Share_Rewrite}).  Everything the specification of
   the monitor for @{term \<phi>} depends on -- the number and set of free variables, the traces
   (through the signature), the satisfaction relation and the progress -- is the same for the
   rewritten formula, which is monitorable and well typed whenever @{term \<phi>} is.  Only the order

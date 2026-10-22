@@ -87,7 +87,7 @@ lemma iset_iensure[simp]: "iset (iensure msks A) = iset A"
 subsection \<open>Updating a table and its indices\<close>
 
 text \<open>Adding the tuples @{term X} and then removing the tuples @{term D}: every index is updated
-  by the two tables, which the code equations of @{theory MFODL_Monitor_Exec.Idx_Code} turn into
+  by the two tables, which the code equations of @{theory Monitor_Exec.Idx_Code} turn into
   a visit of the buckets of the moving tuples only.\<close>
 
 definition iupd :: "'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where

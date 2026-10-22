@@ -9,7 +9,7 @@ begin
 section \<open>The Until window with the aggregation fused in\<close>
 
 text \<open>
-  @{theory MFODL_Monitor_Exec.Since_Agg} fuses an aggregation into the Since window: the
+  @{theory Monitor_Exec.Since_Agg} fuses an aggregation into the Since window: the
   count set makes each tuple's entry into and exit from the window's union explicit, and those
   are exactly the events the kernel's incremental structure takes, so the aggregate is kept in
   step with the union and read off instead of recomputed.
@@ -399,7 +399,7 @@ section \<open>The executable fused Until window\<close>
 text \<open>
   The theory above fuses the aggregation into the Until window.  The
   executable window is the same structure with the count structure kept without its key set, as
-  the executable fused Since window of @{theory MFODL_Monitor_Exec.Since_Agg} keeps it: it reports
+  the executable fused Since window of @{theory Monitor_Exec.Since_Agg} keeps it: it reports
   the aggregate rather than the union, so the mapping answers everything it asks.  There is no
   invariant here -- that stayed a level below, in @{const valid_ua}.
 \<close>

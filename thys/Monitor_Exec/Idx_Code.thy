@@ -10,7 +10,7 @@ section \<open>The Since index maintained by its keys\<close>
 
 text \<open>
   The executable Since keeps its stored tables clustered by the join columns (@{const eidx}), and
-  @{theory MFODL_Monitor_Exec.Frame_Aux} maintains that index by whole-index operations: the tuples
+  @{theory Monitor_Exec.Frame_Aux} maintains that index by whole-index operations: the tuples
   that enter the window are clustered and merged in (@{const eidx_union}), the tuples that leave
   it are clustered and subtracted (@{const eidx_minus}), and the probe by the left operand's table
   restricts the index by a filter over all its keys.  Each of these walks the whole index at every

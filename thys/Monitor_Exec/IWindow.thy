@@ -16,7 +16,7 @@ text \<open>
   hands its union out as it is, so a join of the window's result probes the indices instead of
   building one at every time point.  Which indices the set carries is up to the window's
   consumer, who asks for them (@{text isw_ensure}).  Forgetting the indices
-  (@{text isw_abs}) maps every operation to the one of @{theory MFODL_Monitor_Exec.Window}, so the
+  (@{text isw_abs}) maps every operation to the one of @{theory Monitor_Exec.Window}, so the
   window's proofs apply unchanged.
 \<close>
 

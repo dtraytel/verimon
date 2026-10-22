@@ -7,7 +7,7 @@ begin
 
 
 text \<open>
-  Every theorem of @{theory MFODL_Monitor_Exec.Frame} needs its operand tables to be finite and
+  Every theorem of @{theory Monitor_Exec.Frame} needs its operand tables to be finite and
   well formed over the node's columns.  The simulation below takes that from the kernel: it is
   stated for the calls of @{const meval} that @{const kgood} covers, whose tables the kernel's
   correctness theorem describes (@{thm [source] kgood_tables}).
@@ -17,7 +17,7 @@ text \<open>
   @{term "esim n ks cs tw \<phi>d \<phi>"} relates a executable formula to a kernel one whose tables are over
   the column list @{term ks}, read by the executable one over its ascending order @{term cs}.  The
   relation is about the state alone; the operand well-formedness that the
-  @{theory MFODL_Monitor_Exec.Frame} theorems ask for comes from the call (@{const kgood}).
+  @{theory Monitor_Exec.Frame} theorems ask for comes from the call (@{const kgood}).
 \<close>
 
 text \<open>Widening the bound is harmless, which is what the node needs when a new batch of
@@ -89,7 +89,7 @@ text \<open>
 \<close>
 
 text \<open>
-  The simulation itself.  Every case is one theorem of @{theory MFODL_Monitor_Exec.Frame}
+  The simulation itself.  Every case is one theorem of @{theory Monitor_Exec.Frame}
   applied pointwise to the operand's output list, with @{thm [source] kgood_tables} supplying
   the operand well-formedness: the operands' calls are good when the node's is.
 \<close>

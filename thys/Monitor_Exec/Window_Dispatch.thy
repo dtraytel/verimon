@@ -10,8 +10,8 @@ section \<open>Choosing the structure at the ascending frame\<close>
 
 text \<open>
   The executable Since and Until nodes carry one of two structures: the general one of
-  @{theory MFODL_Monitor_Exec.Frame_Aux}, or the sliding window of
-  @{theory MFODL_Monitor_Exec.Window} where the left operand is closed (and, for the Until,
+  @{theory Monitor_Exec.Frame_Aux}, or the sliding window of
+  @{theory Monitor_Exec.Window} where the left operand is closed (and, for the Until,
   the interval contains zero).  The choice is made once, when the node is built, from the
   arguments alone; the operations dispatch on it, and the relation to the kernel's abstract
   auxiliary list is the disjunction of the two structures' relations.  The five Since lemmas and
@@ -515,8 +515,8 @@ section \<open>The structures the evaluator runs\<close>
 
 text \<open>
   The evaluator runs the structures above in the representations of
-  the executable windows of @{theory MFODL_Monitor_Exec.Since_Agg}, @{theory MFODL_Monitor_Exec.Until_Agg}
-  and @{theory MFODL_Monitor_Exec.Agg_Cache}, and its buffers in queues
+  the executable windows of @{theory Monitor_Exec.Since_Agg}, @{theory Monitor_Exec.Until_Agg}
+  and @{theory Monitor_Exec.Agg_Cache}, and its buffers in queues
   (@{typ "'a mbuf_t"}).  Each is related to the structure above by a function -- @{text rdsx},
   @{text rdux} and @{const Rep_mbuf_t} -- with which every operation commutes on every input,
   so the simulation states its relations on the images.

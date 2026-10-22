@@ -20,8 +20,8 @@ text \<open>
   every value of the type and no invariant has to be carried through the evaluator.  The table is
   built for one node, its key: a structure built for a different constraint or aggregation is
   rebuilt by the first step.  The window over it, @{text uswaggc}, is the window of
-  @{theory MFODL_Monitor_Exec.Since_Agg} with the count set over a mapping
-  (Section ``The executable fused Since window'' of @{theory MFODL_Monitor_Exec.Since_Agg}) and the aggregate moved into the new type, and
+  @{theory Monitor_Exec.Since_Agg} with the count set over a mapping
+  (Section ``The executable fused Since window'' of @{theory Monitor_Exec.Since_Agg}) and the aggregate moved into the new type, and
   it maps onto that window (@{text rsc}) with every operation commuting.
 
   The per-group reading rests on the result tuple of a group, @{text mkr}: the group with the

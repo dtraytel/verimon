@@ -15,9 +15,9 @@ text \<open>
   (@{const dual_since}), and rewritten, until it becomes monitorable. Optionally (@{text mw}), the prepared
   formula is converted into multi-way joins. The executable state is then built from it by
   @{const eminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
-  can (@{theory MFODL_Monitor_Exec.Frz_Rewrite}), moves existential quantifiers into the
-  windows they commute with (@{theory MFODL_Monitor_Exec.Push_Rewrite}), and binds the right
-  operand of a release so that it is evaluated once (@{theory MFODL_Monitor_Exec.Share_Rewrite}). The
+  can (@{theory Monitor_Exec.Frz_Rewrite}), moves existential quantifiers into the
+  windows they commute with (@{theory Monitor_Exec.Push_Rewrite}), and binds the right
+  operand of a release so that it is evaluated once (@{theory Monitor_Exec.Share_Rewrite}). The
   theorem @{text eminit_verimon_mverdicts} below states that the verdicts of the executable monitor
   started from this state are those of the input formula, provided the executable compiler covered
   the whole formula.

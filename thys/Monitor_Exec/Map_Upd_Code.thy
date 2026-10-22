@@ -776,6 +776,10 @@ setup \<open>Monomorphize.monomorphize_cmd
 
 subsection \<open>The result's upkeep, with the steps applied\<close>
 
+text \<open>The window's steps of @{theory Monitor_Exec.Agg_Cache} pass the aggregate's
+  step to @{const cstep} as an argument, where the redirection to its copy at the short tuples
+  below does not reach it; these name the two instances with the step applied.\<close>
+
 definition cstep_ins :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> event_data list \<Rightarrow>
     ugagg option \<times> event_data list set \<Rightarrow> ugagg option \<times> event_data list set" where
   "cstep_ins = cstep gstep_ins"
@@ -947,6 +951,10 @@ lemma ugres_q_unfold[code_unfold]: "ugres (uqok q) = ugres_q q"
   by (simp add: ugres_q_def)
 
 subsection \<open>The steps at the short tuples\<close>
+
+text \<open>The steps of @{theory Monitor_Exec.Agg_Gen} are generic in the element
+  type, and their generated code built the comparator of the key lists at every lookup; these are
+  their copies at @{typ event_data}, whose mapping operations the specialised ones take over.\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("gi_cnt", "edl_gi_cnt", ["event_data"]),
