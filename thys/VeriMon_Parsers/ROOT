@@ -1,20 +1,26 @@
 chapter AFP
 
-session VeriMon_Parsers = Containers +
+session VeriMon_Parsers = MFODL_Parser_Code +
   description
     "The parsers of the monitor's inputs, which do not depend on the monitoring algorithm: the
-     verified log parser (session Log_Parser) and the verified formula parser (sessions
-     MFODL_Grammar, MFODL_Parser and MFODL_Parser_Code, built with the grammar package). They are
-     collected into one heap at the bottom of the monitor's sessions, so that a change to the
-     monitor does not check them again."
+     verified formula parser (sessions MFODL_Grammar, MFODL_Parser and MFODL_Parser_Code, built
+     with the grammar package) and the verified log parser (session Log_Parser), together with
+     the library session Containers.  The formula parser, by far the slowest of them, is the
+     parent, so that a build of all sessions checks it only once; Containers and the log parser
+     are checked here again.  The monitor's sessions build on this heap, so that a change to the
+     monitor does not check the parsers again."
   options [timeout = 0]
   sessions
+    Deriving
+    Containers
     MFODL_Syntax
     Log_Parser
-    MFODL_Parser_Code
   theories
+    "Deriving.Derive"
+    "Deriving.Comparator"
+    "Deriving.RBT_Comparator_Impl"
+    "Containers.Containers"
     "MFODL_Syntax.MFODL_Post"
     "MFODL_Syntax.String_Escape"
     "MFODL_Syntax.Byte_String"
     "Log_Parser.Log_Code"
-    "MFODL_Parser_Code.MFODL_Parser_Code"

@@ -6,7 +6,6 @@ session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
      the concrete instance default_maux of the monitoring algorithm is an instance of maux."
   sessions
     Generic_Join_Devel
-    Monitor_Impl
   theories
     Optimized_Common_Proof
     Optimized_Since_Proof
@@ -16,4 +15,3 @@ session Monitor_Impl_Proof (AFP) = MFODL_Monitor_Proof +
     Optimized_Until_Deque_Proof
     Optimized_Join_Proof
     Monitor_Impl_Proof
-    "Monitor_Impl.Monomorphic_Code"

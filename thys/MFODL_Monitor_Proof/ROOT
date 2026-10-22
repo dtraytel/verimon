@@ -1,9 +1,11 @@
 chapter AFP
 
-session MFODL_Monitor_Proof (AFP) = MFODL_Monitor +
+session MFODL_Monitor_Proof (AFP) = VeriMon_CLI +
   description
     "The progress of the monitoring algorithm and its correctness: the invariant wf_mformula, its
-     preservation by meval, and the correctness of VeriMon's preparation for the algorithm."
+     preservation by meval, and the correctness of VeriMon's preparation for the algorithm.  The
+     theories need only session MFODL_Monitor; the parent is the top of the code sessions, so
+     that the proof sessions form one chain on top of the code chain and check no theory twice."
   theories
     Progress
     Progress_Rewriting

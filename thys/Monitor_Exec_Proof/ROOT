@@ -4,10 +4,6 @@ session Monitor_Exec_Proof = Monitor_Impl_Proof +
   description
     "The executable monitor simulates the kernel (Kernel_Call and the theories *_Proof) and so
      inherits its correctness; Log_Monitor_Online states it for the online interface."
-  sessions
-    Monitor_DS
-    Log_Parser
-    Monitor_Exec
   theories
     Kernel_Call
     Tuple_Fields_Proof

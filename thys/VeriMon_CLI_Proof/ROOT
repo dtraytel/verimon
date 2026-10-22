@@ -7,9 +7,5 @@ session VeriMon_CLI_Proof = Monitor_Exec_Proof +
      specification prescribes for every prefix the log denotes, and an error on every log that
      denotes no prefix."
   options [document = false]
-  sessions
-    MFODL_Frontend
-    Log_Parser
-    VeriMon_CLI
   theories
     CLI_Proof
