@@ -11,10 +11,6 @@ subsection \<open>The split of a conjunction\<close>
 lemma is_frz_predD: "is_frz_pred pn q \<Longrightarrow> \<exists>e ts. q = Formula.Pred e ts \<and> (e, length ts) = pn"
   by (cases q) auto
 
-lemma frz_find_Some:
-  "frz_find pn l = Some (q, r) \<Longrightarrow> is_frz_pred pn q \<and> set l = insert q (set r)"
-  by (induct l arbitrary: r) (auto split: if_splits option.splits)
-
 lemma Min_insert_image:
   assumes "set l = insert q (set r)" "r \<noteq> []"
   shows "Min (f ` set l) = min (f q) (Min (f ` set r))"
@@ -25,20 +21,6 @@ lemma eval_dec_trm: "0 \<notin> Formula.fv_trm s \<Longrightarrow> Formula.eval_
 
 lemma fvi_dec_trm: "0 \<notin> Formula.fv_trm s \<Longrightarrow> Formula.fvi_trm b (dec_trm s) = Formula.fvi_trm (Suc b) s"
   by (induct s) auto
-
-lemma wty_dec_trm: "case_nat t E \<turnstile> s :: ty \<Longrightarrow> 0 \<notin> Formula.fv_trm s \<Longrightarrow> E \<turnstile> dec_trm s :: ty"
-proof (induct rule: wty_trm.induct)
-  case (Var x ty)
-  then show ?case
-    by (cases x) (auto intro: wty_trm.Var)
-qed (auto intro: wty_trm.intros)
-
-lemma frz_split_Exists_Some:
-  assumes "frz_split pn (Formula.Exists t \<alpha>) = Some (q, \<alpha>')"
-  obtains e ts \<beta> where "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
-    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
-    "\<alpha>' = Formula.Exists t \<beta>"
-  using assms by (auto split: option.splits prod.splits formula.splits if_splits)
 
 lemma frz_split_pred: "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> is_frz_pred pn q"
 proof (induct pn \<psi> arbitrary: q r rule: frz_split.induct)
@@ -88,30 +70,6 @@ proof (induct pn \<psi> arbitrary: q r b rule: frz_split.induct)
     using 3(1)[OF s(1)] s(4) by simp
 qed (auto split: if_splits option.splits dest!: frz_find_Some)
 
-lemma frz_split_wty:
-  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> q \<and> S, E \<turnstile> r"
-proof (induct pn \<psi> arbitrary: q r E rule: frz_split.induct)
-  case (3 pn t \<alpha>)
-  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
-    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
-    "r = Formula.Exists t \<beta>"
-    by (rule frz_split_Exists_Some)
-  from 3(3) have "S, case_nat t E \<turnstile> \<alpha>"
-    by (rule wty_formula_ExistsD)
-  with 3(1)[OF s(1)] have p: "S, case_nat t E \<turnstile> Formula.Pred e ts" and b: "S, case_nat t E \<turnstile> \<beta>"
-    by blast+
-  from p obtain tys where "S (e, length ts) = Some tys"
-    "list_all2 (\<lambda>tm ty. case_nat t E \<turnstile> tm :: ty) ts tys"
-    by (cases rule: wty_formula.cases) auto
-  moreover have "E \<turnstile> dec_trm tm :: ty" if "tm \<in> set ts" "case_nat t E \<turnstile> tm :: ty" for tm ty
-    using wty_dec_trm[OF that(2)] s(2) that(1) by (simp add: list_all_iff)
-  ultimately have "S, E \<turnstile> q"
-    using s(3) by (auto intro!: wty_formula.Pred simp: list.rel_map elim!: list.rel_mono_strong)
-  then show ?case
-    using b s(4) by (auto intro: wty_formula.Exists)
-qed (auto split: if_splits option.splits dest!: frz_find_Some elim!: wty_formula.cases
-  intro!: wty_formula.intros)
-
 lemma frz_split_progress:
   "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow>
     progress \<sigma> P \<psi> j = min (progress \<sigma> P q j) (progress \<sigma> P r j)"
@@ -143,23 +101,6 @@ next
     using 3(1)[OF s(1) 3(3)] s(3,4) by simp
 qed (auto split: if_splits)
 
-lemma hoist_Exists_cases:
-  obtains (None) "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = None"
-    "hoist fl pn (Formula.Exists t \<phi>) = Formula.Exists t (hoist fl pn \<phi>)"
-  | (Some) q \<alpha> where "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = Some (q, \<alpha>)"
-    "hoist fl pn (Formula.Exists t \<phi>) = Formula.And q \<alpha>"
-proof (cases "frz_split pn (Formula.Exists t (hoist fl pn \<phi>))")
-  case None
-  then show thesis
-    by (intro that(1)) (simp_all only: hoist.simps(8) Let_def option.case)
-next
-  case (Some x)
-  then obtain q \<alpha> where "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = Some (q, \<alpha>)"
-    by (cases x) simp
-  then show thesis
-    by (intro that(2)) (simp_all only: hoist.simps(8) Let_def option.case prod.case)
-qed
-
 lemma fvi_hoist[simp]: "Formula.fvi b (hoist fl pn \<phi>) = Formula.fvi b \<phi>"
 proof (induct fl pn \<phi> arbitrary: b rule: hoist.induct)
   case (1 fl pn \<phi> I \<psi>)
@@ -189,63 +130,6 @@ qed (auto simp: Let_def split: option.splits if_splits dest!: frz_split_fvi)
 
 lemma nfv_hoist[simp]: "Formula.nfv (hoist fl pn \<phi>) = Formula.nfv \<phi>"
   by (simp add: Formula.nfv_def)
-
-lemma wty_frz_split_And:
-  assumes "frz_split pn \<psi> = Some (q, \<alpha>)" "S, E \<turnstile> \<psi>" "S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<beta>"
-  shows "S, E \<turnstile> Formula.And q \<beta>"
-  using frz_split_wty[OF assms(1,2)] assms(3) by (auto intro: wty_formula.And)
-
-lemma wty_hoist: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> hoist fl pn \<phi>"
-proof (induct fl pn \<phi> arbitrary: S E rule: hoist.induct)
-  case (1 fl pn \<phi> I \<psi>)
-  then have \<phi>: "S, E \<turnstile> \<phi>" and \<psi>: "S, E \<turnstile> hoist fl pn \<psi>"
-    by (auto dest: wty_formulaD)
-  then have "S, E \<turnstile> hoist fl pn \<phi>"
-    using 1(2)[OF refl _ \<phi>] 1(3)[OF refl _ refl \<phi>]
-    by (cases "if memL I 0 \<or> fl then frz_split pn (hoist fl pn \<psi>) else None") auto
-  with \<psi> show ?case
-    by (auto split: option.splits simp: Let_def intro: wty_formula.Since
-      intro!: wty_frz_split_And dest: frz_split_wty)
-next
-  case (2 fl pn \<phi> I \<psi>)
-  then have \<phi>: "S, E \<turnstile> \<phi>" and \<psi>: "S, E \<turnstile> hoist fl pn \<psi>"
-    by (auto dest: wty_formulaD)
-  then have "S, E \<turnstile> hoist fl pn \<phi>"
-    using 2(2)[OF refl _ \<phi>] 2(3)[OF refl _ refl \<phi>]
-    by (cases "frz_split pn (hoist fl pn \<psi>)") auto
-  with \<psi> show ?case
-    by (auto split: option.splits simp: Let_def intro: wty_formula.Until
-      intro!: wty_frz_split_And dest: frz_split_wty)
-next
-  case (3 fl pn I \<psi>)
-  then have "S, E \<turnstile> hoist fl pn \<psi>"
-    by (auto dest: wty_formulaD)
-  then show ?case
-    by (auto split: option.splits simp: Let_def intro: wty_formula.Next
-      intro!: wty_frz_split_And dest: frz_split_wty)
-next
-  case (7 fl pn l)
-  show ?case
-    using 7(1) wty_formula_AndsD[OF 7(2)] by (auto intro!: wty_formula.Ands)
-next
-  case (8 fl pn t \<phi>)
-  have "S, E \<turnstile> Formula.Exists t (hoist fl pn \<phi>)"
-    using 8(1)[OF wty_formula_ExistsD[OF 8(2)]] by (rule wty_formula.Exists)
-  then show ?case
-  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
-    case (Some q \<alpha>)
-    then show ?thesis
-      using frz_split_wty[OF Some(1) \<open>S, E \<turnstile> Formula.Exists t (hoist fl pn \<phi>)\<close>]
-      by (auto intro: wty_formula.And)
-  qed simp
-next
-  case (11 fl pn I \<psi>)
-  then have "S, E \<turnstile> hoist fl pn \<psi>"
-    by (auto dest: wty_formulaD)
-  then show ?case
-    by (auto split: option.splits if_splits simp: Let_def intro: wty_formula.Prev
-      intro!: wty_frz_split_And dest: frz_split_wty)
-qed (erule wty_formula.cases; auto intro: wty_formula.intros)+
 
 lemma sat_frz_pred_const:
   assumes "is_frz_pred pn q" "V pn = Some X" "\<forall>w j j'. X w j = X w j'"
@@ -794,32 +678,10 @@ next
     using 2(1)[OF 2(3,4)] 2(2)[OF pm full_env_Cons_upd[OF 2(4)]] by (simp add: fun_upd_def)
 qed (auto simp: o_def cong: map_cong)
 
-lemma wty_frz_rw: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> frz_rw B \<phi>"
-proof (induct B \<phi> arbitrary: S E rule: frz_rw.induct)
-  case (1 B p \<phi> \<psi>)
-  let ?pn = "(p, Formula.nfv \<phi>)"
-  from 1(3) obtain E' where \<phi>: "S, E' \<turnstile> \<phi>" and \<psi>: "S(?pn \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi>"
-    by (cases rule: wty_formula.cases) auto
-  have \<phi>': "S, E' \<turnstile> frz_rw B \<phi>"
-    by (rule 1(1)[OF refl \<phi>])
-  have \<psi>': "S(?pn \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile>
-      hoist (full_now B (frz_rw B \<phi>)) ?pn (frz_rw (?pn # B) \<psi>)"
-    by (rule wty_hoist[OF 1(2)[OF refl refl \<psi>]])
-  show ?case
-    using wty_formula.Let[OF \<phi>'] wty_formula.Frz[OF \<phi>'] \<psi>' by (simp add: Let_def)
-next
-  case (2 B p \<phi> \<psi>)
-  from 2(3) obtain E' where \<phi>: "S, E' \<turnstile> \<phi>" and \<psi>: "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi>"
-    by (cases rule: wty_formula.cases) auto
-  show ?case
-    using wty_formula.Let[OF 2(1)[OF \<phi>]] 2(2)[OF \<psi>] by (simp add: fun_upd_def)
-next
-  case (6 B l)
-  show ?case
-    using 6(1) wty_formula_AndsD[OF 6(2)] by (auto intro!: wty_formula.Ands)
-qed (erule wty_formula.cases; auto intro: wty_formula.intros)+
-
 lemma fvi_frz_opt[simp]: "Formula.fvi b (frz_opt \<phi>) = Formula.fvi b \<phi>"
+  by (simp add: frz_opt_def Let_def)
+
+lemma nfv_frz_opt[simp]: "Formula.nfv (frz_opt \<phi>) = Formula.nfv \<phi>"
   by (simp add: frz_opt_def Let_def)
 
 lemma sat_frz_opt[simp]: "Formula.sat \<sigma> V v i (frz_opt \<phi>) = Formula.sat \<sigma> V v i \<phi>"
@@ -832,12 +694,5 @@ lemma progress_frz_opt:
 lemma progress_frz_opt_empty[simp]: "progress \<sigma> Map.empty (frz_opt \<phi>) j = progress \<sigma> Map.empty \<phi> j"
   by (simp add: progress_frz_opt full_env_def)
 
-lemma wty_frz_opt: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> frz_opt \<phi>"
-  by (simp add: frz_opt_def Let_def wty_frz_rw)
-
-lemma mmonitorable_frz_opt: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (frz_opt \<phi>)"
-  by (simp add: frz_opt_def Let_def mmonitorable_exec_mmonitorable)
-
-(*<*)
 end
 (*>*)

@@ -1159,6 +1159,40 @@ termination
 
 declare usc_expire.simps[simp del]
 
+lemma sa_move_rsc: "sa_move args p nt pend win (ucc (uc_cnt x)) (uc_ax x) =
+    (case usc_move args p q nt pend win x of (pend', win', x') \<Rightarrow> (pend', win', ucc (uc_cnt x'), uc_ax x'))"
+proof (induct args p q nt pend win x rule: usc_move.induct)
+  case (1 args p q nt pend win x)
+  obtain h pend' where hd: "safe_hd pend = (h, pend')" by (cases "safe_hd pend")
+  show ?case
+  proof (cases h)
+    case None
+    then show ?thesis by (subst sa_move.simps, subst usc_move.simps) (simp add: hd)
+  next
+    case (Some e)
+    note IH = 1[OF hd[symmetric] Some]
+    show ?thesis
+      using IH by (subst sa_move.simps, subst usc_move.simps) (simp add: hd Some)
+  qed
+qed
+
+lemma sa_expire_rsc: "sa_expire args p nt win (ucc (uc_cnt x)) (uc_ax x) =
+    (case usc_expire args p q nt win x of (win', x') \<Rightarrow> (win', ucc (uc_cnt x'), uc_ax x'))"
+proof (induct args p q nt win x rule: usc_expire.induct)
+  case (1 args p q nt win x)
+  obtain h win' where hd: "safe_hd win = (h, win')" by (cases "safe_hd win")
+  show ?case
+  proof (cases h)
+    case None
+    then show ?thesis by (subst sa_expire.simps, subst usc_expire.simps) (simp add: hd)
+  next
+    case (Some e)
+    note IH = 1[OF hd[symmetric] Some]
+    show ?thesis
+      using IH by (subst sa_expire.simps, subst usc_expire.simps) (simp add: hd Some)
+  qed
+qed
+
 definition usc_init :: "args \<Rightarrow> eaggp \<Rightarrow> uconstr option \<Rightarrow> uswaggc" where
   "usc_init args p q = ((0, empty_queue, empty_queue), uc_mk q p Mapping.empty (ag_init p (args_n args)))"
 
@@ -1182,5 +1216,27 @@ definition usc_add_new_table :: "args \<Rightarrow> eaggp \<Rightarrow> uconstr 
 definition usc_result :: "uconstr option \<Rightarrow> args \<Rightarrow> eaggp \<Rightarrow> uswaggc \<Rightarrow> event_data list set" where
   "usc_result q args p aux = (case aux of ((t, pend, win), x) \<Rightarrow> uc_res q p (args_n args) x)"
 
+lemma sa_add_new_ts_rsc: "sa_add_new_ts args p nt (rsc aux) = rsc (usc_add_new_ts args p q nt aux)"
+proof -
+  obtain t pend win x where aux: "aux = ((t, pend, win), x)" by (cases aux) auto
+  obtain pend' win' x' where m: "usc_move args p q nt pend win x = (pend', win', x')"
+    by (cases "usc_move args p q nt pend win x") auto
+  obtain win'' x'' where e: "usc_expire args p q nt win' x' = (win'', x'')"
+    by (cases "usc_expire args p q nt win' x'") auto
+  show ?thesis
+    using sa_move_rsc[of args p nt pend win x q] sa_expire_rsc[of args p nt win' x' q]
+    by (simp add: aux m e sa_add_new_ts_def usc_add_new_ts_def)
+qed
+
+lemma sa_join_rsc: "sa_join args p X (rsc aux) = rsc (usc_join args p q X aux)"
+  by (cases aux) (auto simp: sa_join_def sw_join_def usc_join_def ucc.simps)
+
+lemma sa_add_new_table_rsc: "sa_add_new_table args p X (rsc aux) = rsc (usc_add_new_table args p q X aux)"
+  by (cases aux) (auto simp: sa_add_new_table_def usc_add_new_table_def)
+
+lemma sa_result_rsc: "ufilt q (sa_result args p (rsc aux)) = usc_result q args p aux"
+  by (cases aux) (auto simp: sa_result_def usc_result_def uc_res ag_res_ucc simp del: ag_res_ucc_None)
+
+(*<*)
 end
 (*>*)

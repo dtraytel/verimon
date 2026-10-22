@@ -88,6 +88,12 @@ fun umatch :: "Formula.trm list \<Rightarrow> event_data list \<Rightarrow> (nat
       | Some z \<Rightarrow> if y = z then Some f else None))"
 | "umatch _ _ = None"
 
+lemma umatch_match: "umatch tms xs = match tms xs"
+  by (induct tms xs rule: umatch.induct) auto
+
+lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
+  by (force simp: Option.these_def image_iff)
+
 definition umatch_table :: "Formula.trm list \<Rightarrow> nat list \<Rightarrow> event_data list set \<Rightarrow>
     event_data list set" where
   "umatch_table tms cs X =

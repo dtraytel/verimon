@@ -269,6 +269,22 @@ definition iprobe_l :: "mrg list \<Rightarrow> bool list \<Rightarrow> 'b eindex
     'b list set" where
   "iprobe_l p rk m B = fold (\<lambda>b acc. acc \<union> (\<lambda>a. emerge p a b) ` ebucket m (eproj rk b)) (csl B) {}"
 
+lemma fold_union_image: "fold (\<lambda>x acc. acc \<union> f x) l acc = acc \<union> (\<Union>x \<in> set l. f x)"
+  by (induct l arbitrary: acc) auto
+
+lemma ebucket_eidx: "ebucket (eidx msk T) k = {y \<in> T. eproj msk y = k}"
+  by (auto simp: ebucket_def lookup_eidx)
+
+lemma iprobe_eq:
+  "set (csl A) = A \<Longrightarrow>
+   iprobe p lk (eidx rk B) A = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
+  by (auto simp: iprobe_def fold_union_image ebucket_eidx) metis
+
+lemma iprobe_l_eq:
+  "set (csl B) = B \<Longrightarrow>
+   iprobe_l p rk (eidx lk A) B = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
+  by (simp add: iprobe_l_def fold_union_image ebucket_eidx) blast
+
 text \<open>
   The join of two indexed tables by a plan: an operand that carries an index at the mask the plan
   probes is probed through it, and otherwise the join is that of the underlying tables.  An index
@@ -295,10 +311,48 @@ fun ijoin0 :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \
      else gbin_join0 (EJGen p lk rk) (iset A) pos (iset B))"
 | "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
 
+theorem ijoin0_eq:
+  fixes A B :: "event_data itab"
+  shows "ijoin0 pl A pos B = gbin_join0 pl (iset A) pos (iset B)"
+proof (cases pl)
+  case (EJSub msk)
+  then show ?thesis
+    by (cases pos; cases "Mapping.lookup (iidxs A) msk")
+      (auto simp: esemi_idx_dsemi dest!: iidxs_eidx)
+next
+  case (EJSup msk)
+  then show ?thesis
+    by (cases pos; cases "Mapping.lookup (iidxs B) msk")
+      (auto simp: esemi_idx_dsemi esemi_def dest!: iidxs_eidx)
+next
+  case (EJGen p lk rk)
+  show ?thesis
+  proof (cases "pos \<and> finite (iset A) \<and> finite (iset B)")
+    case True
+    then have cA: "set (csl (iset A)) = iset A" and cB: "set (csl (iset B)) = iset B"
+      by (simp_all add: set_csl_ed)
+    show ?thesis
+      using EJGen True
+      apply (cases "Mapping.lookup (iidxs B) rk"; cases "Mapping.lookup (iidxs A) lk")
+         apply (auto simp: iprobe_eq[OF cA] iprobe_l_eq[OF cB] ggen_join_eq[OF cA cB] dest!: iidxs_eidx)
+      apply blast+
+      done
+  next
+    case False
+    then show ?thesis
+      using EJGen by (simp only: ijoin0.simps if_not_P[OF False] if_False)
+  qed
+qed simp_all
+
 definition ijoin :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \<Rightarrow> 'b itab \<Rightarrow> 'b list set" where
   "ijoin pl A pos B = (if Set.is_empty (iset A) then {}
      else if Set.is_empty (iset B) then (if pos then {} else iset A)
      else ijoin0 pl A pos B)"
 
+theorem ijoin_eq:
+  fixes A B :: "event_data itab"
+  shows "ijoin pl A pos B = gbin_join pl (iset A) pos (iset B)"
+  using ijoin0_eq by (simp add: ijoin_def gbin_join_def)
+(*<*)
 end
 (*>*)

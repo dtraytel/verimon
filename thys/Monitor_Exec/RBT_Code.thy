@@ -198,10 +198,6 @@ lemma paint_code[code]:
 
 section \<open>The Since structure's deletions, through the specialised deletion\<close>
 
-text \<open>The deletion of a key set from the Since structure's timestamp mapping, copied by
-  @{theory MFODL_Monitor_Exec.Mono_Sweep}, gets the specialised deletion for the tree
-  representation and the generic equation for the others.\<close>
-
 lemma edl_mapping_delete_set_code[code]:
   "edl_mapping_delete_set m (RBT_set rbt) = RBT_Set2.fold ed_delete_nat rbt m"
   "edl_mapping_delete_set m (DList_set dxs) = (if finite (DList_set dxs)

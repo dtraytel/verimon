@@ -6,5 +6,9 @@ begin
 
 
 
+text \<open>The deletion of a key set from the Since structure's timestamp mapping, copied by
+  @{theory MFODL_Monitor_Exec.Mono_Sweep}, gets the specialised deletion for the tree
+  representation and the generic equation for the others.\<close>
+
 end
 (*>*)
