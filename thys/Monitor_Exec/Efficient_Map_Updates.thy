@@ -401,7 +401,7 @@ proof -
     by (simp add: Let_def split: prod.splits)
 qed
 
-text \<open>Then the new table is the right operand's table itself.\<close>
+text \<open>Without the test, the new table is the right operand's table itself.\<close>
 
 definition guntil_a2_step :: "('b list, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
     ts + tp \<Rightarrow> 'b list \<Rightarrow> ('b list, ts + tp) mapping dq \<Rightarrow> ('b list, ts + tp) mapping dq" where
@@ -727,7 +727,7 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("gsum", "(nat \<times> integer) \<times> (event_data list, nat) mapping")])
   ["etuple_dict_simps"]\<close>
 
-subsection \<open>Result upkeep with applied steps\<close>
+subsection \<open>Result cache with applied steps\<close>
 
 text \<open>@{const cstep} takes the step unapplied, out of reach of the redirection to its copy;
   these name the two applied instances.\<close>

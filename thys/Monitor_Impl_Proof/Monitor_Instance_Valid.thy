@@ -12,7 +12,7 @@ text \<open>Merging the structures' proof theories brings @{thm [source] Let_def
 
 declare Let_def[simp del]
 
-subsection \<open>Buffers as queues\<close>
+subsection \<open>Refinement of the buffers\<close>
 
 lemma Rep_mbuf_t_cases[simp]:
   "mbuf_t_cases xs = (None, xs') \<Longrightarrow> Rep_mbuf_t xs = []"

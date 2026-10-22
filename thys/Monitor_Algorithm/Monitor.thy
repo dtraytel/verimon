@@ -10,13 +10,13 @@ theory Monitor
 begin
 (*>*)
 
-
 section \<open>Generic monitoring algorithm\<close>
 
-text \<open>The algorithm defined here abstracts over the implementation of the temporal operators.\<close>
+text \<open>The algorithm is parametrized by the auxiliary data structures of the temporal operators.\<close>
 
+subsection \<open>Regular expressions\<close>
 
-subsection \<open> Regular expressions\<close>
+subsubsection \<open>Indexed regular expressions\<close>
 
 datatype mregex =
   MSkip nat
@@ -127,7 +127,7 @@ qed
 
 derive linorder mregex
 
-subsubsection \<open>Left Partial Derivative (LPD)\<close>
+subsubsection \<open>Left partial derivatives\<close>
 
 definition saturate where
   "saturate f = while (\<lambda>S. f S \<noteq> S) f"
@@ -278,7 +278,7 @@ lemma LPDs_code[code]:
 
 end
 
-subsubsection \<open>Right Partial Derivative (RPD)\<close>
+subsubsection \<open>Right partial derivatives\<close>
 
 primrec RPD where
   "RPD (MSkip n) = (case n of 0 \<Rightarrow> {} | Suc m \<Rightarrow> {MSkip m})"
@@ -401,7 +401,7 @@ lemma RPDs_code[code]:
 end
 
 
-subsection \<open> Datatypes \<close>
+subsection \<open>Datatypes of the monitor state\<close>
 
 type_synonym ts = nat
 
@@ -413,13 +413,10 @@ type_synonym 'a mbuf2S = "'a table list \<times> 'a table list \<times> ts list 
 type_synonym 'a msaux = "(ts \<times> 'a table) list"
 type_synonym 'a mtaux = "(ts \<times> 'a table \<times> 'a table) list"
 type_synonym 'a muaux = "(ts \<times> 'a table \<times> 'a table) list"
-type_synonym 'a mr\<delta>aux = "(ts \<times> (mregex, 'a table) mapping) list" \<comment> \<open> right and left derivs. aux \<close>
+type_synonym 'a mr\<delta>aux = "(ts \<times> (mregex, 'a table) mapping) list"
 type_synonym 'a ml\<delta>aux = "(ts \<times> 'a table list \<times> 'a table) list"
 
 datatype mconstraint = MEq | MLess | MLessEq
-
-text \<open>The columns of the aggregated formula (@{text aggargs_cols}) and of the two operands of a
-  temporal operator (@{text args_L}, @{text args_R}) are the column lists of their tables.\<close>
 
 record aggargs =
   aggargs_cols :: "nat list"
@@ -442,39 +439,22 @@ datatype pred_mode = Copy | Simple | Match
 
 datatype mtrm = MVar nat | MConst event_data
 
-text \<open>A freeze whose body reads the frozen predicate only at the body's first variables
-  (@{const key_sep}) can be evaluated without a copy per frozen table: one copy of the body is fed
-  a table @{term L} that contains every pending frozen table, and one the empty table, both as live
-  copies; the verdict for a time point takes the first copy's rows whose frozen tuple is in the
-  time point's frozen table and the second copy's other rows.  Which of the two evaluations runs
-  is decided by the work they count (@{text frz_step} below): it has no bearing on the verdicts.
-  The state of the decision: none for a freeze that is not separable; in the replay mode, the
-  accumulated regret, the backoff factor, the steps it has measured, the union of the frozen tables
-  of the current measurement with the number of its steps that brought new tuples, the estimates of
-  the size of @{term L} and of that number, and the frozen tables of the recent steps; in the
-  separable mode, the table @{term L} with its size, the progress of the two copies and their verdicts from
-  the first pending time point on (in pairs), and the regret, backoff, epoch steps and epoch
-  union.\<close>
+text \<open>The mode of a freeze: not separable, replaying the body per frozen table, or running two
+copies of the body, fed a table @{term L} of all pending frozen tables and the empty table.\<close>
 
 datatype ('a, 't) frz_sep =
     FSOff
   | FSStock nat nat nat 'a nat nat nat "'a list"
   | FSSep 'a nat nat "('t \<times> 't) list" nat nat nat 'a
 
-text \<open>The operations on the frozen tables (of type @{typ 'a}) and verdicts (of type @{typ 't}) that
-  the separable evaluation needs: the combination of a row of the two copies at a frozen table,
-  the union, the number of tuples of a table not in another, the size, the empty table, and the
-  sample of a table that the work model measures.\<close>
+text \<open>Combination of the copies' verdicts, union, number of new tuples, size, empty table and
+sample of frozen tables.\<close>
 
 datatype ('a, 't) frz_ops = FrzOps (fo_cmb: "'t \<Rightarrow> 't \<Rightarrow> 'a \<Rightarrow> 't") (fo_un: "'a \<Rightarrow> 'a \<Rightarrow> 'a")
   (fo_fr: "'a \<Rightarrow> 'a \<Rightarrow> nat") (fo_cd: "'a \<Rightarrow> nat") (fo_emp: 'a) (fo_smp: "'a \<Rightarrow> 'a")
 
-text \<open>Each node produces its tables over the column list @{const Formula.fv_list} of its
-  formula.  A node records the column lists of its operands where it needs them to combine
-  their tables: the conjunction, disjunction and existential quantifier, the bound formula
-  of a @{text Let} (whose tables are read positionally as a predicate), the multi-way
-  conjunction, the regular expressions (over the columns of the whole expression and of each
-  atom), and the assignment and constraint conjuncts (to evaluate terms).\<close>
+text \<open>Each node produces its tables over the columns @{const Formula.fv_list} of its formula and
+records its operands' columns where it combines their tables.\<close>
 
 datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   MRel "event_data table"
@@ -514,7 +494,7 @@ record ('msaux, 'muaux, 'mtaux) mstate =
   mstate_n :: nat
   mstate_t :: "ts list"
 
-subsection \<open> Init \<close>
+subsection \<open>Arguments, terms and aggregations\<close>
 
 definition init_args :: "\<I> \<Rightarrow> nat \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> aggargs option \<Rightarrow> args" where
   "init_args I n L R pos agg = \<lparr>args_ivl = I, args_n = n, args_L = L, args_R = R,
@@ -525,16 +505,11 @@ definition init_aggargs :: "nat list \<Rightarrow> nat \<Rightarrow> bool \<Righ
   "init_aggargs cs n g0 y \<omega> tys f = \<lparr>aggargs_cols = cs, aggargs_n = n, aggargs_g0 = g0,
     aggargs_y = y, aggargs_\<omega> = \<omega>, aggargs_tys = tys, aggargs_f = f\<rparr>"
 
-text \<open>The table of an equation between a variable and a constant has the variable's single
-  column; one between two constants has no columns.\<close>
-
 fun eq_rel :: "Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> event_data table" where
   "eq_rel (Formula.Const x) (Formula.Const y) = (if x = y then unit_table else empty_table)"
 | "eq_rel (Formula.Var x) (Formula.Const y) = singleton_table y"
 | "eq_rel (Formula.Const x) (Formula.Var y) = singleton_table x"
 | "eq_rel _ _ = undefined"
-
-text \<open>A term evaluated on a tuple over the columns @{term cs}.\<close>
 
 fun meval_trm :: "nat list \<Rightarrow> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data" where
   "meval_trm cs (Formula.Var x) v = tup_get cs v x"
@@ -557,10 +532,8 @@ definition packagg :: "args \<Rightarrow> ty Formula.formula \<Rightarrow> ty Fo
     | Some aggargs \<Rightarrow> Formula.Agg (aggargs_y aggargs)
       (aggargs_\<omega> aggargs) (aggargs_tys aggargs) (aggargs_f aggargs) f)"
 
-text \<open>The aggregation over a table with the columns @{term cs}: the tuples are grouped by
-  their values in the columns that are not bound by the aggregation (the key, over
-  @{term "shift_cols (length tys) cs"}), and each group yields the aggregate followed by the
-  key, a tuple over @{term "y # shift_cols (length tys) cs"}.\<close>
+text \<open>The tuples are grouped by their columns not bound by the aggregation, the key; each group
+yields the aggregate followed by the key.\<close>
 
 definition agg_key :: "nat \<Rightarrow> nat list \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
   "agg_key k cs x = restrict (filter (\<lambda>x. k \<le> x) cs) cs x"
@@ -604,15 +577,16 @@ definition safe_aggargs :: "aggargs \<Rightarrow> bool" where
 definition "valid_aggargs n R args = (case args of None \<Rightarrow> True | Some aggargs \<Rightarrow>
   n = length (aggargs_tys aggargs) + aggargs_n aggargs \<and> R = aggargs_cols aggargs \<and> safe_aggargs aggargs)"
 
-text \<open>The columns of the result of a temporal operator, after the aggregation if any.\<close>
-
 definition args_cols :: "args \<Rightarrow> nat list" where
   "args_cols args = (case args_agg args of None \<Rightarrow> args_R args
     | Some aggargs \<Rightarrow> aggargs_y aggargs # shift_cols (length (aggargs_tys aggargs)) (args_R args))"
-text \<open>The operations of the auxiliary structures, without their specification: the algorithm is
-  defined over these, so that an implementation of the structures yields an executable monitor
-  before (and independently of) the proof that it meets the specification
-  (locales @{text msaux}, @{text muaux}, @{text mtaux}, @{text maux}).\<close>
+
+subsection \<open>Auxiliary structures\<close>
+
+text \<open>Each structure has a locale of its operations and one of their specification; the algorithm
+is defined over the operations alone.\<close>
+
+subsubsection \<open>Since\<close>
 
 locale msaux_ops =
   fixes init_msaux :: "args \<Rightarrow> 'msaux"

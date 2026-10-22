@@ -68,7 +68,7 @@ qed
 
 subsection \<open>Generic multi-way join\<close>
 
-text \<open>The columns of the generic join's result, in its order.\<close>
+text \<open>The sorted columns of the positive tables, in which the generic join returns its result.\<close>
 
 abbreviation mcols :: "nat list list \<Rightarrow> nat list" where
   "mcols A_pos \<equiv> cols (\<Union>A\<in>set A_pos. set A)"
@@ -159,8 +159,8 @@ termination
 
 subsection \<open>Left-deep binary joins\<close>
 
-text \<open>A left-deep sequence of binary joins followed by antijoins for the negated tables, which
-  avoids the large constant factors of the generic join.\<close>
+text \<open>A left-deep sequence of binary joins followed by antijoins for the negated tables avoids
+  the large constant factors of the generic join.\<close>
 
 fun mmulti_join_pos :: "nat list \<Rightarrow> 'a table \<Rightarrow> (nat list \<times> 'a table) list \<Rightarrow> nat list \<times> 'a table" where
   "mmulti_join_pos cs t [] = (cs, t)"
@@ -170,8 +170,8 @@ fun mmulti_join_neg :: "nat list \<Rightarrow> 'a table \<Rightarrow> (nat list 
   "mmulti_join_neg cs t [] = t"
 | "mmulti_join_neg cs t ((cs', t') # L) = mmulti_join_neg cs (bin_join cs t False cs' t') L"
 
-text \<open>The unspecified @{text use_generic_join} selects the strategy, so correctness holds for
-  both; their column orders differ, so the result is reordered to the given columns.\<close>
+text \<open>The unspecified @{text use_generic_join} selects the strategy, and correctness is proved for
+  both; as their column orders differ, the result is reordered to the given columns.\<close>
 
 consts use_generic_join :: bool
 
