@@ -8,15 +8,6 @@ begin
 
 subsection \<open>The executable state machine\<close>
 
-text \<open>
-  The executable monitor's online interface mirrors the kernel's -- the record \<open>mstate\<close> and the
-  function \<open>mstep\<close> -- field for field, with @{const ieval} in place of @{const meval}.  The state
-  additionally records the ascending column list its verdicts are narrowed to, and its formula
-  is the indexed one: the state relation forgets the indices (@{const eabs}) and relates the
-  result to the kernel's formula by @{const esim}, and @{thm [source] ieval_eeval} carries a step
-  of @{const ieval} over to one of @{const eeval}.
-\<close>
-
 record emstate =
   emstate_i :: nat
   emstate_j :: nat

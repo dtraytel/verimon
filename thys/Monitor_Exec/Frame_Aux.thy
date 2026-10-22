@@ -323,15 +323,6 @@ definition euaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> c
 
 section \<open>The match structures over ascending columns\<close>
 
-text \<open>
-  The regular-expression nodes need no executable operations of their own.  Every table a match node
-  handles lives over the node's own columns or over an atom's, and the reordering turns the
-  kernel's operations into the very same operations over the ascending columns: the joins are
-  @{thm [source] etabc_join_sub}, the unions are @{thm [source] etabc_Un_img}.  The one thing
-  that does not come for free is that the guards really are tables over the node's columns: that
-  is the regular expression's safety condition, and the lemmas below carry it.
-\<close>
-
 text \<open>The atoms' tables, reordered each at its own columns.\<close>
 
 definition etabcs :: "cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> 'b list set list" where

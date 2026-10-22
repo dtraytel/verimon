@@ -8,22 +8,6 @@ begin
 
 section \<open>The match windows over the operands' own columns\<close>
 
-text \<open>
-  @{theory Monitor_Exec.Frame_Aux} relates the kernel's match windows at the kernel's
-  columns to the kernel's windows run at the ascending columns, on the reordered operands.  The
-  windows below are what the executable evaluator runs:
-  an operand is probed by the semi-join against its mask instead of the kernel's join, and they
-  are polymorphic in the field type.  This theory shows that at the ascending columns they are
-  the kernel's windows, so the relations @{const emrd_rel} and @{const emld_rel} of
-  @{theory Monitor_Exec.Frame_Aux} hold of them unchanged.
-
-  Two things differ from the kernel's derivatives.  The join against an atom is a semi-join,
-  which @{thm [source] join_sub_eq} relates to the kernel's join; and the join of two lax
-  epsilons is an intersection, which it is because both are tables over the node's columns.  The
-  unit table is the empty tuple, which is the kernel's, and a strict epsilon's atom needs no
-  reordering, because its columns are the node's.
-\<close>
-
 subsection \<open>The match structures over short tuples\<close>
 
 text \<open>

@@ -1016,6 +1016,15 @@ proof -
   then show ?thesis using vd r w by (auto simp: euaux'_def)
 qed
 
+text \<open>
+  The regular-expression nodes need no executable operations of their own.  Every table a match node
+  handles lives over the node's own columns or over an atom's, and the reordering turns the
+  kernel's operations into the very same operations over the ascending columns: the joins are
+  @{thm [source] etabc_join_sub}, the unions are @{thm [source] etabc_Un_img}.  The one thing
+  that does not come for free is that the guards really are tables over the node's columns: that
+  is the regular expression's safety condition, and the lemmas below carry it.
+\<close>
+
 lemma wf_atomsD:
   assumes "wf_atoms ks kss css rels" "i < length rels"
   shows "eframe (kss ! i) (css ! i)" "set (kss ! i) \<subseteq> set ks" "table (kss ! i) (rels ! i)"

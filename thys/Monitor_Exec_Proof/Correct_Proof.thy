@@ -18,6 +18,15 @@ sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
   by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
 
+text \<open>
+  The executable monitor's online interface mirrors the kernel's -- the record \<open>mstate\<close> and the
+  function \<open>mstep\<close> -- field for field, with @{const ieval} in place of @{const meval}.  The state
+  additionally records the ascending column list its verdicts are narrowed to, and its formula
+  is the indexed one: the state relation forgets the indices (@{const eabs}) and relates the
+  result to the kernel's formula by @{const esim}, and @{thm [source] ieval_eeval} carries a step
+  of @{const ieval} over to one of @{const eeval}.
+\<close>
+
 lemma eannotate_eq:
   "eannotate i tq vs acc = (i', tq', vs') \<Longrightarrow>
      i' = i + length vs \<and> Rep_mbuf_t tq' = drop (length vs) (Rep_mbuf_t tq) \<and>
