@@ -840,6 +840,9 @@ qed
 lemma fold_cnt_add1_ucc: "fold cnt_add1 xs (ucc c) = ucc (fold ucnt_add1 xs c)"
   by (induct xs arbitrary: c) (simp_all add: cnt_add1_ucc)
 
+lemma fold_cnt_del1_ucc: "fold cnt_del1 xs (ucc c) = ucc (fold ucnt_del1 xs c)"
+  by (induct xs arbitrary: c) (simp_all add: cnt_del1_ucc)
+
 lemma ufilt_Some: "ufilt (Some c) X = Set.filter (ueval_constraint c) X"
   by (simp add: ufilt_def uqok_def)
 

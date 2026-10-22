@@ -37,11 +37,6 @@ definition eidx_add :: "bool list \<Rightarrow> 'b list set \<Rightarrow> ('b li
     ('b list, 'b list set) mapping" where
   "eidx_add msk X i = eidx_union i (eidx msk X)"
 
-lemma eidx_add_code:
-  "eidx_add msk X i = (if finite X then set_fold_cfi (eidx_add1_cfi msk) i X
-     else Code.abort (STR ''eidx_add: infinite'') (\<lambda>_. eidx_add msk X i))"
-  by (simp add: set_fold_cfi.rep_eq eidx_add1_cfi.rep_eq eidx_add_fold)
-
 lemma eidx_add_RBT_code[code]:
   fixes rbt :: "'b :: ccompare list set_rbt"
   shows "eidx_add msk (RBT_set rbt) i = (case ID CCOMPARE('b list) of

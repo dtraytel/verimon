@@ -39,6 +39,9 @@ lemma table_etabc: "table cs (etabc ks cs T)"
 lemma etabw_dtabc: "eframe ks cs \<Longrightarrow> table ks T \<Longrightarrow> etabw ks cs (etabc ks cs T) = T"
   by (force simp: etabw_def etabc_def table_def restrict_inv image_image)
 
+lemma etabc_empty_iff: "(etabc ks cs T = {}) = (T = {})"
+  by (auto simp: etabc_def)
+
 lemma etabc_Un_img: "etabc ks cs (A \<union> B) = etabc ks cs A \<union> etabc ks cs B"
   by (auto simp: etabc_def)
 
@@ -1885,6 +1888,10 @@ qed
 
 lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
   by transfer (auto simp: ran_def)
+
+lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
+  (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
+  unfolding eidx_def by transfer auto
 
 text \<open>The index computes the semi-join: a stored tuple's bucket survives the restriction exactly
   when the tuple itself survives the filter.\<close>
