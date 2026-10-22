@@ -45,11 +45,6 @@ qed
 lemma eidx_add_fold: "finite X \<Longrightarrow> eidx_add msk X i = Finite_Set.fold (eidx_add1 msk) i X"
   by (intro mapping_eqI) (simp add: lookup_eidx_add lookup_fold_eidx_add1)
 
-lemma eidx_add_code:
-  "eidx_add msk X i = (if finite X then set_fold_cfi (eidx_add1_cfi msk) i X
-     else Code.abort (STR ''eidx_add: infinite'') (\<lambda>_. eidx_add msk X i))"
-  by (simp add: set_fold_cfi.rep_eq eidx_add1_cfi.rep_eq eidx_add_fold)
-
 lemma lookup_eidx_del1: "Mapping.lookup (eidx_del1 msk x i) k =
   (if k = eproj msk x then (if ebucket i k - {x} = {} then None else Some (ebucket i k - {x}))
    else Mapping.lookup i k)"

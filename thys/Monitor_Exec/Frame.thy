@@ -48,6 +48,9 @@ definition etabw :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightar
 lemma etabc_empty[simp]: "etabc ks cs {} = {}"
   by (simp add: etabc_def)
 
+lemma etabc_empty_iff: "(etabc ks cs T = {}) = (T = {})"
+  by (auto simp: etabc_def)
+
 subsection \<open>Merging two column lists\<close>
 
 datatype mrg = MLft | MRgt | MBth
@@ -438,6 +441,10 @@ definition eidx :: "bool list \<Rightarrow> 'b list set \<Rightarrow> ('b list, 
 definition esemi_idx :: "bool list \<Rightarrow> bool \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow> 'b list set \<Rightarrow>
     'b list set" where
   "esemi_idx msk pos idx X = set_of_idx (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) idx)"
+
+lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
+  (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
+  unfolding eidx_def by transfer auto
 
 end
 (*>*)

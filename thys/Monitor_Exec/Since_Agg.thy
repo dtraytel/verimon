@@ -275,6 +275,9 @@ fun ucc :: "ucnt \<Rightarrow> cntset" where
 
 declare ucc.simps[simp del]
 
+lemma fold_cnt_del1_ucc: "fold cnt_del1 xs (ucc c) = ucc (fold ucnt_del1 xs c)"
+  by (induct xs arbitrary: c) (simp_all add: cnt_del1_ucc)
+
 lemma cnt_add_ucc[simp]: "cnt_add T (ucc c) = ucc (ucnt_add T c)"
   by (simp add: cnt_add_def ucnt_add_def fold_cnt_add1_ucc)
 
