@@ -684,6 +684,9 @@ subsection \<open>The rewrite of the whole formula\<close>
 lemma fvi_frz_rw[simp]: "Formula.fvi b (frz_rw B \<phi>) = Formula.fvi b \<phi>"
   by (induct B \<phi> arbitrary: b rule: frz_rw.induct) (auto simp: Let_def)
 
+lemma nfv_frz_rw[simp]: "Formula.nfv (frz_rw B \<phi>) = Formula.nfv \<phi>"
+  by (simp add: Formula.nfv_def)
+
 lemma sat_frz_rw[simp]: "Formula.sat \<sigma> V v i (frz_rw B \<phi>) = Formula.sat \<sigma> V v i \<phi>"
 proof (induct B \<phi> arbitrary: V v i rule: frz_rw.induct)
   case (1 B p \<phi> \<psi>)
@@ -815,6 +818,9 @@ next
   show ?case
     using 6(1) wty_formula_AndsD[OF 6(2)] by (auto intro!: wty_formula.Ands)
 qed (erule wty_formula.cases; auto intro: wty_formula.intros)+
+
+lemma fvi_frz_opt[simp]: "Formula.fvi b (frz_opt \<phi>) = Formula.fvi b \<phi>"
+  by (simp add: frz_opt_def Let_def)
 
 lemma sat_frz_opt[simp]: "Formula.sat \<sigma> V v i (frz_opt \<phi>) = Formula.sat \<sigma> V v i \<phi>"
   by (simp add: frz_opt_def Let_def)

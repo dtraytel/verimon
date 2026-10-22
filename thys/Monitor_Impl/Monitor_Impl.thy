@@ -3,6 +3,7 @@ theory Monitor_Impl
   imports
     Optimized_Trigger
     Optimized_Agg_Temporal
+    Optimized_Agg_Valid
     Optimized_Until_Deque
     "HOL-Library.Code_Target_Nat"
     Containers.Containers

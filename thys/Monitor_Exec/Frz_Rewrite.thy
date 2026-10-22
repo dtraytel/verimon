@@ -166,12 +166,6 @@ text \<open>Out of an existential quantifier the conjunct is taken whether or no
 
 declare hoist.simps(8)[simp del]
 
-lemma nfv_frz_rw[simp]: "Formula.nfv (frz_rw B \<phi>) = Formula.nfv \<phi>"
-  by (simp add: Formula.nfv_def)
-
-lemma fvi_frz_opt[simp]: "Formula.fvi b (frz_opt \<phi>) = Formula.fvi b \<phi>"
-  by (simp add: frz_opt_def Let_def)
-
 lemma nfv_frz_opt[simp]: "Formula.nfv (frz_opt \<phi>) = Formula.nfv \<phi>"
   by (simp add: frz_opt_def Let_def)
 
