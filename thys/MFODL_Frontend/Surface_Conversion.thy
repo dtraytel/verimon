@@ -4,11 +4,14 @@ theory Surface_Conversion
 begin
 (*>*)
 
-section \<open>Strings\<close>
+section \<open>Conversion of parsed formulas\<close>
 
-text \<open>The monitor's strings are @{typ string8}; @{text str8_of_string} converts the
-  characters of the formula and of the signature into one. The code implements it by OCaml's
-  strings of bytes (theory @{text CLI_Export}).\<close>
+text \<open>MonPoly's syntax tree becomes the monitor's formula over de Bruijn indices, as MonPoly's front
+  end converts it for @{text "-verified"}; but an equivalence stays one also without rewriting.\<close>
+
+subsection \<open>Strings\<close>
+
+text \<open>The monitor's strings @{typ string8}, which the code implements by OCaml's strings of bytes.\<close>
 
 definition str8_of_string :: "string \<Rightarrow> string8" where
   "str8_of_string = Abs_string8"
@@ -19,47 +22,13 @@ lemma Rep_str8_of_string[simp]: "Rep_string8 (str8_of_string s) = s"
 lemma str8_of_string_inject[simp]: "str8_of_string s = str8_of_string t \<longleftrightarrow> s = t"
   by (metis Rep_str8_of_string)
 
-section \<open>From the parsed formula to the monitor's formula\<close>
-
-text \<open>
-  The parser (session @{text MFODL_Parser}) produces MonPoly's syntax tree, with named variables
-  and MonPoly's derived operators. The monitor reads formulas over de Bruijn indices
-  (@{typ "tysym Formula.formula"}). This theory converts the one into the other as MonPoly's
-  front end does for @{text "-verified"} (\<^verbatim>\<open>Verified_adapter.convert_formula\<close>):
-
-  \<^item> The free variables are numbered in the order of MonPoly's @{text MFOTL.free_vars}
-    (@{text mp_fv}), which is also the order of the columns MonPoly prints. A bound variable is
-    numbered by its distance to its quantifier, the free ones after all bound ones.
-  \<^item> @{text tp}, @{text ts} and @{text tpts} become the operators @{const Formula.TP} and
-    @{const Formula.TS}, unless a @{text LET} binds the predicate.
-  \<^item> The derived operators are expanded: implication, equivalence, universal quantification,
-    the unary temporal operators, and the variables of a quantifier one at a time.
-  \<^item> An aggregation binds the variables of the aggregated formula that are not grouped.
-  \<^item> An interval of the input is converted into the monitor's (@{text conv_intv}).
-
-  With rewriting (the default, @{text "-no_rw"} disables it), MonPoly's front end first eliminates
-  the syntactic sugar (@{text Rewriting.normalize_syntax}), which also replaces @{text ALWAYS}
-  and @{text PAST_ALWAYS} by @{text RELEASE} and @{text TRIGGER} with a false left operand and
-  drops unused quantified variables; @{text elim_sugar} does the same. Its folding of ground
-  terms is done on the converted formula by the monitor's own evaluation of terms
-  (@{text fold_ground}), and so preserves its semantics (@{text sat_fold_ground}).
-
-  The conversion differs from MonPoly's in one respect: without rewriting, MonPoly converts the
-  equivalence of @{text \<phi>} and @{text \<psi>} into
-  @{text "(\<phi> IMPLIES \<psi>) AND (\<psi> IMPLIES \<psi>)"}; here it is the equivalence.
-\<close>
-
 subsection \<open>Free variables in MonPoly's order\<close>
-
-text \<open>@{text Misc.union}: the first list, then the elements of the second that are not in it.\<close>
 
 definition mp_union :: "'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "mp_union xs ys = xs @ filter (\<lambda>y. y \<notin> set xs) ys"
 
 lemma set_mp_union[simp]: "set (mp_union xs ys) = set xs \<union> set ys"
   by (auto simp: mp_union_def)
-
-text \<open>The first occurrence of each element, in order.\<close>
 
 definition dedup :: "'a list \<Rightarrow> 'a list" where
   "dedup xs = rev (remdups (rev xs))"
@@ -69,8 +38,6 @@ lemma set_dedup[simp]: "set (dedup xs) = set xs"
 
 lemma distinct_dedup[simp]: "distinct (dedup xs)"
   by (simp add: dedup_def)
-
-text \<open>@{text Predicate.pvars}: the variables among the arguments, each once.\<close>
 
 definition mp_pvars :: "predicate \<Rightarrow> string list" where
   "mp_pvars p = dedup (pvars p)"
@@ -113,16 +80,15 @@ and mp_fv_r :: "regex \<Rightarrow> string list" where
 | "mp_fv_r (RPlus r s) = mp_union (mp_fv_r r) (mp_fv_r s)"
 | "mp_fv_r (RStar r) = mp_fv_r r"
 
-text \<open>The free variables in the order of the output: those of MonPoly's list, each once (MonPoly's
-  list may repeat a variable that occurs twice in a term).\<close>
+text \<open>The free variables in the order of the output, each once; MonPoly's list may repeat a variable.\<close>
 
 definition out_vars :: "formula \<Rightarrow> string list" where
   "out_vars f = dedup (mp_fv f)"
 
 subsection \<open>Eliminating the syntactic sugar\<close>
 
-text \<open>@{text Rewriting.elim_syntactic_sugar}, as MonPoly's front end applies it for the verified
-  monitor.\<close>
+text \<open>MonPoly's @{text Rewriting.elim_syntactic_sugar}, applied with rewriting, the default; it also
+  drops unused quantified variables.\<close>
 
 definition ffalse :: formula where
   "ffalse = FNeg (FEqual (TCst (CStr ''x'')) (TCst (CStr ''x'')))"
@@ -162,11 +128,10 @@ and elim_sugar_r :: "regex \<Rightarrow> regex" where
 | "elim_sugar_r (RStar r) = RStar (elim_sugar_r r)"
 | "elim_sugar_r r = r"
 
-subsection \<open>Messages\<close>
+subsection \<open>Messages of the conversion\<close>
 
-text \<open>The parts of the formula that the verified monitor does not support are reported as
-  MonPoly's front end reports them: by the exception @{text UnsupportedFragment} of its
-  conversion, which ends the program.\<close>
+text \<open>Unsupported parts are reported as by MonPoly's exception @{text UnsupportedFragment}, which
+  ends the program.\<close>
 
 definition unsupported :: "string \<Rightarrow> string" where
   "unsupported msg = ''Fatal error: exception Libmonpoly.Verified_adapter.UnsupportedFragment('' @
@@ -180,9 +145,6 @@ fun string_of_cst :: "cst \<Rightarrow> string" where
 | "string_of_cst (CStr s) = CHR 0x22 # s @ [CHR 0x22]"
 | "string_of_cst (CFloat s) = s"
 | "string_of_cst (CRegexp s) = CHR ''r'' # CHR 0x22 # s @ [CHR 0x22]"
-
-text \<open>@{text Predicate.string_of_term}: parentheses around the operands that are not variables or
-  constants.\<close>
 
 definition paren :: "bool \<Rightarrow> string \<Rightarrow> string" where
   "paren b s = (if b then s else ''('' @ s @ '')'')"
@@ -211,8 +173,6 @@ primrec t2s :: "trm \<Rightarrow> bool \<Rightarrow> string" where
 definition string_of_term :: "trm \<Rightarrow> string" where
   "string_of_term t = t2s t True"
 
-text \<open>@{text MFOTL.string_of_opt_term}, and @{text Misc.string_of_list_ext}'s separators.\<close>
-
 definition string_of_opt_term :: "trm option \<Rightarrow> string" where
   "string_of_opt_term t = (case t of None \<Rightarrow> ''_'' | Some u \<Rightarrow> string_of_term u)"
 
@@ -236,9 +196,7 @@ definition string_of_interval :: "interval \<Rightarrow> string" where
 
 subsection \<open>Terms and intervals\<close>
 
-text \<open>The index of a variable: its position among the bound variables, innermost first, or the
-  number of bound variables plus its position among the free variables
-  (@{text Verified_adapter.convert_var}).\<close>
+text \<open>The de Bruijn index of a variable: the bound variables innermost first, then the free ones.\<close>
 
 definition pos_of :: "'a list \<Rightarrow> 'a \<Rightarrow> nat" where
   "pos_of xs a = length (takeWhile (\<lambda>x. x \<noteq> a) xs)"
@@ -246,8 +204,8 @@ definition pos_of :: "'a list \<Rightarrow> 'a \<Rightarrow> nat" where
 definition var_idx :: "string list \<Rightarrow> string list \<Rightarrow> string \<Rightarrow> nat" where
   "var_idx fvl bvl a = (if a \<in> set bvl then pos_of bvl a else length bvl + pos_of fvl a)"
 
-text \<open>The reader of floating point numbers is a parameter, as for the log: the front end passes
-  OCaml's @{text float_of_string_opt}, which MonPoly's lexer also uses.\<close>
+text \<open>The reader of floating point numbers is a parameter; the front end passes OCaml's
+  @{text float_of_string_opt}, which MonPoly's lexer also uses.\<close>
 
 definition bytes_of_string :: "string \<Rightarrow> bytes" where
   "bytes_of_string = Abs_bytes"
@@ -283,9 +241,7 @@ fun conv_trms :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list 
 | "conv_trms pf fvl bvl (t # ts) = (case conv_trm pf fvl bvl t of Inl e \<Rightarrow> Inl e
      | Inr a \<Rightarrow> map_sum id (Cons a) (conv_trms pf fvl bvl ts))"
 
-text \<open>An interval of the input, with integer bounds, closed or open or unbounded, as the
-  monitor's interval of natural numbers (@{text Verified_adapter.convert_interval}). A
-  negative bound counts as zero.\<close>
+text \<open>A negative bound of an interval counts as zero.\<close>
 
 definition conv_intv :: "interval \<Rightarrow> string + \<I>" where
   "conv_intv i = (let err = Inl (unsupported (''Unsupported interval '' @ string_of_interval i)) in
@@ -304,11 +260,10 @@ fun conv_agg_op :: "agg_op \<Rightarrow> Formula.agg_type" where
 | "conv_agg_op AAvg = Formula.Agg_Avg"
 | "conv_agg_op AMed = Formula.Agg_Med"
 
-subsection \<open>Formulas\<close>
+subsection \<open>Conversion of formulas\<close>
 
-text \<open>The conversion threads a counter for the type variables of the quantified variables and of
-  the aggregations; the first ones are those of the free variables
-  (@{text Verified_adapter.convert_formula}).\<close>
+text \<open>A counter is threaded for the type variables of quantified variables and aggregations; the
+  first ones are those of the free variables.\<close>
 
 type_synonym 'a conv = "nat \<Rightarrow> string + 'a \<times> nat"
 
@@ -327,8 +282,6 @@ lemma cbind_cong[fundef_cong]:
 
 adhoc_overloading Monad_Syntax.bind \<rightleftharpoons> cbind
 
-text \<open>Fresh type variables.\<close>
-
 definition fresh_ty :: "tysym conv" where
   "fresh_ty k = Inr (TAny k, Suc k)"
 
@@ -346,8 +299,8 @@ definition truth :: "tysym Formula.formula" where
 definition special_preds :: "string list" where
   "special_preds = [''tp'', ''ts'', ''tpts'']"
 
-text \<open>@{text lets}: the predicates that a @{text LET}, @{text LETPAST} or @{text FRZ} binds
-  where the subformula occurs, with their arities.\<close>
+text \<open>@{text lets}: the predicates bound where the subformula occurs by @{text LET},
+  @{text LETPAST} or @{text FRZ}, with their arities.\<close>
 
 fun conv_pred :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list \<Rightarrow> string list \<Rightarrow> (string \<times> nat) list \<Rightarrow>
     predicate \<Rightarrow> string + tysym Formula.formula" where
@@ -360,9 +313,6 @@ fun conv_pred :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list 
        | (''tpts'', [u, v]) \<Rightarrow> Formula.And (Formula.TP u) (Formula.TS v)
        | _ \<Rightarrow> Formula.Pred (str8_of_string n) us)
      else Formula.Pred (str8_of_string n) us))"
-
-text \<open>The variables of the arguments of a predicate that @{text LET} defines, in order: the free
-  variables of its definition.\<close>
 
 definition def_vars :: "predicate \<Rightarrow> string list" where
   "def_vars p = concat (map tvars (snd p))"
@@ -455,11 +405,8 @@ and conv_r :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list \<R
 
 subsection \<open>Folding ground terms\<close>
 
-text \<open>A term without variables is replaced by its value, in the atoms where MonPoly's front end
-  folds them.  This is @{text Rewriting.simplify_terms}, which preserves the semantics
-  (@{text Rewriting.simplify_terms_sat}); the front end keeps its own copy because theory
-  @{text Rewriting} declares a formula datatype and a function @{text tvars} whose names clash
-  with those of the parse tree.\<close>
+text \<open>Ground terms are replaced by their values in the atoms where MonPoly's front end folds them,
+  as by @{text Rewriting.simplify_terms}, which preserves the semantics.\<close>
 
 fun ground :: "Formula.trm \<Rightarrow> bool" where
   "ground (Formula.Var x) = False"
@@ -501,11 +448,10 @@ fun fold_ground :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "fold_ground (Formula.TP t) = Formula.TP (fold_trm t)"
 | "fold_ground (Formula.TS t) = Formula.TS (fold_trm t)"
 
-subsection \<open>The formula of the input\<close>
+subsection \<open>Formula of the input\<close>
 
-text \<open>The monitor's formula for the parsed formula: with rewriting (@{text rw}), after the
-  syntactic sugar is eliminated; its free variables are numbered in the order of
-  @{const out_vars} of the input.\<close>
+text \<open>With rewriting (@{text rw}), the syntactic sugar is eliminated first; the free variables are
+  numbered in the order of @{const out_vars}.\<close>
 
 definition conv_formula :: "(bytes \<Rightarrow> double option) \<Rightarrow> bool \<Rightarrow> formula \<Rightarrow> string + tysym Formula.formula" where
   "conv_formula pf rw f = (let fvl = out_vars f in

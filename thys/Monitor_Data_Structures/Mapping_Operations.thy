@@ -2,6 +2,10 @@ theory Mapping_Operations
   imports "Containers.Mapping_Impl" Mapping_Facts
 begin
 
+section \<open>Operations on mappings\<close>
+
+subsection \<open>Values, joins and antijoins\<close>
+
 lift_definition set_of_idx :: "('a, 'b set) mapping \<Rightarrow> 'b set" is
   "\<lambda>m. \<Union>(ran m)" .
 
@@ -70,6 +74,8 @@ lemma lookup_mapping_antijoin: "Mapping.lookup (mapping_antijoin m m') x =
   (case Mapping.lookup m x of None \<Rightarrow> None
    | Some y \<Rightarrow> (case Mapping.lookup m' x of None \<Rightarrow> Some y | Some y' \<Rightarrow> None))"
   by (simp add: Mapping.lookup_def mapping_antijoin.rep_eq split: option.splits)
+
+subsection \<open>Updates and deletions\<close>
 
 lift_definition upd_set :: "('a, 'b) mapping \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> 'a set \<Rightarrow> ('a, 'b) mapping" is
   "\<lambda>m f X a. if a \<in> X then Some (f a) else m a" .
@@ -217,6 +223,8 @@ lemma lookup_update_mapping_with:
     (if k' = k then (case Mapping.lookup m k of None \<Rightarrow> Some v | Some v' \<Rightarrow> Some (f k v' v)) else Mapping.lookup m k')"
   by transfer (auto split: option.splits)
 
+subsection \<open>Filtering by stored value\<close>
+
 abbreviation "filter_cond X' ts t' \<equiv> (\<lambda>as _. \<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t'))"
 
 abbreviation "filter_cond' X' ts t' \<equiv> (\<lambda>as. \<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t'))"
@@ -323,6 +331,8 @@ lift_definition filter_cfi :: "'b \<Rightarrow> ('a, ('a, 'b) mapping \<times> '
 lemma filter_set_code[code]:
   "filter_set (t, A) (m, Y) = (if finite A then set_fold_cfi (filter_cfi t) (m, Y) A else Code.abort (STR ''upd_set: infinite'') (\<lambda>_. filter_set (t, A) (m, Y)))"
   by (transfer fixing: m) (auto simp: filter_set_fold)
+
+subsection \<open>Nested updates\<close>
 
 lift_definition upd_set' :: "('a, 'b) mapping \<Rightarrow> 'b \<Rightarrow> ('b \<Rightarrow> 'b) \<Rightarrow> 'a set \<Rightarrow> ('a, 'b) mapping" is
   "\<lambda>m d f X a. (if a \<in> X then (case Mapping.lookup m a of Some b \<Rightarrow> Some (f b) | None \<Rightarrow> Some d)

@@ -699,7 +699,8 @@ definition vinit :: "ipolicy \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow>
          if n = 0 then Inr (VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf, (einit, ust, 0))
          else Inl (VI_FRAGMENT n))))"
 
-text \<open>The least input offset that later outputs may report, besides the pending item's.\<close>
+text \<open>For the driver: the least input offset that later outputs may report, apart from the pending
+  item.\<close>
 
 definition vpending :: "vstate \<Rightarrow> integer" where
   "vpending z = (case fst z of (b, l, _) \<Rightarrow> (case l of
