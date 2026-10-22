@@ -132,7 +132,7 @@ next
         "\<phi> = Formula.formula.Neg \<phi>'"
         "safe_formula \<phi>'"
         "\<forall>x. progress \<sigma> x (convert_multiway \<phi>') j = progress \<sigma> x \<phi>' j"
-        by (auto split: formula.splits)
+        by (auto split: Formula.formula.splits)
       then have ?thesis using Trigger_0 by auto
     }
     ultimately show ?thesis by blast
