@@ -15,8 +15,9 @@ text \<open>
   future operators (@{const and_release_safe_bounded}); both contain the right operand several
   times, each copy a subformula of its own that the monitor evaluates.  Binding the right operand
   with @{const Formula.Let} to a predicate that occurs nowhere else, and releasing that
-  predicate, has it evaluated once.  The theory @{text Prepare} applies the rewrite before the
-  multiway conversion.
+  predicate, has it evaluated once.  The executable monitor's start state
+  (@{text eminit_verimon}, theory @{text Push_Rewrite}) applies the rewrite before the multiway
+  conversion.
 \<close>
 
 subsection \<open>The rewrite\<close>

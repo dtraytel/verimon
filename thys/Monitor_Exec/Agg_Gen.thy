@@ -156,6 +156,13 @@ fun gres :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> nat \<Rightarrow
          in EFloat aggval) m
      | _ \<Rightarrow> {}))"
 
+subsection \<open>Folds that drop the structure\<close>
+
+text \<open>The kernel's steps carry a flag and keep folding once it is down; the steps here stop at
+  the first failure.  The two agree, and a fold of steps that commute with a map @{text R} is
+  the map of the fold.  The keys a fold leaves are the ones it started with and the groups of
+  the tuples it inserted.\<close>
+
 lemma fold_flag_False:
   assumes "\<And>t m. S t (False, m) = (False, m)"
   shows "fold S xs (False, m) = (False, m)"

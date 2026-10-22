@@ -4,6 +4,171 @@ theory Until_Gen_Proof
 begin
 (*>*)
 
+section \<open>The executable Until structure\<close>
+
+text \<open>
+  The Until structure needs far less than the Since one.  Only one of its components mentions
+  the left operand: the mapping @{text a1_map} that records, for each tuple over the left
+  operand's columns, the last time point at which it held.  The verified structure looks a stored
+  tuple's restriction to those columns up in it; the executable one looks up the tuple's executable
+  projection, which is the same tuple.  Every other operation is the verified one.
+\<close>
+
+lemma mmuaux_dq_cases:
+  fixes d :: "event_data mmuaux_dq"
+  obtains tp tss tables len result a1_map a2_dq tstp_dq dn
+  where "d = (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, dn)"
+  by (metis prod.collapse)
+
+lemma euntil_elem_step_dq_eq:
+  "emsk_args args msk \<Longrightarrow> length as = length (args_R args) \<Longrightarrow>
+     euntil_elem_step_dq a1_map msk pos tp len inz P d as acc
+     = until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P d as acc"
+  by (simp add: euntil_elem_step_dq_def until_elem_step_dq_def emsk_args_dproj)
+
+lemma fold_euntil_elem_step_dq:
+  "emsk_args args msk \<Longrightarrow> (\<And>as. as \<in> set xs \<Longrightarrow> length as = length (args_R args)) \<Longrightarrow>
+     fold (euntil_elem_step_dq a1_map msk pos tp len inz P d) xs acc
+     = fold (until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P d) xs acc"
+  by (induct xs arbitrary: acc) (simp_all add: euntil_elem_step_dq_eq)
+
+text \<open>
+  The executable operation is the verified one.  Where @{const add_new_dq} guards the fold with
+  @{term \<open>finite rel2\<close>} and falls back on the other structure, this one folds unconditionally:
+  every table the evaluator produces is finite.
+\<close>
+
+theorem eadd_new_dq_eq:
+  assumes fin: "finite rel2" and dm: "emsk_args args msk"
+    and r2: "\<And>as. as \<in> rel2 \<Longrightarrow> length as = length (args_R args)"
+  shows "eadd_new_dq args msk rel1 rel2 nt aux = add_new_dq args rel1 rel2 nt aux"
+proof (cases "shift_dq args nt aux" rule: mmuaux_dq_cases)
+  case (1 tp tss tables len result a1_map a2_dq tstp_dq dn)
+  have rs: "set (csorted_list_of_set rel2) = rel2" by (rule set_csorted_list_of_set_etuple[OF fin])
+  have fl: "fold (euntil_elem_step_dq a1_map msk (args_pos args) tp len (memL (args_ivl args) 0)
+        (\<lambda>t. memL (args_ivl args) (nt - dq_nth (dq_push nt tstp_dq) (t - (tp - len))))
+        (if memL (args_ivl args) 0 then Inr tp else Inl nt))
+      (csorted_list_of_set rel2) ({}, a2_dq, result)
+    = fold (until_elem_step_dq a1_map (args_L args) (args_R args) (args_pos args) tp len
+        (memL (args_ivl args) 0)
+        (\<lambda>t. memL (args_ivl args) (nt - dq_nth (dq_push nt tstp_dq) (t - (tp - len))))
+        (if memL (args_ivl args) 0 then Inr tp else Inl nt))
+      (csorted_list_of_set rel2) ({}, a2_dq, result)"
+    by (rule fold_euntil_elem_step_dq[OF dm]) (use rs r2 in auto)
+  show ?thesis
+    unfolding eadd_new_dq_def add_new_dq_def if_P[OF fin] 1 csl_finite[OF fin]
+    by (simp add: Let_def fl split: prod.splits)
+qed
+
+lemma evalid_init_muaux:
+  assumes LR: "set L \<subseteq> set R" "distinct L" "distinct R"
+  shows "evalid_muaux (init_args I n L R pos None) msk 0 (init_dq (init_args I n L R pos None)) []"
+proof -
+  have "valid_muaux_dq (init_args I n L R pos None) 0 (init_muaux_dq (init_args I n L R pos None)) []"
+    by (rule valid_init_muaux_dq[OF LR])
+  then show ?thesis
+    unfolding evalid_muaux_def init_muaux_dq_def by (simp add: init_args_def)
+qed
+
+lemma evalid_add_new_muaux:
+  assumes v: "evalid_muaux args msk cur daux auxlist"
+    and fin: "finite rel2" and dm: "emsk_args args msk"
+    and t1: "table (args_L args) rel1" and t2: "table (args_R args) rel2"
+    and nt: "nt \<ge> cur"
+  shows "evalid_muaux args msk nt (eadd_new_dq args msk rel1 rel2 nt daux)
+     (update_until args rel1 rel2 nt auxlist)"
+proof -
+  have r2: "\<And>as. as \<in> rel2 \<Longrightarrow> length as = length (args_R args)"
+    using t2 by (auto simp: table_def wf_tuple_def)
+  have "valid_muaux_dq args nt (add_new_muaux_dq args rel1 rel2 nt (MU_dq daux))
+      (update_until args rel1 rel2 nt auxlist)"
+    by (rule valid_add_new_muaux_dq[OF v[unfolded evalid_muaux_def] t1 t2 nt])
+  then show ?thesis
+    by (simp add: evalid_muaux_def eadd_new_dq_eq[OF fin dm r2])
+qed
+
+lemma evalid_eval_muaux:
+  assumes v: "evalid_muaux args msk cur daux auxlist" and nt: "nt \<ge> cur"
+    and ev: "eval_dq args nt daux = (res, daux')"
+    and eu: "eval_until (args_ivl args) nt auxlist = (res', auxlist')"
+  shows "evalid_muaux args msk cur daux' auxlist' \<and> res = map (eval_args_agg args) res'"
+proof -
+  have e: "eval_muaux_dq args nt (MU_dq daux) = (res, MU_dq daux')"
+    using ev by (simp del: eval_dq.simps)
+  show ?thesis
+    using valid_eval_muaux_dq[OF v[unfolded evalid_muaux_def] nt e eu]
+    by (simp add: evalid_muaux_def)
+qed
+
+lemma euaux'_init:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+  shows "euaux' kL cL kR cR args 0 (init_dq (eargs cR cL args)) []"
+proof -
+  have "evalid_muaux (init_args (args_ivl args) (length cR) cL cR (args_pos args) None)
+      (emsk cR cL) 0 (init_dq (init_args (args_ivl args) (length cR) cL cR (args_pos args) None)) []"
+    by (rule evalid_init_muaux[OF eframe_sub[OF fR fL sub] eframeD(4)[OF fL] eframeD(4)[OF fR]])
+  then show ?thesis by (simp add: euaux'_def eargs_def eauxlist3_def)
+qed
+
+lemma euaux'_add_new:
+  assumes v: "euaux' kL cL kR cR args cur daux auxlist"
+    and fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and t1: "table kL rel1" and t2: "table kR rel2"
+    and f2: "finite rel2" and nt: "cur \<le> nt"
+  shows "euaux' kL cL kR cR args nt
+      (eadd_new_dq (eargs cR cL args) (emsk cR cL) (etabc kL cL rel1) (etabc kR cR rel2) nt daux)
+      (update_until args rel1 rel2 nt auxlist)"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2"
+    and d: "evalid_muaux (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+    using v by (auto simp: euaux'_def)
+  have dm: "emsk_args (eargs cR cL args) (emsk cR cL)"
+    unfolding emsk_def
+    by (rule emsk_args_dargs[OF eframeD(2)[OF fR] eframeD(2)[OF fL] eframe_sub[OF fR fL sub]])
+  have fin: "finite (etabc kR cR rel2)" using f2 by (rule finite_etabc)
+  have tt1: "table (args_L (eargs cR cL args)) (etabc kL cL rel1)" by (simp add: table_etabc)
+  have tt2: "table (args_R (eargs cR cL args)) (etabc kR cR rel2)" by (simp add: table_etabc)
+  have "evalid_muaux (eargs cR cL args) (emsk cR cL) nt
+      (eadd_new_dq (eargs cR cL args) (emsk cR cL) (etabc kL cL rel1) (etabc kR cR rel2) nt daux)
+      (update_until (eargs cR cL args) (etabc kL cL rel1) (etabc kR cR rel2) nt
+        (eauxlist3 kL cL kR cR auxlist))"
+    by (rule evalid_add_new_muaux[OF d fin dm tt1 tt2 nt])
+  moreover have "eauxlist3 kL cL kR cR (update_until args rel1 rel2 nt auxlist)
+      = update_until (eargs cR cL args) (etabc kL cL rel1) (etabc kR cR rel2) nt
+          (eauxlist3 kL cL kR cR auxlist)"
+    by (rule eauxlist3_update_until[OF fR fL sub w t1 t2 aL aR]) simp_all
+  ultimately show ?thesis using eauxlist3_wf_update_until[OF w sub t1 t2 aL aR]
+    by (simp add: euaux'_def)
+qed
+
+lemma euaux'_eval:
+  assumes v: "euaux' kL cL kR cR args cur daux auxlist" and nt: "cur \<le> nt"
+    and de: "eval_dq (eargs cR cL args) nt daux = (dres, daux')"
+    and we: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+  shows "dres = map (etabc kR cR) res \<and> euaux' kL cL kR cR args cur daux' auxlist'"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2"
+    and d: "evalid_muaux (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+    using v by (auto simp: euaux'_def)
+  have de': "eval_until (args_ivl (eargs cR cL args)) nt (eauxlist3 kL cL kR cR auxlist)
+      = (map (etabc kR cR) res, eauxlist3 kL cL kR cR auxlist')"
+    using eauxlist3_eval_until[OF we] by simp
+  have vd: "evalid_muaux (eargs cR cL args) (emsk cR cL) cur daux' (eauxlist3 kL cL kR cR auxlist')"
+    and r: "dres = map (eval_args_agg (eargs cR cL args)) (map (etabc kR cR) res)"
+    using evalid_eval_muaux[OF d nt de de'] by simp_all
+  have "set auxlist' \<subseteq> set auxlist"
+    using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
+  then show ?thesis using vd r w by (auto simp: euaux'_def)
+qed
+
+lemma eauxlist3_wf_eval_until:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and e: "eval_until I nt aux = (res, aux')"
+  shows "\<forall>(t, a1, a2) \<in> set aux'. table kR a1 \<and> table kR a2"
+  using wf eval_until_auxlist'[OF e] by (auto dest: in_set_dropD)
+
+
 
 
 lemma dq_nth_s_in: "k < dq_len d \<Longrightarrow> dq_nth_s d k z = dq_nth d k"

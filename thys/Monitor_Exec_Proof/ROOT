@@ -6,12 +6,10 @@ session Monitor_Exec_Proof = Monitor_Impl_Proof +
      inherits its correctness; Log_Monitor_Online states it for the online interface."
   theories
     Kernel_Call
-    Tuple_Fields_Proof
     Frame_Proof
     Frame_Aux_Proof
     Until_Gen_Proof
     Window_Proof
-    Agg_Gen_Proof
     Since_Agg_Proof
     Until_Agg_Proof
     Agg_Cache_Proof
@@ -20,7 +18,6 @@ session Monitor_Exec_Proof = Monitor_Impl_Proof +
     Release_Window_Proof
     Trigger_Window_Proof
     Eval_Proof
-    Idx_Code_Proof
     ITable_Proof
     IWindow_Proof
     IEval_Proof
@@ -29,12 +26,5 @@ session Monitor_Exec_Proof = Monitor_Impl_Proof +
     Frz_Rewrite_Proof
     Share_Rewrite_Proof
     Push_Rewrite_Proof
-    Prepare_Proof
-    Tuple_Code_Proof
-    Mono_Sweep_Proof
-    Agg_Code_Proof
-    Map_Upd_Code_Proof
-    RBT_Code_Proof
-    Mono_Hot_Proof
     Log_Monitor_Proof
     Log_Monitor_Online

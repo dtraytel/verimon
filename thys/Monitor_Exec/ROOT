@@ -34,7 +34,6 @@ session Monitor_Exec = Monitor_Impl +
     Frz_Rewrite
     Share_Rewrite
     Push_Rewrite
-    Prepare
     Tuple_Code
     Mono_Sweep
     Agg_Code
@@ -42,5 +41,3 @@ session Monitor_Exec = Monitor_Impl +
     RBT_Code
     Mono_Hot
     Log_Monitor
-  theories [document=false]
-    Monitor_Code

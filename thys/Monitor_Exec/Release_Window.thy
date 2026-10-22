@@ -4,6 +4,23 @@ theory Release_Window
 begin
 (*>*)
 
+section \<open>The Release structure's auxiliary list\<close>
+
+text \<open>The native release keeps, for each pending time point, the tables of the tuples waiting to
+  be released and of the tuples still alive, both over the columns of the right operand
+  (@{const update_release}). The executable one keeps their short forms; the join with the left
+  operand's table, whose columns are among the right operand's, is a membership test of a
+  projection (@{const esemi}).\<close>
+
+definition eupdate_release :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> ts \<Rightarrow>
+    (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list" where
+  "eupdate_release args msk rel1 rel2 nt aux =
+    map (\<lambda>(t, a1, a2). if memR (args_ivl args) (nt - t)
+      then (t, esemi msk (\<not> args_pos args) (a1 \<inter> rel2) rel1, a2 - (a1 - rel2))
+      else (t, a1, a2)) aux @
+    [(nt, esemi msk (\<not> args_pos args) rel2 rel1, rel2)]"
+
+
 
 
 section \<open>The release structure\<close>

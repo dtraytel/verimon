@@ -4,6 +4,38 @@ theory Release_Window_Proof
 begin
 (*>*)
 
+subsection \<open>The Release structure's auxiliary list\<close>
+
+lemma eauxlist3_update_release:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and t1: "table kL rel1" and t2: "table kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and iv: "args_ivl args' = args_ivl args" and po: "args_pos args' = args_pos args"
+  shows "eauxlist3 kR cR kR cR (update_release args rel1 rel2 nt aux)
+       = eupdate_release args' (emsk cR cL) (etabc kL cL rel1) (etabc kR cR rel2) nt (eauxlist3 kR cR kR cR aux)"
+proof -
+  have subc: "set cL \<subseteq> set cR"
+    using sub eframeD(3)[OF fR] eframeD(3)[OF fL] by simp
+  have J: "etabc kR cR (join kR T b kL rel1) = esemi (emsk cR cL) b (etabc kR cR T) (etabc kL cL rel1)"
+    if "table kR T" for T b
+    using esemi_join[OF fR fL subc that t1] by (simp add: emsk_def)
+  show ?thesis
+    using wf
+    by (induct aux)
+      (auto simp: eauxlist3_def update_release_def eupdate_release_def iv po aL aR J
+        etabc_Int[OF fR _ t2] etabc_Diff[OF fR] table_Int table_Diff t2)
+qed
+
+lemma eauxlist3_wf_update_release:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kR a1 \<and> table kR a2"
+    and sub: "set kL \<subseteq> set kR" and t1: "table kL rel1" and t2: "table kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+  shows "\<forall>(t, a1, a2) \<in> set (update_release args rel1 rel2 nt aux). table kR a1 \<and> table kR a2"
+  using wf t1 t2 sub
+  by (auto simp: update_release_def aL aR split: if_splits intro!: table_join_sub table_Int table_Diff)
+
+
 
 
 subsection \<open>The summaries\<close>

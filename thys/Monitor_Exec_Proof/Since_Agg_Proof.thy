@@ -1,6 +1,6 @@
 (*<*)
 theory Since_Agg_Proof
-  imports "Monitor_Exec.Since_Agg" Window_Proof Frame_Aux_Proof Agg_Gen_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
+  imports "Monitor_Exec.Since_Agg" Window_Proof Frame_Aux_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
 begin
 (*>*)
 

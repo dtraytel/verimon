@@ -1,6 +1,6 @@
 (*<*)
 theory ITable_Proof
-  imports "Monitor_Exec.ITable" Idx_Code_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
+  imports "Monitor_Exec.ITable" Until_Gen_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
 begin
 (*>*)
 

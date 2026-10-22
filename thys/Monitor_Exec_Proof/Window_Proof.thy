@@ -1,6 +1,6 @@
 (*<*)
 theory Window_Proof
-  imports "Monitor_Exec.Window" Tuple_Fields_Proof "Monitor_Impl_Proof.Optimized_Until_Deque_Proof" "Monitor_Impl_Proof.Optimized_Trigger_Proof" "Monitor_Impl_Proof.Monitor_Impl_Proof"
+  imports "Monitor_Exec.Window" "Monitor_Impl_Proof.Optimized_Until_Deque_Proof" "Monitor_Impl_Proof.Optimized_Trigger_Proof" "Monitor_Impl_Proof.Monitor_Impl_Proof"
 begin
 (*>*)
 

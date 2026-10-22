@@ -1,6 +1,6 @@
 (*<*)
 theory Frame_Proof
-  imports "Monitor_Exec.Frame" Tuple_Fields_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
+  imports "Monitor_Exec.Frame" "Monitor_Impl_Proof.Monitor_Impl_Proof"
 begin
 (*>*)
 
@@ -236,6 +236,33 @@ proof (intro equalityI subsetI)
     using restrict_inv[OF f, of a] restrict_inv[OF f, of a'] t1 t2 by (auto simp: table_def)
   then show "z \<in> etabc ks cs (T \<inter> T')" using a by (auto simp: etabc_def)
 qed (auto simp: etabc_def)
+
+lemma etabc_Diff:
+  assumes f: "eframe ks cs" and t1: "table ks T" and t2: "table ks T'"
+  shows "etabc ks cs (T - T') = etabc ks cs T - etabc ks cs T'"
+proof (intro equalityI subsetI)
+  fix z assume "z \<in> etabc ks cs (T - T')"
+  then obtain a where a: "a \<in> T" "a \<notin> T'" "z = restrict cs ks a"
+    by (auto simp: etabc_def)
+  have "z \<notin> etabc ks cs T'"
+  proof
+    assume "z \<in> etabc ks cs T'"
+    then obtain a' where a': "a' \<in> T'" "z = restrict cs ks a'"
+      by (auto simp: etabc_def)
+    have wa: "wf_tuple ks a" using t1 a(1) by (auto simp: table_def)
+    have wa': "wf_tuple ks a'" using t2 a'(1) by (auto simp: table_def)
+    have "a = a'"
+      using restrict_inv[OF f wa] restrict_inv[OF f wa'] a(3) a'(2) by simp
+    then show False
+      using a a'(1) by simp
+  qed
+  then show "z \<in> etabc ks cs T - etabc ks cs T'"
+    using a by (auto simp: etabc_def)
+next
+  fix z assume "z \<in> etabc ks cs T - etabc ks cs T'"
+  then show "z \<in> etabc ks cs (T - T')"
+    by (auto simp: etabc_def)
+qed
 
 subsection \<open>Equal columns, and a right operand with no columns\<close>
 
@@ -796,6 +823,12 @@ lemma eframe_set_cols: "distinct ks \<Longrightarrow> eframe ks (set_cols (set k
 
 subsection \<open>Matching a predicate's arguments\<close>
 
+lemma umatch_match: "umatch tms xs = match tms xs"
+  by (induct tms xs rule: umatch.induct) auto
+
+lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
+  by (force simp: Option.these_def image_iff)
+
 text \<open>The kernel tabulates a match at the predicate's columns in their order of occurrence; the
   executable match reads it off at the same columns in ascending order.\<close>
 
@@ -950,6 +983,9 @@ lemma eauxlist3_eval_until:
 lemma table_Int: "table ks X \<Longrightarrow> table ks (X \<inter> Y)"
   by (auto simp: table_def)
 
+lemma table_Diff: "table ks X \<Longrightarrow> table ks (X - Y)"
+  by (auto simp: table_def)
+
 lemma eauxlist3_wf_update_until:
   assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kL a1 \<and> table kR a2"
     and sub: "set kL \<subseteq> set kR" and t1: "table kL rel1" and t2: "table kR rel2"
@@ -1062,6 +1098,44 @@ next
           buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
         by (rule IH[OF p1 r order_refl _ _ s1 s2]) (use P4 tsC in auto)
       then show ?thesis using tsC by auto
+    qed
+  qed
+qed
+
+text \<open>The buffer traversal steps two accumulators in lockstep if every step preserves a relation
+  between them; unlike @{thm [source] mbuf2t_take_rel_ts}, the relation does not mention time.\<close>
+
+lemma mbuf2t_take_rel:
+  "(\<And>a b t za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R za z'a \<Longrightarrow>
+      R (f a b t za) (g (h a) (k b) t z'a)) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
+   R w w2 \<and> buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
+  case Nil
+  then show ?case by (cases ts) auto
+next
+  case (Cons x xs)
+  note IH = Cons.hyps and P = Cons.prems
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P(2-4) by (cases ts) auto
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P(2-4) ysC by auto
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have r: "R (f x y t z) (g (h x) (k y) t z')"
+        using P(1)[of x y z z' t] P(2) ysC by simp
+      show ?thesis
+        by (rule IH[OF _ r, of ys2 t ts3]) (use P ysC tsC in auto)
     qed
   qed
 qed

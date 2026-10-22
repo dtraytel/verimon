@@ -4,6 +4,48 @@ theory Until_Gen
 begin
 (*>*)
 
+section \<open>The executable Until structure over ascending columns\<close>
+
+definition euntil_elem_step_dq :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+    (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc_dq \<Rightarrow> 'a until_acc_dq" where
+  "euntil_elem_step_dq a1_map msk pos tp len inz P d as acc =
+    (let acc' = (if inz then until_step_dq P d (tp - len) (tp, as) acc else acc) in
+     case Mapping.lookup a1_map (eproj msk as) of
+        None \<Rightarrow> (if \<not>pos then until_step_dq P d (tp - len) (tp - len, as) acc' else acc')
+      | Some tp' \<Rightarrow> until_step_dq P d (tp - len) (if pos then (max (tp - len) tp', as)
+          else (max (tp - len) (tp' + 1), as)) acc')"
+
+definition eadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow>
+    event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
+  "eadd_new_dq args msk rel1 rel2 nt aux =
+    (let (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, dn) = shift_dq args nt aux;
+     I = args_ivl args; pos = args_pos args; inz = memL I 0;
+     new_tstp = (if inz then Inr tp else Inl nt);
+     tstp_dq = dq_push nt tstp_dq;
+     P = (\<lambda>t. memL I (nt - dq_nth tstp_dq (t - (tp - len))));
+     (tbl, a2_dq', result') = fold (euntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+       (csl rel2) ({}, a2_dq, result);
+     tables = append_queue (tbl, new_tstp) tables;
+     a2_dq = dq_push Mapping.empty a2_dq';
+     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
+       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+     tss = append_queue nt tss in
+     (tp + 1, tss, tables, len + 1, result', a1_map, a2_dq, tstp_dq, dn))"
+
+subsection \<open>The executable Until structure's validity\<close>
+
+definition evalid_muaux :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data muaux \<Rightarrow>
+    bool" where
+  "evalid_muaux args msk cur daux auxlist \<longleftrightarrow> valid_muaux_dq args cur (MU_dq daux) auxlist"
+
+
+definition euaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow>
+    event_data muaux \<Rightarrow> bool" where
+  "euaux' kL cL kR cR args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2) \<and>
+     evalid_muaux (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
+
+
 
 
 section \<open>The Until structure, over a bare element type\<close>

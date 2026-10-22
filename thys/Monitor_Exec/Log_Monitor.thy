@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Monitor
-  imports Prepare Tuple_Code "Log_Parser.Log_Values" "Log_Parser.Log_Code"
+  imports Push_Rewrite Tuple_Code "Log_Parser.Log_Values" "Log_Parser.Log_Code"
 begin
 (*>*)
 

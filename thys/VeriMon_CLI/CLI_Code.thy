@@ -1,6 +1,7 @@
 (*<*)
 theory CLI_Code
-  imports CLI "MFODL_Parser_Code.MFODL_Lexer_Code" "Monitor_Exec.Monitor_Code"
+  imports CLI "MFODL_Parser_Code.MFODL_Lexer_Code" "Monitor_Impl.Monomorphic_Code" "Monitor_Exec.Mono_Hot"
+    "Monitor_Exec.Push_Rewrite" "Log_Parser.Log_Code" "Monitor_Exec.Log_Monitor"
 begin
 (*>*)
 
@@ -8,8 +9,8 @@ section \<open>Code export\<close>
 
 text \<open>
   The code of the program @{text verimon} (\<^verbatim>\<open>src/verimon_code.ml\<close>), with the code setup of
-  the monitor's export (@{theory Monitor_Exec.Monitor_Code}) and the parser's code equations
-  for the lexer (@{theory MFODL_Parser_Code.MFODL_Lexer_Code}). The trusted part beyond theirs is
+  the monitor's export (below) and the parser's code equations for the lexer
+  (@{theory MFODL_Parser_Code.MFODL_Lexer_Code}). The trusted part beyond theirs is
   the code printing of the four functions below on byte strings and integers, each by the OCaml
   function with the same meaning: the strings of bytes of a list of characters, the decimal
   representation of an integer (@{text Verimon_runtime.dec_of_z} in
@@ -22,6 +23,34 @@ text \<open>
   (@{text "Nat (Z.of_int n)"}, which is a constant since Zarith's @{text Z.of_int} is the
   identity on OCaml's integers), rather than as applications of @{const nat_of_integer}, so that
   the tables are static data, which the OCaml compiler does not compile into code.
+\<close>
+
+text \<open>
+  The code-generator setup of the verified executable monitor, which this theory imports:
+  the monomorphised containers and tree primitives of @{theory Monitor_Exec.Tuple_Code}
+  and @{theory Monitor_Exec.Mono_Sweep}, the rank trees of the aggregations of
+  @{theory Monitor_Exec.Agg_Code}, the one-descent updates of
+  @{theory Monitor_Exec.Map_Upd_Code}, the red-black trees' rebalancing of
+  @{theory Monitor_Exec.RBT_Code}, and the copies of
+  @{theory Monitor_Exec.Mono_Hot} for the generic operations a profile still found
+  on the inner loops.
+
+  The monitor that runs is @{const eminit_verimon} and @{const emstep}:
+  @{const eminit_verimon} prepares the input formula as VeriMon does -- type checking and, if
+  the formula is not monitorable, normalization and rewriting, then the conversion into
+  multi-way joins (@{const eminit_verimon}, @{theory Monitor_Exec.Push_Rewrite}) -- and builds the initial state
+  from it with @{const eminit_push}, which binds frozen predicates with @{text LET} where it can
+  (@{theory Monitor_Exec.Frz_Rewrite}), moves existential quantifiers into the windows they
+  commute with (@{theory Monitor_Exec.Push_Rewrite}), binds the right operand of a release
+  so that it is evaluated once (@{theory Monitor_Exec.Share_Rewrite}) and compiles the
+  resulting formula into the executable one; @{const emstep} performs one step on it.
+  @{const efail_nodes} says whether the compiler covered the whole formula; it must be zero
+  for the correctness theorem @{text emonitor_mverdicts_dof}
+  (@{theory Monitor_Exec.Compile}) to apply, and VeriMon refuses the formula otherwise.
+  They run on the log through @{const vinit}, @{const vfeed_chunk} and @{const vfinish}
+  (@{theory Monitor_Exec.Log_Monitor}), with the theorems
+  @{text verimon_log.vrun_log} and @{text verimon_log.vrun_filtered} (theory
+  @{text Log_Monitor_Online}) from the bytes of the log to the verdicts.
 \<close>
 
 declare [[code drop: str8_of_string bytes_of_string str8_of_integer str8_quoted]]

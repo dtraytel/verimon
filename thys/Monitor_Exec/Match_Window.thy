@@ -4,6 +4,114 @@ theory Match_Window
 begin
 (*>*)
 
+section \<open>The match structures over ascending columns\<close>
+
+text \<open>The atoms' tables, reordered each at its own columns.\<close>
+
+definition etabcs :: "cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> 'b list set list" where
+  "etabcs kss css rels = map (\<lambda>i. etabc (kss ! i) (css ! i) (rels ! i)) [0..<length rels]"
+
+lemma length_etabcs[simp]: "length (etabcs kss css rels) = length rels"
+  by (simp add: etabcs_def)
+
+lemma nth_etabcs[simp]: "i < length rels \<Longrightarrow> etabcs kss css rels ! i = etabc (kss ! i) (css ! i) (rels ! i)"
+  by (simp add: etabcs_def)
+
+definition wf_atoms :: "cols \<Rightarrow> cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> bool" where
+  "wf_atoms ks kss css rels \<longleftrightarrow> length kss = length rels \<and> length css = length rels \<and>
+     (\<forall>i < length rels. eframe (kss ! i) (css ! i) \<and> set (kss ! i) \<subseteq> set ks \<and> table (kss ! i) (rels ! i))"
+
+locale eregex_frame =
+  fixes ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list"
+  assumes fK: "eframe ks cs" and lc: "length css = length \<psi>s"
+    and fa: "\<And>i. i < length \<psi>s \<Longrightarrow> eframe (Formula.fv_list (\<psi>s ! i)) (css ! i)"
+    and sub: "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set ks"
+begin
+
+abbreviation (input) wfrels :: "event_data table list \<Rightarrow> bool" where
+  "wfrels rels \<equiv> list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel \<and> finite rel) \<psi>s rels"
+
+abbreviation (input) erels :: "event_data table list \<Rightarrow> event_data table list" where
+  "erels rels \<equiv> etabcs (map Formula.fv_list \<psi>s) css rels"
+
+lemma lr: "wfrels rels \<Longrightarrow> length \<psi>s = length rels"
+  by (simp add: list_all2_lengthD)
+
+end
+
+subsection \<open>The past-match structure\<close>
+
+text \<open>
+  A past-match structure is a list of tabulations indexed by a time stamp; the executable one is the
+  same list with every entry reordered.  Since a tabulation is only ever read through
+  @{const lookup}, the relation below says just that, and adds the invariant the derivatives
+  need: every entry is a table over the node's columns.
+\<close>
+
+definition emrd_rel :: "cols \<Rightarrow> cols \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> bool" where
+  "emrd_rel ks cs = list_all2 (\<lambda>(t, X) (t', X'). t = t' \<and>
+     (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)))"
+
+lemma emrd_rel_Nil[simp]: "emrd_rel ks cs [] []"
+  by (simp add: emrd_rel_def)
+
+lemma emrd_rel_Cons[simp]:
+  "emrd_rel ks cs ((t, X) # aux) ((t', X') # daux) \<longleftrightarrow> t = t' \<and>
+     (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)) \<and>
+     emrd_rel ks cs aux daux"
+  by (simp add: emrd_rel_def)
+
+locale ematchP_frame = eregex_frame ks cs \<psi>s css
+  for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +
+  fixes rels :: "event_data table list" and mrs :: "mregex list"
+  assumes ops: "list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel \<and> finite rel) \<psi>s rels"
+    and d: "distinct mrs"
+    and mrsok: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+       Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex ms \<psi>s) \<and> ok (length \<psi>s) ms \<and>
+       set ks = fv_regex (from_mregex ms \<psi>s)"
+begin
+
+abbreviation (input) "kss \<equiv> map Formula.fv_list \<psi>s"
+
+end
+
+subsection \<open>The future-match structure\<close>
+
+text \<open>
+  A future-match structure keeps, per time stamp, the operands' tables at that time point and the
+  result accumulated for it so far.  The executable one keeps the same list with both reordered.
+\<close>
+
+definition emld_rel :: "cols \<Rightarrow> cols \<Rightarrow> ty Formula.formula list \<Rightarrow> cols list \<Rightarrow>
+    event_data ml\<delta>aux \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> bool" where
+  "emld_rel ks cs \<psi>s css = list_all2 (\<lambda>(t, rls, rel) (t', drls, drel). t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
+     drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel)"
+
+lemma emld_rel_Nil[simp]: "emld_rel ks cs \<psi>s css [] []"
+  by (simp add: emld_rel_def)
+
+lemma emld_rel_Cons[simp]:
+  "emld_rel ks cs \<psi>s css ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r \<and> finite r) \<psi>s rls \<and>
+     drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel \<and>
+     emld_rel ks cs \<psi>s css aux daux"
+  by (simp add: emld_rel_def)
+
+locale ematchF_frame = eregex_frame ks cs \<psi>s css
+  for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +
+  fixes mrs :: "mregex list"
+  assumes d: "distinct mrs"
+    and mrsok: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+       Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex ms \<psi>s) \<and> ok (length \<psi>s) ms \<and>
+       set ks = fv_regex (from_mregex ms \<psi>s)"
+begin
+
+abbreviation (input) "kss \<equiv> map Formula.fv_list \<psi>s"
+
+end
+
+
 
 
 section \<open>The match windows over the operands' own columns\<close>

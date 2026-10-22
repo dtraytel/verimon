@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Monitor_Proof
-  imports "Monitor_Exec.Log_Monitor" Prepare_Proof Tuple_Code_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
+  imports "Monitor_Exec.Log_Monitor" Push_Rewrite_Proof "Monitor_Impl_Proof.Monitor_Impl_Proof"
 begin
 (*>*)
 
