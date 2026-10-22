@@ -4,7 +4,9 @@ theory Indexed_Eval_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of indexed evaluation\<close>
 
+subsection \<open>Forgetting the indices\<close>
 
 lemma iset_igands_pos: "iset (igands_pos ps t us) = gands_pos ps (iset t) (map iset us)"
   by (induct ps t us rule: igands_pos.induct) (simp_all add: ijoin_eq)
@@ -34,6 +36,8 @@ proof (induct ix rq \<phi> rule: eemb.induct)
     by (rule map_zip_inv) (auto intro: 13)
   then show ?case by simp
 qed (auto simp: comp_def intro!: map_idI)
+
+subsection \<open>Buffers\<close>
 
 lemma mbuf_t_cases_map: "mbuf_t_cases (mbuf_t_map f b) = map_prod (map_option f) (mbuf_t_map f) (mbuf_t_cases b)"
   by transfer (auto split: list.splits)
@@ -109,6 +113,10 @@ proof (induction g b arbitrary: zs b' rule: mebuf2_take.induct)
   qed
 qed
 
+subsection \<open>Evaluator\<close>
+
+text \<open>Evaluation over indexed tables computes what @{const eeval} computes once the indices are
+  forgotten.\<close>
 
 lemma map_eeval_eabs:
   assumes "\<And>x xs \<phi>'. x \<in> set Ld \<Longrightarrow> ieval [] j ts db x = (xs, \<phi>') \<Longrightarrow>

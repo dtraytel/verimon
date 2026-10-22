@@ -40,7 +40,6 @@ definition evalid_muaux :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Righ
     bool" where
   "evalid_muaux args msk cur daux auxlist \<longleftrightarrow> valid_muaux_dq args cur (MU_dq daux) auxlist"
 
-
 definition euaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow>
     event_data muaux \<Rightarrow> bool" where
   "euaux' kL cL kR cR args cur daux auxlist \<longleftrightarrow>

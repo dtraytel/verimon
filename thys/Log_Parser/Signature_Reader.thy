@@ -4,27 +4,15 @@ theory Signature_Reader
 begin
 (*>*)
 
-section \<open>The signature file\<close>
+section \<open>Reader of the signature file\<close>
 
-text \<open>
-  MonPoly reads the signature file (@{text "-sig"}) with the tokens of its log lexer
-  (\<^verbatim>\<open>Log_parser.parse_signature\<close>): a sequence of declarations
-  \<open>p(f\<^sub>1, \<dots>, f\<^sub>n)\<close>, where each field \<open>f\<^sub>i\<close> is a type or \<open>x:type\<close>, with the types
-  \<open>int\<close>, \<open>string\<close>, \<open>float\<close> and \<open>regexp\<close>. The resulting schema starts with the three
-  predicates \<open>tp\<close>, \<open>ts\<close> and \<open>tpts\<close>, which no declaration may redeclare, and no predicate
-  may be declared twice.
+text \<open>A recursive descent over the tokens of the verified log lexer that follows MonPoly's
+  @{text Log_parser.parse_signature} and reports the same errors, in the same order.\<close>
 
-  Here the signature is read with the tokens of the verified log lexer
-  (@{const Log_Lexer.lex}, @{thm [source] lex_correct}), by a recursive descent that follows
-  MonPoly's and reports the same errors, in the same order. The theorem @{text read_sig_correct}
-  below states that it accepts exactly the inputs that lex to a token word of the grammar
-  @{text G_sig} whose declarations form a schema (@{text decls_schema}).
-\<close>
+subsection \<open>Strings and failures\<close>
 
-subsection \<open>Strings\<close>
-
-text \<open>The characters of a byte string, by the operations on byte strings that the code
-  implements by OCaml's (@{theory Log_Parser.Log_OCaml}).\<close>
+text \<open>The characters of a byte string by the operations on byte strings, so that the code uses
+  OCaml's.\<close>
 
 definition string_of_bytes :: "bytes \<Rightarrow> string" where
   "string_of_bytes b = map (\<lambda>i. bytes_at b (integer_of_nat i)) [0..<nat_of_integer (bytes_length b)]"
@@ -32,16 +20,13 @@ definition string_of_bytes :: "bytes \<Rightarrow> string" where
 lemma string_of_bytes[simp]: "string_of_bytes b = Rep_bytes b"
   by (simp add: string_of_bytes_def bytes_at_def bytes_length_def map_nth)
 
-text \<open>An uncaught @{text Failure} as OCaml's runtime reports it: MonPoly's front end raises one on
-  an error in the signature, and so ends with this message and exit code 2.\<close>
+text \<open>An uncaught @{text Failure} as OCaml's runtime reports it, by which MonPoly ends on an error
+  in the signature.\<close>
 
 definition fatal_failure :: "string \<Rightarrow> string" where
   "fatal_failure msg = ''Fatal error: exception Failure('' @ CHR 0x22 # escaped msg @ CHR 0x22 # '')''"
 
-subsection \<open>Grammar\<close>
-
-text \<open>A signature is a sequence of declarations, each a predicate name followed by a tuple of
-  fields, as the tuples of the log (@{const G_tuple}).\<close>
+subsection \<open>Grammar of signatures\<close>
 
 inductive G_sig :: "'s token list \<Rightarrow> ('s \<times> 's list) list \<Rightarrow> bool" where
   G_sig_Nil: "G_sig [] []"
@@ -50,9 +35,7 @@ inductive G_sig :: "'s token list \<Rightarrow> ('s \<times> 's list) list \<Rig
 definition sig_lang :: "string \<Rightarrow> (string \<times> string list) list \<Rightarrow> bool" where
   "sig_lang s ds \<longleftrightarrow> (\<exists>ts. lexes s ts \<and> G_sig ts ds)"
 
-subsection \<open>Schema\<close>
-
-text \<open>The types of the fields, as MonPoly's @{text Predicate.tcst}.\<close>
+subsection \<open>Schemas\<close>
 
 datatype sty = SInt | SStr | SFloat | SRegexp
 
@@ -61,8 +44,8 @@ type_synonym schema = "(string \<times> (string \<times> sty) list) list"
 definition base_schema :: schema where
   "base_schema = [(''tp'', [(''i'', SInt)]), (''ts'', [(''t'', SInt)]), (''tpts'', [(''i'', SInt), (''t'', SInt)])]"
 
-text \<open>The errors: an error of the reader, reported as MonPoly reports its
-  @{text Local_error}s, and the two failures it raises directly.\<close>
+text \<open>An error of the reader, reported as MonPoly reports its @{text Local_error}s, and the two
+  failures that MonPoly raises directly.\<close>
 
 datatype sig_error = SE_PARSE string | SE_TWICE string | SE_INTERNAL
 
@@ -72,8 +55,7 @@ definition sig_error_msg :: "sig_error \<Rightarrow> string" where
    | SE_TWICE p \<Rightarrow> ''[Db.add_predicate] Predicate '' @ p @ '' was defined more than once in the signature.''
    | SE_INTERNAL \<Rightarrow> ''[Log_parser.convert_types] internal error'')"
 
-text \<open>@{text Misc.nsplit} at the colon: the empty string has no parts, every other string
-  the parts between its colons.\<close>
+text \<open>As MonPoly's @{text Misc.nsplit}: the empty string has no parts.\<close>
 
 function colon_parts :: "string \<Rightarrow> string list" where
   "colon_parts s = (let a = takeWhile (\<lambda>c. c \<noteq> CHR '':'') s; r = dropWhile (\<lambda>c. c \<noteq> CHR '':'') s in
@@ -112,8 +94,6 @@ fun field_decls :: "string list \<Rightarrow> sig_error + (string \<times> sty) 
 | "field_decls (f # fs) = (case field_decl f of Inl e \<Rightarrow> Inl e
      | Inr d \<Rightarrow> map_sum id (Cons d) (field_decls fs))"
 
-text \<open>A declaration is added in front of the schema (@{text Db.add_predicate}).\<close>
-
 definition add_decl :: "string \<times> string list \<Rightarrow> schema \<Rightarrow> sig_error + schema" where
   "add_decl d S = (case field_decls (snd d) of Inl e \<Rightarrow> Inl e
      | Inr l \<Rightarrow> if fst d \<in> fst ` set S then Inl (SE_TWICE (fst d)) else Inr ((fst d, l) # S))"
@@ -122,21 +102,17 @@ fun decls_schema :: "(string \<times> string list) list \<Rightarrow> schema \<R
   "decls_schema [] S = Inr S"
 | "decls_schema (d # ds) S = (case add_decl d S of Inl e \<Rightarrow> Inl e | Inr S' \<Rightarrow> decls_schema ds S')"
 
-subsection \<open>Tokens\<close>
+subsection \<open>Tokens up to a lexical error\<close>
 
-text \<open>MonPoly's lexer returns a token @{text ERR} for a character that begins no token and goes
-  on after it; the verified lexer stops there. The reader sees the tokens up to that point and then
-  @{text SErr}, which no rule accepts, so that MonPoly's error is reported unless an earlier one
-  is. A lexeme that the input ends in before it is complete (a quoted string) counts as such a
-  character.\<close>
+text \<open>The verified lexer stops at a character that begins no token, where MonPoly's lexer emits
+  @{text ERR} and goes on. @{text SErr} then ends the tokens, so MonPoly's error is reported unless
+  an earlier one is.\<close>
 
 datatype stok = STok "string token" | SErr
 
 fun pend_toks :: "lstate \<Rightarrow> string token list" where
   "pend_toks (L_SIMPLE s) = [T_STR s]"
 | "pend_toks _ = []"
-
-text \<open>The tokens up to the first character that begins no token.\<close>
 
 fun lex_upto :: "string \<Rightarrow> lstate \<Rightarrow> string token list" where
   "lex_upto [] l = []"
@@ -199,9 +175,7 @@ proof (cases "lex_run s L_INIT")
       using \<open>lex_run s L_INIT = Some p\<close> by (simp add: sig_tokens_def p, metis map_append)
   qed
 qed (use assms in \<open>simp add: sig_tokens_def\<close>)
-subsection \<open>The reader\<close>
-
-text \<open>The tokens as MonPoly's messages show them (@{text Log_parser.string_of_token}).\<close>
+subsection \<open>Recursive descent\<close>
 
 definition squote :: "string \<Rightarrow> string" where
   "squote s = CHR 0x27 # s @ [CHR 0x27]"
@@ -217,8 +191,6 @@ fun tok_str :: "stok list \<Rightarrow> string" where
 
 definition expected :: "string \<Rightarrow> stok list \<Rightarrow> sig_error" where
   "expected what ts = SE_PARSE (''Expected '' @ what @ '' but saw '' @ tok_str ts)"
-
-text \<open>The fields after the first (@{text "more"} in @{text Log_parser.parse_tuple}) and a tuple.\<close>
 
 fun sig_more :: "stok list \<Rightarrow> string list \<Rightarrow> sig_error + string list \<times> stok list" where
   "sig_more [] acc = Inl (expected (squote '','' @ '' or '' @ squote '')'') [])"
@@ -247,8 +219,7 @@ qed simp
 lemma sig_tuple_length: "sig_tuple ts = Inr (fs, ts') \<Longrightarrow> length ts' < length ts"
   by (auto simp: sig_tuple_def split: stok.splits token.splits list.splits dest!: sig_more_length)
 
-text \<open>The declarations (@{text Log_parser.parse_predicates}), each added to the schema before the
-  next is read.\<close>
+text \<open>Each declaration is added to the schema before the next is read.\<close>
 
 function (sequential) sig_decls :: "stok list \<Rightarrow> schema \<Rightarrow> sig_error + schema" where
   "sig_decls [] S = Inr S"
@@ -263,9 +234,7 @@ termination
 definition read_sig :: "string \<Rightarrow> sig_error + schema" where
   "read_sig s = sig_decls (sig_tokens s) base_schema"
 
-subsection \<open>Correctness\<close>
-
-text \<open>The fields after the first: a comma-separated list of strings, then the closing parenthesis.\<close>
+subsection \<open>Correctness on token words\<close>
 
 inductive G_more :: "'s token list \<Rightarrow> 's list \<Rightarrow> bool" where
   G_more_end: "G_more [T_RPAREN] []"
@@ -456,6 +425,8 @@ qed
 lemma sig_decls_correct:
   "sig_decls (map STok ts) S = Inr S' \<longleftrightarrow> (\<exists>ds. G_sig ts ds \<and> decls_schema ds S = Inr S')"
   using sig_decls_InrD sig_decls_G_sig by blast
+
+subsection \<open>Correctness of the reader\<close>
 
 lemma sig_more_suffix: "sig_more ts acc = Inr (fs, ts') \<Longrightarrow> \<exists>pre. ts = pre @ ts' \<and> SErr \<notin> set pre"
 proof (induction ts arbitrary: acc rule: length_induct)

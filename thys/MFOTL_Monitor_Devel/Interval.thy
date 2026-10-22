@@ -8,6 +8,8 @@ begin
 
 section \<open>Intervals\<close>
 
+subsection \<open>Interval type\<close>
+
 definition upclosed :: "(nat \<Rightarrow> bool) \<Rightarrow> bool" where
   "upclosed mem = (\<forall>l m. mem l \<longrightarrow> l \<le> m \<longrightarrow> mem m)"
 
@@ -99,6 +101,8 @@ lemma mem_mt_and_memR_imp_mem:
 lift_definition all :: \<I> is "(\<lambda>_. True, \<lambda>_. True, False)" by (auto simp: upclosed_def downclosed_def)
 lemma interval_all: "mem all i"
   by transfer auto
+
+subsection \<open>Interval constructors\<close>
 
 lift_definition point :: "nat \<Rightarrow> \<I>" is "\<lambda>n. ((\<le>) n, (\<ge>) n, True)"
   by (auto simp: upclosed_def downclosed_def not_le)
@@ -219,12 +223,15 @@ lift_definition clopen_ivlL :: "nat \<Rightarrow> enat \<Rightarrow> \<I>" is
   using enat_iless Suc_ile_eq
   by (auto simp: upclosed_def downclosed_def not_le order_subst2)
 
-(* [a, b] \<Rightarrow> [b+1, \<infinity>] *)
+subsection \<open>Flipped intervals\<close>
+
+text \<open>For an interval @{text "[a, b]"}, the definitions below yield @{text "[b+1, \<infinity>)"},
+  @{text "[b+1, 2b]"}, @{text "[0, a-1]"} and @{text "[0, b]"}.\<close>
+
 lift_definition flip_int :: "\<I> \<Rightarrow> \<I>" is
   "\<lambda>I. if bounded I then ((\<lambda>i. \<not>memR I i), (\<lambda>i. True), False) else ((\<lambda>i. True), (\<lambda>i. True), False)"
   by transfer (auto simp: upclosed_def downclosed_def)
 
-(* [a, b] \<Rightarrow> [b+1, 2b]. nonempty if b+1\<le>2b \<Leftrightarrow> 1\<le>b *)
 lift_definition flip_int_double_upper :: "\<I> \<Rightarrow> \<I>" is
   "\<lambda>I. if (bounded I) then ((\<lambda>i. \<not>memR I i), (\<lambda>i. memR I ((div) i 2)), True) else ((\<lambda>i. True), (\<lambda>i. True), False)"
 proof -
@@ -275,12 +282,10 @@ proof -
     by auto
 qed
 
-(* [a, b] \<Rightarrow> [0, a-1] *)
 lift_definition flip_int_less_lower :: "\<I> \<Rightarrow> \<I>" is
   "\<lambda>I. if \<not>memL I 0 then ((\<lambda>i. True), (\<lambda>i. \<not>memL I i), True) else ((\<lambda>i. True), (\<lambda>i. True), False)"
   by transfer (auto simp: upclosed_def downclosed_def)
 
-(* [a, b] \<Rightarrow> [0, b] *)
 lift_definition int_remove_lower_bound :: "\<I> \<Rightarrow> \<I>" is
   "\<lambda>I. ((\<lambda>i. True), (\<lambda>i. memR I i), bounded I)"
   by transfer (auto simp: upclosed_def downclosed_def)
@@ -292,26 +297,26 @@ lemma flip_int_props:
   using assms by (transfer') (auto split: if_splits)
 
 lemma flip_int_less_lower_props:
-  assumes "\<not>memL I 0" (* [a, b] *)
-  assumes "I' = flip_int_less_lower I" (* [0, a-1] *)
+  assumes "\<not>memL I 0"
+  assumes "I' = flip_int_less_lower I"
   shows "mem I' 0 \<and> bounded I'"
   using assms by (transfer') (auto split: if_splits)
 
 lemma flip_int_less_lower_mem:
-  assumes "\<not>bounded I" "\<not>mem I x" (* [a, \<infinity>], x < a *)
-  shows "mem (flip_int_less_lower I) x" (* x \<in> [0, a-1] *)
+  assumes "\<not>bounded I" "\<not>mem I x"
+  shows "mem (flip_int_less_lower I) x"
   using assms
   by (transfer') (simp add: bounded_memR)
 
 lemma int_flip_mem:
-  assumes "bounded I" "mem I 0" "\<not>mem I x" (* [0, a], a<x *)
-  shows "mem (flip_int I) x" (* [a, \<infinity>] *)
+  assumes "bounded I" "mem I 0" "\<not>mem I x"
+  shows "mem (flip_int I) x"
   using assms memL_mono
   by (transfer') (auto split: if_splits)
 
 lemma flip_int_double_upper_leq:
-  assumes "mem (flip_int_double_upper I) x" (* x \<in> [b+1, 2b] *)
-  assumes "\<not> mem (flip_int_double_upper I) y" "y\<le>x" (* y \<notin> [b+1, 2b] and y \<le> x *)
+  assumes "mem (flip_int_double_upper I) x"
+  assumes "\<not> mem (flip_int_double_upper I) y" "y\<le>x"
   assumes "mem I 0"
   shows "mem I y"
 proof -
@@ -332,10 +337,11 @@ lemma int_remove_lower_bound_simps [simp]:
   "mem (int_remove_lower_bound I) 0"
   by (transfer, clarsimp)+
 
+subsection \<open>Notation and membership\<close>
+
 bundle ivl_no_notation
 begin
 
-(* use bold with \bold (warning: hard to copy-paste) *)
 no_notation clopen_ivlR ("\<^bold>[_,_\<^bold>\<rangle>")
     and clopen_ivlL ("\<^bold>\<langle>_,_\<^bold>]")
      and Interval.interval ("\<^bold>[_,_\<^bold>]")
@@ -345,14 +351,13 @@ end
 bundle ivl_notation
 begin
 
-(* use bold with \bold (warning: hard to copy-paste) *)
 notation clopen_ivlR ("\<^bold>[_,_\<^bold>\<rangle>")
     and clopen_ivlL ("\<^bold>\<langle>_,_\<^bold>]")
      and Interval.interval ("\<^bold>[_,_\<^bold>]")
 
 end
 
-unbundle ivl_notation \<comment> \<open> enable notation \<close>
+unbundle ivl_notation
 
 lemma memL_interval_simp[simp]: "memL \<^bold>[a,b\<^bold>] x \<longleftrightarrow> (a \<le> b \<and> a \<le> x) \<or> (a > b)"
   by transfer auto
@@ -381,7 +386,7 @@ lemma mem_clopen_ivlR_simp[simp]: "mem \<^bold>[a,b\<^bold>\<rangle> x \<longlef
 lemma mem_clopen_ivlL_simp[simp]: "mem \<^bold>\<langle>a,b\<^bold>] x \<longleftrightarrow> (a < x \<and> x \<le> b) \<or> (a \<ge> b)"
   by transfer auto
 
-unbundle ivl_no_notation \<comment> \<open> disable notation \<close>
+unbundle ivl_no_notation
 
 
 (*<*)

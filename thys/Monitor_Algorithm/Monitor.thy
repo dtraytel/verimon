@@ -447,8 +447,8 @@ datatype ('a, 't) frz_sep =
   | FSStock nat nat nat 'a nat nat nat "'a list"
   | FSSep 'a nat nat "('t \<times> 't) list" nat nat nat 'a
 
-text \<open>Combination of the copies' verdicts, union, number of new tuples, size, empty table and
-sample of frozen tables.\<close>
+text \<open>The operations of the separable mode: combining the copies' verdicts, union, number of new
+tuples, size, empty table and sample.\<close>
 
 datatype ('a, 't) frz_ops = FrzOps (fo_cmb: "'t \<Rightarrow> 't \<Rightarrow> 'a \<Rightarrow> 't") (fo_un: "'a \<Rightarrow> 'a \<Rightarrow> 'a")
   (fo_fr: "'a \<Rightarrow> 'a \<Rightarrow> nat") (fo_cd: "'a \<Rightarrow> nat") (fo_emp: 'a) (fo_smp: "'a \<Rightarrow> 'a")
@@ -742,7 +742,7 @@ locale muaux =
 
 sublocale muaux \<subseteq> muaux_ops init_muaux add_new_muaux length_muaux eval_muaux .
 
-subsection \<open>Parameters of the algorithm\<close>
+subsection \<open>Locale of the algorithm\<close>
 
 locale maux = msaux valid_msaux init_msaux add_new_ts_msaux join_msaux add_new_table_msaux result_msaux +
   muaux valid_muaux init_muaux add_new_muaux length_muaux eval_muaux + 
@@ -1059,7 +1059,9 @@ definition (in maux_ops) minit_safe where
   "minit_safe \<phi> = (if mmonitorable_exec \<phi> then minit \<phi> else undefined)"
 
 
-subsection \<open> Step \<close>
+subsection \<open>Step functions of the operators\<close>
+
+subsubsection \<open>Buffers\<close>
 
 fun mprev_next :: "\<I> \<Rightarrow> (event_data table) list \<Rightarrow> ts list \<Rightarrow> (event_data table) list \<times> (event_data table) list \<times> ts list" where
   "mprev_next I [] ts = ([], [], ts)"
@@ -1087,6 +1089,8 @@ fun mbuf2t_take :: "(event_data table \<Rightarrow> event_data table \<Rightarro
   "mbuf2t_take f z (x # xs, y # ys) t0 (t # ts) = mbuf2t_take f (f x y t z) (xs, ys) t ts"
 | "mbuf2t_take f z (xs, ys) t0 ts = (z, (xs, ys), (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
 
+subsubsection \<open>Since\<close>
+
 context maux_ops begin
 context fixes args :: args begin
 
@@ -1104,8 +1108,10 @@ fun eval_since :: "event_data table list \<Rightarrow> event_data mbuf2S \<Right
     in eval_since (result_msaux args aux' # rs) (xs, ys, ts, False) aux')"
 | "eval_since rs buf aux = (rev rs, buf, aux)"
 
-end (* fixes args *)
-end (* maux *)
+end
+end
+
+subsubsection \<open>Multiway buffers\<close>
 
 fun mbufn_add :: "(event_data table) list list \<Rightarrow> event_data mbufn \<Rightarrow> event_data mbufn" where
   "mbufn_add xs' xs = List.map2 (@) xs xs'"
@@ -1129,6 +1135,8 @@ fun mbufnt_take :: "(event_data table list \<Rightarrow> ts \<Rightarrow> 'b \<R
     (if [] \<in> set buf \<or> ts = [] then (z, buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)
     else mbufnt_take f (f (map hd buf) (hd ts) z) (map tl buf) (hd ts) (tl ts))"
 
+subsubsection \<open>Predicates\<close>
+
 fun match :: "Formula.trm list \<Rightarrow> event_data tuple \<Rightarrow> (nat \<rightharpoonup> event_data) option" where
   "match [] [] = Some Map.empty"
 | "match (Formula.Const x # ts) (y # ys) = (if x = y then match ts ys else None)"
@@ -1139,18 +1147,17 @@ fun match :: "Formula.trm list \<Rightarrow> event_data tuple \<Rightarrow> (nat
       | Some z \<Rightarrow> if y = z then Some f else None))"
 | "match _ _ = None"
 
-text \<open>A predicate's table is over its variables in the order of their first occurrence.  With a
-  simple pattern (distinct variables in increasing order) the tuples of the event are the
-  tuples of the table; otherwise they are matched against the pattern and tabulated.\<close>
+text \<open>With a simple pattern, of distinct variables in increasing order, the event tuples are the
+table's tuples; otherwise they are matched against the pattern.\<close>
 
 definition tabulate_match :: "nat list \<Rightarrow> (nat \<rightharpoonup> event_data) \<Rightarrow> event_data tuple" where
   "tabulate_match cs f = map (\<lambda>x. the (f x)) cs"
 definition "lookup = Mapping.lookup_default empty_table"
 
-text \<open>The tables of a regular expression's derivatives are over the columns @{term cs} of the
-  whole expression, those of its atoms over the columns @{term dss} of each atom.  A lax test
-  joins the atom's table into the guard; a strict test, whose atom has the same variables as the
-  whole expression, reorders it.\<close>
+subsubsection \<open>Match operators\<close>
+
+text \<open>The derivatives' tables are over the expression's columns @{term cs}, the atoms' tables over
+their own columns @{term dss}.\<close>
 
 fun \<epsilon>_lax where
   "\<epsilon>_lax cs dss guard \<phi>s (MSkip n) = (if n = 0 then guard else empty_table)"
@@ -1235,7 +1242,7 @@ lemma map_split_map: "map_split f (map g xs) = map_split (f o g) xs"
 lemma map_split_eq_Pair_iff: "map_split f xs = (ys, zs) \<longleftrightarrow> ys = map (fst o f) xs \<and> zs = map (snd o f) xs"
   by (induct xs arbitrary: ys zs) (auto split: prod.splits)
 
-text \<open>An assignment appends the assigned variable's column to the tuples over @{term cs}.\<close>
+subsubsection \<open>Assignments and constraints\<close>
 
 fun eval_assignment :: "nat list \<Rightarrow> nat \<times> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
   "eval_assignment cs (x, t) y = y @ [meval_trm cs t y]"
@@ -1247,6 +1254,9 @@ fun eval_constraint0 :: "mconstraint \<Rightarrow> event_data \<Rightarrow> even
 
 fun eval_constraint :: "nat list \<Rightarrow> Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> bool" where
   "eval_constraint cs (t1, p, c, t2) x = (eval_constraint0 c (meval_trm cs t1 x) (meval_trm cs t2 x) = p)"
+
+subsubsection \<open>Recursive let\<close>
+
 function letpast_meval0 where
   "letpast_meval0 eval j i ys xs p ts db \<phi> =
      (let (ys', \<phi>') = eval ts (Mapping.update p xs db) \<phi>
@@ -1311,14 +1321,12 @@ proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
   qed
 qed
 
-text \<open>The copies stop at the first frozen table whose verdict is not out yet.  That copy's state
-  is kept (the live copy), with the number of its verdicts still to come before the pending one,
-  and in the next step it is fed the new time points instead of being replayed from the replay
-  base again.  The live copy is kept in a slot of its own, @{text \<rho>L}, next to the number of its
-  verdicts still to come; without a live copy the slot keeps its previous contents.  A new live
-  copy replaces the slot only if it has the same size, which the live copies of a well-formed state
-  always have (they are replays of the replay base): so evaluation keeps the size of the state,
-  which the termination argument needs.\<close>
+subsection \<open>Step function of the freeze\<close>
+
+subsubsection \<open>Replay mode\<close>
+
+text \<open>The copy at the first frozen table without a verdict yet is kept as the live copy and fed only
+the new time points next. It replaces its slot only at equal size, for termination.\<close>
 
 definition frz_keep_lv :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> nat option" where
   "frz_keep_lv lv \<rho>L = (case lv of Some (g, st) \<Rightarrow> if size st = size \<rho>L then Some g else None | None \<Rightarrow> None)"
@@ -1329,22 +1337,8 @@ definition frz_keep_st :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<R
 lemma size_frz_keep_st[simp]: "size (frz_keep_st lv \<rho>L) = size \<rho>L"
   by (auto simp: frz_keep_st_def split: option.splits)
 
-text \<open>The windowed replay of @{const MFrz}: a time point whose timestamp is more than the past
-  reach @{term d} of the body before that of a time point @{term i} is never looked at by the
-  verdict at @{term i} or later ones.  The number of such time points at the front of the window
-  @{term "tq"} (the timestamps from time point @{term w} on), by which the window can move forward
-  before the copy of @{term i}, or, with @{term i} the first undecided time point, at the end of a
-  step.  Once every verdict is out (@{term "i = j"}), the timestamp of @{term i} is not known yet;
-  that of the last time point, @{term "j - 1"}, bounds it from below.  Without this, a frozen
-  formula that never lags would keep the window at its start, and each copy would replay the whole
-  prefix.
-
-  When the body does not use the frozen predicate beyond the current time point (the flag
-  @{term po}: @{const safe_letpast} of the frozen predicate is at most @{const NonFutuRec}, as for
-  the recursive predicate of @{const Formula.LetPast}), a copy's verdict at a time point @{term i}
-  needs the frozen predicate only up to @{term i}.  The copy of @{term i} is then fed it only up
-  to @{term i}, not up to the last time point (@{text frz_cut}): this matters when the frozen
-  formula lags, and the frozen tables of several time points arrive at once.\<close>
+text \<open>The replay window drops the time points beyond the body's past reach @{term d} from every
+pending verdict. With @{term po}, the copy at @{term i} is fed the frozen predicate only up to @{term i}.\<close>
 definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> nat" where
   "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> w < j
      then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (min jfrz (j - 1) - w))) tq) else 0)"
@@ -1352,24 +1346,14 @@ definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> na
 definition frz_cut :: "bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
   "frz_cut po w i j = (if po then min (j - w) (Suc i - w) else j - w)"
 
-text \<open>The value of the frozen predicate with which the replay base absorbs the time points that
-  leave the window.  They lie beyond the past reach of every verdict still to be computed, so any
-  table of the frozen formula will do.  The copies start from the replay base and throw away what
-  it holds for those time points.  With the frozen predicate under a negation
-  (@{const neg_pred}), the latest frozen table leaves the least of that: a copy's own frozen table
-  is typically close to it.  Otherwise the empty table does.\<close>
+text \<open>Any frozen table can fill the time points that leave the window; the latest one under a
+negation, the empty one otherwise, keeps the work that the copies discard small.\<close>
 
 definition frz_fill :: "bool \<Rightarrow> 'a set list \<Rightarrow> 'a set" where
   "frz_fill ng \<alpha>s = (if ng then last ({} # \<alpha>s) else {})"
 
-text \<open>The copies, each with the window moved to its own time point.  The replay base and its window
-  (the base, the window's start @{term w}, the base's progress, the window's timestamps and the
-  base's verdicts from the first pending one on) are threaded through the copies: before the copy
-  for the frozen table of time point @{term i}, the window moves as far as @{term i} allows
-  (@{text frz_adv_st}), and after the last copy, as far as the first pending verdict allows.  The
-  base's evaluation is a parameter @{term ev}; a moved base replaces the old one only if it has
-  the same size @{term sz}, which the evaluation always keeps: the termination argument needs it,
-  as for @{text letpast_meval0}.  A copy stops the loop if it does not have its verdict yet.\<close>
+text \<open>Before each copy, the replay base's window moves as far as the copy's time point allows; a
+moved base replaces the old one only at equal size.\<close>
 
 definition frz_adv_st :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'm \<Rightarrow> 't list \<times> 'm) \<Rightarrow>
     'k \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'a \<Rightarrow> enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
@@ -1392,9 +1376,6 @@ primrec frz_loop :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Rightarrow>
         [] \<Rightarrow> ([], \<alpha> # \<alpha>s, Some (i - (pR - length rb) - length (rb @ us), \<sigma>), (\<rho>, w, pR, tq, rb))
       | y # _ \<Rightarrow> (case frz_loop sz ev pm dbe fl d po j (Suc i) \<alpha>s (\<rho>, w, pR, tq, rb) of
           (zs, \<alpha>s', lv, s') \<Rightarrow> (y # zs, \<alpha>s', lv, s')))))"
-
-text \<open>With a live copy (@{term lr}, its verdicts after the new time points and its state), the
-  first verdict is the live copy's, if it has it.\<close>
 
 definition frz_live_loop where
   "frz_live_loop sz ev pm dbe fl d po j i \<alpha>s lr s = (case lr of
@@ -1484,12 +1465,10 @@ proof -
     by (simp only: frz_live_loop_def)
 qed
 
-text \<open>The separable evaluation of @{const MFrz}.  The two live copies are replays of the replay
-  base over its window, one with the table @{term L} and one with the empty table at every time
-  point of the window (@{text frz_copies}); they replace the slots only if they have their sizes,
-  as the live copy of the replay mode does.  Their verdicts from the first pending time point
-  @{term i} on are kept in pairs, those the base already holds included (paired with
-  themselves).\<close>
+subsubsection \<open>Separable mode\<close>
+
+text \<open>The two copies replay the replay base with @{term L} and with the empty table; their verdicts
+from the first pending time point on are kept in pairs.\<close>
 
 definition frz_copies :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> 'm \<Rightarrow> 't list \<times> 'm) \<Rightarrow> 'a \<Rightarrow>
     'k \<Rightarrow> ('k, 'a list) mapping \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'm \<Rightarrow> 'm \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
@@ -1502,31 +1481,13 @@ definition frz_copies :: "('m \<Rightarrow> nat) \<Rightarrow> (ts list \<Righta
          drop (min i (pR + length uS) - (pR - length rb)) (zip (rb @ uS) (rb @ uE)))
        else None)))"
 
-text \<open>The verdicts of the pending time points that the two copies have, in order.\<close>
-
 definition frz_emit :: "('t \<Rightarrow> 't \<Rightarrow> 'a \<Rightarrow> 't) \<Rightarrow> 'a list \<Rightarrow> ('t \<times> 't) list \<Rightarrow> 't list" where
   "frz_emit cmb \<alpha>s buf = map2 (\<lambda>\<alpha> (yS, yE). cmb yS yE \<alpha>) \<alpha>s buf"
 
-text \<open>The work model of the decision.  A copy of the replay mode replays the window, of length
-  @{term k}, with its frozen table: its work is @{term k} times the table's size.  The separable
-  mode steps its two copies with the table @{term L} (a factor @{text frz_lambda} times its size)
-  and rebuilds them, a replay with @{term L}, when a new frozen table is not contained in
-  @{term L}.  Each mode accumulates the work it does less than the other would (the regret of
-  having switched) and the work the other would do less; the replay mode switches when the latter
-  exceeds the work of a rebuild, the separable mode when it exceeds that of a replay of @{term L},
-  and each switch back to the replay mode doubles the threshold of the next switch to the
-  separable mode.  The table @{term L} only grows with new frozen tables; at the end of an epoch
-  of @{text frz_epoch} steps it shrinks to the frozen tables of the epoch and the pending ones if
-  that halves it.
+subsubsection \<open>Choice of the mode\<close>
 
-  A replay of a body that refers only to the past is cut at the time point it decides
-  (@{const frz_cut}), and the work of the replay mode is counted with the cut length.  The replay
-  mode does not track the tables it would put in @{term L}: while the cut length is at most
-  @{text frz_lambda} the replay is no more work than stepping the copies, and otherwise it measures
-  the size of @{term L} and the steps that bring new tuples on a sample of the tuples
-  (@{const fo_smp}, about one in @{text frz_sample}), over epochs of @{text frz_epoch} steps that
-  start from the sample of the recent frozen tables, and uses each measurement until the next one.
-  It keeps the frozen tables of the last @{text frz_keep} steps, which give @{term L} at a switch.\<close>
+text \<open>Each mode accumulates the work the other would save and switches when that exceeds the cost
+of switching. The choice affects only the work, never the verdicts.\<close>
 
 definition frz_lambda :: nat where "frz_lambda = 6"
 definition frz_c0 :: nat where "frz_c0 = 1000"
@@ -1540,10 +1501,8 @@ definition frz_absorb :: "('a, 't) frz_ops \<Rightarrow> 'a list \<Rightarrow> '
 definition frz_unions :: "('a, 't) frz_ops \<Rightarrow> 'a list \<Rightarrow> 'a \<Rightarrow> 'a" where
   "frz_unions ops xs = fold (\<lambda>\<alpha> L. fo_un ops L \<alpha>) xs"
 
-text \<open>The measurement of the replay mode in a step (if @{term g}, the cut length exceeds
-  @{text frz_lambda}): the steps measured, the union of the sampled frozen tables of the current
-  epoch, the steps of it with new sampled tuples, and the two estimates (the size of the union,
-  scaled by @{text frz_sample}, and the steps with new tuples).\<close>
+text \<open>The replay mode measures, on samples over epochs, the size of @{term L} and the number of
+steps with new tuples.\<close>
 
 definition frz_meas :: "('a, 't) frz_ops \<Rightarrow> bool \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow>
     nat \<times> 'a \<times> nat \<times> nat \<times> nat \<Rightarrow> nat \<times> 'a \<times> nat \<times> nat \<times> nat" where
@@ -1575,10 +1534,8 @@ definition frz_stock where
             | None \<Rightarrow> (ys, \<alpha>s', lv, s', FSStock 0 bo cy' Lm' nm' en' ep' rs', \<sigma>S, \<sigma>E))
           else (ys, \<alpha>s', lv, s', FSStock rg' bo cy' Lm' nm' en' ep' rs', \<sigma>S, \<sigma>E))))"
 
-text \<open>A step of the freeze after the new time points: the live copies @{term fd} of the separable
-  mode have been fed them (with @{term L} and the empty table), and @{term xsr} are the new frozen
-  tables.  The copies are rebuilt if a new frozen table is not contained in @{term L}, or if the
-  table shrinks at the end of an epoch.\<close>
+text \<open>The separable mode rebuilds its copies if a new frozen table is not contained in @{term L} or
+if @{term L} shrinks at the end of an epoch.\<close>
 
 definition frz_step where
   "frz_step sz ev ops pm dbe fl d po j i \<alpha>s xsr lr fd sx \<sigma>S \<sigma>E s = (case sx of
@@ -1813,10 +1770,9 @@ next
   qed
 qed
 
-text \<open>The operations of the separable evaluation on the kernel's tables: a verdict's tuple, over
-  the body's columns @{term cs}, is read at the frozen predicate's variables.  The sample of a
-  table are its tuples whose hash code is divisible by 8 (@{const frz_sample}): whose last three
-  bits, @{text frz_smask}, are 0.\<close>
+subsubsection \<open>Operations on kernel tables\<close>
+
+text \<open>A sample keeps the tuples whose hash code is divisible by @{const frz_sample}.\<close>
 
 definition frz_smask :: hashcode where "frz_smask = 7"
 
@@ -1827,6 +1783,8 @@ definition frz_kops :: "nat \<Rightarrow> nat list \<Rightarrow> (event_data lis
   "frz_kops m cs = FrzOps (\<lambda>yS yE \<alpha>. {x \<in> yS. val m cs x \<in> \<alpha>} \<union> {x \<in> yE. val m cs x \<notin> \<alpha>})
     (\<union>) (\<lambda>\<alpha> L. card (\<alpha> - L)) card {} (\<lambda>\<alpha>. {x \<in> \<alpha>. frz_sampled x})"
 
+subsection \<open>Recursive evaluation\<close>
+
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
 | "list_of_option (Some x) = [x]"
@@ -1834,8 +1792,6 @@ fun list_of_option :: "'a option \<Rightarrow> 'a list" where
 fun eval_mtrm :: "mtrm \<Rightarrow> event_data \<Rightarrow> event_data table" where
   "eval_mtrm (MVar v) x = singleton_table x"
 | "eval_mtrm (MConst c) x = (if c = x then unit_table else empty_table)"
-
-text \<open>The columns of a predicate's table.\<close>
 
 definition pred_cols :: "Formula.trm list \<Rightarrow> nat list" where
   "pred_cols ts = fold (\<lambda>t cs. cols_union cs (Formula.fv_trm_list t)) ts []"
@@ -1849,9 +1805,8 @@ context
   fixes j :: nat
 begin
 
-text \<open>The tables of a formula bound to a predicate are read positionally, as the event tuples:
-  @{const MLet}, @{const MFrz} and @{const MLetPast} reorder them from the formula's columns
-  @{term cs} to @{term "[0..<m]"}.\<close>
+text \<open>@{const MLet}, @{const MFrz} and @{const MLetPast} reorder a bound formula's tables to
+@{term "[0..<m]"}. The @{const MFrz} equation returns each stage's values as a tuple, for speed.\<close>
 
 function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula \<Rightarrow>
     event_data table list \<times> ('msaux, 'muaux, 'mtaux) mformula" where
@@ -1986,7 +1941,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
 lemma
   psize_snd_meval: "meval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meval n t db \<phi>)) = size \<phi>"
 proof (induct rule: meval.pinduct)
-  case (6 n ts db p m cs \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>MLetPast\<close>\<close>
+  case (6 n ts db p m cs \<phi> \<psi> i buf)
   let ?eval = "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval m ts db \<phi>)"
   obtain xs i' buf' \<phi>' where lp: "letpast_meval0 ?eval j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
     by (metis prod_cases4)
@@ -2000,7 +1955,7 @@ proof (induct rule: meval.pinduct)
     using 6(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
   show ?case
     using size_\<phi>' size_\<psi>' by (simp add: meval.psimps(6)[OF 6(1)] lp \<psi>')next
-  case (15 n ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>MPrev\<close>\<close>
+  case (15 n ts db I \<phi> first buf nts)
   obtain xs \<phi>' where \<phi>': "meval n ts db \<phi> = (xs, \<phi>')"
     by fastforce
   obtain zs buf' nts' where mp: "mprev_next I (buf @ xs) (nts @ ts) = (zs, buf', nts')"
@@ -2010,7 +1965,7 @@ proof (induct rule: meval.pinduct)
   then show ?case
     by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
 next
-  case (4 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E) \<comment> \<open>\<^const>\<open>MFrz\<close>\<close>
+  case (4 n ts db p m cs \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)
   let ?db0 = "Mapping.update (p, m) [] db"
   obtain xs \<phi>' where \<phi>': "meval m ts db \<phi> = (xs, \<phi>')"
     by fastforce
@@ -2058,30 +2013,19 @@ next
         prod.case snd_conv)
   then show ?case
     using s\<phi> s\<psi> s\<rho>'' sS sE by simp
-  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
 qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply size_frz_keep_st cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
-  text \<open>The live copies are subterms.  The copies and the window's moves evaluate a replay base of
-    the size of the one the node holds (@{const frz_live_loop}): left to the automation below, this
-    case takes long, since the many equations of the body's @{text let}s are tried in both
-    orientations.
-
-    The equation for @{const MFrz} computes the values each stage needs inside the bound term of
-    that stage's recursive call and returns them as a tuple, so that only a few pair @{text let}s
-    follow the calls.  With the values bound one by one at the top level, the definition takes
-    minutes instead of seconds: the function package's congruence steps unify over the whole
-    chain of @{text let}s that follows a call.\<close>
-  case 7 \<comment> \<open>the live copy, a subterm\<close>
+    case 7
   then show ?case
     by simp
 next
-  case 8 \<comment> \<open>the copy of the separable mode with the frozen table, a subterm\<close>
+  case 8
   then show ?case
     by simp
 next
-  case 9 \<comment> \<open>the copy of the separable mode with the empty table, a subterm\<close>
+  case 9
   then show ?case
     by simp
 next
@@ -2097,7 +2041,7 @@ lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
 termination meval
   by (rule total_meval)
 
-end (* fixes j *)
+end
 
 definition "letpast_meval m cs j =
   letpast_meval0 (\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] cs)) (meval j m ts db \<phi>)) j"
@@ -2120,7 +2064,9 @@ qed
 
 declare meval.simps[simp del]
 lemmas meval_simps[simp] = meval.simps[folded letpast_meval_def]
-end (* maux *)
+end
+
+subsection \<open>Monitor steps\<close>
 
 definition (in maux_ops) mstep :: "database \<times> ts \<Rightarrow> ('msaux, 'muaux, 'mtaux) mstate \<Rightarrow>
     (nat \<times> ts \<times> event_data table) list \<times> ('msaux, 'muaux, 'mtaux) mstate" where
@@ -2152,7 +2098,7 @@ lift_definition msteps_stateless :: "Formula.prefix \<Rightarrow> ('msaux, 'muau
 definition monitor where
   "monitor \<phi> \<pi> = msteps_stateless \<pi> (minit_safe \<phi>)"
 
-end (* maux *)
+end
 
 
 (*<*)

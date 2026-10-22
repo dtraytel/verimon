@@ -101,9 +101,6 @@ abbreviation (input) "kss \<equiv> map Formula.fv_list \<psi>s"
 
 end
 
-
-
-
 subsection \<open>Derivatives over short tuples\<close>
 
 text \<open>

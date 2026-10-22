@@ -78,12 +78,12 @@ qed simp
 lemma emonitor_eindex[simp]: "emonitor (eindex ix st) \<pi> = emonitor st \<pi>"
   unfolding emonitor_def emsteps_stateless.rep_eq by (rule emsteps0_stateless_eforget) simp
 
+subsection \<open>Simulation of a step\<close>
+
 lemma enumerate_zip_map:
   "List.enumerate i (zip us (map f xs))
      = map (\<lambda>(k, u, X). (k, u, f X)) (List.enumerate i (zip us xs))"
   by (simp add: List.enumerate_eq_zip zip_map2 case_prod_beta)
-
-subsection \<open>Simulation of a step\<close>
 
 lemma emstep_mstep:
   assumes r: "emsim_state n ks cs tw st dst" and le: "tw \<le> snd tdb"

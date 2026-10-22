@@ -17,8 +17,8 @@ text \<open>
 subsection \<open>Executable formulas\<close>
 
 text \<open>
-  They mirror the kernel's @{typ "('msaux, 'muaux, 'mtaux) mformula"} node by node, with the data of
-  the ascending representation; @{term EFail} marks a node outside the executable fragment.
+  An executable formula mirrors the kernel's @{typ "('msaux, 'muaux, 'mtaux) mformula"} node by
+  node, with the data of the ascending representation; @{term EFail} marks an uncovered node.
 \<close>
 
 datatype ('b2, 'bn, 'ba, 'bs, 'bu, 'p) geformula =
@@ -362,7 +362,7 @@ definition esres :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ev
 lemma esres_Nil[simp]: "esres ks cs args [] []"
   unfolding esres_def by (intro exI[of _ "[]"]) simp
 
-text \<open>With a post-function on the executable side, for the window with the fused aggregate.\<close>
+text \<open>@{text esresh} adds a post-function on the executable side, for the fused aggregate.\<close>
 
 definition esresh :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> (event_data table \<Rightarrow> event_data table) \<Rightarrow>
     event_data table list \<Rightarrow> event_data table list \<Rightarrow> bool"

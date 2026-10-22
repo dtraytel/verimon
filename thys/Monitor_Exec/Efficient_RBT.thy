@@ -6,26 +6,15 @@ begin
 
 
 
-section \<open>The red-black trees' rebalancing, in code\<close>
+section \<open>Code for red-black trees\<close>
 
-text \<open>
-  @{const RBT_Impl.balance} restores the colour invariant on the way back up from an insertion,
-  at every level of every insertion into every tree the monitor keeps.  Its equations are
-  sequential, and its last one, @{text "balance a s t b = Branch B a s t b"}, is what applies at
-  almost every level.  The code generator completes the patterns of such a definition into
-  disjoint nested ones, which replaces the variables @{text a} and @{text b} of that last equation
-  by the constructors they were split into -- so the generated code rebuilds both subtrees from
-  their fields, three blocks where one is needed.  A case expression with overlapping nested
-  patterns has the same problem, for the same reason.
+text \<open>The code equations inspect one level at a time and never split a variable that the
+  right-hand side uses, so the generated code does not rebuild the subtrees it passes on.\<close>
 
-  The code equation below therefore inspects the arguments one level at a time, a node and then
-  its colour, and never splits a variable that its right-hand side uses; the two sides that are
-  checked for a red child, the left one only when it is red itself, are two small functions.
-\<close>
+subsection \<open>Rebalancing of insertions\<close>
 
-text \<open>In @{text bal_right} the right child's left child matters only when the right child's
-  right child is not red; the fallback it gives is a function of its own, so that the red case
-  does not build it first.\<close>
+text \<open>The fallback of @{text bal_right} is a function of its own, which the red case does not
+  build.\<close>
 
 definition bal_right_b :: "('a, 'b) rbt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> ('a, 'b) rbt \<Rightarrow>
     ('a, 'b) rbt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> ('a, 'b) rbt \<Rightarrow> ('a, 'b) rbt" where
@@ -80,14 +69,7 @@ lemma balance_code[code]:
   by (cases "(l, k, v, r)" rule: balance.cases)
     (simp_all add: bal_left_def bal_right_def bal_right_b_def split: color.split)
 
-text \<open>
-  The deletion has the same problem.  Its rebalancing steps @{const balance_left} and
-  @{const balance_right}, its @{const RBT_Impl.combine} of a deleted node's children, and the
-  steps of the specialised deletions that descend to the left or to the right are sequential
-  equations, whose completed patterns rebuild the subtrees they only look at: a black node passed
-  on unchanged, at every level of every deletion.  The equations below inspect one level at a
-  time, as above.
-\<close>
+subsection \<open>Rebalancing of deletions\<close>
 
 definition bal_left_del :: "('a, 'b) rbt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> ('a, 'b) rbt \<Rightarrow> ('a, 'b) rbt" where
   "bal_left_del l k x r = (case r of
@@ -185,8 +167,7 @@ lemma edl_rbtc_del_lk_fr_code[code]:
      | RBT_Impl.R \<Rightarrow> (case edl_rbtc_del_lk x b of (ov, b') \<Rightarrow> (ov, Branch RBT_Impl.R a y s b'))))"
   by (cases b) (simp_all add: edl_rbtc_del_lk_simps split: color.split)
 
-text \<open>An insertion and a deletion end by painting the root black, which rebuilt the root although
-  it almost always is black already.\<close>
+text \<open>Painting leaves a root of the right colour as it is.\<close>
 
 lemma paint_code[code]:
   "RBT_Impl.paint c t = (case t of
@@ -196,11 +177,9 @@ lemma paint_code[code]:
      | RBT_Impl.R \<Rightarrow> (case c' of RBT_Impl.R \<Rightarrow> t | RBT_Impl.B \<Rightarrow> Branch RBT_Impl.R l k v r)))"
   by (cases t) (simp_all split: color.split)
 
-section \<open>The Since structure's deletions, through the specialised deletion\<close>
+subsection \<open>Key set deletion in Since\<close>
 
-text \<open>The deletion of a key set from the Since structure's timestamp mapping, copied by
-  @{theory Monitor_Exec.Monomorphic_Remainder}, gets the specialised deletion for the tree
-  representation and the generic equation for the others.\<close>
+text \<open>The Since structure's deletion of a key set gets the specialised deletion on trees.\<close>
 
 lemma edl_mapping_delete_set_code[code]:
   "edl_mapping_delete_set m (RBT_set rbt) = RBT_Set2.fold ed_delete_nat rbt m"
@@ -221,28 +200,15 @@ lemma edl_mapping_delete_set_code[code]:
      else Code.abort (STR ''mapping_delete_set: infinite'')
        (\<lambda>_. edl_mapping_delete_set m (Complement Q)))"
 proof -
-  \<comment> \<open>The tree case is the specialised equation of the first copy.\<close>
   show "edl_mapping_delete_set m (RBT_set rbt) = RBT_Set2.fold ed_delete_nat rbt m"
     by (simp add: edl_mapping_delete_set_def ed_delete_nat_def mapping_delete_set_RBT_code
         ID_ccompare_etuple ccomp_etuple)
-  \<comment> \<open>The other four cases are instances of the generic equation.\<close>
 qed (unfold edl_mapping_delete_set_def, (rule mapping_delete_set_code)+)
 
-section \<open>The join-based set operations, without counting black heights\<close>
+subsection \<open>Black heights compared without counting\<close>
 
-text \<open>
-  The union, the intersection and the difference of two red-black trees
-  (@{const RBT_Comparator_Impl.rbt_comp_union_swap_rec} and its neighbours) split one tree at
-  the other's root and join the results back together.  Every join, and every recursive step of
-  the operations themselves, compares the black heights of two trees, and the library computes
-  each height as a @{typ nat} by walking the tree's left spine -- a boxed number per level, and
-  per call.  On \<^verbatim>\<open>until-nu20\<close> that was 5\% of the run.
-
-  The comparisons can be decided without computing either height: by descending the two spines
-  in lockstep (@{text bh_le_g}), or by counting a bound down one spine (@{text bh_lt_g}); both
-  allocate nothing.  They are stated below at every value type, as the library's operations are,
-  and the library's code equations are replaced by ones that use them.
-\<close>
+text \<open>The joins compare black heights by descending two spines in lockstep (@{text bh_le_g}) or
+  counting down one (@{text bh_lt_g}), without computing heights.\<close>
 
 function bh_le_g :: "('a, 'b) rbt \<Rightarrow> ('c, 'd) rbt \<Rightarrow> bool" where
   "bh_le_g RBT_Impl.Empty t2 = True"
@@ -281,9 +247,7 @@ proof (induction k t rule: bh_lt_g.induct)
   qed
 qed (auto simp: integer_of_nat_eq_of_nat)
 
-text \<open>The library's two tests, and the three joins, through the comparisons.  The union and the
-  intersection come with code equations that compute both heights up front, and are given their
-  defining equations back, which are stated with the two tests.\<close>
+text \<open>The union and intersection get back their defining equations, which use the two tests.\<close>
 
 declare [[code drop: RBT_Impl.small_rbt RBT_Impl.flip_rbt RBT_Impl.rbt_joinL RBT_Impl.rbt_joinR
   RBT_Impl.rbt_join RBT_Comparator_Impl.rbt_comp_union_swap_rec

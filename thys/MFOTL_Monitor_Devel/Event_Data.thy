@@ -82,6 +82,7 @@ definition div_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" 
 definition mod_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
   "mod_to_zero x y = (let z = snd (Code_Numeral.divmod_abs x y) in
     if x < 0 then - z else z)"
+
 subsection \<open>Hash codes\<close>
 
 text \<open>Named constants keep the numerals of the code equations below from being converted from

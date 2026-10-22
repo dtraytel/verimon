@@ -10,10 +10,9 @@ theory Monitor_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of the monitoring algorithm\<close>
 
-subsection \<open> Well-formed mformula invariant \<close>
-
-text \<open>The frozen tables are read positionally, as the event tuples.\<close>
+subsection \<open>State of the freeze operator\<close>
 
 definition (in maux) frz_qtable where
   "frz_qtable \<sigma> V m \<phi> k X = sat_table \<sigma> V m UNIV [0..<m] k \<phi> X"
@@ -109,12 +108,8 @@ lemma frz_kops_simps: "fo_un (frz_kops m cs) = (\<union>)" "fo_fr (frz_kops m cs
 lemma frz_cmb_same: "fo_cmb (frz_kops m cs) y y \<alpha> = y"
   by (auto simp: frz_kops_def)
 
-text \<open>The windowed replay of @{const MFrz}: the replay base has absorbed the time points before
-  @{term w} with, at each, the frozen predicate empty or holding the frozen formula's value at
-  some time point (@{const frz_fill}, valuations of the kind @{const frz_val}); they lie beyond the
-  past reach @{term d} of the body, seen from the first undecided time point @{term jfrz}.  The
-  window's timestamps are kept (unless the reach is infinite, in which case the window never
-  moves), and the verdicts of the replay base from @{term jfrz} on are those of the freeze.\<close>
+text \<open>The replay base has absorbed the time points before @{term w}, beyond the body's past
+  reach @{term d} from @{term jfrz}; its verdicts from @{term jfrz} on are those of the freeze.\<close>
 
 definition (in maux) wf_frz_win where
   "wf_frz_win \<sigma> j P V n R p m \<phi> \<psi> jfrz w pR tq rb d \<longleftrightarrow>
@@ -139,10 +134,7 @@ proof -
     by (auto simp: wf_frz_queue_def)
 qed
 
-
-text \<open>A pair of rows of the separable evaluation's copies at a time point: the verdict of the
-  freeze twice (the replay base's), or the rows of the body with the two copies' interpretations
-  of the frozen predicate.\<close>
+text \<open>Rows of the two copies of the separable evaluation at time point @{term k}.\<close>
 
 definition frz_row :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow>
     event_data list set \<Rightarrow> Formula.name \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow>
@@ -153,8 +145,10 @@ definition frz_row :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<
     (sat_table \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> QS)) n R (Formula.fv_list \<psi>) k \<psi> yS \<and>
      sat_table \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> QE)) n R (Formula.fv_list \<psi>) k \<psi> yE)"
 
-text \<open>Every node produces its tables over the columns @{const Formula.fv_list} of its formula;
-  the column lists a node records are those of its operands.\<close>
+subsection \<open>Invariant of the monitor state\<close>
+
+text \<open>Each node's tables are over the columns @{const Formula.fv_list} of its formula; the column
+  lists a node records are those of its operands.\<close>
 
 inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> nat 
   \<Rightarrow> event_data list set \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula \<Rightarrow> ty Formula.formula \<Rightarrow> bool" for \<sigma> j 
@@ -354,7 +348,7 @@ definition (in maux) wf_mstate :: "sig \<Rightarrow> tyenv \<Rightarrow> ty Form
         \<and> wf_mformula \<sigma> (plen \<pi>) Map.empty Map.empty (mstate_n st) R (mstate_m st) \<phi>) 
         \<and> mstate_t st = drop (mstate_i st) (pts \<pi>)"
 
-
+subsection \<open>Invariant of the LetPast loop\<close>
 
 definition (in maux) letpast_meval_invar 
   where "letpast_meval_invar n V \<sigma> P \<phi>' m j' i ys xs p ts db \<phi> k 
@@ -571,6 +565,8 @@ proof -
     unfolding letpast_meval_post_def by simp
 qed
 
+subsection \<open>Consequences of the invariant\<close>
+
 lemma (in maux) wf_mformula_wf_set: "wf_mformula \<sigma> j P V n R \<phi> \<phi>' \<Longrightarrow> \<forall>x\<in>Formula.fv \<phi>'. x < n"
 proof (induction rule: wf_mformula.induct)
   case (AndRel P V n R \<phi> \<phi>' \<psi>' conf)
@@ -640,8 +636,7 @@ lemma (in maux) wf_mformula_release: "wf_mformula \<sigma> j P V n R \<phi> (rel
   by (cases rule: wf_mformula.cases) 
     (auto simp add: release_safe_0_def packagg_def split: if_splits option.splits)
 
-
-subsection \<open> Correct initialisation \<close>
+subsection \<open>Correctness of initialisation\<close>
 
 lemma (in maux) wf_minit0_op:
   assumes "safe_formula \<psi>" "fv \<phi> \<subseteq> fv \<psi>"
@@ -1298,8 +1293,7 @@ lemma (in maux) wf_mstate_minit:
   unfolding wf_mstate_def minit_def Let_def
   by (auto simp add: pts.rep_eq pnil.rep_eq intro!: wf_minit0 fvi_less_nfv wty_pnil)
 
-
-subsection \<open> Main correctness result \<close>
+subsection \<open>Correctness of the LetPast loop\<close>
 
 lemma (in maux) letpast_meval_invar_post:
   assumes "safe_letpast (p, m) \<phi>' \<le> PastRec"
@@ -1358,7 +1352,6 @@ proof (induction i ys xs "(p, m)" ts db \<phi> arbitrary: p i' buf' ys' \<phi>f 
     using invar unfolding letpast_meval_invar_def Let_def by simp
   then have xs: "list_all2 ?Q [i..<i + length xs] xs"
     by (smt (verit, del_insts) add_diff_cancel_left' eq_diff_iff length_upt list_all2_lengthD nat_le_linear upt_conv_Nil)
-  \<comment> \<open>results of @{term meval} can be stated in terms of @{term letpast_sat}\<close>
   have sat_letpast: "Formula.sat \<sigma> ?V w k \<phi>' =
     letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<phi>') w k" for w k
     by (subst letpast_sat.simps) (rule V_subst_letpast[OF safe], simp)
@@ -1427,12 +1420,13 @@ proof (induction i ys xs "(p, m)" ts db \<phi> arbitrary: p i' buf' ys' \<phi>f 
         by simp
     next
       case (14 \<phi>_m us)
-      \<comment> \<open>the induction hypothesis may use the assumption on @{term meval} for the next iteration\<close>
       with size_eq show ?case
         by (intro meval) simp_all
     qed (use eqs safe PP'(2) fv wty safe_formula cs in \<open>simp_all add: rel_mapping_order_refl\<close>)
   qed
 qed
+
+subsection \<open>Release states and the freeze queue\<close>
 
 lemma (in maux) wf_mformula_and_release_safe_bddE:
   "wf_mformula \<sigma> j P V n R \<phi>\<^sub>M (and_release_safe_bounded \<alpha>' \<phi>' I \<psi>') 
@@ -1448,8 +1442,6 @@ lemma (in maux) wf_mformula_and_release_safe0E:
 
 unbundle MFODL_notation
 
-text \<open>Drop-based queue infrastructure (replaces old discharge_skip machinery).\<close>
-
 lemma (in maux) wf_frz_queue_drop:
   assumes q: "wf_frz_queue \<sigma> V m \<phi> ks xs"
   shows "wf_frz_queue \<sigma> V m \<phi> (drop n ks) (drop n xs)"
@@ -1460,9 +1452,6 @@ lemma (in maux) wf_frz_queue_append:
     and q2: "wf_frz_queue \<sigma> V m \<phi> ks2 xs2"
   shows "wf_frz_queue \<sigma> V m \<phi> (ks1 @ ks2) (xs1 @ xs2)"
   using assms by (auto simp: wf_frz_queue_def intro: list_all2_appendI)
-
-text \<open>After extending the queue with new phi results and dropping a prefix,
-we obtain a queue over the appropriate interval.\<close>
 
 lemma (in maux) wf_frz_queue_length:
   assumes wfq: "wf_frz_queue \<sigma> V m \<phi> [a..<b] xs"
@@ -1555,7 +1544,6 @@ proof -
     show ?thesis using jphi0_eq len_new phi_mono by simp
   qed
 
-  text \<open>Prove the queue property by case split on whether the drop stays within bounds\<close>
   have queue1': "wf_frz_queue \<sigma> V m \<phi> [?jfrz + length zs0_out..<?jphi'] alphas1"
   proof (cases "?jfrz + length zs0_out \<le> ?jphi'")
     case True
@@ -1599,7 +1587,6 @@ proof -
     qed
   next
     case overflow: False
-    text \<open>When jfrz + |zs0_out| > jphi', the drop exceeds the list, giving an empty queue\<close>
     then have "?jfrz + length zs0_out > ?jphi'" by simp
     then have interval_empty: "[?jfrz + length zs0_out..<?jphi'] = []" by simp
     have "alphas1 = []"
@@ -1643,11 +1630,10 @@ proof -
   qed
 qed
 
-text \<open>The copy loop under a simulation: the states of two runs are related by @{term R}, with the
-  verdicts mapped by @{term g} (@{text frz_st_rel}); and a property of the states and the verdicts
-  that the evaluation keeps holds of the loop's results (@{text frz_st_inv}).  The evaluators of the
-  executable and of the dense layers run the same loop on their own states (theory
-  @{text Good_Kernel_Calls}).\<close>
+subsection \<open>Copy loop of the freeze operator\<close>
+
+text \<open>The loop is generic in the states and verdicts: the evaluators of the executable and the
+  dense layers run it on their own states, related by a simulation.\<close>
 
 definition frz_st_rel :: "('m \<Rightarrow> 'm' \<Rightarrow> bool) \<Rightarrow> ('t \<Rightarrow> 't') \<Rightarrow> 'm \<times> nat \<times> nat \<times> ts list \<times> 't list \<Rightarrow>
     'm' \<times> nat \<times> nat \<times> ts list \<times> 't' list \<Rightarrow> bool" where
@@ -1779,7 +1765,7 @@ next
   qed
 qed
 
-text \<open>The windowed replay of @{const MFrz}: helper facts.\<close>
+subsection \<open>Windowed replay of the freeze operator\<close>
 
 lemma (in maux) wf_envs_update_frz:
   assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
@@ -1860,9 +1846,6 @@ lemma (in maux) qtable_frz_alpha:
 lemma frz_fill_cases: "frz_fill ng \<alpha>s = {} \<or> frz_fill ng \<alpha>s \<in> set \<alpha>s"
   by (cases \<alpha>s rule: rev_cases) (auto simp: frz_fill_def)
 
-text \<open>The table with which the replay base absorbs the time points that leave the window is the
-  frozen formula's value at some time point, or empty.\<close>
-
 lemma (in maux) frz_fill_val:
   assumes \<alpha>s: "\<forall>\<alpha>\<in>set \<alpha>s. \<exists>i. sat_table \<sigma> V m UNIV [0..<m] i \<phi> \<alpha>"
     and in_fv: "{0..<m} \<subseteq> FV \<phi>"
@@ -1881,6 +1864,8 @@ next
   then show ?thesis
     by (intro that[of None]) (auto simp: frz_fill_def)
 qed
+
+subsection \<open>Correctness of evaluation\<close>
 
 lemma qtable_eval_mtrm:
   assumes "\<forall>x\<in>fv_trm t. x < n" 
@@ -2013,6 +1998,8 @@ lemma (in maux) meval_correct:
           [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] xs"
   using assms
 proof (induction \<phi> arbitrary: db P P' V n R \<phi>' j \<delta> S E rule: mformula_induct)
+  subsubsection \<open>Rel, Pred and Let\<close>
+
   case (MRel rel)
   let ?case1 = "\<lambda>t1 t2. \<phi>' = t1 =\<^sub>F t2 \<and> rel = eq_rel t1 t2
   \<and> is_simple_eq t1 t2 \<and> (\<forall>x\<in>FV\<^sub>t t1. x < n) \<and> (\<forall>x\<in>FV\<^sub>t t2. x < n)"
@@ -2040,7 +2027,7 @@ next
   have mode: "is_copy_pattern n ts \<or> is_simple_pattern ts 0" if "mode \<noteq> Match"
     using that wfmf(2) by (auto simp: pred_mode_of_def split: if_splits)
   show ?case
-  proof (cases "?p \<in> dom P") \<comment> \<open>notice @{term "dom P = dom V"}\<close>
+  proof (cases "?p \<in> dom P")
     case True
     hence "?p \<in> Mapping.keys db" "?p \<in> dom P'" "?p \<in> dom V" and
       "list_all2 (\<lambda>i X. X = {v. length v = length ts \<and> the (V ?p) v i}) 
@@ -2162,6 +2149,8 @@ next
   show ?case unfolding Let
     by (auto simp: fun_upd_def intro!: wf_mformula.Let)
 next
+  subsubsection \<open>Freeze\<close>
+
   case (MFrz p m cs \<phi> \<psi> jfrz0 jpsi0_val jphi0 \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)
   let ?pn = "(p, m)"
   let ?db0 = "Mapping.update ?pn [] db"
@@ -2216,7 +2205,6 @@ next
     by simp
   define good where "good k X \<longleftrightarrow>
     sat_table \<sigma> V n R (Formula.fv_list \<psi>1) k (Formula.Frz p \<phi>1 \<psi>1) X" for k X
-  \<comment> \<open>the progress of the parts\<close>
   define jphi where "jphi = progress \<sigma> P \<phi>1 j"
   define jphi' where "jphi' = progress \<sigma> P' \<phi>1 (j + \<delta>)"
   define jpsi0 where "jpsi0 = progress \<sigma> (P(?pn \<mapsto> 0)) \<psi>1 j"
@@ -2269,7 +2257,6 @@ next
     unfolding pR1_def jpsi0'_def by (rule mono_pn) (use w_le in simp_all)
   have w_jfrz0: "w \<le> jfrz0"
     by (rule frz_win_le[OF win_old])
-  \<comment> \<open>the frozen formula\<close>
   obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
     by (cases "meval (j + \<delta>) m ?ts db \<phi>")
   have wf_\<phi>_new: "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>_new \<phi>1"
@@ -2282,7 +2269,6 @@ next
     by (rule list.rel_mono_strong[OF phi_raw]) (rule sat_table_reorder_upt[OF _ fv(2,1)])
   have len_xs: "length xs = jphi' - jphi" "length xsr = jphi' - jphi"
     using phi_raw by (auto simp: xsr_def dest: list_all2_lengthD)
-  \<comment> \<open>the body, with the frozen predicate empty\<close>
   obtain zs0 \<psi>_new where e\<psi>0: "meval (j + \<delta>) n ?ts ?db0 \<psi> = (zs0, \<psi>_new)"
     by (cases "meval (j + \<delta>) n ?ts ?db0 \<psi>")
   have IH\<psi>: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<lambda>v j. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>1)) n R \<psi>_new \<psi>1 \<and>
@@ -2311,7 +2297,6 @@ next
     with diag show ?thesis
       by (auto simp: good_def fv(1) elim!: list.rel_mono_strong intro: qtable_cong[OF _ refl])
   qed
-  \<comment> \<open>the queue of frozen tables still to be replayed\<close>
   define \<alpha>s1 where "\<alpha>s1 = drop (jfrz0 - jphi0 + length zs0_out) (\<alpha>s @ xsr)"
   have jphi0_eq: "jphi0 = jphi"
     using wf_state by (auto simp: wf_frz_state_def Let_def jphi_def)
@@ -2343,7 +2328,6 @@ next
   have \<alpha>s1_qtab: "\<exists>k. sat_table \<sigma> V m UNIV [0..<m] k \<phi>1 \<alpha>"
     if "\<alpha> \<in> set \<alpha>s1" for \<alpha>
     using that qtab_\<alpha>s1 by (auto simp: in_set_conv_nth)
-  \<comment> \<open>the replay base absorbs the new time points, with no new frozen tables\<close>
   obtain rs \<rho>1 where e\<rho>1: "meval (j + \<delta>) n ?ts ?db0 \<rho> = (rs, \<rho>1)"
     by (cases "meval (j + \<delta>) n ?ts ?db0 \<rho>")
   have size_\<rho>1: "size \<rho>1 = size \<rho>"
@@ -2359,7 +2343,6 @@ next
     show ?thesis
       using MFrz(3)[OF refl wf_\<rho>[OF supM] envs wty2] e\<rho>1 by (simp add: pR_eq pR1_def fun_upd_def)
   qed
-  \<comment> \<open>the verdicts of the replay base are those of the freeze from the first undecided time point on\<close>
   have rs_good: "list_all2 (\<lambda>k X. jfrz0 \<le> k \<longrightarrow> good k X) [pR..<pR1] rs"
   proof -
     have "list_all2 (\<lambda>k. sat_table \<sigma> (V(?pn \<mapsto> frz_cv \<sigma> V \<phi>1 N w i)) n R (Formula.fv_list \<psi>1) k \<psi>1)
@@ -2403,7 +2386,6 @@ next
     using frz_eq jpsi0_jpsij by (auto split: if_splits)
   have jfrzM_jpsij': "jfrzM \<le> jpsij'"
     using jfrz0_jpsij jpsij_le jpsi0'_jpsij' unfolding jfrzM_eq by simp
-  \<comment> \<open>the time points that leave the window are absorbed with a frozen table, or the empty one\<close>
   have \<alpha>s_xs_qtab: "\<forall>\<alpha>\<in>set (\<alpha>s @ xsr). \<exists>i. sat_table \<sigma> V m UNIV [0..<m] i \<phi>1 \<alpha>"
     using old_queue new_queue
     by (fastforce simp: wf_frz_queue_def frz_qtable_def in_set_conv_nth list_all2_conv_all_nth)
@@ -2413,7 +2395,6 @@ next
     using frz_fill_val[OF \<alpha>s_xs_qtab fv(2)] unfolding fl_def by blast
   have fin_fl: "finite fl"
     using frz_fill_cases[of ng "\<alpha>s @ xsr"] \<alpha>s_xs_qtab unfolding fl_def by (auto dest: qtableD(5))
-  \<comment> \<open>the replay base, fed the frozen predicate up to @{term "w' + c"}\<close>
   have replay: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> w' + c)) (V(?pn \<mapsto> Q)) n R \<rho>'' \<psi>1 \<and>
       list_all2 (\<lambda>k. sat_table \<sigma> (V(?pn \<mapsto> Q)) n R (Formula.fv_list \<psi>1) k \<psi>1)
         [progress \<sigma> (P'(?pn \<mapsto> w')) \<psi>1 (j + \<delta>)..<progress \<sigma> (P'(?pn \<mapsto> w' + c)) \<psi>1 (j + \<delta>)] us"
@@ -2433,8 +2414,7 @@ next
     show ?thesis
       using MFrz(3)[OF sz wf' envs wty2] e by (simp add: fun_upd_def)
   qed
-  \<comment> \<open>the state of the replay base and its window, between the copies: the verdicts it holds are
-    those of the freeze from the time point @{term i} of the next copy on\<close>
+  \<comment> \<open>the replay base and its window between the copies\<close>
   define INV where "INV i s \<longleftrightarrow> (case s of (\<rho>', w', pR', tq', rb') \<Rightarrow>
       size \<rho>' = size \<rho> \<and> w' \<le> j + \<delta> \<and> pR' = progress \<sigma> (P'(?pn \<mapsto> w')) \<psi>1 (j + \<delta>) \<and>
       (\<forall>k<w'. enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> i)) \<and>
@@ -2458,7 +2438,6 @@ next
       using that frz_win_mono[OF win that(2)] unfolding INV_def s
       by (auto elim!: list.rel_mono_strong)
   qed
-  \<comment> \<open>the window moves as far as the time point @{term i'} allows\<close>
   let ?adv = "frz_adv_st size (meval (j + \<delta>) n) ?pn ?dbe fl d (j + \<delta>)"
   have adv: "EXA i' (?adv i' s)" if inv: "INV i s" and ii: "i \<le> i'" "i' \<le> j + \<delta>" for i i' s
   proof -
@@ -2622,8 +2601,6 @@ next
         using IH2[of M] by blast
     qed (use wa_le a_facts in \<open>simp_all add: pR2_def\<close>)
   qed
-  \<comment> \<open>a copy: the frozen table of @{term i} from the window's start on, up to @{term i} when the
-    body does not use the frozen predicate beyond the current time point\<close>
   have cp: "(drop k (rb' @ us) \<noteq> [] \<longleftrightarrow> i < jpsij') \<and>
       (\<forall>y r. drop k (rb' @ us) = y # r \<longrightarrow> good i y) \<and>
       (drop k (rb' @ us) = [] \<longrightarrow> \<not> po \<longrightarrow> LIVE i (k - length (rb' @ us)) st)"
@@ -2731,7 +2708,6 @@ next
     show ?thesis
       using ne hd live by blast
   qed
-  \<comment> \<open>the copies, from the time point @{term i} on\<close>
   have loop: "length ys = min (jphi' - i) (jpsij' - i) \<and> list_all2 good [i..<i + length ys] ys \<and>
       bs' = drop (length ys) bs \<and> EXA (i + length ys) s' \<and>
       (\<forall>g st. lv = Some (g, st) \<longrightarrow> bs' \<noteq> [] \<and> (\<not> po \<longrightarrow> LIVE (i + length ys) g st))"
@@ -2807,7 +2783,6 @@ next
           using R by simp
       qed (use R in blast)+    qed
   qed
-  \<comment> \<open>the replay base after the new time points, with its verdicts from the first pending one on\<close>
   have tqs: "(if d = \<infinity> then [] else tq @ ?ts) = (if d = \<infinity> then [] else map (\<tau> \<sigma>) [w..<j + \<delta>])"
     using tq_eq w_le by (simp add: upt_add_eq_append'[of w j "j + \<delta>"])
   define rb1 where "rb1 = drop (min jfrzM (pR + length rs) - (pR - length rb)) (rb @ rs)"
@@ -2843,7 +2818,6 @@ next
         using IH\<rho> by blast
     qed (use size_\<rho>1 w_le tqs len_rb1 in \<open>simp_all add: pR1_def\<close>)
   qed
-  \<comment> \<open>the live copy: the copy of the first frozen table, fed the new time points\<close>
   define lr where "lr = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
     if zs0_out = [] \<and> \<alpha>s1 \<noteq> [] then Some (g, meval (j + \<delta>) n ?ts
       (Mapping.update ?pn (replicate (length ?ts) (hd \<alpha>s1)) db) \<rho>L) else None)"
@@ -2881,7 +2855,6 @@ next
       using MFrz(4)[OF wfL envs wty2] ev npo winL gap cond
       by (auto simp: jpsij_def jpsij'_def fun_upd_def)
   qed
-  \<comment> \<open>the verdicts of the step after those of the body with the frozen predicate empty\<close>
   have live_loop: "length ys = min (jphi' - jfrzM) (jpsij' - jfrzM) \<and>
       list_all2 good [jfrzM..<jfrzM + length ys] ys \<and>
       bs' = drop (length ys) \<alpha>s1 \<and> EXA (jfrzM + length ys) s' \<and>
@@ -2970,7 +2943,7 @@ next
           using conjunct1[OF conjunct2[OF R]] gy by (simp del: upt_Suc)
       qed (use R in blast)+    qed
   qed
-  \<comment> \<open>the separable evaluation: its tables, and the state of its two copies from a time point on\<close>
+  \<comment> \<open>the separable evaluation\<close>
   have tab_\<alpha>: "frz_tab \<sigma> V m \<phi>1 \<alpha>" if "sat_table \<sigma> V m UNIV [0..<m] k \<phi>1 \<alpha>" for k \<alpha>
     using qtable_frz_alpha[OF that fv(2)] qtableD(5)[OF that] by (auto simp: frz_tab_def)
   have tab_\<alpha>s1: "frz_tab \<sigma> V m \<phi>1 \<alpha>" if "\<alpha> \<in> set \<alpha>s1" for \<alpha>
@@ -3008,7 +2981,6 @@ next
     using that by (simp add: QE_def frz_ext_ge)
   have tab_eq: "{v. length v = m \<and> v \<in> L} = L" if "frz_tab \<sigma> V m \<phi>1 L" for L
     using that by (auto simp: frz_tab_def)
-  \<comment> \<open>the two copies, replays of the replay base\<close>
   have copies: "SEPC i L \<rho>S' \<rho>E' pX' buf'"
     if cpe: "frz_copies size (meval (j + \<delta>) n) {} ?pn ?dbe (j + \<delta>) i L \<sigma>S \<sigma>E s = Some (\<rho>S', \<rho>E', pX', buf')"
       and ex: "EXA i s" and tabL: "frz_tab \<sigma> V m \<phi>1 L" and ij: "i \<le> jpsij'"
@@ -3103,7 +3075,6 @@ next
         using RE unfolding wc res(2) by blast
     qed (use drop_rows pX'_eq in simp)
   qed
-  \<comment> \<open>the verdicts of the two copies: the frozen table of each pending time point is in @{term L}\<close>
   have emit: "length ys = min (jphi' - i) (jpsij' - i) \<and> list_all2 good [i..<i + length ys] ys \<and>
       SEPC (i + length ys) L \<rho>S' \<rho>E' pX' (drop (length ys) buf')"
     if sc: "SEPC i L \<rho>S' \<rho>E' pX' buf'" and q: "wf_frz_queue \<sigma> V m \<phi>1 [i..<jphi'] bs"
@@ -3184,7 +3155,6 @@ next
     show ?thesis
       using len_ys goods sc' by blast
   qed
-  \<comment> \<open>the copies of the separable mode, fed the new time points\<close>
   have feed: "SEPC jfrzM L \<rho>S1 \<rho>E1 (pX + length uS)
       (drop (min jfrzM (pX + length uS) - (pX - length buf)) (buf @ zip uS uE))"
     if sx: "sx = FSSep L nL pX buf rg bo tk Lr"
@@ -3259,7 +3229,6 @@ next
     show ?thesis
       by (rule SEPCI[OF _ _ winS' winE' conjunct1[OF RS] conjunct1[OF RE]]) (use pX1 lenD drop_rows in simp_all)
   qed
-  \<comment> \<open>the results of a step, from the first pending time point on\<close>
   define RES where "RES ys bs' lv' s' \<longleftrightarrow> length ys = min (jphi' - jfrzM) (jpsij' - jfrzM) \<and>
       list_all2 good [jfrzM..<jfrzM + length ys] ys \<and> bs' = drop (length ys) \<alpha>s1 \<and> EXA (jfrzM + length ys) s' \<and>
       (\<forall>g st. lv' = Some (g, st) \<longrightarrow> bs' \<noteq> [] \<and> (\<not> po \<longrightarrow> LIVE (jfrzM + length ys) g st))"
@@ -3274,7 +3243,7 @@ next
   have tab_unions: "frz_tab \<sigma> V m \<phi>1 (frz_unions (frz_kops m cS) bs L)"
     if "frz_tab \<sigma> V m \<phi>1 L" "set bs \<subseteq> set \<alpha>s1 \<union> set xsr" for bs L
     by (rule frz_tab_unions[OF that(1)]) (use that(2) tab_\<alpha>s1 tab_xsr in blast)
-  \<comment> \<open>the replay mode, and its decision\<close>
+  \<comment> \<open>the replay mode and its decision\<close>
   have stock: "RES ys bs' lv' s' \<and> SEPST (jfrzM + length ys) bs' lv' sx' \<rho>S' \<rho>E'"
     if st: "frz_stock size (meval (j + \<delta>) n) (frz_kops m cS) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 xsr lr0
         (rg, bo, cy, Lm, nm, en, ep, rs) \<sigma>S \<sigma>E s0 = (ys, bs', lv', s', sx', \<rho>S', \<rho>E')"
@@ -3331,7 +3300,6 @@ next
         by (auto simp: SEPST_def split: if_splits)
     qed
   qed
-  \<comment> \<open>the separable mode\<close>
   define fd where "fd = (case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
     Some (meval (j + \<delta>) n ?ts (Mapping.update ?pn (replicate (length ?ts) L) db) \<rho>S,
       meval (j + \<delta>) n ?ts (Mapping.update ?pn (replicate (length ?ts) {}) db) \<rho>E)
@@ -3470,7 +3438,6 @@ next
         using R by blast
     qed
   qed
-  \<comment> \<open>the step\<close>
   have step: "RES ys bs' lv' s' \<and> SEPST (jfrzM + length ys) bs' lv' sx' \<rho>S' \<rho>E'"
     if st: "frz_step size (meval (j + \<delta>) n) (frz_kops m cS) ?pn ?dbe fl d po (j + \<delta>) jfrzM \<alpha>s1 xsr lr fd sx
         \<rho>S \<rho>E s1 = (ys, bs', lv', s', sx', \<rho>S', \<rho>E')"
@@ -3635,6 +3602,8 @@ next
         (simp_all add: jfrzM_def jfrz1_def)
   qed
 next
+  subsubsection \<open>LetPast\<close>
+
   case (MLetPast p m cs \<phi>1 \<phi>2 i buf)
   let ?pn = "(p, m)"
   from MLetPast.prems(1) obtain \<phi>1' \<phi>2' 
@@ -3698,8 +3667,7 @@ next
   proof (rule letpast_meval_invar_post[OF safe pred_alt pred_alt_2 rel_map fv wf_form wf_envs _ _ wty1 safe1 cs
         invar e_letpast], goal_cases)
     case (1 xs db \<phi>_m us P P' V S E)
-    \<comment> \<open>the evaluation of @{term \<phi>1} in each iteration is covered by the induction hypothesis,
-      either for the new time-points (first iteration) or for no time-points (later iterations)\<close>
+    \<comment> \<open>the induction hypothesis, for the new time points or for none\<close>
     from 1(5) show ?case
     proof
       assume us: "us = []"
@@ -3733,6 +3701,8 @@ next
   show ?case unfolding LetPast
     by (auto simp: fun_upd_def Let_def intro!: wf_mformula.LetPast simp del: fun_upd_apply)
 next
+  subsubsection \<open>Conjunctions\<close>
+
   case (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)
   from MAnd.prems(1) obtain \<phi>'' \<psi>'' where
     wf\<phi>: "wf_mformula \<sigma> j P V n R \<phi> \<phi>''" and wf\<psi>: "wf_mformula \<sigma> j P V n R \<psi> \<psi>''"
@@ -4132,7 +4102,6 @@ next
       using wf_trigger_aux[unfolded aux'_def] zs_rel new res[unfolded aux'_def] args_props
       by (auto simp: acc Let_def intro!: list_all2_appendI)
   qed auto
-  \<comment> \<open>the same, without the conjunction\<close>
   then have update_trigger:
     "wf_trigger_aux \<sigma> V R args \<gamma> \<beta> aux' (Progress.progress \<sigma> P' (formula.Trigger \<alpha> I \<beta>) (j + \<delta>))"
     "list_all2 (\<lambda>i (dfvs, r). wf_dfvs dfvs \<sigma> I i (formula.Trigger \<alpha> I \<beta>) \<and>
@@ -4144,7 +4113,6 @@ next
       bin_join (Formula.fv_list \<phi>) r1 True V_trigger r2
   ) (mbuf2_add xs zs' buf1)"
 
-  \<comment> \<open>the evaluation step of @{term z'} in terms of the intermediate results\<close>
   have meval_z': "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db z' =
       (fst tuple', MAndTrigger (Formula.fv_list \<phi>) \<phi>'' (snd tuple') args \<gamma>'' \<beta>'' buf2' nts' aux')"
     unfolding z'_def meval.simps Let_def \<open>X\<^sub>\<phi> = Formula.fv_list \<phi>\<close> xtuple_eq atuple_eq btuple_eq prod.case
@@ -4400,6 +4368,8 @@ next
         elim!: wf_mbufn_take list_all2_appendI
         elim: mbufn_take_induct[OF _ wf_mbufn_add[OF wf_buf]])
 next
+  subsubsection \<open>Or, Neg, Exists and Agg\<close>
+
   case (MOr cs1 \<phi> cs2 \<psi> buf)
   from MOr.prems obtain \<phi>'' \<psi>'' \<alpha>' J where
     \<phi>'_eq: "\<phi>' = \<phi>'' \<or>\<^sub>F \<psi>'' \<or> \<phi>' = \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')"
@@ -4412,7 +4382,6 @@ next
   have wty_phi: "S, E \<turnstile> \<phi>''" 
     and wty_psi: "S, E \<turnstile> \<psi>''"
     and wty_alpha: "\<phi>' = \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'') \<Longrightarrow> S, E \<turnstile> \<alpha>'"
-    \<comment> \<open>in both shapes of @{term \<phi>'}, these are subformulas of the well-typed @{term \<phi>'}\<close>
     using \<phi>'_eq MOr.prems(3) by (auto dest: wty_formulaD)
   obtain \<phi>s \<phi>\<^sub>M and \<psi>s \<psi>\<^sub>M and \<phi>\<psi>s buf'
     where meval_defs: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db \<phi> = (\<phi>s, \<phi>\<^sub>M)"
@@ -4422,7 +4391,6 @@ next
   have meval_eq: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db (MOr cs1 \<phi> cs2 \<psi> buf) =
       (\<phi>\<psi>s, MOr cs1 \<phi>\<^sub>M cs2 \<psi>\<^sub>M buf')"
     by (simp only: meval.simps Let_def meval_defs prod.case)
-  \<comment> \<open>both shapes evaluate a disjunction\<close>
   have or_step: "wf_mformula \<sigma> (j + \<delta>) P' V n R (MOr cs1 \<phi>\<^sub>M cs2 \<psi>\<^sub>M buf') (Formula.Or \<phi>1 \<psi>1) \<and>
       wf_mbuf2' \<sigma> P' V (j + \<delta>) n R \<phi>1 \<psi>1 buf' \<and>
       list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>1) i \<chi>)
@@ -4618,6 +4586,8 @@ next
   show ?case
     unfolding meval_eq prod.case using wf_new out by (rule conjI)
 next
+  subsubsection \<open>Prev and Next\<close>
+
   case (MPrev I \<phi> first buf nts)
   from MPrev.prems show ?case
   proof (cases rule: wf_mformula.cases)
@@ -4830,6 +4800,8 @@ next
     qed
   qed
 next
+  subsubsection \<open>Since and Until\<close>
+
   case (MSince args \<phi> \<psi> buf  aux db P P' V n' R' \<phi>')
   note sat.simps[simp del]
   from MSince.prems obtain \<phi>'' \<phi>''' \<psi>'' I n R pos where Since_eq: "\<phi>' = packagg args (Formula.Since \<phi>''' I \<psi>'')"
@@ -5004,6 +4976,8 @@ next
   show ?case
     unfolding meval_eq prod.case using wf_new out by (rule conjI)
 next
+  subsubsection \<open>Trigger and Release\<close>
+
   case (MTrigger args \<phi> \<psi> buf nts aux db P P' V)
   from MTrigger.prems obtain \<gamma> I \<alpha> \<beta>
     where phi'_eq: "\<phi>' = Formula.Trigger \<alpha> I \<beta>"
@@ -5434,6 +5408,8 @@ next
   show ?case
     unfolding meval_eq prod.case using wf_new out by (rule conjI)
 next
+  subsubsection \<open>MatchP, MatchF, TP and TS\<close>
+
   case (MMatchP I cs dss mr mrs \<phi>s buf nts aux)
   note sat.simps[simp del] mbufnt_take.simps[simp del] mbufn_add.simps[simp del]
   from MMatchP.prems obtain r \<psi>s where eq: "\<phi>' = Formula.MatchP I r"
@@ -5544,7 +5520,6 @@ next
           list_all3_map map2_map_map list_all3_list_all2_conv list.rel_map list.rel_flip[symmetric, of _ \<psi>s \<phi>s]
           dest!: MMatchF.IH[OF _ _ MMatchF.prems(2)]
           elim: wf_update_matchF[OF _ safe mr mrs] elim!: list.rel_mono_strong)
-    \<comment> \<open>the new results of the subformulas, by the induction hypothesis\<close>
     have xss: "list_all3 list_all2
         (map (\<lambda>\<psi> i r. sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi> r) \<psi>s)
         (map2 upt (map (\<lambda>\<psi>. progress \<sigma> P \<psi> j) \<psi>s) (map (\<lambda>\<psi>. progress \<sigma> P' \<psi> (j + \<delta>)) \<psi>s)) xss"
@@ -5709,9 +5684,7 @@ qed
 
 unbundle MFODL_no_notation
 
-
-subsection \<open> Correct step \<close>
-
+subsection \<open>Correctness of a step\<close>
 
 lemma (in maux) wf_mstate_mstep:
   assumes "wf_mstate S E \<phi> \<pi> R st" and "wty_db S (fst tdb)" and  "last_ts \<pi> \<le> snd tdb"
@@ -5801,8 +5774,6 @@ proof -
   qed
 qed
 
-text \<open>Every verdict tuple is over the formula's columns.\<close>
-
 lemma (in maux) mstep_output_wf:
   assumes "wf_mstate S E \<phi> \<pi> R st" "wty_db S (fst tdb)" "last_ts \<pi> \<le> snd tdb"
     "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st))" "finite (fst tdb)"
@@ -5861,7 +5832,7 @@ lemma msteps_psnoc: "last_ts \<pi> \<le> snd tdb \<Longrightarrow> msteps (psnoc
 
 end
 
-section \<open> Specification \<close>
+subsection \<open>Agreement with the specification\<close>
 
 context maux
 begin
@@ -5976,30 +5947,28 @@ lemma (in verimon) monitor_mverdicts:
   by (subst wf_mstate_msteps_stateless_UNIV[OF wf_mstate_minit_safe, simplified])
     (auto simp: mmonitorable_def Mt_pnil well_typed)
 
-
-section \<open>Collected correctness results\<close>
+subsection \<open>Main results\<close>
 
 context verimon
 begin
 
-text \<open>We summarize the main results proved above.
+text \<open>
 \begin{enumerate}
-\item The term @{term M} describes semantically the monitor's expected behaviour:
+\item The specification @{term M} of the verdicts:
 \begin{itemize}
 \item @{thm[source] mono_monitor}: @{thm mono_monitor[no_vars]}
 \item @{thm[source] sound_monitor}: @{thm sound_monitor[no_vars]}
 \item @{thm[source] complete_monitor}: @{thm complete_monitor[no_vars]}
 \item @{thm[source] sliceable_M}: @{thm sliceable_M[no_vars]}
 \end{itemize}
-\item The executable monitor's online interface @{term minit_safe} and @{term mstep}
-  preserves the invariant @{term wf_mstate} and produces the the verdicts according
-  to @{term M}:
+\item The online interface @{term minit_safe} and @{term mstep} preserves the invariant
+  @{term wf_mstate} and outputs the verdicts of @{term M}:
 \begin{itemize}
 \item @{thm[source] wf_mstate_minit_safe}: @{thm wf_mstate_minit_safe[no_vars]}
 \item @{thm[source] wf_mstate_mstep}: @{thm wf_mstate_mstep[no_vars]}
 \item @{thm[source] mstep_mverdicts}: @{thm mstep_mverdicts[no_vars]}
 \end{itemize}
-\item The executable monitor's offline interface @{term monitor} implements @{term M}:
+\item The offline interface @{term monitor} implements @{term M}:
 \begin{itemize}
 \item @{thm[source] monitor_mverdicts}: @{thm monitor_mverdicts[no_vars]}
 \end{itemize}

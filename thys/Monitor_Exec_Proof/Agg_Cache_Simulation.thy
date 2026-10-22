@@ -4,14 +4,15 @@ theory Agg_Cache_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of the aggregate cache\<close>
 
+subsection \<open>Steps of the cached aggregate\<close>
 
 lemma cnt_ins_fold_cins: "cnt_ins_fold F xs c b = fold (cins F) xs (c, b)"
   unfolding cnt_ins_fold_def cins_def by (rule arg_cong[where f = "\<lambda>f. fold f xs (c, b)"]) (auto simp: fun_eq_iff)
 
 lemma cnt_del_fold_cdel: "cnt_del_fold F xs c b = fold (cdel F) xs (c, b)"
   unfolding cnt_del_fold_def cdel_def by (rule arg_cong[where f = "\<lambda>f. fold f xs (c, b)"]) (auto simp: fun_eq_iff)
-
 
 lifting_forget mapping.lifting
 
@@ -42,6 +43,8 @@ lemma fst_fold_cstep_ins: "fst (fold (cstep gstep_ins q p) xs axC) =
 lemma fst_fold_cstep_del: "fst (fold (cstep gstep_del q p) xs axC) =
     (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> gdel k (umeval_trm f) xs (fst axC))"
   by (cases p) (simp add: gdel_def fold_cstep_fst[where G = "gstep_del _ _"] cstep_del_fst)
+
+subsection \<open>Insertion, deletion and result\<close>
 
 lemma uc_step_ins_nc:
   assumes "\<not> cachedp p" "p = (g0, \<omega>, f, k, pos)"
@@ -191,6 +194,8 @@ lemma gempty_gkeys: "gempty a \<longleftrightarrow> gkeys a = {}"
 lemma uc_res: "uc_res q p w x = uag_res q p w (uc_cnt x) (uc_ax x)"
   by (auto simp: uc_res_def uag_res_code ugres_def gres_gvset ufilt_def uc_set_gcache gcache_def
       gempty_gkeys split: option.splits prod.splits)
+
+subsection \<open>Since window with cached aggregate\<close>
 
 lemma sa_move_rsc: "sa_move args p nt pend win (ucc (uc_cnt x)) (uc_ax x) =
     (case usc_move args p q nt pend win x of (pend', win', x') \<Rightarrow> (pend', win', ucc (uc_cnt x'), uc_ax x'))"

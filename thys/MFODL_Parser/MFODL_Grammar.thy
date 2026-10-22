@@ -2,14 +2,12 @@ theory MFODL_Grammar
   imports "MFODL_Syntax.Surface_Syntax" LR_Parser.LR_Parser
 begin
 
-section \<open>Tokens\<close>
+section \<open>Grammar of MFODL formulas\<close>
 
-text \<open>
-  The token classes of MonPoly's formula lexer
-  (\<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly). Tokens that carry a payload
-  (\<open>NAME\<close>, \<open>INTEGER\<close>, \<dots>) carry it as their lexeme, the text \<^const>\<open>s_txt\<close>
-  of their \<^const>\<open>span\<close>; the semantic actions convert it.
-\<close>
+subsection \<open>Tokens\<close>
+
+text \<open>The token classes of MonPoly's formula lexer. A token with a payload carries it as its
+  lexeme, which the semantic actions convert.\<close>
 
 datatype mtok =
     FALSE | TRUE | LPA | RPA | LSB | RSB | COM | SC | DOT | QM | LD
@@ -28,7 +26,7 @@ definition lexeme :: \<open>mtoken \<Rightarrow> string\<close> where
   \<open>lexeme t = s_txt (span t)\<close>
 
 
-section \<open>Conversions used by the semantic actions\<close>
+subsection \<open>Conversions for the semantic actions\<close>
 
 definition digit_val :: \<open>char \<Rightarrow> int\<close> where
   \<open>digit_val c = int (of_char c) - int (of_char (CHR ''0''))\<close>
@@ -36,14 +34,10 @@ definition digit_val :: \<open>char \<Rightarrow> int\<close> where
 definition nat_of_digits :: \<open>string \<Rightarrow> int\<close> where
   \<open>nat_of_digits ds = foldl (\<lambda>n c. 10 * n + digit_val c) 0 ds\<close>
 
-text \<open>An \<open>INTEGER\<close> lexeme, \<open>'-'? digit+\<close> (\<^verbatim>\<open>Z.of_string\<close>).\<close>
-
 definition int_of_lexeme :: \<open>string \<Rightarrow> int\<close> where
   \<open>int_of_lexeme s = (case s of CHR ''-'' # ds \<Rightarrow> - nat_of_digits ds | ds \<Rightarrow> nat_of_digits ds)\<close>
 
-text \<open>A \<open>TU\<close> lexeme, \<open>digit+ letter\<close>, in seconds (\<^verbatim>\<open>Formula_parser.timeunits\<close>).
-  The lexer only emits \<open>TU\<close> for the letters \<open>d\<close>, \<open>h\<close>, \<open>m\<close> and \<open>s\<close>, on which
-  MonPoly's conversion does not fail.\<close>
+text \<open>The lexer emits \<open>TU\<close> only for the units \<open>d\<close>, \<open>h\<close>, \<open>m\<close> and \<open>s\<close>.\<close>
 
 definition unit_factor :: \<open>char \<Rightarrow> int\<close> where
   \<open>unit_factor c = (if c = CHR ''d'' then 24 * 60 * 60 else if c = CHR ''h'' then 60 * 60
@@ -52,8 +46,7 @@ definition unit_factor :: \<open>char \<Rightarrow> int\<close> where
 definition units_of_lexeme :: \<open>string \<Rightarrow> int\<close> where
   \<open>units_of_lexeme s = unit_factor (last s) * nat_of_digits (butlast s)\<close>
 
-text \<open>String constants \<open>"\<dots>"\<close> and regular expressions \<open>r"\<dots>"\<close> lose their
-  delimiters (\<^verbatim>\<open>Formula_parser.strip\<close>, \<^verbatim>\<open>compile_regexp\<close>); escapes stay.\<close>
+text \<open>Constants lose their delimiters; escapes stay.\<close>
 
 definition strip_quotes :: \<open>string \<Rightarrow> string\<close> where
   \<open>strip_quotes s = butlast (tl s)\<close>
@@ -61,77 +54,22 @@ definition strip_quotes :: \<open>string \<Rightarrow> string\<close> where
 definition strip_regexp :: \<open>string \<Rightarrow> string\<close> where
   \<open>strip_regexp s = butlast (drop 2 s)\<close>
 
-text \<open>A bare formula \<open>\<phi>\<close> used as a regular expression atom: a test followed
-  by a step for \<open>MATCHF\<close>, a step followed by a test for \<open>MATCHP\<close>.\<close>
+text \<open>A bare formula as an atom: a test then a step for \<open>MATCHF\<close>, the reverse for \<open>MATCHP\<close>.\<close>
 
 definition bare_atom :: \<open>formula \<Rightarrow> bool \<Rightarrow> regex\<close> where
   \<open>bare_atom f fut = (if fut then RConcat (RTest f) wild else RConcat wild (RTest f))\<close>
 
-section \<open>The grammar\<close>
+subsection \<open>Productions\<close>
 
-text \<open>
-  MonPoly's grammar (\<^verbatim>\<open>src/formula_parser.mly\<close> of MonPoly) is ambiguous and
-  resolved by ocamlyacc's precedence declarations. Here the precedences are
-  compiled into the productions, so that the grammar is unambiguous and passes
-  the LALR(1) conflict check of the \<^theory_text>\<open>parser\<close> command.
+text \<open>MonPoly's ocamlyacc precedences are compiled into the productions, so that the grammar is
+  unambiguous and passes the LALR(1) check of the \<^theory_text>\<open>parser\<close> command.\<close>
 
-  \<^descr>[Binary operators] from loosest to tightest: the temporal operators
-  \<open>SINCE\<close>, \<open>TRIGGER\<close>, \<open>UNTIL\<close>, \<open>RELEASE\<close> (right associative), \<open>EQUIV\<close>
-  (left), \<open>IMPLIES\<close> (right), \<open>OR\<close> (left), \<open>AND\<close> (left), then the prefix \<open>NOT\<close>.
+text \<open>Each Boolean level \<open>X\<close> has variants \<open>XC\<close>, \<open>XM\<close> and \<open>XL\<close>: formulas ending in no open
+  prefix, in a unary temporal operator or quantifier, or in \<open>LET\<close>, \<open>LETPAST\<close>, \<open>FRZ\<close>
+  or an aggregation.\<close>
 
-  \<^descr>[Prefix operators with a formula body] extend as far to the right as
-  possible, but differently far. The unary temporal operators and the
-  quantifiers (\<^emph>\<open>mid\<close> prefixes, \<open>PM\<close>) absorb the Boolean connectives and stop
-  at a binary temporal operator: \<open>PREV \<alpha> AND \<beta> SINCE \<gamma>\<close> is
-  \<open>(PREV (\<alpha> AND \<beta>)) SINCE \<gamma>\<close>. \<open>LET\<close>, \<open>LETPAST\<close>, \<open>FRZ\<close> and aggregations
-  (\<^emph>\<open>low\<close> prefixes, \<open>PL\<close>) absorb everything.
-
-  A prefix operator can be the rightmost operand of any operator, but a formula
-  ending in one cannot be the left operand of a binary operator it would absorb.
-  So every Boolean level \<open>X\<close> comes in three variants: \<open>XC\<close> (closed: it does not
-  end in an open prefix), \<open>XM\<close> (it ends in a mid prefix) and \<open>XL\<close> (it ends in a
-  low prefix). \<open>ECM\<close> collects the formulas that may precede a binary temporal
-  operator.
-
-  \<^descr>[Regular expressions] of \<open>MATCHF\<close>/\<open>MATCHP\<close> (\<open>|>\<close>/\<open><|\<close>): alternation
-  \<open>+\<close> binds looser than concatenation by juxtaposition, both right
-  associative, then the postfix \<open>*\<close>. An atom is a parenthesised expression,
-  the wildcard \<open>.\<close>, a test \<open>\<phi>?\<close> or a bare formula \<open>\<phi>\<close>
-  (\<^const>\<open>bare_atom\<close>). The value of a regular expression is a function of the
-  direction (\<^const>\<open>True\<close> for \<open>MATCHF\<close>), which only matters for bare atoms.
-
-  Parentheses around a single bare formula atom are formula parentheses
-  (MonPoly makes the same choice; both readings denote the same expression).
-
-  A formula in an atom, bare or tested, is not delimited on the right, so
-  it is restricted to what cannot absorb the tokens that continue a regular
-  expression. Tests \<open>\<phi>?\<close> (\<open>RTestF\<close>) are negations of atomic formulas;
-  bare atoms (\<open>RSafe\<close>) are negations of atomic formulas that do not end in a
-  term (a term would absorb a following \<open>+\<close>, \<open>*\<close> or \<open>-\<close>). A comparison
-  (\<open>RBareT\<close>) can be a bare atom only at the end of a concatenation that is not
-  followed by \<open>+\<close>. Formulas with a prefix operator and nested \<open>MATCHF\<close>/\<open>MATCHP\<close>
-  must be parenthesised in atoms. MonPoly accepts some of these without
-  parentheses (see \<^file>\<open>README.md\<close>).
-
-  \<^descr>[Contexts of short productions] The parser of the \<^theory_text>\<open>parser\<close>
-  command runs on a coarse LR(0) automaton: after a symbol \<open>X\<close>, a state holds
-  the items \<open>A \<rightarrow> X \<cdot> \<beta>\<close> of all productions starting with \<open>X\<close>, and the
-  lookaheads of such an item are pooled over all contexts in which \<open>X\<close> starts
-  something. Its static check therefore rejects grammars that ocamlyacc accepts,
-  when a production that is complete after one symbol is used in contexts with
-  different followers. Where that happens, a context gets its own nonterminals:
-  \<open>FTerm\<close> for the first argument after the \<open>(\<close> of a predicate or a
-  \<open>MATCHES\<close> list (whose followers include \<open>,\<close>, like the lower bound of an
-  interval \<open>(5, \<dots>\<close>), \<open>PTerm\<close> for the pattern of \<open>MATCHES \<dots> (\<dots>)\<close> (followed
-  by \<open>(\<close>, like a predicate name), and \<open>RAtomF\<close>, \<open>RAtomS\<close>, \<open>RSafeF\<close>,
-  \<open>RSafeS\<close> for the first atom in parentheses and the operand of \<open>*\<close>. The
-  variables of an aggregation are \<open>NAME\<close> tokens for the same reason.
-
-  \<^descr>[Aggregations] \<open>y <- op x; g\<^sub>1, \<dots>, g\<^sub>n \<phi>\<close> groups by the variables
-  \<open>g\<^sub>i\<close>. After \<open>;\<close>, MonPoly reads a name as a group-by variable, never as the
-  beginning of \<open>\<phi>\<close>; the grammar accepts an empty group-by list after \<open>;\<close> if
-  \<open>\<phi>\<close> is parenthesised, as in \<open>y <- op x; (\<phi>)\<close>.
-\<close>
+text \<open>Nonterminals such as \<open>FTerm\<close>, \<open>PTerm\<close> and \<open>RAtomF\<close> separate contexts with different
+  followers, since the check pools the lookaheads of a production over its contexts.\<close>
 
 grammar (relation) mfodl =
   tokens \<open>mtoken\<close>

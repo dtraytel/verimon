@@ -6,35 +6,11 @@ begin
 
 
 
-section \<open>The generic operations left on the executable monitor's inner loops\<close>
+section \<open>Monomorphisation of hot spots\<close>
 
-text \<open>
-  @{theory Monitor_Exec.Monomorphic_Remainder} ends with the claim that what is left generic
-  is cold.  A profile of the export says otherwise for a handful of operations, all of them at
-  the tuples, and all for one of three reasons.
+subsection \<open>Copies at the tuples\<close>
 
-  \<^item> \<^emph>\<open>A copy is missing.\<close>  Without copies of their own at @{typ "event_data list"},
-    the sorted list of a table and the filter of a count map pass the dictionary down, so the
-    tree operations inside reach the composite comparator
-    @{text "comparator_list comparator_event_data"} through a closure.
-  \<^item> \<^emph>\<open>A fold is generic while its step is not.\<close>  @{theory Monitor_Exec.Efficient_Map_Updates}
-    specialises the grouped aggregation's steps @{const gstep_ins} and @{const gstep_del} at
-    @{typ event_data}, but not the folds @{const gins} and @{const gdel} over them, nor the
-    result @{const gres}, @{const gmr} and the initial state @{const ginit}; the window
-    aggregate over a group calls all of these at @{typ event_data}, so it runs the generic
-    steps, and their generic one-descent updates and lookups, after all.  On the aggregation
-    benchmark that is about a tenth of the run inclusive.
-  \<^item> \<^emph>\<open>A dictionary is built per call.\<close>  The one-descent updates of
-    @{theory Monitor_Exec.Efficient_Map_Updates} return a pair containing a tree, and
-    @{command lift_definition}'s option @{text code_dt} puts the pair behind an isomorphism whose projection
-    takes the key type's @{class ccompare} dictionary without using it.  The monomorphic
-    updates call that projection with the dictionary built on the spot, once per update.
-\<close>
-
-subsection \<open>The copies\<close>
-
-text \<open>The tree's key list and fold, which the sorted list of a table and the Since
-  structure's filter reach, need copies of their own, or the dictionary moves one frame down.\<close>
+text \<open>Without copies, the tree's key list and fold pass the dictionary down.\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   (let val cnt_set = "(event_data list, nat) mapping \<times> event_data list set" in
@@ -46,8 +22,8 @@ setup \<open>Monomorphize.monomorphize_cmd
      ("Mapping.filter", "edl_mfilter_nat", [edl, "nat"])] end)
   ["etuple_dict_simps"]\<close>
 
-text \<open>The grouped aggregation's folds, initial state and results.  Their empty maps are those
-  of @{theory Monitor_Impl.Monomorphic_Instance}.\<close>
+text \<open>The grouped aggregation's folds, initial state and results, so that they call the
+  specialised steps.\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("gins", "edl_gins", ["event_data"]),
@@ -59,8 +35,8 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("gres", "edl_gres", ["event_data"])]
   ["etuple_dict_simps"]\<close>
 
-text \<open>The projections of the two isomorphisms, boxed at the value types the updates are
-  used at, so that their dictionary is built once.\<close>
+text \<open>The isomorphisms that @{text code_dt} introduces for the updates take an unused
+  dictionary; their projections are boxed, so that it is built once.\<close>
 
 ML \<open>
 val upd_iso = "Efficient_Map_Updates.x'b.x_.ccompare.x_.x'a.mapping_rbt.x'b.option.prod.x_x.x'b.x_.ccompare.x_.x'a.rbt.x'b.option.prod.Rep_isom"
@@ -75,13 +51,9 @@ setup \<open>Monomorphize.box_cmd
      ([("nat", "nat"), ("nsum", "nat \<times> integer")] @ gagg_value_types)
    @ map (fn (tn, ty) => (upd2_iso, "edl_upd2_iso_" ^ tn ^ "_v", [edl, ty])) gagg_value_types)\<close>
 
-subsection \<open>The intersection at the tuples' comparator\<close>
+subsection \<open>Intersection at the tuples' comparator\<close>
 
-text \<open>The intersection of two tables is the tree intersection of
-  @{theory Deriving.RBT_Comparator_Impl} with @{const ed_comparator} passed as its argument, so
-  its lookups (the small operand's keys looked up in the other tree) and its splits call the
-  comparator through a closure.  These are its copies at that comparator, as
-  @{theory Monitor_Exec.Efficient_Map_Updates} has them for the union and the difference.\<close>
+text \<open>Copies of the tree intersection call @{const ed_comparator} directly.\<close>
 
 definition edl_map_filter_comp_inter :: "(event_data list \<Rightarrow> 'v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow>
     (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> (event_data list \<times> 'v) list" where
@@ -124,8 +96,7 @@ lemma edl_rbtc_inter_with_key_unfold[code_unfold]:
   "rbt_comp_inter_with_key ed_comparator = edl_rbtc_inter_with_key"
   by (simp add: edl_rbtc_inter_with_key_def)
 
-text \<open>And the membership test on a table, whose code equation compared the lookup with
-  @{term "Some ()"} by the generic equality on options.\<close>
+text \<open>Membership matches on the lookup instead of comparing it with @{term "Some ()"}.\<close>
 
 lemma ed_rbt_member_lookup[code]:
   "ed_rbt_member t x = (case RBT_Mapping2.lookup t x of None \<Rightarrow> False | Some _ \<Rightarrow> True)"

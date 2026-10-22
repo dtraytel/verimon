@@ -16,9 +16,6 @@ definition eupdate_release :: "args \<Rightarrow> bool list \<Rightarrow> 'b lis
       else (t, a1, a2)) aux @
     [(nt, esemi msk (\<not> args_pos args) rel2 rel1, rel2)]"
 
-
-
-
 subsection \<open>Sliding window of summaries\<close>
 
 text \<open>
@@ -57,7 +54,6 @@ definition eraux_update :: "args \<Rightarrow> bool list \<Rightarrow> 'b list s
 definition eraux_eval :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> 'b list set list \<times> 'b eraux" where
   "eraux_eval I nt aux = (case eraux_shift I nt aux of
      (cur, outs, s) \<Rightarrow> (outs, (cur, [], s)))"
-
 
 abbreviation efold :: "'b esum list \<Rightarrow> 'b esum option" where
   "efold \<equiv> sw_fold ecomp"

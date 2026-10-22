@@ -4,8 +4,6 @@ theory Trigger_Window
 begin
 (*>*)
 
-
-
 section \<open>Trigger structure\<close>
 
 abbreviation (input) ftable :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool" where

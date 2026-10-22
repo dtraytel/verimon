@@ -998,7 +998,6 @@ lift_definition uc_step_del :: "uconstr option \<Rightarrow> eaggp \<Rightarrow>
   qed
   done
 
-
 lifting_update mapping.lifting
 
 subsection \<open>Reading the result\<close>

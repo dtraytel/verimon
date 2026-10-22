@@ -9,13 +9,11 @@ theory Preliminaries
 begin
 (*>*)
 
+section \<open>Preliminaries\<close>
 
-section \<open> Preliminary lemmas \<close>
+unbundle lattice_syntax
 
-unbundle lattice_syntax \<comment> \<open> enable notation \<close>
-
-
-subsection \<open> Lists \<close>
+subsection \<open>Lists\<close>
 
 lemma foldr_union: "foldr (\<union>) Xs {} = \<Union>(set Xs)"
   by (induction Xs) auto
@@ -215,7 +213,7 @@ lemma foldr_max_upper: "x \<in> set l \<Longrightarrow> f x \<le> foldr max (map
   by (induct l) (auto simp: le_max_iff_disj)
 
 
-subsection \<open> Logic and sets \<close>
+subsection \<open>Logic, sets and cardinality\<close>
 
 lemma disjE_Not2: "P \<or> Q \<Longrightarrow> (P \<Longrightarrow> R) \<Longrightarrow> (\<not>P \<Longrightarrow> Q \<Longrightarrow> R) \<Longrightarrow> R"
   by blast
@@ -235,9 +233,6 @@ lemma filter_insert:
   "Set.filter p (Set.insert x X) = (if p x then Set.insert x (Set.filter p X) else (Set.filter p X))"
   by auto
 
-
-subsection \<open> Finiteness and cardinality \<close>
-
 definition "ecard A = (if finite A then card A else \<infinity>)"
 
 lemma ecard_image: "inj_on f A \<Longrightarrow> ecard (f ` A) = ecard A"
@@ -250,7 +245,7 @@ proof -
 qed
 
 
-subsection \<open> Orders \<close>
+subsection \<open>Orders\<close>
 
 lemma Max_Un_absorb:
   assumes "finite X" "X \<noteq> {}" "finite Y" "(\<And>x y. y \<in> Y \<Longrightarrow> x \<in> X \<Longrightarrow> y \<le> x)"
@@ -288,6 +283,8 @@ lemma sorted_foldl_max:
   using assms by(induction xs arbitrary:x n) auto
 
 end
+
+subsection \<open>Sorted lists and interval bounds\<close>
 
 lemma sorted_takeWhile_filter:
   assumes s: "List.sorted (map fst xs)" and m: "\<And>t t'. t \<le> t' \<Longrightarrow> Q t' \<Longrightarrow> Q t"
@@ -529,7 +526,7 @@ proof (induction xs)
 qed auto
 
 
-subsection \<open> Partial maps \<close>
+subsection \<open>Partial maps\<close>
 
 definition "pred_mapping Q = pred_fun (\<lambda>_. True) (pred_option Q)"
 definition "rel_mapping Q = rel_fun (=) (rel_option Q)"
@@ -661,13 +658,12 @@ proof -
 qed
 
 
-subsection \<open> Intervals and traces \<close>
+subsection \<open>Intervals and traces\<close>
 
-unbundle no lattice_syntax \<comment> \<open> disable notation \<close>
+unbundle no lattice_syntax
 
-text \<open>The largest time difference in a bounded interval: one less than the first one outside it.
-  A past operator at @{term i} looks at time points @{term k} with @{term "\<tau> \<sigma> i - \<tau> \<sigma> k"} at most
-  this far.\<close>
+text \<open>The largest time difference in a bounded interval, which bounds how far a past operator
+  looks back.\<close>
 
 definition ivl_ub :: "\<I> \<Rightarrow> enat" where
   "ivl_ub I = (if bounded I then enat ((LEAST t. \<not> memR I t) - 1) else \<infinity>)"
@@ -685,9 +681,6 @@ proof (cases "bounded I")
   then show ?thesis
     using True by (simp add: ivl_ub_def)
 qed (simp add: ivl_ub_def)
-
-text \<open>The upper bound is computed by searching for the first time difference outside the
-  interval; the search is linear in the bound, and runs once per operator at initialisation.\<close>
 
 lemma while_option_Suc_Least:
   assumes "\<not> P m" "\<forall>t<k. P t" "k \<le> m"

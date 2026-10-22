@@ -4,7 +4,9 @@ theory Indexed_Windows_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of the indexed windows\<close>
 
+subsection \<open>Count set\<close>
 
 lemma icnt_abs_add1: "icnt_abs (icnt_add1 t cc) = cnt_add1 t (icnt_abs cc)"
   by (cases cc) (simp add: icnt_abs_def icnt_add1_def cnt_add1_def split: option.splits)
@@ -23,6 +25,8 @@ lemma icnt_abs_add: "icnt_abs (icnt_add T cc) = cnt_add T (icnt_abs cc)"
 
 lemma icnt_abs_del: "icnt_abs (icnt_del T cc) = cnt_del T (icnt_abs cc)"
   by (simp add: icnt_del_def cnt_del_def icnt_abs_fold_del1)
+
+subsection \<open>Window of a closed left operand\<close>
 
 lemma isw_move_abs:
   "isw_move args nt pend win cc = (pend', win', cc') \<Longrightarrow>
@@ -66,6 +70,8 @@ lemma isw_abs_add_new_table:
 
 lemma iset_isw_result: "iset (isw_result aux) = sw_result args (isw_abs aux)"
   by (simp add: isw_abs_def isw_result_def sw_result_def icnt_abs_def split: prod.splits)
+
+subsection \<open>Since of a general left operand\<close>
 
 lemma ims_abs_emb[simp]: "ims_abs (ims_emb a) = a"
   by (cases a rule: emsaux_cases) simp
@@ -112,6 +118,8 @@ lemma iset_ieresult: "iset (ieresult_msaux a) = eresult_msaux args (ims_abs a)"
 
 lemma ims_abs_ensure[simp]: "ims_abs (iems_ensure msks a) = ims_abs a"
   by (cases a rule: iemsaux_cases) simp
+
+subsection \<open>Until of a closed left operand\<close>
 
 lemma iuw_extend_abs:
   "uw_extend args ts0 win rest bend (icnt_abs cc) =
@@ -172,6 +180,8 @@ lemma iuw_eval_abs: "iuw_eval args nt aux = (zs, aux') \<Longrightarrow>
     uw_eval args nt (iuw_abs aux) = (map iset zs, iuw_abs aux')"
   using iuw_abs_shift[of args nt aux]
   by (auto simp: iuw_eval_def uw_eval_def iuw_abs_def rev_map split: prod.splits)
+
+subsection \<open>Dispatched structures\<close>
 
 lemma riu_iudsx_emb[simp]: "riu (iudsx_emb msks d) = d"
   by (cases d) (simp_all add: iudsx_emb_def)

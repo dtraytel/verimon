@@ -4,8 +4,6 @@ theory Window_Dispatch
 begin
 (*>*)
 
-
-
 section \<open>Choice of the Since and Until structures\<close>
 
 text \<open>
