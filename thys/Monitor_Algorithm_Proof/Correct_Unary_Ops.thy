@@ -132,6 +132,7 @@ proof -
     by (intro qtable_simple_pattern_gen[OF assms(3) *]) simp_all
 qed
 
+
 subsection \<open> Predicates without patterns \<close>
 
 lemma match_fvi_trm_Some: "Some f = match ts xs \<Longrightarrow> t \<in> set ts \<Longrightarrow> x \<in> Formula.fv_trm t \<Longrightarrow> f x \<noteq> None"
@@ -278,6 +279,7 @@ proof -
     unfolding that(2) assms(1) fv_list_Pred using that(1,3)
     by (intro qtable_no_pattern_gen[OF * assms(3)]) simp
 qed
+
 
 subsection \<open> Equalities \<close>
 

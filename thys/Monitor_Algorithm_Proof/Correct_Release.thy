@@ -33,6 +33,7 @@ definition wf_release_auxlist :: "Formula.trace \<Rightarrow> _ \<Rightarrow> na
             else \<not> Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) v) k \<phi>)) r2)
       auxlist [ne..<ne+length auxlist]"
 
+
 subsection \<open> Evaluated left operand \<close>
 
 lemma release_left_cases: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow>
@@ -72,6 +73,7 @@ lemma safe_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrig
 lemma wty_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow> S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow>
   S, E \<turnstile> \<phi>"
   by (auto dest!: release_left_cases dest: wty_formula_NegD intro: wty_formula.intros)
+
 
 subsection \<open> Preservation of the invariant \<close>
 
@@ -245,6 +247,7 @@ lemma progress_Releasep[simp]: "mem I 0 \<Longrightarrow> progress \<sigma> P (R
 lemma progress_Releasep_le: "mem I 0 \<Longrightarrow>
   progress \<sigma> P (Releasep pos \<phi> I \<psi>) j \<le> min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)"
   by (auto simp: trans_le_add1 intro!: cInf_lower)
+
 
 subsection \<open> Evaluation step \<close>
 

@@ -4,10 +4,8 @@ begin
 
 section \<open>Tables that carry their columns\<close>
 
-text \<open>A @{text wf_table} is a table together with the list of its columns.  The generated code
-  represents it either as a plain set (@{text wf_set}) or as an index (@{text wf_idx}) that
-  clusters the tuples by their values at some of the columns; joins of two indexes on the same
-  key columns join cluster by cluster.\<close>
+text \<open>A table with the list of its columns, represented in code as a plain set or as an index
+  that clusters the tuples by their values at some key columns.\<close>
 
 subsection \<open>Tables\<close>
 
@@ -67,8 +65,6 @@ lemma wf_table_set_join: "wf_table_set (wf_table_join t1 t2) =
   join (wf_table_sig t1) (wf_table_set t1) True (wf_table_sig t2) (wf_table_set t2)"
   by transfer (auto simp del: bin_join.simps simp: bin_join_table)
 
-text \<open>The antijoin requires the second table's columns to be among the first's.\<close>
-
 lift_definition wf_table_antijoin :: "'a wf_table \<Rightarrow> 'a wf_table \<Rightarrow> 'a wf_table" is
   "\<lambda>(cs, T) (ds, T'). if set ds \<subseteq> set cs then (cs, bin_join cs T False ds T') else (cs, T)"
   by (fastforce simp del: bin_join.simps simp: bin_join_table cols_union_subset intro: join_table)
@@ -112,8 +108,6 @@ lemma idx_wfI:
 
 lemma idx_wf_table: "idx_wf cs I T \<Longrightarrow> table cs (set_of_idx T)"
   by (auto simp: table_def mem_set_of_idx idx_wf_def)
-
-text \<open>A tuple of the index is in the cluster of its key.\<close>
 
 lemma idx_wf_lookup:
   assumes "idx_wf cs I T" "z \<in> set_of_idx T"
@@ -171,8 +165,8 @@ proof -
       split: option.splits)
 qed
 
-text \<open>Two indexes on the same key columns are joined cluster by cluster: the tuples of a join
-  have the same key in both operands.\<close>
+text \<open>Indexes on the same key columns are joined cluster by cluster, as joined tuples have the
+  same key in both operands.\<close>
 
 definition "idx_join cs T ds T' =
   Mapping.filter (\<lambda>_ Y. Y \<noteq> {}) (mapping_join (\<lambda>Y Y'. bin_join cs Y True ds Y') T T')"
@@ -246,9 +240,6 @@ proof -
       using Z(2) by blast
   qed
 qed
-text \<open>The antijoin keeps the clusters of the first index that the second does not have, and
-  antijoins the others.\<close>
-
 definition "idx_antijoin cs T ds T' = Mapping.combine (\<union>) (mapping_antijoin T T')
   (Mapping.filter (\<lambda>_ Y. Y \<noteq> {}) (mapping_join (\<lambda>Y Y'. bin_join cs Y False ds Y') T T'))"
 
@@ -267,7 +258,6 @@ proof -
   have key: "restrict I ds (restrict ds cs z) = restrict I cs z" for z :: "'a tuple"
     using assms(3) by (simp add: restrict_restrict)
   note antijoin = join_False_iff[OF assms(1,2) _ _ assms(4)]
-  \<comment> \<open>the tuples of @{term T'} that match a tuple are in the cluster of its key\<close>
   have T'_mem: "restrict ds cs z \<in> set_of_idx T' \<longleftrightarrow>
     (\<exists>Y'. Mapping.lookup T' (restrict I cs z) = Some Y' \<and> restrict ds cs z \<in> Y')" for z
     using idx_wf_lookup[OF assms(6), of "restrict ds cs z"] by (auto simp: key mem_set_of_idx)
@@ -322,8 +312,6 @@ proof -
       using idx_wfD(1,3)[OF assms(5) Y] by (auto intro: table_subset)
   qed
 qed
-
-text \<open>When the second index is keyed by all its columns, it is a set of keys.\<close>
 
 lemma idx_wf_all_cols:
   assumes "distinct ds" "idx_wf ds ds T'"
@@ -576,8 +564,6 @@ lift_definition wf_idx_of_wf_set :: "nat list \<Rightarrow> 'a wf_set \<Rightarr
 
 lemma wf_table_of_idx_of_wf_set[simp]: "wf_table_of_idx (wf_idx_of_wf_set I t) = wf_table_of_wf_set t"
   by (rule wf_table_eqI; transfer) (auto simp: Let_def idx_create(1))
-
-text \<open>The operations on the two representations.\<close>
 
 lemma wf_table_of_wf_set_of_set: "wf_table_of_set cs T = wf_table_of_wf_set (wf_set_of_set cs T)"
   by transfer auto

@@ -4,32 +4,14 @@ theory Agg_Cache
 begin
 (*>*)
 
-
-
-section \<open>The window's aggregate with its result table\<close>
+section \<open>Aggregate with cached result table\<close>
 
 text \<open>
-  A fused aggregation over a past window (@{const sa_result}) reads its result at every time
-  point, and the read builds the table of all groups afresh from the aggregate's mapping, one
-  insertion per group.  From one time point to the next only the groups of the tuples entering
-  and leaving the window can change -- and for MIN and MAX few of those do.  This theory keeps the
-  result table next to the aggregate and updates it at the touched groups only.
-
-  The aggregate and its result are kept together in the type @{text ucache}, whose invariant is
-  that the table is the (filtered) result of the aggregate, so that reading it off is correct on
-  every value of the type and no invariant has to be carried through the evaluator.  The table is
-  built for one node, its key: a structure built for a different constraint or aggregation is
-  rebuilt by the first step.  The window over it, @{text uswaggc}, is the window of
-  @{theory Monitor_Exec.Since_Agg} with the count set over a mapping
-  (Section ``The executable fused Since window'' of @{theory Monitor_Exec.Since_Agg}) and the aggregate moved into the new type, and
-  it maps onto that window (@{text rsc}) with every operation commuting.
-
-  The per-group reading rests on the result tuple of a group, @{text mkr}: the group with the
-  aggregate inserted at the result's position, which determines the group and the value
-  (@{text mkr_eq_iff}), so a group's old tuple can be removed without touching another group's.
+  The result table is kept next to the aggregate and updated at the touched groups only;
+  @{text ucache} makes its agreement with the aggregate a type invariant.
 \<close>
 
-subsection \<open>The result, group by group\<close>
+subsection \<open>Result by group\<close>
 
 definition mkr :: "nat \<Rightarrow> 'b list \<Rightarrow> 'b \<Rightarrow> 'b list" where
   "mkr p g v = take p g @ v # drop p g"
@@ -147,13 +129,10 @@ proof -
   finally show ?thesis .
 qed
 
-subsection \<open>The counts and the aggregate, in one pass\<close>
+subsection \<open>Counts and aggregate in one pass\<close>
 
-text \<open>When a time point's table enters the window or leaves it, the node updates the count of
-  every tuple in the window and the aggregate, which sees only the tuples that newly enter or
-  finally leave.  The tuples of a table are distinct, so each one's count can be read and updated
-  in the same pass as the aggregate without seeing another tuple's update: @{text cnt_ins_fold}
-  and @{text cnt_del_fold} are that pass.\<close>
+text \<open>The tuples of a table are distinct, so each count can be updated in the same pass as the
+  aggregate.\<close>
 
 definition cnt_ins_fold :: "(event_data list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> event_data list list \<Rightarrow> ucnt \<Rightarrow> 'b \<Rightarrow>
     ucnt \<times> 'b" where
@@ -210,7 +189,7 @@ proof (cases "finite X")
     using ID_ccompare_etuple_dq by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 qed (simp add: csl_infinite)
 
-subsection \<open>The aggregate with its result\<close>
+subsection \<open>Cached aggregates\<close>
 
 definition gcache :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> ugagg \<Rightarrow> event_data list set" where
   "gcache q p a = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> Set.filter (uqok q) (gvset \<omega> pos a))"
@@ -218,21 +197,16 @@ definition gcache :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> ugagg \<R
 lemma gcache_ugres: "gcache q p a = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) False \<omega> pos a)"
   by (simp add: gcache_def ugres_def gres_gvset split: prod.splits)
 
-text \<open>The table pays where a group's aggregate rarely changes with a tuple, which is MIN and MAX:
-  for them a tuple changes its group's value only when it is the group's extreme.  The count, the
-  sum and the average change with every tuple, and keeping the table then costs more than building
-  it; for those the structure keeps no table, and the read builds it as before.\<close>
+text \<open>Only MIN and MAX keep a table: a tuple changes its group's value only if it is the group's
+  extreme, whereas the other aggregates change with every tuple.\<close>
 
 definition cachedp :: "eaggp \<Rightarrow> bool" where
   "cachedp p = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> fst \<omega> = Formula.Agg_Min \<or> fst \<omega> = Formula.Agg_Max)"
 
-subsection \<open>The count set, by group\<close>
+subsection \<open>Count set by group\<close>
 
-text \<open>For a count or a sum, the count set can be kept split by group: an outer map from each group
-  to its summary (the count or the count and the sum) together with the count set of the group's
-  tuples.  A tuple's step then descends the outer map once and the group's small map once, where
-  the flat representation descends the count set and the aggregate's map separately.  The flat
-  count set and the aggregate are the projections @{text nflat} and @{text nsumm}.\<close>
+text \<open>For a count or a sum, the count set is split by group next to the group's summary, so a
+  tuple's step descends the outer map and the group's small map once each.\<close>
 
 type_synonym 'a nmap = "(event_data list, 'a \<times> ucnt) mapping"
 
@@ -250,7 +224,7 @@ definition nsumm :: "'a nmap \<Rightarrow> (event_data list, 'a) mapping" where
 lemma lookup_nsumm: "Mapping.lookup (nsumm M) g = map_option fst (Mapping.lookup M g)"
   by (simp add: nsumm_def lookup_map_values)
 
-text \<open>A tuple entering: its count, and the summary of its group when it is new.\<close>
+subsubsection \<open>Insertion and deletion\<close>
 
 definition nins :: "nat \<Rightarrow> (event_data list \<Rightarrow> 'a) \<Rightarrow> (event_data list \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow>
     event_data list \<Rightarrow> 'a nmap \<Rightarrow> 'a nmap" where
@@ -334,9 +308,7 @@ proof (rule mapping_eqI)
   qed
 qed
 
-text \<open>The summary of a group, when its tuples leave: the step of the aggregate's deletion.  Its
-  agreement with the summaries rests on the invariant: every tuple lies in its own group, every
-  count is positive, and a summary counts its group's tuples.\<close>
+subsubsection \<open>Invariant\<close>
 
 definition gdn :: "nat \<Rightarrow> (event_data list \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('a \<Rightarrow> nat) \<Rightarrow>
     event_data list \<Rightarrow> (event_data list, 'a) mapping \<Rightarrow> (event_data list, 'a) mapping" where
@@ -525,8 +497,9 @@ next
 qed
 qed
 
-text \<open>The count set read off in full, for the rare step that has to go back to the flat
-  structure: every group's tuples, inserted one by one.\<close>
+subsubsection \<open>Flattening\<close>
+
+text \<open>The count set in full, for the rare step back to the flat representation.\<close>
 
 definition nflat_x :: "'a nmap \<Rightarrow> ucnt" where
   "nflat_x M = fold (\<lambda>g c. case Mapping.lookup M g of None \<Rightarrow> c
@@ -599,7 +572,7 @@ proof (rule mapping_eqI)
         split: option.splits)
 qed
 
-subsection \<open>The two instances: the count and the count with the sum\<close>
+subsection \<open>Count and sum instances\<close>
 
 definition cins :: "(event_data list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> event_data list \<Rightarrow> ucnt \<times> 'b \<Rightarrow> ucnt \<times> 'b" where
   "cins F t ca = (case ca of (c, acc) \<Rightarrow> (case Mapping.lookup c t of
@@ -641,13 +614,10 @@ lemma gstep_del_GSum: "Mapping.lookup m (drop k t) \<noteq> None \<Longrightarro
     else None)"
   by (auto simp: gstep_del_def gdn_def Let_def is_eint_def ival_def split: option.splits event_data.splits)
 
-subsection \<open>The representation: flat, or grouped for a count or a sum\<close>
+subsection \<open>Flat or grouped representation\<close>
 
-text \<open>The representation of the count set and the aggregate: flat, the count set next to the
-  aggregate, or grouped, for a count (@{text UNCnt}, the group's count of tuples) or a sum
-  (@{text UNSum}, the group's count and sum).  A grouped representation is made only for an empty
-  window (@{text urmk}); a sum whose value is not an integer goes back to the flat one, as the flat
-  aggregate does then.  The projections @{text rcnt} and @{text rax} give the flat pair.\<close>
+text \<open>A grouped representation is made only for an empty window; a sum over a non-integer value
+  falls back to the flat one.\<close>
 
 datatype ucrep = UFlat ucnt "ugagg option" | UNCnt "nat nmap" | UNSum "(nat \<times> integer) nmap"
 
@@ -799,12 +769,10 @@ definition urmk :: "eaggp \<Rightarrow> ucnt \<Rightarrow> ugagg option \<Righta
 lemma urmk: "rcnt k (urmk p c ax) = c" "rax (urmk p c ax) = ax" "rinv k (urmk p c ax)"
   by (auto simp: urmk_def is_empty_eq_empty split: option.splits gagg.splits)
 
-text \<open>The cache: its key (the constraint and the aggregation it was made for), the
-  representation and the result table.  The representation is grouped at the key's group arity
-  (@{text ek}).  A step of an aggregation that keeps no table keeps the grouped representation
-  whenever the arity agrees, whatever the rest of the key: the representation does not depend on
-  it, and the constraint on the result is pushed into the node after the cache is made, so that
-  comparing the whole key would lose the grouping at the first step.\<close>
+subsection \<open>Cache and its steps\<close>
+
+text \<open>Without a table, a step keeps the grouped representation whenever the group arity agrees:
+  the constraint is pushed into the node after the cache is made, so the full key may differ.\<close>
 
 typedef ucache = "{x :: (uconstr option \<times> eaggp) \<times> ucrep \<times> event_data list set.
     case x of (key, R, C) \<Rightarrow> rinv (ek (snd key)) R \<and>
@@ -830,9 +798,6 @@ lift_definition uc_mk :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> ucnt 
 
 lemma uc_mk[simp]: "uc_cnt (uc_mk q p c ax) = c" "uc_ax (uc_mk q p c ax) = ax"
   by (transfer; simp add: urmk)+
-
-text \<open>A tuple's step, on the aggregate and its result together: the result changes only at the
-  tuple's group, from the group's value before the step to its value after.\<close>
 
 definition cstep :: "(nat \<Rightarrow> (event_data list \<Rightarrow> event_data) \<Rightarrow> event_data list \<Rightarrow> ugagg option \<Rightarrow>
     ugagg option) \<Rightarrow> uconstr option \<Rightarrow> eaggp \<Rightarrow> event_data list \<Rightarrow>
@@ -888,9 +853,6 @@ lemma cstep_del_cinv: "cinv q p axC \<Longrightarrow> cinv q p (cstep gstep_del 
 lemma fold_cstep_cinv:
   "(\<And>t axC. cinv q p axC \<Longrightarrow> cinv q p (S t axC)) \<Longrightarrow> cinv q p axC \<Longrightarrow> cinv q p (fold S xs axC)"
   by (induct xs arbitrary: axC) simp_all
-
-text \<open>The window's two steps on the counts, the aggregate and its result, in one pass each.  A
-  structure built for another node (its key differs) is rebuilt instead.\<close>
 
 lemma cnt_ins_fold_cinv:
   assumes "\<forall>a. ax = Some a \<longrightarrow> C = gcache q p a"
@@ -1039,7 +1001,7 @@ lift_definition uc_step_del :: "uconstr option \<Rightarrow> eaggp \<Rightarrow>
 
 lifting_update mapping.lifting
 
-subsection \<open>The result, read off\<close>
+subsection \<open>Reading the result\<close>
 
 fun gempty :: "'b gagg \<Rightarrow> bool" where
   "gempty (GCnt m) = Mapping.is_empty m"
@@ -1053,7 +1015,7 @@ definition uc_res :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> nat \<Rig
        then (if g0 \<and> gempty a then ufilt q {[eval_agg_op \<omega> {}]} else uc_set x)
        else ugres (uqok q) g0 \<omega> pos a))"
 
-text \<open>The result read off the grouped representation directly, without the projection.\<close>
+text \<open>The grouped representation is read directly, without the projection.\<close>
 
 definition nis_empty :: "'a nmap \<Rightarrow> bool" where
   "nis_empty M = Mapping.is_empty M"
@@ -1102,8 +1064,8 @@ lemma uc_res_code[code]: "uc_res q p w x = (case p of (g0, \<omega>, f, k, pos) 
   by (auto simp: uc_res_def uc_ax_rep uc_cnt_rep ugres_nc_def ugres_ns_def nis_empty_def
       split: ucrep.splits prod.splits option.splits)
 
-text \<open>The code reads the count set through the executable flattening, and a tuple's count through
-  its group's map; the projection @{const nflat} itself is a lookup function, not a tree.\<close>
+text \<open>@{const nflat} is a lookup function, not a tree, so the code reads counts through the
+  flattening and the group maps.\<close>
 
 lemma uc_cnt_code[code]: "uc_cnt x = rflat_x (uc_rep x)"
   using rflat_x[OF uc_rep_inv[of x]] by (simp add: uc_cnt_rep)
@@ -1114,7 +1076,7 @@ definition nlk :: "nat \<Rightarrow> 'a nmap \<Rightarrow> event_data list \<Rig
 lemma lookup_nflat_nlk[code_unfold]: "Mapping.lookup (nflat k M) t = nlk k M t"
   by (simp add: lookup_nflat nlk_def)
 
-subsection \<open>The window over it\<close>
+subsection \<open>Since window over the cache\<close>
 
 type_synonym uswaggc = "(ts \<times> (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue) \<times>
   ucache"

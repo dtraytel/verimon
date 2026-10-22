@@ -175,6 +175,7 @@ proof -
   qed
 qed
 
+
 subsection \<open> Invariant of the auxiliary state \<close>
 
 definition (in msaux) wf_since_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>
@@ -419,6 +420,7 @@ proof -
     unfolding pOut_pIn wf_since_aux_def args_ivl args_n using aggargs by auto
 qed
 
+
 subsection \<open> Result of the auxiliary state \<close>
 
 lemma (in msaux) wf_since_aux_result':
@@ -526,6 +528,7 @@ proof -
     using qtable_eval_args_agg[OF ** mr valid_aggargs[folded args_R] fv] valid_result_msaux[OF valid_ms] agg_n
     by auto
 qed 
+
 
 subsection \<open> Evaluation step \<close>
 

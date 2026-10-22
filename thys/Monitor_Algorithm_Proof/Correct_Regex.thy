@@ -141,6 +141,7 @@ lemma RPDi_ok: "ok m mr \<Longrightarrow> ms \<in> RPDi n mr \<Longrightarrow> o
 lemma RPDs_ok: "ok m mr \<Longrightarrow> ms \<in> RPDs mr \<Longrightarrow> ok m ms"
   unfolding RPDs_def by (auto intro: RPDi_ok)
 
+
 subsection \<open> Safety of left derivatives \<close>
 
 lemma LPD_fv_regex_le:
@@ -847,6 +848,7 @@ next
     by (cases mr) (auto simp: qtable_unit_table split: if_splits)
 qed
 
+
 subsection \<open> Tables of derivatives \<close>
 
 inductive ok_rctxt for \<phi>s where
@@ -978,6 +980,7 @@ lemma lookup_tabulate:
   unfolding lookup_default_def lookup_def
   by transfer (auto simp: Let_def map_filter_def map_of_eq_None_iff o_def image_image dest!: map_of_SomeD
       split: if_splits option.splits)
+
 
 subsection \<open> Update for MatchP \<close>
 
@@ -1235,6 +1238,7 @@ proof -
   qed (auto dest!: in_aux'_1 intro!: qtable_empty dest!: bspec[OF _ RPDs_refl]
       simp: from_mregex_eq[OF safe mr])
 qed
+
 
 subsection \<open> Update for MatchF \<close>
 

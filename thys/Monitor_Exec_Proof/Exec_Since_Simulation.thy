@@ -9,7 +9,7 @@ section \<open>Correctness of the executable Since structure\<close>
 text \<open>Over ascending columns, restricting a stored tuple to the left operand's columns is the
   projection at the mask @{term "mrg_left_key (mrg_plan cs_R cs_L)"}, which keys the index.\<close>
 
-subsection \<open>Index under the semi-join\<close>
+subsection \<open>Index and mask\<close>
 
 lemma eidx_filter:
   "Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (eidx msk T) = eidx msk (esemi msk pos T X)"
@@ -30,8 +30,6 @@ qed
 
 lemma eidx_empty[simp]: "eidx msk {} = Mapping.empty"
   by (intro mapping_eqI) (simp add: lookup_eidx)
-
-subsection \<open>Mask of the left operand's columns\<close>
 
 lemma length_mrg_left_key:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>

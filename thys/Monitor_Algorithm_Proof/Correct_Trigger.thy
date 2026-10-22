@@ -297,6 +297,7 @@ next
     using cond len lst by auto
 qed
 
+
 subsection \<open> Invariant of the auxiliary state \<close>
 
 definition (in mtaux) wf_trigger_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>
@@ -510,6 +511,7 @@ proof -
     unfolding wf_trigger_aux_def diff_Suc_1
     by blast
 qed
+
 
 subsection \<open> Correctness of the result \<close>
 
