@@ -5,7 +5,7 @@ begin
 section \<open>Surface syntax of MFODL formulas\<close>
 
 text \<open>The abstract syntax of MonPoly's formula parser, with named variables. Floating point
-  numbers and regular expressions are kept as lexemes, since their interpretation is not parsing.\<close>
+  numbers and regular expressions are kept as lexemes; interpreting them is not part of parsing.\<close>
 
 datatype cst = CInt int | CStr string | CFloat string | CRegexp string
 
@@ -19,7 +19,7 @@ datatype bound = OBnd int | CBnd int | BInf
 
 type_synonym interval = \<open>bound \<times> bound\<close>
 
-text \<open>The interval of temporal operators written without one.\<close>
+text \<open>Default interval of temporal operators written without one.\<close>
 
 definition dfintv :: interval where
   \<open>dfintv = (CBnd 0, BInf)\<close>

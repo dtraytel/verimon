@@ -4,13 +4,9 @@ theory Release_Window
 begin
 (*>*)
 
-section \<open>The Release structure's auxiliary list\<close>
+section \<open>Release structure\<close>
 
-text \<open>The native release keeps, for each pending time point, the tables of the tuples waiting to
-  be released and of the tuples still alive, both over the columns of the right operand
-  (@{const update_release}). The executable one keeps their short forms; the join with the left
-  operand's table, whose columns are among the right operand's, is a membership test of a
-  projection (@{const esemi}).\<close>
+subsection \<open>Auxiliary list over short tuples\<close>
 
 definition eupdate_release :: "args \<Rightarrow> bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> ts \<Rightarrow>
     (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list" where
@@ -23,30 +19,11 @@ definition eupdate_release :: "args \<Rightarrow> bool list \<Rightarrow> 'b lis
 
 
 
-section \<open>The release structure\<close>
+subsection \<open>Sliding window of summaries\<close>
 
 text \<open>
-  The release node keeps one entry per pending time-point in the list of
-  @{const eupdate_release}: the tuples whose right operand has held and the left one not since
-  that point, and the tuples still alive at it.  Every step touches every entry inside the
-  interval, so a step costs the window's length times the size of a table.  This structure does
-  a bounded number of operations on tables per step instead.
-
-  The fate of a tuple over a stretch of points is one of three: the right operand held
-  throughout and the left one never did (the tuple is still pending), the left and the right
-  operand held together at some point before the right one first failed (the tuple is released),
-  or neither (it is dead).  A stretch is summarised by its pending and its released tuples,
-  and summaries compose associatively: a tuple pending over the
-  first stretch takes its fate over the second.  An entry's pending and alive tuples are the
-  pending and the pending-or-released tuples of the summary of the points from it to the last
-  one.  So the window is a sliding window aggregation over this monoid, kept as the two-list
-  queue of theory @{text Sliding_Window_Agg}: an entry leaves the queue together with its front
-  summary and the back's, and is read off by composing the two.  Every point's summary is thus
-  composed a bounded number of times.
-
-  An entry is read off when a point arrives whose timestamp is outside its interval.  That happens
-  before the point is added, so that the entry's summary is the one of the queue, and the result
-  is kept until the structure is read.
+  Over a stretch of points a tuple is pending, released or dead; summaries of stretches compose
+  associatively, so the list becomes a sliding window aggregation with bounded work per step.
 \<close>
 
 type_synonym 'b esum = "'b list set \<times> 'b list set"
@@ -91,15 +68,9 @@ definition eout :: "'b esum \<Rightarrow> 'b list set \<times> 'b list set" wher
 definition edisj :: "'b esum \<Rightarrow> bool" where
   "edisj x \<longleftrightarrow> fst x \<inter> snd x = {}"
 
-subsection \<open>The structure refines the list\<close>
+subsection \<open>Refinement relations\<close>
 
-text \<open>
-  The structure stands for a list of @{const eupdate_release} as follows.  The results kept but
-  not yet read are the alive tuples of the list's first entries, whose points are outside the
-  interval as seen from @{term c}.  The other entries are the queue's points, with summaries
-  @{term es}, and each entry's pending and alive tuples are read off the summary from its point
-  to the last one.  Their timestamps are sorted and at most the last one.
-\<close>
+text \<open>An entry's pending and alive tuples are read off the summary from its point to the last.\<close>
 
 definition erel' :: "\<I> \<Rightarrow> ts \<Rightarrow> 'b eraux \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow> bool" where
   "erel' I c aux L \<longleftrightarrow> (case aux of (cur, outs, s) \<Rightarrow> \<exists>es.
@@ -119,13 +90,8 @@ lemma fst_eraux_update[simp]: "fst (eraux_update args msk l r nt aux) = nt"
 lemma length_eupdate_release[simp]: "length (eupdate_release args msk l r nt L) = Suc (length L)"
   by (simp add: eupdate_release_def)
 
-subsection \<open>The release node's structure\<close>
-
-text \<open>
-  At the node, the structure stands for the kernel's auxiliary list over the ascending columns.
-  Like the Until's, it accepts a new timestamp only at or after the one it is at, so the relation
-  also bounds the kernel's last timestamp and the pending ones by the node's timestamp bound.
-\<close>
+text \<open>The structure accepts only timestamps at or after its own, so the node's relation bounds the
+  kernel's timestamps by the node's bound.\<close>
 
 definition erelease_rel :: "cols \<Rightarrow> cols \<Rightarrow> \<I> \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow> event_data muaux \<Rightarrow>
     event_data eraux \<Rightarrow> ts list \<Rightarrow> bool" where

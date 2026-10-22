@@ -4,21 +4,12 @@ theory Log_Parser
 begin
 (*>*)
 
-section \<open>The parser\<close>
+section \<open>Parser of the log format\<close>
 
-text \<open>
-  The parser is an automaton that reads one token at a time and emits the entries that the
-  token completes. A time point is complete when the next time point, a command, a
-  @{text ";"} or the end of the input follows; the last case is handled by
-  @{text parse_finish}. The states record the partial entry: the timestamp, the events read so
-  far (in reverse order), the current predicate name and the fields of the current tuple (in
-  reverse order). This is the automaton of the POCS project, with a state @{text P_NAME} for a
-  name not yet followed by a tuple, which becomes the nullary event if no tuple follows, and
-  with the commands' arguments kept.
+text \<open>An automaton over tokens whose state records the partial entry, in reverse. It never inspects
+  the strings, so it is polymorphic in their type and commutes with maps on them.\<close>
 
-  The automaton never inspects the strings in the tokens; it is therefore polymorphic in their
-  type, and it commutes with every function applied to them (lemma @{text pstep_map} below).
-\<close>
+subsection \<open>Parser automaton\<close>
 
 datatype 's pstate = P_INIT | P_TS | P_DB 's "('s \<times> 's list) list"
   | P_NAME 's "('s \<times> 's list) list" 's | P_TUPLES 's "('s \<times> 's list) list" 's
@@ -81,8 +72,6 @@ definition parse_from :: "'s pstate \<Rightarrow> 's token list \<Rightarrow> 's
 definition parse :: "'s token list \<Rightarrow> 's item list option" where
   "parse ts = parse_from P_INIT ts"
 
-subsection \<open>Basic properties\<close>
-
 lemma parse_run_append:
   "parse_run (ts @ ts') st = (case parse_run ts st of
      None \<Rightarrow> None
@@ -130,9 +119,6 @@ inductive pending :: "'s pstate \<Rightarrow> 's token list \<Rightarrow> bool" 
       (T_AT # T_STR ts # db @ T_STR p # tus @ T_LPAREN # fs @ [T_COMMA])"
 | pending_CMD: "pending P_CMD [T_RANGLE]"
 | pending_ARGS: "list_all cmd_arg args \<Longrightarrow> pending (P_ARGS c (rev args)) (T_RANGLE # T_STR c # args)"
-
-text \<open>The result of a step: the pending tokens and the token read split into a part that the
-  emitted entries parse and the new pending part.\<close>
 
 definition step_ok :: "'s token list \<Rightarrow> 's item list \<Rightarrow> 's pstate \<Rightarrow> bool" where
   "step_ok ts es st \<longleftrightarrow> (\<exists>ts1 ts2. ts = ts1 @ ts2 \<and> G_parser ts1 es \<and> pending st ts2)"
@@ -278,8 +264,8 @@ qed
 
 subsection \<open>Completeness\<close>
 
-text \<open>The states in which the database of a time point is complete so far: another table or
-  the end of the time point may follow. On these tokens, the three states behave alike.\<close>
+text \<open>The states in which the database of a time point is complete so far; they behave alike on
+  the tokens that may follow.\<close>
 
 fun db_evs :: "'s pstate \<Rightarrow> ('s \<times> ('s \<times> 's list) list) option" where
   "db_evs (P_DB ts evs) = Some (ts, evs)"

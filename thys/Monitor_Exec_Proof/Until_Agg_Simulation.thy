@@ -4,13 +4,12 @@ theory Until_Agg_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of the aggregating Until window\<close>
 
+subsection \<open>Agreement with the plain window\<close>
 
-subsection \<open>It tracks the plain window\<close>
-
-text \<open>The fused operations differ from @{const uw_extend}, @{const uw_step} and
-  @{const uw_shift} only in the extra component and in what is pushed onto the list of finished
-  answers.  The first lemmas say so: everything but that list steps identically.\<close>
+text \<open>The fused operations step like @{const uw_extend}, @{const uw_step} and @{const uw_shift} on
+  all but the aggregate and the list of finished answers.\<close>
 
 lemma ua_extend_proj:
   "(case ua_extend args p w ts0 win rest bend cc ax of (a, b, c, d, e) \<Rightarrow> (a, b, c, d))
@@ -26,10 +25,6 @@ lemma ua_extend_fst4:
   assumes "ua_extend args p w ts0 win rest bend cc ax = (win', rest', bend', cc', ax')"
   shows "uw_extend args ts0 win rest bend cc = (win', rest', bend', cc')"
   using ua_extend_proj[of args p w ts0 win rest bend cc ax] unfolding assms by simp
-
-text \<open>And the aggregate it carries stays valid for the union it is kept against: the scan's
-  insertions are exactly @{const cnt_add}'s, so @{thm [source] ag_inv_ins} applies at each of
-  them.  This mirrors @{thm [source] sa_move_rep} for the Since window's scan.\<close>
 
 lemma ua_extend_rep:
   assumes "linearize rest = rl"
@@ -90,16 +85,13 @@ next
   qed
 qed
 
+subsection \<open>Step and shift\<close>
+
 lemma valid_ua_init:
   assumes "length (args_R args) = args_n args" and "eagg_ok p (args_n args)"
   shows "valid_ua args p 0 (ua_init args p) []"
   using assms valid_uw_init[of args] ag_inv_init[of p "args_n args"]
   by (auto simp: valid_ua_def ua_rel_def ua_init_def uw_init_def)
-
-text \<open>The two recursions in step, and the shift that drives them, keep the relation.\<close>
-
-text \<open>What the plain window's validity gives about the tables it holds, in the form
-  @{thm [source] ag_inv_ins} and @{thm [source] ag_inv_del} want them.\<close>
 
 lemma valid_uw_tables:
   assumes v: "valid_uw args cur (nts, win, rest, len, bend, cc, dn) auxlist"
@@ -118,9 +110,8 @@ proof -
     using v by (auto simp: valid_uw_def Let_def)
 qed
 
-text \<open>The step needs only what @{thm [source] valid_uw_tables} extracts, not the whole of
-  @{const valid_uw}: the shift below applies it to states whose queue of pending time stamps has
-  already had its head taken off.\<close>
+text \<open>The step assumes only what @{thm [source] valid_uw_tables} extracts, as the shift applies it to
+  states whose queue of pending timestamps has lost its head.\<close>
 
 lemma ua_step_rel:
   assumes rel: "ua_rel p (args_n args) a u"
@@ -241,10 +232,7 @@ lemma ua_shift_rel:
   shows "ua_rel p (args_n args) (ua_shift args p (args_n args) nt a) (uw_shift args nt u)"
   by (rule ua_shift_rel_gen[OF refl assms])
 
-text \<open>The two entry points.  Both shift first, and the relation is preserved by everything they
-  do afterwards: appending to the queues touches neither the count set, nor the aggregate, nor
-  the finished answers, and handing the answers over reverses a list the relation maps
-  pointwise.\<close>
+subsection \<open>Entry points\<close>
 
 lemma valid_ua_add_new:
   assumes v: "valid_ua args p cur a auxlist" and L: "args_L args = []"
@@ -308,6 +296,8 @@ proof -
     show "res = map (eagg_p p) res'" using vres unfolding reseq by (simp add: rev_map)
   qed
 qed
+
+subsection \<open>Executable fused window\<close>
 
 lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
   by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)

@@ -4,12 +4,9 @@ theory Exec_Preparation_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of the preparation\<close>
 
-
-subsection \<open>The comparison's move\<close>
-
-text \<open>The move keeps the conjunction's operands and only regroups them; its result is a
-  conjunction or a multiway conjunction.\<close>
+subsection \<open>Moving comparisons inward\<close>
 
 lemma ands_cstr_Some:
   "ands_cstr c l = Some l' \<Longrightarrow> \<exists>xs e ys. l = xs @ e # ys \<and> l' = xs @ Formula.And e c # ys \<and>
@@ -126,7 +123,7 @@ proof (cases rule: and_cstr_cases[of X c])
     unfolding 2(5) by (rule wty_formula.Ands)
 qed (use assms in simp)
 
-subsection \<open>Free variables\<close>
+subsection \<open>Moving quantifiers inward\<close>
 
 lemma fvi_push_ex[simp]: "Formula.fvi b (push_ex \<phi>) = Formula.fvi b \<phi>"
   by (induct \<phi> arbitrary: b) (auto simp: push_ex_And)
@@ -134,16 +131,13 @@ lemma fvi_push_ex[simp]: "Formula.fvi b (push_ex \<phi>) = Formula.fvi b \<phi>"
 lemma nfv_push_ex[simp]: "Formula.nfv (push_ex \<phi>) = Formula.nfv \<phi>"
   by (simp add: Formula.nfv_def)
 
-subsection \<open>Satisfaction\<close>
-
 lemma sat_push_ex[simp]: "Formula.sat \<sigma> V v i (push_ex \<phi>) = Formula.sat \<sigma> V v i \<phi>"
   by (induct \<phi> arbitrary: V v i) (auto simp: push_ex_And split: nat.splits)
 
-subsection \<open>Shapes\<close>
+subsubsection \<open>Shapes and safety\<close>
 
-text \<open>The safety conditions look at a few syntactic shapes of their operands: comparisons,
-  assignments and negations.  The quantifier's step never produces one of them, and the rest of
-  the traversal keeps each of them as it is.\<close>
+text \<open>The safety conditions inspect comparisons, assignments and negations; the quantifier's step
+  produces none of them, and the rest of the traversal keeps them.\<close>
 
 lemma ex_into_shape: "(\<exists>\<psi>. ex_into t \<phi> = Formula.Exists t \<psi>) \<or>
   (\<exists>I \<psi>. ex_into t \<phi> = Formula.Since Formula.TT I \<psi>) \<or> (\<exists>I \<psi>. ex_into t \<phi> = Formula.Until Formula.TT I \<psi>)"
@@ -207,8 +201,6 @@ lemma case_Neg_push_ex:
    = (case \<phi> of Formula.Neg \<psi> \<Rightarrow> f (push_ex \<psi>) | _ \<Rightarrow> False)"
   by (simp add: case_Neg_iff push_ex_Neg_iff) blast
 
-subsection \<open>Safety\<close>
-
 lemma safe_push_ex[simp]: "safe_formula (push_ex \<phi>) = safe_formula \<phi>"
 proof (induct \<phi> rule: measure_induct_rule[where f = size])
   case (less \<phi>)
@@ -264,7 +256,7 @@ proof (induct \<phi> rule: measure_induct_rule[where f = size])
   qed (simp_all add: less)
 qed
 
-subsection \<open>Future-boundedness, monitorability and relevant events\<close>
+subsubsection \<open>Monitorability, progress and typing\<close>
 
 lemma future_bounded_push_ex[simp]: "Safety.future_bounded (push_ex \<phi>) = Safety.future_bounded \<phi>"
   by (induct \<phi>) (auto simp: push_ex_And list.pred_map o_def cong: list.pred_cong)
@@ -275,8 +267,6 @@ lemma mmonitorable_push_ex[simp]: "mmonitorable (push_ex \<phi>) = mmonitorable 
 lemma matches_push_ex[simp]: "Safety.matches v (push_ex \<phi>) e = Safety.matches v \<phi> e"
   by (induct \<phi> arbitrary: v e) (auto simp: push_ex_And)
 
-subsection \<open>Progress\<close>
-
 lemma progress_ex_into[simp]: "progress \<sigma> P (ex_into t \<phi>) j = progress \<sigma> P \<phi> j"
   by (induct t \<phi> arbitrary: P rule: ex_into.induct) (simp_all add: Formula.TT_def)
 
@@ -285,8 +275,6 @@ lemma progress_push_ex[simp]: "progress \<sigma> P (push_ex \<phi>) j = progress
 
 lemma pprogress_push_ex[simp]: "pprogress (push_ex \<phi>) = pprogress \<phi>"
   by (simp add: pprogress_def fun_eq_iff)
-
-subsection \<open>Typing\<close>
 
 lemma wty_ex_into: "S, case_nat t E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> ex_into t \<phi>"
 proof (induct t \<phi> arbitrary: E rule: ex_into.induct)
@@ -302,6 +290,8 @@ qed (simp only: ex_into.simps, rule wty_formula.Exists, assumption)+
 lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_ex \<phi>"
   by (induct rule: wty_formula.induct)
     (auto simp: push_ex_And fun_upd_def intro!: wty_formula.intros wty_ex_into wty_and_cstr elim: regex.pred_mono_strong)
+
+subsection \<open>Prepared formula\<close>
 
 lemma fvi_eprep[simp]: "Formula.fvi b (eprep \<phi>) = Formula.fvi b \<phi>"
   by (simp add: eprep_def)
@@ -321,10 +311,10 @@ lemma wty_eprep: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> e
 lemma mmonitorable_eprep: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (eprep \<phi>)"
   by (simp add: eprep_def mmonitorable_share_opt mmonitorable_frz_opt)
 
-subsection \<open>Reordering the verdicts' columns\<close>
+subsection \<open>Verdicts up to column order\<close>
 
-text \<open>Two formulas with the same number and set of free variables, the same satisfaction
-  relation and the same progress have the same verdicts, up to the order of their columns.\<close>
+text \<open>Formulas with the same free variables, satisfaction and progress have the same verdicts, up to
+  the order of their columns.\<close>
 
 context
   fixes \<phi> \<psi> :: "ty Formula.formula" and S :: sig and E :: tyenv
@@ -381,11 +371,10 @@ lemma flatten_verdicts_map_comp:
     (\<lambda>(i, t, v). (i, t, f v)) ` flatten_verdicts (map (\<lambda>(i, t, X). (i, t, g X)) Vs)"
   by (auto simp: flatten_verdicts_def image_UN image_image split_beta)
 
-subsection \<open>The executable monitor on the rewritten formula\<close>
+subsection \<open>Monitor on the prepared formula\<close>
 
-text \<open>The executable state is compiled from the rewritten formula at its own column list, but the
-  ascending columns are the free variables in ascending order, which the rewriting does not change.
-  So the executable verdicts, read at the columns of @{term \<phi>}, are those of @{term \<phi>}.\<close>
+text \<open>The rewrites change the order of the free variables but not their set, so the ascending
+  columns, at which the executable verdicts are read, stay the same.\<close>
 
 lemma fv_list_eprep_ecols: "ecols (Formula.fv_list (eprep \<phi>)) = ecols (Formula.fv_list \<phi>)"
   by (rule ecols_cong) simp
@@ -425,37 +414,16 @@ qed
 
 end
 
-text \<open>The front end's entry point: the executable monitor started on the rewritten formula, the state
-  of @{thm [source] verimon_spec.emonitor_mverdicts_push}.\<close>
-
 lemma eminit_push_eq:
   "eminit_push \<phi>
    = eof_state (Formula.nfv \<phi>) (Formula.fv_list (eprep \<phi>))
        (ecols (Formula.fv_list (eprep \<phi>))) (minit_safe (eprep \<phi>))"
   by (simp add: eminit_push_def eminit_safe_def)
 
-section \<open>VeriMon's preparation of the formula for the verified executable monitor\<close>
+subsection \<open>VeriMon's preparation\<close>
 
-text \<open>
-  The verified executable monitor runs on the formula that VeriMon prepares (@{const prepare_verimon}):
-  the input formula is type checked and, if it is not monitorable and rewriting is requested,
-  normalized, its temporal operators with negated right operands replaced by their duals
-  (@{const dual_since}), and rewritten, until it becomes monitorable. Optionally (@{text mw}), the prepared
-  formula is converted into multi-way joins. The executable state is then built from it by
-  @{const eminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
-  can (@{theory Monitor_Exec.Freeze_Hoisting}), moves existential quantifiers into the
-  windows they commute with (@{theory Monitor_Exec.Exec_Preparation}), and binds the right
-  operand of a release so that it is evaluated once (@{theory Monitor_Exec.Release_Sharing}). The
-  theorem @{text eminit_verimon_mverdicts} below states that the verdicts of the executable monitor
-  started from this state are those of the input formula, provided the executable compiler covered
-  the whole formula.
-
-  The short tuples are over the free variables in ascending order, whatever the formula they
-  were compiled from: the rewrites change the order in which @{const Formula.fv_list} lists the
-  free variables, and so the kernel's columns, but not the set.
-\<close>
-
-text \<open>Changing the formula's type annotations changes none of its column lists.\<close>
+text \<open>@{const prepare_verimon} type checks and possibly rewrites the input formula;
+  @{const eminit_push} builds the executable state from it, optionally after multi-way conversion.\<close>
 
 lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
   by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def wty_share_opt
@@ -502,8 +470,8 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
   "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
-text \<open>The verdicts of the executable monitor started from the state @{const eminit_verimon} builds
-  are the verdicts the specification of the input formula prescribes.\<close>
+text \<open>Started from the state of @{const eminit_verimon}, the executable monitor outputs the verdicts
+  the input formula prescribes, provided no node failed to compile.\<close>
 
 theorem eminit_verimon_mverdicts:
   assumes init: "eminit_verimon ix mw rw sig \<phi> = Inr ust"

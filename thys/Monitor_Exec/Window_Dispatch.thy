@@ -6,25 +6,19 @@ begin
 
 
 
-section \<open>Choosing the structure at the ascending frame\<close>
+section \<open>Choice of the Since and Until structures\<close>
 
 text \<open>
-  The executable Since and Until nodes carry one of two structures: the general one of
-  @{theory Monitor_Exec.Exec_Since}, or the sliding window of
-  @{theory Monitor_Exec.Closed_Left_Windows} where the left operand is closed (and, for the Until,
-  the interval contains zero).  The choice is made once, when the node is built, from the
-  arguments alone; the operations dispatch on it, and the relation to the kernel's abstract
-  auxiliary list is the disjunction of the two structures' relations.  The five Since lemmas and
-  the four Until lemmas that the simulation uses are restated for the sum, so that nothing
-  downstream needs to know which structure runs.
+  A node carries the general structure or, for a closed left operand (and, for Until, an interval
+  containing zero), a sliding window; the choice is made once and the operations dispatch on it.
 \<close>
 
-subsection \<open>The Since structure\<close>
+subsection \<open>Since structures\<close>
 
 datatype esaux_x = ESX_gen "event_data emsaux" | ESX_win swaux | ESX_wagg eaggp swagg
 
-text \<open>The window is chosen from the arguments alone; the window with the aggregate is chosen by
-  the compiler, which knows the aggregation the kernel fused into the node.\<close>
+text \<open>The aggregating window is chosen by the compiler, which knows the aggregation fused into the
+  node.\<close>
 
 definition esx_init :: "args \<Rightarrow> bool list \<Rightarrow> esaux_x" where
   "esx_init args msk = (if args_L args = [] then ESX_win (sw_init args)
@@ -53,9 +47,6 @@ fun esx_result :: "args \<Rightarrow> esaux_x \<Rightarrow> event_data table" wh
 | "esx_result args (ESX_win w) = sw_result args w"
 | "esx_result args (ESX_wagg p a) = sa_result args p a"
 
-text \<open>What a structure reports, relative to the window's union: the union itself, or its
-  aggregate.  The choice is fixed with the structure and no operation changes it.\<close>
-
 fun esx_post :: "esaux_x \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "esx_post (ESX_gen d) = id"
 | "esx_post (ESX_win w) = id"
@@ -76,9 +67,6 @@ lemma esx_post_init[simp]: "esx_post (esx_init args msk) = id"
 lemma esx_post_init_agg[simp]: "esx_post (esx_init_agg args p) = eagg_p p"
   by (simp add: esx_init_agg_def)
 
-text \<open>Which aggregate, if any, a structure reports; the compiler and the simulation tell the
-  structures apart by it.\<close>
-
 fun esx_agg :: "esaux_x \<Rightarrow> eaggp option" where
   "esx_agg (ESX_gen d) = None"
 | "esx_agg (ESX_win w) = None"
@@ -98,9 +86,6 @@ lemma esx_agg_init[simp]: "esx_agg (esx_init args msk) = None"
 
 lemma esx_agg_init_agg[simp]: "esx_agg (esx_init_agg args p) = Some p"
   by (simp add: esx_init_agg_def)
-
-text \<open>The windows are used for a closed left operand, whose kernel columns are then empty as
-  well.\<close>
 
 definition esxaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> esaux_x \<Rightarrow>
     (ts \<times> event_data table) list \<Rightarrow> bool" where
@@ -128,7 +113,7 @@ fun esx_eval_since :: "args \<Rightarrow> event_data table list \<Rightarrow> ev
      in esx_eval_since args (esx_result args daux' # rs) (xs, ys, ts, False) daux')"
 | "esx_eval_since args rs buf daux = (rev rs, buf, daux)"
 
-subsection \<open>The Until structure\<close>
+subsection \<open>Until structures\<close>
 
 datatype euaux_x = EUX_gen "event_data mmuaux_dq" | EUX_win uwaux | EUX_wagg eaggp uwagg
 
@@ -151,10 +136,6 @@ fun eux_eval :: "args \<Rightarrow> ts \<Rightarrow> euaux_x \<Rightarrow> event
 
 definition eux_init_agg :: "args \<Rightarrow> eaggp \<Rightarrow> euaux_x" where
   "eux_init_agg args p = EUX_wagg p (ua_init args p)"
-
-text \<open>What a structure reports for each finished time point, relative to the window's union at
-  it: the union itself, or its aggregate.  As on the Since side the choice is fixed with the
-  structure and no operation changes it.\<close>
 
 fun eux_post :: "euaux_x \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "eux_post (EUX_gen d) = id"
@@ -201,22 +182,16 @@ definition euxaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> 
        (\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2) \<and>
        valid_ua (eargs cR cL args) p cur a (eauxlist3 kL cL kR cR auxlist))"
 
-section \<open>The structures the evaluator runs\<close>
+subsection \<open>Structures the evaluator runs\<close>
 
 text \<open>
-  The evaluator runs the structures above in the representations of
-  the executable windows of @{theory Monitor_Exec.Since_Agg}, @{theory Monitor_Exec.Until_Agg}
-  and @{theory Monitor_Exec.Agg_Cache}, and its buffers in queues
-  (@{typ "'a mbuf_t"}).  Each is related to the structure above by a function -- @{text rdsx},
-  @{text rdux} and @{const Rep_mbuf_t} -- with which every operation commutes on every input,
-  so the simulation states its relations on the images.
+  The evaluator's structures map to those above by @{text rdsx}, @{text rdux} and
+  @{const Rep_mbuf_t}, with which every operation commutes.
 \<close>
 
-subsection \<open>The Since and Until structures, dispatched\<close>
+subsubsection \<open>Dispatched Since and Until structures\<close>
 
-text \<open>The structure of a fused aggregating window carries the node's guard: the constraint the
-  node's own result is read through, if it has one.  Only the read looks at it; every other
-  operation passes it along, and the structure above it stands for does not have it at all.\<close>
+text \<open>A fused aggregating window carries the node's guard, which only the read uses.\<close>
 
 datatype udsaux_x = UDSX_gen "event_data emsaux" | UDSX_win swaux
   | UDSX_wagg eaggp "uconstr option" uswaggc
@@ -298,7 +273,7 @@ fun udux_eval :: "args \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> uta
 | "udux_eval args nt (UDUX_wagg p a) =
      (let (zs, a') = uua_eval args p (args_n args) nt a in (zs, UDUX_wagg p a'))"
 
-subsection \<open>The buffers\<close>
+subsubsection \<open>Buffers\<close>
 
 type_synonym uebuf2 = "event_data mebuf2"
 type_synonym uebufn = "event_data mebufn"
@@ -313,8 +288,6 @@ fun rbufS :: "uebuf2S \<Rightarrow> event_data mbuf2S" where
 abbreviation rbufo :: "utable mbuf_t \<times> utable option mbuf_t \<Rightarrow>
     event_data table list \<times> event_data table option list" where
   "rbufo \<equiv> map_prod Rep_mbuf_t Rep_mbuf_t"
-
-subsection \<open>The Since buffer's traversal\<close>
 
 fun uedsx_eval_since :: "args \<Rightarrow> utable list \<Rightarrow> uebuf2S \<Rightarrow> udsaux_x \<Rightarrow>
     utable list \<times> uebuf2S \<times> udsaux_x" where

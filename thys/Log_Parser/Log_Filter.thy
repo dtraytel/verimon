@@ -4,17 +4,10 @@ theory Log_Filter
 begin
 (*>*)
 
-section \<open>Dropping the events of irrelevant predicates\<close>
+section \<open>Dropping events of irrelevant predicates\<close>
 
-text \<open>
-  A monitor only needs the events of the predicates its formula mentions. The parser of this
-  theory drops the other events while it reads them: it still reads their tuples, so that a log
-  is accepted exactly as before, but it neither keeps their fields nor adds them to the time
-  point. Which predicates are kept is a parameter @{text k} of the parser. Its output is the
-  output of the parser of @{theory Log_Parser.Log_Parser} with the events of the other predicates
-  removed (theorem @{text fparse_log_correct}); this is proved by a simulation: the states of
-  the filtering parser are the images of the states of the full parser under @{text fabs}.
-\<close>
+text \<open>The parser keeps only the events of the predicates that @{text k} accepts. It still reads the
+  other tuples, so the same logs are accepted, and its output is the full parser's, filtered.\<close>
 
 definition filter_item :: "('s \<Rightarrow> bool) \<Rightarrow> 's item \<Rightarrow> 's item" where
   "filter_item k e = (case e of Entry ts evs \<Rightarrow> Entry ts (filter (k \<circ> fst) evs) | Command c args \<Rightarrow> Command c args)"
@@ -27,10 +20,10 @@ lemma filter_item_simps[simp]:
 lemma filter_item_True[simp]: "filter_item (\<lambda>_. True) = id"
   by (rule ext) (simp add: filter_item_def split: item.splits)
 
-subsection \<open>The parser\<close>
+subsection \<open>Filtering parser\<close>
 
-text \<open>The states of the full parser, and for an irrelevant predicate the states that read its
-  tuples without recording them (@{text F_SKIP} after its name or a tuple of it).\<close>
+text \<open>The states of the full parser, and states that read the tuples of an irrelevant predicate
+  without recording them.\<close>
 
 datatype 's fpstate = F_INIT | F_TS | F_DB 's "('s \<times> 's list) list" | F_NAME 's "('s \<times> 's list) list" 's
   | F_TUPLES 's "('s \<times> 's list) list" 's | F_FIELD1 's "('s \<times> 's list) list" 's
@@ -111,7 +104,7 @@ definition fparse_from :: "('s \<Rightarrow> bool) \<Rightarrow> 's fpstate \<Ri
 definition fparse :: "('s \<Rightarrow> bool) \<Rightarrow> 's token list \<Rightarrow> 's item list option" where
   "fparse k ts = fparse_from k F_INIT ts"
 
-subsection \<open>Simulation\<close>
+subsection \<open>Simulation of the full parser\<close>
 
 text \<open>The state of the filtering parser that corresponds to a state of the full parser.\<close>
 
@@ -229,8 +222,7 @@ corollary fparse_log_log_lang:
   "fparse_log k s = Some es' \<longleftrightarrow> (\<exists>es. log_lang s es \<and> es' = map (filter_item k) es)"
   by (auto simp: fparse_log_correct parse_log_correct)
 
-text \<open>The filtering parser reads online like the full one: it outputs the filtered entries that
-  the full parser outputs, and an entry as soon as the next item begins.\<close>
+text \<open>The filtering parser reads online: an entry is output as soon as the next item begins.\<close>
 
 theorem fstream_run_prompt:
   assumes "Glex s ts" "G_parser ts es" "c = CHR ''@'' \<or> c = CHR ''>''"

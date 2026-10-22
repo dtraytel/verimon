@@ -6,31 +6,15 @@ begin
 
 
 
-section \<open>The rank trees of the aggregations, in code\<close>
+section \<open>Code for aggregations\<close>
 
-text \<open>
-  The aggregation over a window keeps one order-statistic tree per group for MIN, MAX and MED
-  (@{typ list_aux}, over @{typ "'a treelist"}, over @{typ "'a wf_wbt"}).  Its operations are
-  refined here at the level of code equations, with the refinements proved against the
-  equations they replace.  They are placed after
-  @{theory Monitor_Exec.Monomorphic_Remainder} so that the theory lies on the import chain
-  of the export rather than beside it: a side branch would bring back, at the merge, the code
-  preprocessor rules that the theories in between delete.
-\<close>
+text \<open>The theory lies on the export's import chain: a side branch would restore, at the merge,
+  code preprocessor rules deleted in between.\<close>
 
-subsection \<open>Deletion that reads the stored sizes\<close>
+subsection \<open>Deletion using stored sizes\<close>
 
-text \<open>@{const Order_Statistic_Tree.combine} decides which side to take the new root from by
-  comparing @{const size}, which walks both subtrees, although every node carries its size;
-  and @{const split_min} and @{const del_max} test @{term "l = Leaf"}, an equality on trees,
-  which is the only reason the tree operations need an @{class equal} dictionary besides the
-  @{class linorder} one.  The copies below read the stored size and match on @{const Leaf}
-  instead.  On a tree satisfying @{const wbt}, which every tree inside @{typ "'a wf_wbt"}
-  does, they compute the same result.\<close>
-
-text \<open>The subtrees are inspected with a @{text case} rather than by nested patterns: a nested
-  pattern such as @{term "Node (Node l' x r') y r"} makes the generated code rebuild the inner
-  node before it can pass it on, an allocation per level.\<close>
+text \<open>The copies below read the stored sizes and match on @{const Leaf} instead of testing tree
+  equality; they avoid nested patterns, which make the generated code rebuild nodes.\<close>
 
 fun split_min_p :: "'a wbt \<Rightarrow> 'a \<times> 'a wbt" where
   "split_min_p (Node l (a, _) r) = (case l of
@@ -76,11 +60,9 @@ lemma delete_p_eq: "wbt t \<Longrightarrow> delete_p x t = delete x t"
 lemma tree_remove_code[code]: "Rep_wf_wbt (tree_remove x t) = delete_p x (Rep_wf_wbt t)"
   using Rep_wf_wbt[of t] by (simp add: tree_remove.rep_eq delete_p_eq)
 
-subsection \<open>The extremes, read off the ends of the tree\<close>
+subsection \<open>Extremes from the ends of the tree\<close>
 
-text \<open>MIN and MAX ask for the element of rank 0 and of rank \<open>n - 1\<close>.  @{const select} finds
-  them by comparing the rank with the stored size at every node on the way down; the leftmost
-  and the rightmost node are reached without any arithmetic.\<close>
+text \<open>MIN and MAX read the leftmost and rightmost node instead of selecting by rank.\<close>
 
 fun wbt_min :: "'a wbt \<Rightarrow> 'a" where
   "wbt_min Leaf = [] ! 0"
@@ -133,13 +115,9 @@ lemma get_edata_min_max_unfold[code_unfold]:
   "get_edata_list k (get_length k - 1) = get_edata_max k"
   by (simp_all add: get_edata_min_def get_edata_max_def)
 
-subsection \<open>The tree operations at their two closed types\<close>
+subsection \<open>Tree operations at closed types\<close>
 
-text \<open>@{theory Monitor_Exec.Monomorphic_Remainder} specialises the treelist operations at
-  @{typ integer} and @{typ string8}, but their bodies still called the generic tree operations
-  with a dictionary, and the generic @{const cmp} goes through the dictionary's @{text less} and
-  @{text equal} at every node.  These are the tree operations' copies at the two types, and the
-  @{typ nat} comparison of @{const select}.\<close>
+text \<open>Copies at @{typ integer} and @{typ string8} compare without a dictionary.\<close>
 
 setup \<open>mono
   [("cmp", "nat_cmp", ["nat"]),
@@ -155,28 +133,10 @@ setup \<open>mono
    ("tree_remove", "s8_tree_remove", ["string8"])]
   dicts\<close>
 
-subsection \<open>The result table, left as it is\<close>
+subsection \<open>Aggregation outside windows\<close>
 
-text \<open>The result table of the aggregation is left as @{thm [source] ugmr_code} builds it, by
-  inserting its rows one at a time.  Collecting the rows in a list, sorting them with a
-  comparator merge sort and building the tree with @{const rbt_of_sorted_list}
-  was proved and measured, and it does not pay: on @{text "CNT"} over a window of 50 it saves
-  about as many instructions in the insertions as the sort, the sortedness check of
-  @{const rbt_of_sorted_list} and the natural-number arithmetic of @{const rbtreeify} spend
-  (0.7% of the run).\<close>
-
-subsection \<open>The aggregation outside a window, through the window's structure\<close>
-
-text \<open>An aggregation that is not over a window (@{const uagg}) clusters its operand's table by
-  the group, clusters each group again by the aggregated value to count the multiplicities, and
-  reads the aggregate off the multiset.  The window's structure (@{typ "'b gagg"}) keeps, per
-  group, the count, the count and the sum, or the order-statistic tree of the values; built
-  from scratch by inserting the table's tuples one at a time, it has the aggregate at hand.  The
-  invariant of the window's aggregation says that the result read off it is
-  @{const uagg}'s (@{thm [source] ag_res_inv}), when the tuples have one width that the
-  aggregation's parameters fit (@{const eagg_ok}).  The code below checks that and falls back
-  to @{const uagg}'s own equation, @{text uagg_gen}, otherwise, or when the structure cannot
-  represent the aggregation.\<close>
+text \<open>@{const uagg} builds the window's structure from its table and reads the result off it,
+  falling back to its own equation (@{text uagg_gen}) unless @{const eagg_ok} holds.\<close>
 
 definition uagg_gen :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
     event_data list set \<Rightarrow> event_data list set" where
@@ -250,8 +210,7 @@ proof (cases "csl X")
   qed
 qed (simp add: uagg_gen_def uagg_g_def)
 
-text \<open>An aggregation the structure cannot represent at all (@{const ginit}) goes straight to
-  @{const uagg}'s own equation, without the checks.\<close>
+text \<open>An aggregation that @{const ginit} cannot represent skips the checks.\<close>
 
 lemma uagg_g_code[code]:
   "uagg_g g0 \<omega> f k pos X = (if Option.is_none (ginit \<omega> :: event_data gagg option) then uagg_gen g0 \<omega> f k pos X

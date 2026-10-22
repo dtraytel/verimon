@@ -6,14 +6,10 @@ begin
 
 section \<open>Efficient code equations\<close>
 
-subsection \<open>Folding a red-black tree of keys\<close>
+subsection \<open>Folds, projections and lookups\<close>
 
-text \<open>
-  @{const RBT_Set2.fold} is defined by discarding the value of each entry, which the generated
-  code does by wrapping the element function in a closure: one closure allocated per fold, and
-  two indirect calls per element instead of one.  A fold that takes the element function
-  directly does the same work.
-\<close>
+text \<open>Folds over the keys of a red-black tree call the element function directly, not through
+  a closure that discards the value.\<close>
 
 fun rbt_fold_key :: "('a \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> ('a, unit) RBT_Impl.rbt \<Rightarrow> 'b \<Rightarrow> 'b" where
   "rbt_fold_key f RBT_Impl.Empty s = s"
@@ -33,22 +29,14 @@ declare [[code drop: rbt_fold]]
 lemma rbt_fold_code[code]: "rbt_fold f t = rbt_fold_key f (RBT_Mapping2.impl_of t)"
   by (simp add: rbt_fold_def rbt_set2_fold_code)
 
-text \<open>
-  Folding over a mapped list builds the mapped list first.  Applying the two functions to the
-  element in one step removes it, and -- because the redirections of Section \<open>Monomorphic_Instance\<close>
-  rewrite an operation applied to an argument, not an operation on its own -- it also lets the
-  monomorphic container operations reach folds whose function argument was written point-free.
-\<close>
+text \<open>Folds over a mapped list apply both functions per element without building the list,
+  which also exposes point-free fold arguments to the monomorphic redirections.\<close>
 
 lemma fold_map_unfold[code_unfold]: "fold f (map g xs) = fold (\<lambda>x. f (g x)) xs"
   by (simp add: fold_map comp_def)
 
-text \<open>
-  @{const fst} and @{const snd} are generated from their defining equations on a pair pattern,
-  which compiles them as functions of two arguments; every application to a pair that is not
-  written out at the call site then goes through the adapter that rebuilds the pair.  They
-  account for five of the eleven million entries into it on P2.
-\<close>
+text \<open>@{const fst} and @{const snd} take the pair as one argument, avoiding the adapter that
+  rebuilds it.\<close>
 
 declare [[code drop: fst snd]]
 
@@ -58,11 +46,7 @@ lemma fst_code[code]: "fst p = (case p of (a, b) \<Rightarrow> a)"
 lemma snd_code[code]: "snd p = (case p of (a, b) \<Rightarrow> b)"
   by (simp split: prod.splits)
 
-text \<open>
-  The lookup in a red-black tree is stated point-free, so the generated code applies it to the
-  tree, gets a closure back and then applies that to the key: one closure allocated per lookup,
-  and on P2 that is 1.3\% of everything the monitor allocates.
-\<close>
+text \<open>The lookup in a red-black tree takes tree and key at once instead of returning a closure.\<close>
 
 declare [[code drop: RBT_Mapping2.lookup]]
 
@@ -72,12 +56,8 @@ lemma rbt_mapping2_lookup_code[code]:
 
 subsection \<open>Direct comparators\<close>
 
-text \<open>
-  The comparators derived by the @{text derive} command are expressed via the generic
-  @{const comparator_of}, whose generated code performs two dictionary-dispatched comparisons
-  (@{text "<"} followed by @{text "="}) per element. The following code equations spell out the
-  comparators for the base types occurring in event data and tuples directly.
-\<close>
+text \<open>The comparators of the base types compare directly instead of through two
+  dictionary-dispatched comparisons in @{const comparator_of}.\<close>
 
 declare [[code drop: "compare :: nat \<Rightarrow> _" "compare :: integer \<Rightarrow> _" "compare :: string8 \<Rightarrow> _" comparator_event_data]]
 
@@ -90,20 +70,8 @@ lemma compare_integer_code[code]: "compare (x :: integer) y = (if x < y then Lt 
 lemma compare_string8_code[code]: "compare (x :: string8) y = (if x < y then Lt else if x = y then Eq else Gt)"
   by (simp add: compare_string8_def comparator_of_def)
 
-text \<open>
-  Comparing two integers with @{text "<"} and then @{text "="} is two calls into the
-  arbitrary-precision library where one would do; on the Until benchmark they are 5.3\% and 1.8\%
-  of the run.  The comparison below makes the one call and reads its sign.
-
-  Even the one call is a call out of OCaml, and after the change above it was the single
-  costliest symbol of the Until benchmark at 5.7\%.  Zarith keeps every integer that fits in an
-  OCaml integer as an immediate and only larger ones as a custom block, so two immediates are
-  in the same order as the machine integers they carry, and the two cases are told apart by
-  the tag.  The printing below takes that path in OCaml and falls back to the library for
-  everything else, which is where the values that do not fit are compared.  This reads the
-  representation that the library documents rather than its interface, so it is one more thing
-  to believe about the generated code, next to the hash functions of the imperative tables.
-\<close>
+text \<open>Integers are compared once, not twice. The trusted OCaml printing compares two Zarith
+  immediates as machine integers, relying on Zarith storing small integers as immediates.\<close>
 
 definition cmp_integer :: "integer \<Rightarrow> integer \<Rightarrow> order" where
   "cmp_integer x y = (if x < y then Lt else if x = y then Eq else Gt)"
@@ -125,26 +93,17 @@ lemma comparator_event_data_code[code]:
 
 subsection \<open>Reversing a list\<close>
 
-text \<open>
-  The code equation the library gives @{const rev} states it as a fold over a function argument,
-  which the generated code passes as a closure and applies through the generic application path
-  once per element.  @{const rev_prepend} from theory @{text Queue} reverses a list onto another
-  one with a direct two-argument recursion, so it replaces that code equation for the whole
-  monitor.
-\<close>
+text \<open>@{const rev} uses the direct recursion @{const rev_prepend} instead of a fold with a closure.\<close>
 
 declare [[code drop: rev]]
 
 lemma rev_code[code]: "rev xs = rev_prepend xs []"
   by (simp add: rev_prepend_eq)
 
-subsection \<open>Run-time selection of the multi-way join strategy\<close>
+subsection \<open>Run-time join strategy\<close>
 
-text \<open>
-  @{const use_generic_join} is an unspecified constant; both values are covered by the
-  correctness proofs. The generated code reads it from a mutable flag in a small auxiliary
-  module, so that the front end can choose the strategy at run time.
-\<close>
+text \<open>The unspecified @{const use_generic_join}, correct for both values, is read from a mutable
+  flag that the front end sets.\<close>
 
 code_printing code_module Config \<rightharpoonup> (OCaml)
 \<open>module Config : sig
@@ -154,20 +113,10 @@ end = struct
 end\<close>
 | constant use_generic_join \<rightharpoonup> (OCaml) "'!Config.generic'_join"
 
-section \<open>Since without join columns\<close>
+subsection \<open>Since without join columns\<close>
 
-text \<open>
-  The Since structure keeps two @{typ "'a wf_table"}s indexed by the join columns
-  @{term "args_L args"}. They are consulted by @{const join_mmsaux} only when there are join
-  columns that do not cover all columns; without them (@{term "args_L args = []"}, e.g. for
-  @{text ONCE}) or when all columns are join columns (@{term "args_L args = args_R args"}) the
-  operations of @{text Optimized_Since} maintain them as @{term "wf_table_of_keys R m"}, the
-  set of keys of the corresponding mapping. Both @{const wf_table_of_set} and @{const wf_table_of_keys} are made
-  representations of @{typ "'a wf_table"} for the code generator: constructing them costs
-  nothing, the (never taken) reads filter lazily, and the binary operations convert them to the
-  plain set representation first. Constructing an index for the empty or the full join column
-  set is also replaced by the plain representation.
-\<close>
+text \<open>@{const wf_table_of_set} and @{const wf_table_of_keys} become lazy code representations, so
+  the indexed tables that Since never reads cost nothing to maintain.\<close>
 
 lemma wf_table_of_idx_of_set: "wf_table_of_idx (wf_idx_of_set cs I X) = wf_table_of_set cs X"
 proof (cases "distinct cs")
@@ -243,17 +192,12 @@ lemma wf_table_antijoin_code'[code]:
   "wf_table_antijoin t (wf_table_of_keys cs m) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m)))"
   by (simp_all only: wf_table_conv)
 
-section \<open>Clustering\<close>
+subsection \<open>Clustering and option-valued unions\<close>
 
 derive (no) cenum event_data
 
-subsection \<open>Unions of option-valued images without sets of sets\<close>
-
-text \<open>
-  @{term "\<Union>v \<in> X. set_option (f v)"} (used by the @{text Match} mode of predicate evaluation)
-  is compiled by Containers through a set of sets, whose comparator compares whole tables.
-  The rewrite below turns it into an image followed by @{const Option.these}.
-\<close>
+text \<open>Unions of option-valued images become @{const Option.these} of an image, avoiding a set of
+  sets compared table by table.\<close>
 
 lemma Union_set_option_these[code_unfold]: "(\<Union>v \<in> X. set_option (f v)) = Option.these (f ` X)"
 proof (intro set_eqI iffI)

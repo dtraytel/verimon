@@ -6,8 +6,7 @@ begin
 
 section \<open>Joins of tables\<close>
 
-text \<open>Facts about the join of two tables (@{const join}) and the reordering of a table's columns
-  that any evaluation of conjunctions relies on, whichever join algorithm implements them.\<close>
+subsection \<open>Join\<close>
 
 abbreviation "join_cond pos t \<equiv> (\<lambda>as. if pos then as \<in> t else as \<notin> t)"
 
@@ -25,8 +24,6 @@ proof (rule set_eqI)
       restrict_idle[OF assms(1), of v]
     by auto
 qed
-
-text \<open>The join of two tables over the same columns is their intersection or difference.\<close>
 
 lemma join_eq:
   assumes "table cs t1" "table cs t2" "distinct cs"
@@ -84,6 +81,7 @@ proof (rule set_eqI)
   qed
 qed
 
+subsection \<open>Reordering columns\<close>
 
 definition reorder :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
   "reorder cs ds t = (if cs = ds then t else restrict cs ds ` t)"

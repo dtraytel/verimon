@@ -4,10 +4,7 @@ theory Since_Agg_Simulation
 begin
 (*>*)
 
-
-
-text \<open>The parameters the compiler builds from a fused node's aggregation are well formed at the
-  width of the node's operand.\<close>
+section \<open>Correctness of the aggregating Since window\<close>
 
 lemma ins_pos_le: "ins_pos cs y \<le> length cs"
   by (simp add: ins_pos_def)
@@ -17,11 +14,7 @@ lemma eagg_ok_agg:
   shows "eagg_ok (g0, \<omega>, reindex_trm (agg_cols k g) f, k, ins_pos g y) (length (agg_cols k g))"
   using fv_reindex_trm[OF assms(1)] assms(2) ins_pos_le[of g y] by auto
 
-text \<open>The kernel reads a window's tuple at the frame: its group key is the tuple's suffix after
-  the bound columns, and the shifted term evaluates to the term on the tuple.\<close>
-
-text \<open>The executable aggregation is the kernel's aggregation at the ascending frame, with the result
-  column moved into place.\<close>
+subsection \<open>Deletion from the aggregate\<close>
 
 lemma cnt_leave_rep: "cnt_rep f cc \<Longrightarrow> cnt_leave T cc = {x \<in> T. f x = 1}"
   unfolding cnt_leave_def cnt_rep_def by (auto split: if_splits)
@@ -148,7 +141,7 @@ proof -
     unfolding ag_inv_def p ag_del_Rk[OF ok[unfolded p] fT T] .
 qed
 
-subsubsection \<open>The scans, and what the window's validity says about its tables\<close>
+subsection \<open>Scans of the window\<close>
 
 lemma sa_move_rep:
   assumes "linearize pend = pl" and "sa_move args p nt pend win cc ax = (pend', win', cc', ax')"
@@ -285,7 +278,7 @@ proof -
   show "ewf_table (args_n args) (snd cc)" using cnt_inv_set[OF cr] dwf by auto
 qed
 
-subsubsection \<open>Validity\<close>
+subsection \<open>Preservation of validity\<close>
 
 lemma valid_sa_init: "length (args_R args) = args_n args \<Longrightarrow> eagg_ok p (args_n args) \<Longrightarrow>
   valid_sa args p 0 (sa_init args p) []"
@@ -380,6 +373,8 @@ proof -
   also have "snd cc = sw_result args (t, pend, win, cc)" by (simp add: sw_result_def)
   finally show ?thesis unfolding valid_sw_result[OF vsw] .
 qed
+
+subsection \<open>Count mapping and guard\<close>
 
 lemma lookup_None_keys: "(Mapping.lookup c t = None) = (t \<notin> Mapping.keys c)"
   by (simp add: Mapping.keys_dom_lookup domIff)

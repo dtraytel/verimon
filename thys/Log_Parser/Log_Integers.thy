@@ -4,21 +4,13 @@ theory Log_Integers
 begin
 (*>*)
 
-section \<open>Numbers in the log\<close>
+section \<open>Integers in the log\<close>
 
-text \<open>
-  Integers in the log are written as by Zarith's @{text Z.of_string}, on which MonPoly relies: an
-  optional sign, then decimal digits, or @{text "0x"}, @{text "0o"} or @{text "0b"} (in either
-  case) followed by hexadecimal, octal or binary digits, among which underscores are ignored.
-  Unlike @{text Z.of_string}, a digit is required after the sign and the base prefix (Zarith
-  reads the empty string, a lone sign and a lone base prefix as 0, and rejects an underscore
-  there too), and the sign is @{text "-"} or @{text "+"} (Zarith also reads @{text "-+"}).
-  Timestamps are the integers that are not negative. The
-  specification is on character lists; the functions on byte strings below, from which the code
-  is generated, are proved equal to it.
-\<close>
+text \<open>Integers as read by Zarith's @{text Z.of_string}, on which MonPoly relies, but with
+  at most one sign and a digit required after the sign and the base prefix. Timestamps are the
+  nonnegative ones.\<close>
 
-subsection \<open>Specification\<close>
+subsection \<open>Specification on character lists\<close>
 
 definition digit_val :: "nat \<Rightarrow> char \<Rightarrow> nat option" where
   "digit_val b c = (let k = of_char c :: nat in
@@ -34,8 +26,6 @@ fun digits_val :: "nat \<Rightarrow> nat \<Rightarrow> char list \<Rightarrow> n
 
 definition nat_of_digits :: "nat \<Rightarrow> char list \<Rightarrow> nat option" where
   "nat_of_digits b cs = (case cs of [] \<Rightarrow> None | c # _ \<Rightarrow> if c = CHR ''_'' then None else digits_val b 0 cs)"
-
-text \<open>The base prefix, if any, and the digits after it.\<close>
 
 definition base_of :: "char list \<Rightarrow> nat \<times> char list" where
   "base_of cs = (case cs of
@@ -60,9 +50,7 @@ definition int_of_string :: "char list \<Rightarrow> int option" where
 definition nat_of_string :: "char list \<Rightarrow> nat option" where
   "nat_of_string cs = (case int_of_string cs of Some i \<Rightarrow> if 0 \<le> i then Some (nat i) else None | None \<Rightarrow> None)"
 
-subsection \<open>On byte strings\<close>
-
-text \<open>The loops over a byte string @{text s} of length @{text n}, from index @{text i}.\<close>
+subsection \<open>Conversion of byte strings\<close>
 
 function bdigits :: "bytes \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> nat option" where
   "bdigits s n b i acc = (if i < n then (if bytes_at s i = CHR ''_'' then bdigits s n b (i + 1) acc
@@ -79,8 +67,6 @@ declare bdigits.simps[simp del]
 definition bnat_of_digits :: "bytes \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> integer \<Rightarrow> nat option" where
   "bnat_of_digits s n b i = (if i < n then (if bytes_at s i = CHR ''_'' then None else bdigits s n b i 0)
      else None)"
-
-text \<open>The base prefix at index @{text i}: the base and the index of the first digit.\<close>
 
 definition bbase_of :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> nat \<times> integer" where
   "bbase_of s n i = (if i + 1 < n \<and> bytes_at s i = CHR ''0'' then
@@ -106,7 +92,7 @@ definition bint_of :: "bytes \<Rightarrow> int option" where
 definition bnat_of :: "bytes \<Rightarrow> nat option" where
   "bnat_of s = (case bint_of s of Some i \<Rightarrow> if 0 \<le> i then Some (nat i) else None | None \<Rightarrow> None)"
 
-subsection \<open>Correctness\<close>
+subsection \<open>Correctness on byte strings\<close>
 
 lemma bdigits_correct:
   assumes "n = bytes_length s" "0 \<le> i" "i \<le> n"
@@ -230,10 +216,12 @@ qed
 theorem bnat_of_correct: "bnat_of s = nat_of_string (Rep_bytes s)"
   by (simp add: bnat_of_def nat_of_string_def bint_of_correct)
 
-subsection \<open>Code\<close>
+subsection \<open>Code on integers\<close>
 
-text \<open>The code computes on integers: arithmetic on the natural numbers of the generated code
-  allocates. A digit, and the value of the digits, are -1 if they are not ones of the base.\<close>
+subsubsection \<open>Digits\<close>
+
+text \<open>The code computes on integers, as arithmetic on the generated natural numbers allocates. A
+  digit not of the base, and the value of digits with one, are -1.\<close>
 
 definition idigit :: "integer \<Rightarrow> char \<Rightarrow> integer" where
   "idigit b c = (case digit_val (nat_of_integer b) c of None \<Rightarrow> -1 | Some d \<Rightarrow> integer_of_nat d)"
@@ -318,13 +306,10 @@ lemma bnat_of_digits_idigits: "bnat_of_digits s n b i = (if i < n then
   using idigits[of s n b i 0]
   by (auto simp: bnat_of_digits_def Let_def integer_simps integer_of_nat_eq_of_nat split: option.splits)
 
-text \<open>The loop above takes time quadratic in the number of digits: each step multiplies the
-  value of the digits so far. For long numerals, the code instead collects the digits and then
-  combines neighbouring blocks of digits pairwise, as a block of value @{text v} and weight
-  @{text p} (the base to the power of its length) followed by one of value @{text v'} and weight
-  @{text p'} is one of value @{text "v * p' + v'"} and weight @{text "p * p'"}: each round halves
-  the number of blocks and multiplies numbers of about equal length, so the time is that of a
-  logarithmic number of rounds of balanced multiplications.\<close>
+subsubsection \<open>Long numerals\<close>
+
+text \<open>The loop takes time quadratic in the number of digits. For long numerals, the code collects
+  the digits and combines neighbouring blocks pairwise, halving their number in each round.\<close>
 
 function bdlist :: "bytes \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> integer \<Rightarrow> nat list option" where
   "bdlist s n b i = (if i < n then (if bytes_at s i = CHR ''_'' then bdlist s n b (i + 1)
@@ -405,7 +390,7 @@ next
   qed
 qed
 
-text \<open>Blocks as pairs of a value and a weight.\<close>
+text \<open>Blocks as pairs of a value and a weight, the base to the power of their length.\<close>
 
 definition pvals :: "integer \<Rightarrow> (integer \<times> integer) list \<Rightarrow> integer" where
   "pvals a xs = foldl (\<lambda>a (v, p). a * p + v) a xs"
@@ -478,8 +463,9 @@ proof -
     unfolding bnat_of_digits_def by (simp add: D I)
 qed
 
-text \<open>The conversion of the fields of the log into integers, fused into one function on
-  integers, without the detours through the natural numbers of the generated code.\<close>
+subsubsection \<open>Fused conversion\<close>
+
+text \<open>The conversion of fields as one function on integers, without the generated natural numbers.\<close>
 
 definition inat_of_digits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer option" where
   "inat_of_digits s n b i = (if i < n then
@@ -527,9 +513,10 @@ lemma ibunsigned: "(case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits 
   map_option integer_of_nat (bunsigned s n i)"
   by (simp add: ibbase_of_def bunsigned_def inat_of_digits split: prod.splits)
 
-text \<open>Most numerals in logs are short and decimal. For those, a loop specialised to base 10
-  recognises the digits by comparing characters, and so needs fewer operations on integers per
-  digit than the loop for an arbitrary base.\<close>
+subsubsection \<open>Short decimal numerals\<close>
+
+text \<open>Most numerals in logs are short and decimal. A loop specialised to base 10 needs fewer
+  operations on integers per digit.\<close>
 
 function ddigits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer" where
   "ddigits s n i acc = (if i < n then (let c = bytes_at s i in

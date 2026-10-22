@@ -4,7 +4,9 @@ theory Exec_Tables_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of tables over ascending columns\<close>
 
+subsection \<open>Short form and short join\<close>
 
 lemma restrict_inv':
   assumes "eframe ks cs" "length d = length cs"
@@ -31,8 +33,6 @@ lemma etabc_Un_img: "etabc ks cs (A \<union> B) = etabc ks cs A \<union> etabc k
 lemma finite_etabc: "finite T \<Longrightarrow> finite (etabc ks cs T)"
   by (simp add: etabc_def)
 
-text \<open>A frame that is already ascending is left alone.\<close>
-
 lemma etabc_same: "distinct cs \<Longrightarrow> table cs T \<Longrightarrow> etabc cs cs T = T"
   by (force simp: etabc_def table_def restrict_idle)
 
@@ -48,10 +48,6 @@ lemma set_merge_cols: "set (merge_cols cs ds) = set cs \<union> set ds"
 lemma sorted_merge_cols:
   "sorted_wrt (<) cs \<Longrightarrow> sorted_wrt (<) ds \<Longrightarrow> sorted_wrt (<) (merge_cols cs ds)"
   by (induct cs ds rule: merge_cols.induct) (auto simp: set_merge_cols)
-
-text \<open>The short join is a merge driven by the two column lists: it succeeds exactly when the
-  two tuples agree on the shared columns, and then reads each merged column from the side that
-  has it.\<close>
 
 lemma ejoin1_mrg_plan:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
@@ -96,9 +92,6 @@ lemma eframe_merge:
   "eframe ks1 cs1 \<Longrightarrow> eframe ks2 cs2 \<Longrightarrow> eframe (cols_union ks1 ks2) (merge_cols cs1 cs2)"
   by (auto simp: eframe_def sorted_merge_cols set_merge_cols)
 
-text \<open>The kernel's join of two tuples reads every column of the result from the side that has
-  it.\<close>
-
 lemma tup_get_join1:
   assumes "wf_tuple ks1 x" "join1 ks1 ks2 (x, y) = Some z" "c \<in> set ks1 \<union> set ks2"
   shows "tup_get (cols_union ks1 ks2) z c = (if c \<in> set ks1 then tup_get ks1 x c else tup_get ks2 y c)"
@@ -136,8 +129,6 @@ proof -
   qed
 qed
 
-text \<open>The short join of two tables is the short form of the kernel's join.\<close>
-
 lemma etabc_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
     and t1: "table ks1 T"
@@ -162,8 +153,6 @@ proof -
   finally show ?thesis .
 qed
 
-text \<open>A kernel table read in another order of its columns has the same executable form.\<close>
-
 lemma etabc_restrict:
   assumes "eframe ks cs" "set ks' = set ks" "table ks T"
   shows "etabc ks' cs (restrict ks' ks ` T) = etabc ks cs T"
@@ -178,9 +167,6 @@ lemma eproj_mrg_left_key:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
      eproj (mrg_left_key (mrg_plan cs1 cs2)) (map f cs1) = map f cs2"
   by (induct cs1 cs2 rule: mrg_plan.induct) auto
-
-text \<open>Reading the shared columns out of a short tuple is the same as taking the short form of
-  the kernel's restriction.\<close>
 
 lemma eproj_left_key_eq:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2" and sub: "set cs2 \<subseteq> set cs1"
@@ -201,11 +187,8 @@ lemma join_sub_eq:
   shows "join ks1 T pos ks2 T' = {a \<in> T. (restrict ks2 ks1 a \<in> T') = pos}"
   using join_sub[OF assms] by (simp add: join_cond_eq)
 
-text \<open>
-  This is the shape the anti-join of @{text "\<phi> AND NOT \<psi>"} takes, and the intersection when the
-  two column lists are equal: every tuple of the left operand either has a partner or does not,
-  and the test is a membership of its projection.
-\<close>
+text \<open>This covers the anti-join of @{text "\<phi> AND NOT \<psi>"} and the intersection over equal
+  columns.\<close>
 
 theorem esemi_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2" and sub: "set cs2 \<subseteq> set cs1"
@@ -223,7 +206,7 @@ proof -
     unfolding esemi_def etabc_def by auto
 qed
 
-subsection \<open>The short form of a table commutes with intersection, difference and union\<close>
+subsection \<open>Joins of special shapes\<close>
 
 lemma etabc_Int:
   assumes f: "eframe ks cs" and t1: "table ks T" and t2: "table ks T'"
@@ -263,8 +246,6 @@ next
   then show "z \<in> etabc ks cs (T - T')"
     by (auto simp: etabc_def)
 qed
-
-subsection \<open>Equal columns, and a right operand with no columns\<close>
 
 lemma mrg_plan_self: "mrg_plan cs cs = map (\<lambda>_. MBth) cs"
   by (induct cs) auto
@@ -367,9 +348,6 @@ proof -
     using mem by auto
 qed
 
-text \<open>The general join's shapes need the right operand's columns among the left's for an
-  antijoin; the result frame of a join is the merge of the two.\<close>
-
 lemma etabc_join_sub_res:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2" and sub: "set cs2 \<subseteq> set cs1"
   shows "cols_union ks1 ks2 = ks1" "merge_cols cs1 cs2 = cs1"
@@ -380,14 +358,13 @@ proof -
     by (rule merge_cols_sub_left[OF eframeD(2)[OF f1] eframeD(2)[OF f2] sub])
 qed
 
+subsection \<open>General join through an index\<close>
+
 lemma length_filter_mrg_plan_left: "length (filter (\<lambda>m. m \<noteq> MRgt) (mrg_plan cs1 cs2)) = length cs1"
   by (induct cs1 cs2 rule: mrg_plan.induct) auto
 
 lemma length_filter_mrg_plan_right: "length (filter (\<lambda>m. m \<noteq> MLft) (mrg_plan cs1 cs2)) = length cs2"
   by (induct cs1 cs2 rule: mrg_plan.induct) auto
-
-text \<open>The join of two short tuples succeeds exactly when they agree on the shared columns, and
-  then it is the test-free merge.\<close>
 
 lemma ejoin1_dmerge:
   "length a = length (filter (\<lambda>m. m \<noteq> MRgt) p) \<Longrightarrow>
@@ -444,9 +421,6 @@ lemma eprobe_l_fold:
   by (induct ys arbitrary: acc)
     (auto simp: gprobe_step_l_def bucket_def fold_insert_image split: option.splits)
 
-text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
-  columns, merged.\<close>
-
 lemma ggen_join_eq:
   assumes cA: "set (csl A) = (A :: event_data table)" and cB: "set (csl B) = B"
   shows "ggen_join p lk rk A B
@@ -487,9 +461,10 @@ proof -
   finally show ?thesis .
 qed
 
-text \<open>Every shape of the plan computes the short form of the kernel's join.  A negative join
-  needs the right operand's columns among the left's, which is what the safety condition of
-  @{text "\<phi> AND NOT \<psi>"} provides; the other shapes then arise only for a positive join.\<close>
+subsection \<open>Binary join of any shape\<close>
+
+text \<open>A negative join needs the right operand's columns among the left's, as the safety of
+  @{text "\<phi> AND NOT \<psi>"} provides.\<close>
 
 theorem gbin_join0_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
@@ -580,6 +555,8 @@ next
       by (simp add: gbin_join_def etabc_empty_iff gbin_join0_join[OF f1 f2 t1 t2 neg fT fT'])
   qed
 qed
+
+subsection \<open>Multi-way join as a fold\<close>
 
 lemma set_kands_cols: "set (kands_cols acc kss) = set acc \<union> (\<Union>k \<in> set kss. set k)"
   by (induct kss arbitrary: acc) auto
@@ -685,8 +662,6 @@ proof (induct kcs arbitrary: T Vs)
     by (simp add: j)
 qed simp
 
-text \<open>The kernel's multi-way join is the left-to-right fold, read in its own column order.\<close>
-
 lemma mmulti_join_kands:
   assumes acc: "distinct acc" "table acc T"
     and pos: "\<forall>(k, u) \<in> set (zip kss Us). distinct k \<and> table k u" "length kss = length Us"
@@ -774,31 +749,14 @@ proof -
   qed
 qed
 
+subsection \<open>Terms, matches and the existential\<close>
+
 lemma col_pos_length: "c \<in> set cs \<Longrightarrow> col_pos cs c < length cs"
   by (induct cs) auto
 
 lemma fv_reindex_trm:
   "Formula.fv_trm t \<subseteq> set cs \<Longrightarrow> Formula.fv_trm (reindex_trm cs t) \<subseteq> {0..<length cs}"
   by (induct t) (auto simp: col_pos_length)
-
-text \<open>The re-indexed term read at the short tuple's positions is the original term read at the
-  kernel's.\<close>
-
-text \<open>The kernel puts the aggregate in front of the group key; the short tuple has it at the
-  one position @{term y} occupies among the group's columns.\<close>
-
-subsection \<open>Selecting a group commutes with the reordering\<close>
-
-subsection \<open>The aggregated values do not change\<close>
-
-subsection \<open>Aggregation over short tuples agrees with the kernel's\<close>
-
-text \<open>
-  The executable aggregation takes the group key as a suffix of the short tuple (of length
-  @{term "length tys"} before it), and writes the aggregate at the position @{term y} occupies
-  among the group's columns.  The kernel's result is over @{term "y # shift_cols (length tys) cs"},
-  the executable one over the same columns in ascending order.
-\<close>
 
 lemma set_cols:
   assumes "finite A"
@@ -821,16 +779,11 @@ lemma set_cols_upt: "set_cols {0..<m} = [0..<m]"
 lemma eframe_set_cols: "distinct ks \<Longrightarrow> eframe ks (set_cols (set ks))"
   by (simp add: eframe_def set_cols)
 
-subsection \<open>Matching a predicate's arguments\<close>
-
 lemma umatch_match: "umatch tms xs = match tms xs"
   by (induct tms xs rule: umatch.induct) auto
 
 lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
   by (force simp: Option.these_def image_iff)
-
-text \<open>The kernel tabulates a match at the predicate's columns in their order of occurrence; the
-  executable match reads it off at the same columns in ascending order.\<close>
 
 theorem umatch_table_etabc:
   assumes "set cs \<subseteq> set ks"
@@ -888,8 +841,7 @@ proof -
   qed
 qed
 
-text \<open>A join whose right operand's columns are among the left one's keeps the left one's columns;
-  it commutes with the reordering.\<close>
+subsection \<open>Auxiliary lists of Since and Until\<close>
 
 theorem etabc_join_sub:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -1002,14 +954,12 @@ proof safe
     by (auto simp: update_until_def aL aR dest!: w intro!: table_Un intro: table_join_sub)
 qed
 
-section \<open>Buffers of reordered tables\<close>
+subsection \<open>Buffers of reordered tables\<close>
 
-text \<open>
-  A buffer never looks inside a tuple: it lines up the tables the operands produce and hands
-  matching pairs to the node's operation.  So a buffer of reordered tables behaves as the
-  reordering of a buffer of the kernel's.  These are map-fusion lemmas for the kernel's own
-  list-level buffers, which is where its verified @{const meval} lives.
-\<close>
+text \<open>A buffer never looks inside a tuple, so a buffer of reordered tables behaves as the
+  reordering of the kernel's buffer.\<close>
+
+subsubsection \<open>Two-operand buffers\<close>
 
 lemma mbuf2_take_map:
   "(\<And>a b. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> g (h a) (k b) = m (f a b)) \<Longrightarrow>
@@ -1045,13 +995,8 @@ lemma mprev_next_map:
   by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
     (auto split: prod.splits)
 
-text \<open>
-  The Until node's operation is the one place where the step condition is not uniform in the
-  timestamp: the verified structure accepts a new timestamp only at or after the one it is already
-  at.  So the accumulator relation is indexed by that timestamp, the step may assume the new one
-  is no smaller, and the conclusion says where the accumulator ended up -- at or before the
-  timestamp the buffer reports and at or before every timestamp it did not consume.
-\<close>
+text \<open>The verified Until structure accepts only timestamps no smaller than its current one, so
+  the relation is indexed by that timestamp.\<close>
 
 lemma mbuf2t_take_rel_ts:
   "(\<And>a b t u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t \<Longrightarrow>
@@ -1101,9 +1046,6 @@ next
     qed
   qed
 qed
-
-text \<open>The buffer traversal steps two accumulators in lockstep if every step preserves a relation
-  between them; unlike @{thm [source] mbuf2t_take_rel_ts}, the relation does not mention time.\<close>
 
 lemma mbuf2t_take_rel:
   "(\<And>a b t za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R za z'a \<Longrightarrow>
@@ -1169,15 +1111,10 @@ next
   qed
 qed
 
-subsection \<open>The multi-way buffer\<close>
+subsubsection \<open>Multi-way buffer\<close>
 
-text \<open>
-  @{const mbufn_take} lines up one table per conjunct, and each conjunct has its own column list,
-  so the morphism is a list of reorderings applied slotwise.  The step condition is relational for
-  the same reason as @{thm [source] mbuf2t_take_rel_ts}, and it is restricted to tables drawn from
-  fixed sets @{term Ss}, one per slot, because the tables the operands produce have to be well
-  formed for the multi-way join theorem to apply and the buffer only ever shrinks.
-\<close>
+text \<open>Each slot has its own column list, so the reordering is a list of maps applied slotwise;
+  tables come from fixed sets @{term Ss}, as the multi-way join needs well-formed operands.\<close>
 
 lemma map2_map_empty_iff:
   "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
@@ -1261,9 +1198,7 @@ proof (induct f z buf arbitrary: z' w buf' w2 buf2 rule: mbufn_take.induct)
   qed
 qed
 
-subsection \<open>Leftovers of a buffer\<close>
-
-text \<open>A take only ever removes a prefix, so whatever stays in the buffer was already there.\<close>
+subsubsection \<open>Leftovers of a buffer\<close>
 
 lemma mbuf2_take_sub:
   "mbuf2_take f (xs, ys) = (zs, (xs', ys')) \<Longrightarrow> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
@@ -1321,10 +1256,7 @@ proof (induct f z buf arbitrary: w buf' rule: mbufn_take.induct)
   qed
 qed
 
-text \<open>The same two facts for the timestamped take: what it leaves in the buffers is a
-  sublist of what it found there, and two runs whose buffers differ by a map on each operand
-  step together, consume the same timestamps and leave buffers that differ by the same map.
-  The past and future match nodes need them, as the conjunction nodes need the untimed ones.\<close>
+subsubsection \<open>Timestamped buffers\<close>
 
 lemma mbufnt_take_sub:
   "mbufnt_take f z buf t0 ts = (w, buf', t', ts') \<Longrightarrow>
@@ -1418,19 +1350,14 @@ proof (induct f z buf t0 ts arbitrary: z' w buf' t' ts' w2 buf2 t2 ts2
   qed
 qed
 
-subsection \<open>Leftovers of the shift buffer\<close>
-
 lemma mprev_next_sub: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow> set xs' \<subseteq> set xs"
   by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
     (auto split: prod.splits)
 
-section \<open>The unit and empty tables\<close>
+subsection \<open>Multi-way join of the monitor\<close>
 
 lemma etabc_unit_table: "etabc [] [] unit_table = unit_table"
   by (simp add: etabc_def unit_table_def)
-
-text \<open>Hence a negation node, whose operand has no columns at all, only has to look at
-  emptiness -- which the reordering preserves in both directions.\<close>
 
 lemma map2_append:
   "length as = length xs \<Longrightarrow> map2 f (as @ bs) (xs @ ys) = map2 f as xs @ map2 f bs ys"
@@ -1513,6 +1440,8 @@ proof -
   finally show ?thesis .
 qed
 
+subsection \<open>Constraints, assignment and time terms\<close>
+
 theorem ueval_constraint_reindex:
   assumes fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
   shows "etabc ks cs (Set.filter (eval_constraint ks (t1, p, c, t2)) T)
@@ -1525,16 +1454,8 @@ proof -
   then show ?thesis unfolding etabc_def by auto
 qed
 
-section \<open>The assignment, the time point and the timestamp\<close>
-
-subsection \<open>Assigning a term to a fresh column\<close>
-
-text \<open>
-  The kernel's assignment appends the value at the end of its tuple:
-  @{thm eval_assignment.simps}.  The short tuple has it at the position the new column occupies
-  in the merged column list -- the same insertion the aggregation's output does, at the same
-  @{const ins_pos}.
-\<close>
+text \<open>The kernel's assignment appends the value to its tuple; the short tuple inserts it at the
+  new column's position @{const ins_pos} in the merged column list.\<close>
 
 lemma restrict_merge_single_append:
   assumes s: "sorted_wrt (<) cs" and yg: "y \<notin> set ks" and sub: "set cs \<subseteq> set ks"
@@ -1570,15 +1491,10 @@ qed
 theorem umtrm_eval_mtrm: "umtrm mt x = eval_mtrm mt x"
   by (cases mt) (simp_all add: singleton_table_def unit_table_def empty_table_def)
 
-section \<open>The verified Trigger structure over ascending columns\<close>
+subsection \<open>Trigger structure over ascending columns\<close>
 
-text \<open>
-  The trigger's auxiliary list carries two tables per time point, like the Until's, but the
-  structure reads its answer off that list rather than accumulating it, so what has to transport
-  is @{const trigger_results} itself.  Its \<^emph>\<open>then\<close> branch is a set comprehension over tuples of
-  the right operand's columns, and the two conditions it puts on a tuple -- membership in a
-  stored right table, and a join against a stored left table -- both commute with the reordering.
-\<close>
+text \<open>The structure reads its answer off the auxiliary list, so @{const trigger_results} itself
+  has to commute with the reordering.\<close>
 
 lemma trigger_results_eq:
   "trigger_results args cur auxlist =
@@ -1630,7 +1546,6 @@ proof -
        (\<exists>j. i < j \<and> j < length auxlist \<and>
           join_cond ?p (etabc kL cL (fst (snd (auxlist ! j)))) (restrict cL cR d))))"
     for d :: "event_data tuple"
-  \<comment> \<open>the two conditions the comprehension puts on a tuple\<close>
   have cond: "Q (restrict cR kR a) = P a" if wa: "wf_tuple kR a" for a :: "event_data tuple"
   proof -
     have inR: "(restrict cR kR a \<in> etabc kR cR (snd (snd (auxlist ! i)))) = (a \<in> snd (snd (auxlist ! i)))"
@@ -1684,16 +1599,10 @@ proof -
     unfolding dsimp ssimp using DS by (simp add: etabc_unit_table)
 qed
 
-text \<open>The structure over ascending columns, related to the kernel's through the abstract
-  auxiliary list they are both valid for, exactly as for the Since and the Until.\<close>
-
 lemma eauxlist3_filter_append:
   "eauxlist3 kL cL kR cR (filter (\<lambda>(t, _). P t) auxlist @ [(nt, l, r)])
      = filter (\<lambda>(t, _). P t) (eauxlist3 kL cL kR cR auxlist) @ [(nt, etabc kL cL l, etabc kR cR r)]"
   by (induct auxlist) (auto simp: eauxlist3_def)
-
-text \<open>The trigger's buffer traversal, stepped over both column orders at once.  It is
-  @{thm [source] mbuf2t_take_rel_ts} without the timestamp bookkeeping.\<close>
 
 lemma mbuf2T_take_rel:
   "(\<And>a b t u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t \<Longrightarrow>
@@ -1744,11 +1653,10 @@ next
   qed
 qed
 
+subsection \<open>Index for the semi-join\<close>
+
 lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
   by transfer (auto simp: ran_def)
-
-text \<open>The index computes the semi-join: a stored tuple's bucket survives the restriction exactly
-  when the tuple itself survives the filter.\<close>
 
 theorem esemi_idx_dsemi: "esemi_idx msk pos (eidx msk T) X = esemi msk pos T X"
 proof (intro set_eqI iffI)

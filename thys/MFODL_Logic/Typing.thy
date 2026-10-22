@@ -745,7 +745,7 @@ lemma sat'_always[simp]: "sat' \<sigma> V v i (always I \<phi>)
 
 
 lemma ty_of_sat'_safe: "safe_formula \<phi> \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> wty_envs S \<sigma> V \<Longrightarrow> 
-  sat' \<sigma> V v i \<phi> \<Longrightarrow> x \<in> Formula.fv \<phi> \<Longrightarrow> ty_of (v ! x) = E x\"
+  sat' \<sigma> V v i \<phi> \<Longrightarrow> x \<in> Formula.fv \<phi> \<Longrightarrow> ty_of (v ! x) = E x"
 proof (induction arbitrary: S E V v i x rule: safe_formula_induct)
   case (Eq_Const c d)
   then show ?case by auto
@@ -2013,7 +2013,7 @@ proof -
   ultimately show ?thesis unfolding wty_result_fX_trm_def by auto
 qed
 
-lemma check_trm_sound: "check_trm E type t = return f \<Longrightarrow> wty_result_fX_trm E type t f\"
+lemma check_trm_sound: "check_trm E type t = return f \<Longrightarrow> wty_result_fX_trm E type t f"
 proof (induction t arbitrary:  E type f)  
   case (Var x) 
   have f_def: "f = (if f type = type 

@@ -6,12 +6,6 @@ begin
 
 section \<open>Facts about mappings\<close>
 
-text \<open>
-  Facts about the operations of the library theory of mappings (@{const Mapping.lookup},
-  @{const Mapping.keys}, @{const Mapping.delete}, @{const Mapping.filter},
-  @{const Mapping.combine} and @{const Mapping.tabulate}) that the library does not state.
-\<close>
-
 lemma Mapping_keys_intro: "Mapping.lookup f x \<noteq> None \<Longrightarrow> x \<in> Mapping.keys f"
   by (simp add: domIff keys_dom_lookup)
 

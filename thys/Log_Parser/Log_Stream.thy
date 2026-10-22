@@ -6,11 +6,8 @@ begin
 
 section \<open>Lexing and parsing in one pass\<close>
 
-text \<open>
-  The streaming parser feeds each token to the parser as soon as the lexer emits it, so that a
-  time point is output as soon as the next item begins (@{text stream_run_prompt} below): it
-  reads its input online. Its state pairs the states of the lexer and of the parser.
-\<close>
+text \<open>Each token is fed to the parser as soon as the lexer emits it, so that the input is read
+  online.\<close>
 
 type_synonym sstate = "lstate \<times> string pstate"
 
@@ -94,9 +91,8 @@ qed
 corollary log_lang_unique: "log_lang s es \<Longrightarrow> log_lang s es' \<Longrightarrow> es = es'"
   by (simp flip: parse_log_correct)
 
-text \<open>The entries that the streaming parser has emitted after reading a prefix of the input are
-  a prefix of the meaning of every extension of that input; and if it fails on a prefix, then no
-  extension of the prefix is a log.\<close>
+text \<open>After a prefix, the entries output are a prefix of the meaning of every extension that is a
+  log; a failure on a prefix means that no extension is a log.\<close>
 
 corollary stream_run_prefix:
   assumes "stream_run s stream_init = Some (es, st)" "log_lang (s @ s') es'"
@@ -121,10 +117,8 @@ qed
 
 subsection \<open>Promptness\<close>
 
-text \<open>The streaming parser passes on an entry as soon as the next item begins: once it has read a
-  log and the @{text "@"} or @{text ">"} that follows it, it has output all of the log's entries.
-  (@{const Glex} excludes a log that ends in a comment without a line end, in which the
-  @{text "@"} would belong to the comment.)\<close>
+text \<open>Once a log and the next @{text "@"} or @{text ">"} are read, all its entries are output.
+  @{const Glex} excludes a final comment without line end, which would contain the @{text "@"}.\<close>
 
 lemma lex_run_Glex_close:
   assumes "Glex s ts" "c = CHR ''@'' \<or> c = CHR ''>''"

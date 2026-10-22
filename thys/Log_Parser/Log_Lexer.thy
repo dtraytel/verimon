@@ -4,18 +4,12 @@ theory Log_Lexer
 begin
 (*>*)
 
-section \<open>The lexer\<close>
+section \<open>Lexer of the log format\<close>
 
-text \<open>
-  The lexer is an automaton that reads one character at a time and emits the tokens that the
-  character completes. Its states record the lexeme being read: nothing (@{text L_INIT}), a
-  simple string, the content of a quoted string (after an optional backslash), or a comment.
-  This is the automaton of Rappl's lexer, extended by escapes, @{text "r\"\<dots>\""} strings,
-  braces, and a final step @{text lex_finish} for the end of the input. Unlike the automaton
-  of MonPoly's lexer, it never backtracks: an unterminated quoted string is only detected at the
-  end of the input, and contains the rest of the input. (MonPoly's lexer reads a quote that no
-  quote follows as a character that begins no token, and continues after it.)
-\<close>
+text \<open>An automaton over characters whose state records the pending lexeme. Unlike MonPoly's lexer,
+  it never backtracks: an unterminated quoted string extends to the end of the input.\<close>
+
+subsection \<open>Lexer automaton\<close>
 
 datatype lstate = L_INIT | L_SIMPLE string | L_QUOTED string | L_ESCAPE string | L_COMMENT
 
@@ -64,8 +58,6 @@ fun lex_finish :: "lstate \<Rightarrow> string token list option" where
 
 definition lex :: "string \<Rightarrow> string token list option" where
   "lex s = (case lex_run s L_INIT of None \<Rightarrow> None | Some (ts, l) \<Rightarrow> map_option ((@) ts) (lex_finish l))"
-
-subsection \<open>Basic properties\<close>
 
 lemma lex_run_append:
   "lex_run (s @ s') l = (case lex_run s l of
@@ -117,10 +109,8 @@ lemma Glex_single: "GToken s1 t \<Longrightarrow> \<not> isSimpleString s1 \<Lon
 
 subsection \<open>Soundness\<close>
 
-text \<open>@{text "Glex_then s ts P"}: the input @{text s} read so far lexes to @{text ts} and may be
-  continued by every lexable input whose first character satisfies @{text P}. This is how the
-  invariant of the lexer below states that the tokens emitted so far are right while the next
-  lexeme is still incomplete; @{text P} captures the maximal munch condition at the boundary.\<close>
+text \<open>The input read so far lexes to @{text ts}, and every lexable input whose first character
+  satisfies @{text P} may follow; @{text P} captures maximal munch at the boundary.\<close>
 
 definition Glex_then :: "string \<Rightarrow> string token list \<Rightarrow> (char \<Rightarrow> bool) \<Rightarrow> bool" where
   "Glex_then s ts P \<longleftrightarrow> (\<forall>s' ts'. Glex s' ts' \<longrightarrow> (s' \<noteq> [] \<longrightarrow> P (hd s')) \<longrightarrow> Glex (s @ s') (ts @ ts'))"
@@ -170,8 +160,8 @@ definition quote_prefix :: "string \<Rightarrow> bool" where
 lemma GToken_quote_prefix: "quote_prefix pre \<Longrightarrow> isQuoted q \<Longrightarrow> GToken (pre @ q @ [CHR 0x22]) (T_STR q)"
   by (auto simp: quote_prefix_def intro: GToken_quoted GToken_rquoted)
 
-text \<open>The invariant: the input read so far consists of a prefix that lexes to the tokens emitted
-  so far, followed by the incomplete lexeme recorded in the state.\<close>
+text \<open>The invariant: the input read so far lexes to the emitted tokens, followed by the pending
+  lexeme of the state.\<close>
 
 fun lex_inv :: "string \<Rightarrow> string token list \<Rightarrow> lstate \<Rightarrow> bool" where
   "lex_inv s ts L_INIT \<longleftrightarrow> Glex_then s ts (\<lambda>_. True)"

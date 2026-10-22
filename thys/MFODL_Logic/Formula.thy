@@ -61,7 +61,7 @@ qualified datatype trm = is_Var: Var nat | is_Const: Const event_data
   | Plus trm trm | Minus trm trm | UMinus trm | Mult trm trm | Div trm trm | Mod trm trm
   | F2i trm | I2f trm
 
-text \<open>Variables are de Bruijn indices: @{text "fvi_trm b"} returns the free variables below
+text \<open>Variables are de Bruijn indices: @{text "fvi_trm b"} collects the variables free under
   @{term b} binders, shifted down by @{term b}.\<close>
 
 qualified primrec fvi_trm :: "nat \<Rightarrow> trm \<Rightarrow> nat set" where

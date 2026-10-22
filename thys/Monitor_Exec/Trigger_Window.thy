@@ -6,46 +6,26 @@ begin
 
 
 
-section \<open>The trigger structure\<close>
-
-text \<open>A table is used throughout with the two properties every theorem about the executable
-  representation needs of it: it is well formed over its columns, and it is finite.\<close>
+section \<open>Trigger structure\<close>
 
 abbreviation (input) ftable :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool" where
   "ftable A X \<equiv> table A X \<and> finite X"
 
-subsection \<open>The interval side condition\<close>
+subsection \<open>Interval side condition\<close>
 
 text \<open>
-  The executable trigger structure below answers for the kernel's auxiliary list under the side
-  condition @{term tok} on the operand frames: the standalone trigger meets it by its interval
-  containing zero, the fused And-Trigger by its two operand frames agreeing and its left operand
-  being positive.  Without zero in the interval the time points that are not yet in it contribute
-  their left tables to the read, which is a table only when the left operand has the node's
-  columns.
+  Without zero in the interval, points not yet in it contribute their left tables to the read,
+  which is a table only if the left operand has the node's columns.
 \<close>
 
 definition tok :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool" where
   "tok cR cL args \<longleftrightarrow> mem (args_ivl args) 0 \<or> (cL = cR \<and> args_pos args)"
 
-subsection \<open>The structure as a sliding window\<close>
+subsection \<open>Sliding window of summaries\<close>
 
 text \<open>
-  A tuple satisfies the trigger at the current time-point if at every time-point in the interval
-  the right operand held, or the left operand held at some later time-point.  Over a stretch of
-  time-points the tuples that pass every in-interval point of it fall into those that can still
-  fail on an earlier point (no point of the stretch satisfies the left operand) and those that
-  cannot (some point does).  These are the release's summaries read backwards in time: a stretch
-  is summarised by the two sets, a single point by the right operand's tuples split by the left
-  operand, and two stretches compose by @{const ecomp} with the later one first.  The read is the
-  union of the two sets of the summary of the whole window.
-
-  The window is a two-list queue over this monoid (theory @{text Sliding_Window_Agg}), so every
-  point is composed a bounded number of times.  When the interval does not contain zero, the
-  newest points are not yet in the interval; they only contribute the tuples that satisfy the left
-  operand, which under the side condition @{const tok} are the left tables themselves.  They are
-  kept in a second two-list queue over union, from which they move to the first queue once they
-  enter the interval.  The pending points' union is added to the read.
+  The release's summaries, composed backwards in time; points not yet in the interval wait in a
+  second window over union.
 \<close>
 
 definition tcomp :: "'b esum \<Rightarrow> 'b esum \<Rightarrow> 'b esum" where
@@ -85,7 +65,7 @@ fun tT :: "args \<Rightarrow> bool list \<Rightarrow> ('b list set \<times> 'b l
 | "tT args msk ((l, r) # es) x =
      ((x \<in> r \<or> (\<exists>e \<in> set es. tphi args msk (fst e) x)) \<and> tT args msk es x)"
 
-subsection \<open>The list a structure stands for\<close>
+subsection \<open>Refinement relations\<close>
 
 definition tent :: "args \<Rightarrow> bool list \<Rightarrow> ts \<times> 'b list set \<times> 'b list set \<Rightarrow> ts \<times> 'b esum" where
   "tent args msk x = (fst x, esum_of args msk (fst (snd x)) (snd (snd x)))"
@@ -97,8 +77,6 @@ definition trel :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> 
      sw_rel (\<union>) fst (fst (snd ax)) (filter (\<lambda>x. \<not> memL (args_ivl args) (cur - fst x)) D) \<and>
      sw_rel tcomp id (snd (snd ax))
        (map (tent args msk) (filter (\<lambda>x. memL (args_ivl args) (cur - fst x)) D))"
-
-subsection \<open>The trigger node's structure\<close>
 
 definition etw :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data twaux \<Rightarrow>
     event_data mtaux \<Rightarrow> bool" where

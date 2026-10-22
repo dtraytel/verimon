@@ -8,13 +8,8 @@ section \<open>Abstract monitors and slicing\<close>
 
 subsection \<open>First-order specifications\<close>
 
-text \<open>
-  We abstract from first-order trace specifications by referring only to their
-  semantics. A first-order specification is described by a finite set of free
-  variables and a satisfaction function that defines for every trace the pairs
-  of valuations and time-points for which the specification is satisfied.
-  The specification can be restricted to a set of traces to which it applies.
-\<close>
+text \<open>A specification is abstracted to its free variables and its satisfaction relation over
+  traces, valuations and time-points, restricted to a set of traces.\<close>
 
 locale fo_spec =
   fixes
@@ -26,9 +21,6 @@ locale fo_spec =
     fv_less_nfv: "x \<in> set cols \<Longrightarrow> x < nfv" and
     sat_fv_cong: "\<sigma> \<in> traces \<Longrightarrow> (\<And>x. x \<in> set cols \<Longrightarrow> v!x = v'!x) \<Longrightarrow> sat \<sigma> v i = sat \<sigma> v' i"
 begin
-
-text \<open>A verdict is a time-point and a tuple over the specification's free variables, listed in
-  the order @{term cols}; @{term "val nfv cols"} reads it as a valuation.\<close>
 
 definition verdicts :: "'a trace \<Rightarrow> (nat \<times> 'b tuple) set" where
   "verdicts \<sigma> = {(i, v). wf_tuple cols v \<and> sat \<sigma> (val nfv cols v) i}"
@@ -44,13 +36,8 @@ lemma prefixes_closed[simp, intro]: "\<pi>' \<in> prefixes \<Longrightarrow> \<p
 
 end
 
-text \<open>
-  We usually employ a monitor to find the \<^emph>\<open>violations\<close> of a specification.
-  That is, the monitor should output the satisfactions of its negation.
-  Moreover, all monitor implementations must work with finite prefixes.
-  We are therefore interested in co-safety properties, which allow us to
-  identify all satisfactions on finite prefixes.
-\<close>
+text \<open>Monitors see only finite prefixes; co-safety ensures that every satisfaction is witnessed
+  by one.\<close>
 
 locale cosafety_fo_spec = fo_spec +
   assumes cosafety_lr: "\<sigma> \<in> traces \<Longrightarrow> sat \<sigma> v i \<Longrightarrow>
@@ -63,13 +50,7 @@ lemma cosafety: "\<sigma> \<in> traces \<Longrightarrow>
 
 end
 
-subsection \<open>Monitor function\<close>
-
-text \<open>
-  We model monitors abstractly as functions from prefixes to verdict sets.
-  The following locale specifies a minimal set of properties that any
-  reasonable monitor should have.
-\<close>
+subsection \<open>Monitor functions\<close>
 
 locale monitor = fo_spec +
   fixes M :: "'a prefix \<Rightarrow> (nat \<times> 'b tuple) set"
@@ -81,10 +62,7 @@ locale monitor = fo_spec +
       (\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> sat \<sigma>' (val nfv cols v) i) \<Longrightarrow>
       \<exists>\<pi>'. prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> M \<pi>'"
 
-text \<open>
-  A monitor for a co-safety specification computes precisely the set of all
-  satisfactions in the limit:
-\<close>
+text \<open>On a co-safety specification, a monitor outputs exactly the satisfactions in the limit.\<close>
 
 abbreviation (in monitor) "M_limit \<sigma> \<equiv> \<Union>{M \<pi> | \<pi>. prefix_of \<pi> \<sigma>}"
 
@@ -114,13 +92,10 @@ qed
 
 end
 
-text \<open>
-  The monitor function \<^term>\<open>M\<close> adds some information over \<^term>\<open>sat\<close>, namely
-  when a verdict is output. One possible behavior is that the monitor outputs
-  its verdicts for one time-point at a time, in increasing order of
-  time-points. Then \<^term>\<open>M\<close> is uniquely defined by a progress function, which
-  returns for every prefix the time-point up to which all verdicts are computed.
-\<close>
+subsection \<open>Monitors defined by progress\<close>
+
+text \<open>A monitor that outputs verdicts in order of time-points is determined by its progress: the
+  time-point up to which all verdicts are computed.\<close>
 
 locale progress = fo_spec _ _ _ sat for sat :: "'a trace \<Rightarrow> 'b list \<Rightarrow> nat \<Rightarrow> bool" +
   fixes progress :: "'a prefix \<Rightarrow> nat"
@@ -129,10 +104,7 @@ locale progress = fo_spec _ _ _ sat for sat :: "'a trace \<Rightarrow> 'b list \
     ex_progress_ge: "\<sigma> \<in> traces \<Longrightarrow> \<exists>\<pi>. prefix_of \<pi> \<sigma> \<and> x \<le> progress \<pi>" and
     progress_sat_cong: "\<sigma> \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma> \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> i < progress \<pi> \<Longrightarrow>
       sat \<sigma> v i \<longleftrightarrow> sat \<sigma>' v i"
-    \<comment> \<open>The last condition is not necessary to obtain a proper monitor function.
-      However, it corresponds to the intuitive understanding of monitor progress,
-      and it results in a stronger characterisation. In particular, it implies that
-      the specification is co-safety, as we will show below.\<close>
+    \<comment> \<open>not needed for a monitor, but implies co-safety\<close>
 begin
 
 definition M :: "'a prefix \<Rightarrow> (nat \<times> 'b tuple) set" where
@@ -195,9 +167,9 @@ next
   qed
 qed
 
-subsection \<open>Slicing\<close>
+subsection \<open>Sliceable specifications\<close>
 
-text \<open>Sliceable specifications can be evaluated meaningfully on a subset of events.\<close>
+text \<open>A sliceable specification can be evaluated on the events relevant to a set of valuations.\<close>
 
 locale abstract_slicer =
   fixes relevant_events :: "'b list set \<Rightarrow> 'a set"
@@ -236,9 +208,6 @@ begin
 lemma pslice_closed[simp, intro]: "\<pi> \<in> prefixes \<Longrightarrow> pslice S \<pi> \<in> prefixes"
   using prefix_of_pmap_\<Gamma> by (fastforce simp: prefixes_def)
 
-text \<open>A verdict tuple that agrees with a valuation of the slice is satisfied on the slice
-  exactly when it is on the whole trace.\<close>
-
 lemma sat_slice_val:
   assumes "\<sigma> \<in> traces" "mem_restr S cols v"
   shows "sat (slice S \<sigma>) (val nfv cols v) i \<longleftrightarrow> sat \<sigma> (val nfv cols v) i"
@@ -255,8 +224,6 @@ proof -
     using eq by (intro sat_fv_cong[symmetric]) (simp_all add: assms(1))
   finally show ?thesis .
 qed
-
-text \<open>A tuple is covered by the slice its valuation belongs to.\<close>
 
 lemma mem_restr_val:
   assumes "wf_tuple cols v" "val nfv cols v \<in> S"
@@ -289,10 +256,9 @@ qed
 
 end
 
-text \<open>
-  We define a similar notion for monitors. It is potentially stronger because
-  the time-point at which verdicts are output must not change.
-\<close>
+subsection \<open>Sliceable monitors\<close>
+
+text \<open>Unlike for specifications, slicing must not change when a verdict is output.\<close>
 
 locale sliceable_monitor = monitor _ _ _ sat M + abstract_slicer relevant_events
   for relevant_events :: "'b list set \<Rightarrow> 'a set" and sat :: "'a set trace \<Rightarrow> 'b list \<Rightarrow> nat \<Rightarrow> bool" and M +
@@ -324,10 +290,8 @@ qed
 
 end
 
-text \<open>
-  If the specification is sliceable and the monitor's progress depends only on
-  time-stamps, then also the monitor itself is sliceable.
-\<close>
+text \<open>If the specification is sliceable and the progress depends only on time-stamps, the monitor
+  is sliceable.\<close>
 
 locale timed_progress = progress +
   assumes progress_time_conv: "\<pi> \<in> prefixes \<Longrightarrow> \<pi>' \<in> prefixes \<Longrightarrow>

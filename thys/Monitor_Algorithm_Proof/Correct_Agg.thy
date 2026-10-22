@@ -6,17 +6,15 @@ theory Correct_Agg
 begin
 (*>*)
 
+section \<open>Correctness of aggregation\<close>
 
-subsection \<open> Lift envs \<close>
+subsection \<open>Lifted environments\<close>
 
 definition lift_envs' :: "nat \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
   "lift_envs' b R = (\<lambda>(xs,ys). xs @ ys) ` ({xs. length xs = b} \<times> R)"
 
 lemma lift_envs'_0[simp]: "lift_envs' 0 R = R"
   by (auto simp: lift_envs'_def image_iff)
-
-text \<open>The group key of a tuple of the aggregated formula: its columns that are not bound by the
-  aggregation, read as columns of the aggregation's result.\<close>
 
 lemma tup_get_agg_key:
   assumes "c \<in> set cs" "k \<le> c"
@@ -80,8 +78,7 @@ next
     by (rule mem_restrI[OF assms w *[THEN conjunct1] get])
 qed
 
-
-subsection \<open> Aggregators' qtable \<close>
+subsection \<open>Aggregation in temporal operators\<close>
 
 definition "agg_n args = (case args_agg args of None \<Rightarrow> args_n args | Some aggargs \<Rightarrow> aggargs_n aggargs)"
 
@@ -89,8 +86,6 @@ definition "agg_tys args = (case args_agg args of None \<Rightarrow> []         
 
 lemma progress_packagg[simp]: "Progress.progress \<sigma> P (packagg args \<phi>) j = Progress.progress \<sigma> P \<phi> j"
   by (auto simp: packagg_def split: option.splits)
-
-text \<open>A temporal operator's table, after the aggregation if any, is over @{const args_cols}.\<close>
 
 lemma fv_list_packagg:
   assumes valid: "valid_aggargs n (Formula.fv_list \<psi>) (args_agg args)"
@@ -180,6 +175,8 @@ next
   with x_less show ?thesis
     by simp
 qed
+
+subsection \<open>Evaluation of aggregations\<close>
 
 lemma qtable_eval_agg:
   assumes inner: "qtable cs (mem_restr (lift_envs' (length tys) R) cs)

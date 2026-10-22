@@ -6,19 +6,12 @@ begin
 
 
 
-section \<open>A mapping's lookup and update, in one descent\<close>
+section \<open>Mapping updates in one descent\<close>
 
-text \<open>
-  The count set of a window and the aggregate's mapping from groups are updated tuple by tuple,
-  and every update of an existing key is a lookup followed by an insertion: two descents of the
-  same red-black tree, each comparing the key with the same nodes.  @{text mupd} is the pair of
-  the two, and on a tree it is one descent (@{text rbt_comp_ins_lk}) that returns the old value
-  and inserts the new one, which is computed from it.  For a new key the tree it builds is the one
-  the insertion builds; for a present key it only replaces the value, as the tree's
-  @{text map_entry} does, and skips the insertion's rebalancing on the way up.
-\<close>
+text \<open>A lookup followed by an update of the same key becomes one descent of the tree
+  (@{text mupd}), which only replaces the value of a present key.\<close>
 
-subsection \<open>On the trees\<close>
+subsection \<open>One descent on trees\<close>
 
 context
   fixes c :: "'a comparator"
@@ -42,10 +35,6 @@ fun rbt_comp_ins_lk :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarr
 lemma fst_rbt_comp_ins_lk: "fst (rbt_comp_ins_lk F k t) = rbt_comp_lookup c t k"
   by (induct F k t rule: rbt_comp_ins_lk.induct) (auto split: order.splits prod.splits option.splits)
 
-text \<open>A key not in the tree is inserted as by the insertion.  A key in it only has its value
-  replaced, which is the tree's @{text map_entry}: the tree keeps its shape and its colours, and
-  the rebalancing on the way up, which the insertion does in any case, is skipped.\<close>
-
 lemma rbt_comp_ins_lk:
   "rbt_comp_ins_lk F k t = (rbt_comp_lookup c t k, case rbt_comp_lookup c t k of
      None \<Rightarrow> rbt_comp_ins c (\<lambda>_ _ nv. nv) k (F None) t
@@ -56,8 +45,6 @@ proof (induct F k t rule: rbt_comp_ins_lk.induct)
     using fst_rbt_comp_ins_lk[of F k l] fst_rbt_comp_ins_lk[of F k r]
     by (auto split: order.splits prod.splits option.splits)
 qed (auto split: order.splits prod.splits option.splits)
-
-text \<open>The same descent, returning the new value as well, for a caller that reads it.\<close>
 
 fun rbt_comp_ins_lk2 :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> 'b option \<times> 'b \<times> ('a, 'b) rbt"
   where
@@ -83,9 +70,7 @@ proof (induct F k t rule: rbt_comp_ins_lk2.induct)
     by (auto simp: Let_def split: order.splits prod.splits option.splits)
 qed (auto simp: Let_def split: order.splits prod.splits option.splits)
 
-text \<open>A caller that does not read the old value needs no pair at every node: the insertion
-  that combines the old value with the new one computes the same tree as the insertion of the
-  value computed from the lookup, since both descend by the same comparisons.\<close>
+text \<open>Without the old value, the insertion combining old and new value needs no pair per node.\<close>
 
 lemma rbt_comp_ins_upd_w:
   "rbt_comp_ins c (\<lambda>_ y _. F (Some y)) k (F None) t =
@@ -98,7 +83,7 @@ qed simp
 
 end
 
-subsection \<open>On the lifted trees\<close>
+subsection \<open>Lifted trees\<close>
 
 lemma paint_rbt_comp_ins: "RBT_Impl.paint RBT_Impl.B (rbt_comp_ins c (\<lambda>_ _ nv. nv) k v t) = rbt_comp_insert c k v t"
   by (simp add: rbt_comp_insert_def rbt_comp_insert_with_key_def)
@@ -145,7 +130,7 @@ lemma upd_lk_eq: "upd_lk k F t = (RBT_Mapping2.lookup t k, case RBT_Mapping2.loo
   | Some v \<Rightarrow> RBT_Mapping2.map_entry k (\<lambda>_. F (Some v)) t)"
   by transfer (simp add: rbt_comp_ins_lk paint_rbt_comp_ins split: option.splits)
 
-subsection \<open>On the mappings\<close>
+subsection \<open>Mappings\<close>
 
 definition mupd :: "'a \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping \<Rightarrow> 'b option \<times> ('a, 'b) mapping"
   where "mupd k F m = (Mapping.lookup m k, Mapping.update k (F (Mapping.lookup m k)) m)"
@@ -161,8 +146,6 @@ lemma mupd_code[code]:
     "mupd k F (Mapping f) = (Mapping.lookup (Mapping f) k, Mapping.update k (F (Mapping.lookup (Mapping f) k)) (Mapping f))"
   by (auto simp: mupd_def upd_lk_eq lookup_Mapping_code update_Mapping Mapping.lookup.abs_eq
       fun_eq_iff split: option.splits)
-
-text \<open>The update that returns the new value too, computed once.\<close>
 
 definition mupd2 :: "'a \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping \<Rightarrow> 'b option \<times> 'b \<times> ('a, 'b) mapping"
   where "mupd2 k F m = (case mupd k F m of (ov, m') \<Rightarrow> (ov, F ov, m'))"
@@ -185,9 +168,6 @@ proof -
   qed simp
 qed (simp_all add: mupd2_def)
 
-text \<open>The update that does not return the old value: one descent that combines the old value
-  with the new one, without the pair @{const upd_lk} builds at every node.\<close>
-
 definition mupdw :: "'a \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping \<Rightarrow> ('a, 'b) mapping"
   where "mupdw k F m = Mapping.update k (F (Mapping.lookup m k)) m"
 
@@ -202,10 +182,9 @@ lemma mupdw_code[code]:
   by (auto simp: mupdw_def upd_w_eq lookup_Mapping_code update_Mapping Mapping.lookup.abs_eq
       fun_eq_iff split: option.splits)
 
-subsection \<open>The updates of the count sets and of the aggregates\<close>
+subsection \<open>Count sets and aggregates\<close>
 
-text \<open>Each of these reads a key's value and writes one computed from it; through @{const mupd} (or @{const mupdw}, where the old value is not read)
-  they do both in the one descent.  The code equations are proved against the definitions.\<close>
+text \<open>Each update reads a key's value and writes one computed from it in one descent.\<close>
 
 definition cnt_inc :: "nat option \<Rightarrow> nat" where
   "cnt_inc ov = (case ov of None \<Rightarrow> 1 | Some k \<Rightarrow> k + 1)"
@@ -246,8 +225,7 @@ lemma gi_rank_mupd[code]:
      else (v, m))"
   by (auto simp: mupd_def Let_def split: option.splits event_data.splits type.splits list_aux.splits)
 
-text \<open>A deletion from a rank aggregate writes the shrunk multiset in the same descent, and
-  descends again only to delete a group whose multiset became empty.\<close>
+text \<open>A second descent only deletes a group whose multiset became empty.\<close>
 
 lemma gd_rank_mupd2[code]:
   "gd_rank k ev ty t (v, m) = (if v then (case (ev t, ty) of
@@ -265,12 +243,9 @@ lemma gd_rank_mupd2[code]:
      else (v, m))"
   by (auto simp: mupd2_def mupd_def Let_def split: option.splits event_data.splits type.splits list_aux.splits)
 
-subsection \<open>The tree union and difference at the tuples' comparator\<close>
+subsection \<open>Union and difference at the tuples' comparator\<close>
 
-text \<open>The union and the difference of two trees fall back, on a small operand, to inserting
-  or deleting its keys one by one, and they split the other tree at a key; both took the
-  comparator as an argument and called it through a closure at every node.  These are their
-  copies at the tuples' comparator, with the specialised insertion, deletion and split.\<close>
+text \<open>Copies with the specialised insertion, deletion and split call the comparator directly.\<close>
 
 definition edl_rbtc_split :: "(event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow>
     (event_data list, 'v) rbt \<times> 'v option \<times> (event_data list, 'v) rbt" where
@@ -339,23 +314,12 @@ lemma edl_rbtc_minus_code[code]: "edl_rbtc_minus t1 t2 = RBT_Impl.paint RBT_Impl
 lemma edl_rbtc_minus_unfold[code_unfold]: "rbt_comp_minus ed_comparator = edl_rbtc_minus"
   by (simp add: edl_rbtc_minus_def)
 
-subsection \<open>The Since index's insertion\<close>
-
-text \<open>A tuple entering the Since structure is added to the bucket of its key in the index:
-  the bucket's lookup and the index's update are one descent through @{const mupdw}.\<close>
+subsection \<open>Since and Until structures\<close>
 
 lemma de_eidx_add1_mupd[code]:
   "de_eidx_add1 msk x i = (let k = eproj msk x in
      (mupdw k (\<lambda>ov. Set.insert x (case ov of None \<Rightarrow> {} | Some z \<Rightarrow> z)) i))"
   by (simp add: de_eidx_add1_def eidx_add1_def ebucket_def mupdw_def Let_def split: option.splits)
-
-subsection \<open>The Until structure's time stamp maps\<close>
-
-text \<open>The Until deque keeps, per time point, a mapping from the tuples to time stamps.  A
-  tuple entering it updates its entry with a function of the old one -- a lookup and an update,
-  one descent through @{const mupdw}.  And the deletion of a set of keys from such a mapping, at the
-  step, went through the generic deletion with the comparator built at every call; the Since
-  structure's two value types got the specialised deletion by hand, and this is the third.\<close>
 
 lemma de_gupd_nested_step_dq_mupd[code]:
   "de_gupd_nested_step_dq base d f x dq = (case x of (k, k') \<Rightarrow>
@@ -366,15 +330,16 @@ lemma de_gupd_nested_step_dq_mupd[code]:
   by (simp add: de_gupd_nested_step_dq_def gupd_nested_step_dq_def mupdw_def Let_def
       split: option.splits prod.splits)
 
+text \<open>The deletion of a key set from Until's time stamp maps gets the specialised deletion.\<close>
+
 lemma de_mapping_delete_set_tstp_rbt[code]:
   "de_mapping_delete_set_tstp m (RBT_set rbt) = RBT_Set2.fold ed_delete_tstp rbt m"
   by (simp add: de_mapping_delete_set_tstp_def ed_delete_tstp_def mapping_delete_set_RBT_code
       ID_ccompare_etuple ccomp_etuple)
 
-text \<open>For a positive left operand, the map from the tuples of the latest left table to the time
-  point since which they hold is refreshed at every step: the tuples new to it get the current
-  time point, and the others are dropped.  That is a filter, a set difference and an insertion per
-  new tuple; on a tree it is the table's own tree with the values filled in by a lookup.\<close>
+subsubsection \<open>Refreshing the left operand's map\<close>
+
+text \<open>On a tree, the refreshed map is the table's own tree with the values filled in by lookup.\<close>
 
 definition mrefresh :: "'v \<Rightarrow> 'k set \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
   "mrefresh v Y m = mfilter_keys True Y (upd_set m (\<lambda>_. v) (Y - Mapping.keys m))"
@@ -407,10 +372,9 @@ lemmas mrefresh_fallback_code[code] =
 setup \<open>Monomorphize.monomorphize_cmd
   [("mrefresh", "de_mrefresh_nat", ["nat", "event_data list"])] ["etuple_dict_simps"]\<close>
 
-text \<open>A tuple of the right operand enters the deque's map at a time point only if the time
-  stamp of that point lies in the interval's left end.  For an interval starting at 0, the common
-  case, that is always so, and the test -- a walk of the time stamp deque to the point -- is
-  dropped.\<close>
+subsubsection \<open>Adding a time point\<close>
+
+text \<open>For an interval starting at 0 the time stamp test always holds and is dropped.\<close>
 
 lemma de_gadd_new_dq_inz:
   "de_gadd_new_dq args msk rel1 rel2 nt aux =
@@ -437,8 +401,7 @@ proof -
     by (simp add: Let_def split: prod.splits)
 qed
 
-text \<open>With the test dropped, every tuple of the right operand enters the new table, which is then
-  the operand's table itself; the fold keeps only the deque.\<close>
+text \<open>Then the new table is the right operand's table itself.\<close>
 
 definition guntil_a2_step :: "('b list, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
     ts + tp \<Rightarrow> 'b list \<Rightarrow> ('b list, ts + tp) mapping dq \<Rightarrow> ('b list, ts + tp) mapping dq" where
@@ -488,11 +451,10 @@ proof -
     by (simp add: fold_guntil_elem_step_dq_True Let_def split: prod.splits)
 qed
 
-text \<open>At a step, the tuples of the tables leaving the window are deleted from the front map if
-  their time stamp there has left it too.  The deletion went through the set of those tuples,
-  built by a filter; a fold over the tables' tuples deletes them as it finds them.  The fold looks
-  each tuple up in the map it has built so far, which is the original map at the tuples not yet
-  seen, since they are distinct.\<close>
+subsubsection \<open>Expiry\<close>
+
+text \<open>Expired tuples are deleted from the front map by a fold that finds them, without building
+  their set by a filter.\<close>
 
 definition mdel_if :: "('v \<Rightarrow> bool) \<Rightarrow> 'k \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
   "mdel_if Q x m = (case Mapping.lookup m x of Some v \<Rightarrow> if Q v then Mapping.delete x m else m
@@ -551,12 +513,9 @@ proof -
     unfolding de_geval_step_dq_def geval_step_dq.simps Let_def eq ..
 qed
 
-subsection \<open>A deletion that returns the deleted value\<close>
+subsection \<open>Deletion returning the value\<close>
 
-text \<open>The window's count set drops a tuple leaving it by a lookup, to learn its count, and then a
-  deletion (or, for a count above one, an update): two descents.  @{text rbt_comp_del_lk} is the
-  deletion returning the value it removed, in the deletion's one descent; the count above one,
-  the rare case, then takes an update of the original tree.\<close>
+text \<open>A deletion that returns the removed value replaces a lookup followed by a deletion.\<close>
 
 context
   fixes c :: "'a comparator"
@@ -620,8 +579,6 @@ lemma mdel_lk_code[code]:
   by (simp_all add: mdel_lk_def del_lk_eq lookup_Mapping_code delete_Mapping Mapping.lookup.abs_eq
       split: option.splits)
 
-text \<open>The count sets' deletions through it.\<close>
-
 lemma ucnt_del1_mdel_lk[code]: "ucnt_del1 t c = (case mdel_lk t c of
      (None, _) \<Rightarrow> c
    | (Some k, c') \<Rightarrow> (if k \<le> 1 then c' else Mapping.update t (k - 1) c))"
@@ -636,9 +593,7 @@ lemma cnt_del_fold_mdel_lk[code]:
   by (rule arg_cong[where f = "\<lambda>g. fold g xs (c, b)"])
     (auto simp: fun_eq_iff mdel_lk_def split: option.splits)
 
-text \<open>The aggregate's deletions: the group's entry, read and written in one descent by
-  @{const mupd}, since a group usually outlives the tuple; the last tuple of a group then takes
-  a deletion of the original mapping.\<close>
+text \<open>Only a group's last tuple takes a second descent, to delete the group.\<close>
 
 lemma gd_cnt_mupd[code]:
   "gd_cnt k t (v, m) = (if v then (v, case mupd (drop k t)
@@ -658,9 +613,7 @@ lemma gd_sum_mupd[code]:
      else (v, m))"
   by (simp add: mupd_def Let_def split: option.splits event_data.splits prod.splits)
 
-text \<open>The count set by group: a tuple's step descends the outer map once, reading and writing the
-  group's entry, and the group's own map once; the group is deleted, in a second descent, only
-  when its last tuple leaves.\<close>
+text \<open>Likewise for the count set by group.\<close>
 
 lemma nis_empty_code[code]:
   fixes t :: "(event_data list, 'a \<times> ucnt) mapping_rbt"
@@ -711,7 +664,7 @@ proof -
         split: option.splits prod.splits)
 qed
 
-subsection \<open>At the tuples' comparator\<close>
+subsection \<open>Updates at the tuples' comparator\<close>
 
 definition edl_rbtc_ins_lk :: "('v option \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>
     (event_data list, 'v) rbt \<Rightarrow> 'v option \<times> (event_data list, 'v) rbt" where
@@ -774,11 +727,10 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("gsum", "(nat \<times> integer) \<times> (event_data list, nat) mapping")])
   ["etuple_dict_simps"]\<close>
 
-subsection \<open>The result's upkeep, with the steps applied\<close>
+subsection \<open>Result upkeep with applied steps\<close>
 
-text \<open>The window's steps of @{theory Monitor_Exec.Agg_Cache} pass the aggregate's
-  step to @{const cstep} as an argument, where the redirection to its copy at the short tuples
-  below does not reach it; these name the two instances with the step applied.\<close>
+text \<open>@{const cstep} takes the step unapplied, out of reach of the redirection to its copy;
+  these name the two applied instances.\<close>
 
 definition cstep_ins :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> event_data list \<Rightarrow>
     ugagg option \<times> event_data list set \<Rightarrow> ugagg option \<times> event_data list set" where
@@ -788,9 +740,8 @@ definition cstep_del :: "uconstr option \<Rightarrow> eaggp \<Rightarrow> event_
     ugagg option \<times> event_data list set \<Rightarrow> ugagg option \<times> event_data list set" where
   "cstep_del = cstep gstep_del"
 
-text \<open>The table is updated with the group's value before and after the step.  Read off the
-  mapping, these are two more descents per tuple; a rank aggregate's step returns both, the old
-  multiset read and the new one written by its one descent.\<close>
+text \<open>A rank aggregate's step returns the group's value before and after it, saving two
+  descents.\<close>
 
 definition rkval :: "ty Formula.agg_op \<Rightarrow> list_aux \<Rightarrow> event_data option" where
   "rkval \<omega> l = (case fst \<omega> of
@@ -865,9 +816,6 @@ lemma cstep_del_code[code]: "cstep_del q p t axC = (case axC of (ax, C) \<Righta
          | Some (a', ov, nv) \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) ov nv C)))))"
   by (simp add: cstep_del_def cstep_def gstepv_del_def split: option.splits prod.splits)
 
-text \<open>The result table of a structure built afresh is the aggregate's result, as the read
-  computes it without the table.\<close>
-
 declare gcache_ugres[code]
 
 lemma cstep_ins_unfold[code_unfold]: "cstep gstep_ins = cstep_ins"
@@ -876,14 +824,10 @@ lemma cstep_ins_unfold[code_unfold]: "cstep gstep_ins = cstep_ins"
 lemma cstep_del_unfold[code_unfold]: "cstep gstep_del = cstep_del"
   by (simp add: cstep_del_def)
 
-subsection \<open>The aggregate's result, with the guard read off the value\<close>
+subsection \<open>Result with a guard on the value\<close>
 
-text \<open>The result of an aggregate writes each group's value into the group's tuple and keeps
-  what passes the node's guard.  @{thm [source] ugmr_code} lists the mapping's entries first,
-  builds every group's tuple by a @{const take}, an append and a @{const drop}, and evaluates the
-  guard on the tuple.  Here the walk is the tree's own fold, the tuple is built in one pass
-  (@{text ins_at}) and only for the groups that pass, and a guard's term that is the result
-  column or a constant is read off the value without the tuple.\<close>
+text \<open>The result folds over the tree, builds a group's tuple in one pass only if it passes the
+  guard, and reads a guard's variable or constant off the value.\<close>
 
 fun ins_at :: "nat \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "ins_at 0 v g = v # g"
@@ -950,11 +894,9 @@ lemmas ugres_q_code[code] = ugres_code[of "uqok q" for q, folded ugres_q_def]
 lemma ugres_q_unfold[code_unfold]: "ugres (uqok q) = ugres_q q"
   by (simp add: ugres_q_def)
 
-subsection \<open>The steps at the short tuples\<close>
+subsection \<open>Steps at the short tuples\<close>
 
-text \<open>The steps of @{theory Monitor_Exec.Exec_Agg} are generic in the element
-  type, and their generated code built the comparator of the key lists at every lookup; these are
-  their copies at @{typ event_data}, whose mapping operations the specialised ones take over.\<close>
+text \<open>Copies at @{typ event_data} use the specialised mapping operations.\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("gi_cnt", "edl_gi_cnt", ["event_data"]),
@@ -969,9 +911,7 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("gempty", "edl_gempty", ["event_data"])]
   ["etuple_dict_simps"]\<close>
 
-text \<open>The count set by group at its two value types, with the mapping operations above
-  specialised; and a tuple's count read through its group, where the specialised lookup took
-  the projection's place.\<close>
+text \<open>Likewise the count set by group; a tuple's count is read through its group.\<close>
 
 lemma edl_lookup_nflat[code_unfold]: "ed_lookup_nat (nflat k M) t = nlk k M t"
   by (simp add: ed_lookup_nat_def lookup_nflat_nlk)
@@ -984,11 +924,9 @@ setup \<open>Monomorphize.monomorphize_cmd
      [("gcnt", "nat"), ("gsum", "nat \<times> integer")])
   ["etuple_dict_simps"]\<close>
 
-subsection \<open>MIN and MAX outside a window, in one pass\<close>
+subsection \<open>MIN and MAX outside windows\<close>
 
-text \<open>The minimum and the maximum of a group need neither the multiset of its values nor an
-  order-statistic tree: one pass over the table, keeping per group the extreme seen so far, has
-  them.  @{text mm_step} folds one tuple into that mapping with one descent (@{const mupdw}).\<close>
+text \<open>One pass over the table keeps per group the extreme seen so far.\<close>
 
 definition mm_step :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow> 'c \<Rightarrow> 'c) \<Rightarrow> nat \<Rightarrow> 'b list \<Rightarrow>
     ('b list, 'c) mapping \<Rightarrow> ('b list, 'c) mapping" where
@@ -1025,9 +963,6 @@ proof -
     by (simp add: Min.set_eq_fold[symmetric])
 qed
 
-text \<open>The multiset of a finite, non-empty group's values lists each of its values at least once
-  and nothing else, so its minimum and maximum are those of the values.\<close>
-
 lemma set_csorted_list_of_set_mset:
   "finite (M :: (event_data \<times> enat) set) \<Longrightarrow> set (csorted_list_of_set M) = M"
 proof -
@@ -1062,8 +997,7 @@ proof -
     using fM by (auto simp: finite_multiset_def M)
 qed
 
-text \<open>The order on @{typ event_data} is total only within each kind of value, and not even there
-  on floats; on integers, the fold over the flattened multiset is the extreme of the integers.\<close>
+text \<open>The order on @{typ event_data} is not total, so only integer values are handled.\<close>
 
 lemma foldl_max_ival: "\<forall>x \<in> set (u # xs). is_eint x \<Longrightarrow>
     foldl max u xs = EInt (foldl max (ival u) (map ival xs))"
@@ -1092,9 +1026,6 @@ proof -
     using fl x by (simp_all add: foldl_max_ival[OF i] foldl_min_ival[OF i] foldl_max_Max
         foldl_min_Min)
 qed
-
-text \<open>The fold computes, per group, the extreme of the integers of the group's tuples; the
-  result table is read off the mapping as the window's is (@{const ugmr}).\<close>
 
 definition uagg_mm :: "(integer \<Rightarrow> integer \<Rightarrow> integer) \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
     event_data list list \<Rightarrow> event_data list set" where
@@ -1142,9 +1073,7 @@ lemma uagg_mm_Max_Min:
   by (rule uagg_mm_gen[OF assms eval_agg_op_uagg_values_Max_Min(1) foldl_max_Max]; assumption)
     (rule uagg_mm_gen[OF assms eval_agg_op_uagg_values_Max_Min(2) foldl_min_Min]; assumption)
 
-text \<open>The code checks that the table is finite and not empty and that every value is an
-  integer; otherwise it computes the aggregation as @{const uagg} is defined.  The other
-  aggregations go through the window's structure (@{thm [source] uagg_g_code}).\<close>
+text \<open>Other tables and aggregations fall back to @{text uagg_gen} and @{const uagg_g}.\<close>
 
 definition uagg_mm_or :: "(integer \<Rightarrow> integer \<Rightarrow> integer) \<Rightarrow> bool \<Rightarrow> ty Formula.agg_op \<Rightarrow>
     Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where

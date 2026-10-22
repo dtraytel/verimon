@@ -2,9 +2,11 @@ theory Correct_Preparation
 imports Monitor_Correctness Progress_Rewriting "MFODL_Logic.Preparation"
 begin
 
-text \<open>The monitor side of locale @{locale verimon_prepare}, whose logic half is in theory
-  Preparation: the progress of the prepared formula @{text \<psi>}, and its verdicts.  The two
-  specification locales are interpreted again here, since an interpretation inside a locale block
+section \<open>Correctness of the preparation\<close>
+
+subsection \<open>Verdicts of the prepared formula\<close>
+
+text \<open>The specification locales are interpreted again: an interpretation inside a locale block
   ends with the block.\<close>
 
 context verimon_prepare
@@ -21,9 +23,8 @@ lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: progress_normalize progress_dual_since progress_rrewrite Let_def type_check_def check_check_subst)
 
-text \<open>The rewriting preserves the free variables, but not necessarily the order in which
-  @{const Formula.fv_list} lists them: the kernel's verdicts on @{term \<psi>} are those of the
-  specification of the input formula, with their columns reordered.\<close>
+text \<open>The rewriting preserves the free variables but not their order in @{const Formula.fv_list}:
+  the verdicts on @{term \<psi>} are those of the input formula, with reordered columns.\<close>
 
 lemma M_exchange: "verimon_\<psi>.M \<pi> = (\<lambda>(i, v). (i, restrict (Formula.fv_list \<psi>)
   (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)) v)) ` monitor_\<phi>.M \<pi>"
@@ -62,7 +63,6 @@ lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restri
   unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def M_exchange image_image
   by (simp add: split_beta)
 
-(* Correctness of specification of the monitor *)
 lemmas mono_monitor = monitor_\<phi>.mono_monitor
 lemmas sound_monitor = monitor_\<phi>.sound_monitor
 lemmas complete_monitor = monitor_\<phi>.complete_monitor
@@ -70,7 +70,7 @@ lemmas sliceable_M = monitor_\<phi>.sliceable_M
 
 end
 
-text \<open>The kernel's monitor on the prepared formula.\<close>
+subsection \<open>Monitor on the prepared formula\<close>
 
 locale verimon_rewrite = maux + verimon_prepare
 begin
@@ -84,7 +84,6 @@ lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst)
   by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
     intro!: wf_mstate_minit wty_rrewrite wty_dual_since wty_normalize dest!: spec[of _ "convert_tysym"])
 
-(* Correctness of output of the monitor (verdicts of \phi is the output) *)
 lemmas wf_mstate_minit = verimon_wf_mstate_minit
 lemmas wf_mstate_mstep = wf_mstate_mstep
 lemmas mstep_mverdicts = verimon_\<psi>.mstep_mverdicts[unfolded Mt_exchange]

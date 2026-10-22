@@ -11,9 +11,11 @@ theory Monitor_Instance
 begin
 (*>*)
 
+section \<open>Executable monitor instance\<close>
+
 declare Let_def[simp del]
 
-section \<open>Data refinement\<close>
+subsection \<open>Buffers as queues\<close>
 
 typedef 'a mbuf_t = "UNIV :: 'a list set" ..
 
@@ -81,15 +83,7 @@ lemma mbuf_t_cases_code[code]: "mbuf_t_cases (MBuf2_t xs) = (case safe_hd xs of 
   | (Some x, xs') \<Rightarrow> (Some x, MBuf2_t (tl_queue xs')))"
   by transfer' (auto simp: tl_queue_rep split: list.splits prod.splits option.splits dest: safe_hd_rep)
 
-text \<open>
-  The two code equations above take the buffer apart and put it back together more often than
-  they need to: @{const mbuf_t_cases} asks @{const safe_hd} for a pair it immediately splits,
-  and then calls @{const tl_queue} on a queue @{const safe_hd} has just rebuilt, while
-  @{const mbuf_t_append} wraps and unwraps the queue once per appended element.  Asking for the
-  head and the tail separately -- and appending in one pass -- allocates the pair once and the
-  queue once.  In the empty case the buffer is returned unchanged, so nothing is allocated
-  at all.
-\<close>
+text \<open>Taking head and tail separately and appending in one pass avoids rebuilding the queue.\<close>
 
 lift_definition mbuf_t_hd :: "'a mbuf_t \<Rightarrow> 'a option" is
   "\<lambda>xs. case xs of [] \<Rightarrow> None | y # _ \<Rightarrow> Some y" .
@@ -154,7 +148,7 @@ fun mebuf2T_take :: "(event_data table \<Rightarrow> event_data table \<Rightarr
     (case mbuf_t_cases ts of (None, ts') \<Rightarrow> (z, (xs, ys), ts') | (Some t, ts') \<Rightarrow>
     (case mbuf_t_cases xs of (None, xs') \<Rightarrow> (z, (xs', ys), t ## ts') | (Some x, xs') \<Rightarrow>
     (case mbuf_t_cases ys of (None, ys') \<Rightarrow> (z, (x ## xs', ys'), t ## ts') | (Some y, ys') \<Rightarrow>
-    mebuf2T_take f (f x y t z) (xs', ys') ts')))" (* TODO: replace with mebuf2t_take *)
+    mebuf2T_take f (f x y t z) (xs', ys') ts')))"
 
 fun mebufn_add :: "event_data table list list \<Rightarrow> event_data mebufn \<Rightarrow> event_data mebufn" 
   where "mebufn_add xs' xs = List.map2 (@@) xs xs'"
@@ -199,13 +193,9 @@ fun mebufnt_take :: "(event_data table list \<Rightarrow> ts \<Rightarrow> 'b \<
     (if (\<exists>x \<in> set buf. mbuf_t_is_empty x) then (z, buf, t, t ## ts')
     else mebufnt_take f (f (map (the \<circ> fst \<circ> mbuf_t_cases) buf) t z) (map (snd \<circ> mbuf_t_cases) buf) t ts'))"
 
-section \<open>Instantiation of the generic algorithm and code setup\<close>
+subsection \<open>Container setup\<close>
 
-(*
-  The following snippet (context \<dots> end) is taken from HOL-Library.Code_Cardinality.
-  We do not include the entire theory because the remaining code setup is superseded
-  by Containers.
-*)
+(* From HOL-Library.Code_Cardinality, whose remaining code setup Containers supersedes *)
 context
 begin
 
@@ -241,6 +231,8 @@ derive (rbt) set_impl string8
 derive (rbt) mapping_impl string8
 derive (rbt) set_impl event_data
 derive (rbt) mapping_impl event_data
+
+subsection \<open>Instances of the algorithm\<close>
 
 type_synonym 'a vmsaux = "nat \<times> (nat \<times> 'a table) list"
 
@@ -315,6 +307,8 @@ global_interpretation default_maux: maux_ops "init_mmasaux :: _ \<Rightarrow> mm
   and msteps_stateless = "maux_ops.msteps_stateless add_new_ts_mmasaux gc_join_mmasaux add_new_table_mmasaux (result_mmasaux :: _ \<Rightarrow> mmasaux \<Rightarrow> _) add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux bin_join mmulti_join"
   and monitor = "maux_ops.monitor init_mmasaux add_new_ts_mmasaux gc_join_mmasaux add_new_table_mmasaux (result_mmasaux :: _ \<Rightarrow> mmasaux \<Rightarrow> _) init_muaux_dq add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join"
   .
+
+subsection \<open>Code equations\<close>
 
 definition "RPDs_aux = saturate (\<lambda>S. S \<union> \<Union> (RPD ` S))"
 
@@ -512,6 +506,8 @@ lemma Sup_rec_safety_atms[code_unfold]:
   by (simp add: Sup_rec_safety_def csorted_list_of_set_def ccompare_rec_safety_def ID_def
       linorder.set_sorted_list_of_set[OF comparator.linorder] comparator_rec_safety
       flip: comp_fun_idem_on.fold_set_fold[OF comp_fun_idem_sup[unfolded comp_fun_idem_def']])
+
+subsection \<open>Folds over finite sets\<close>
 
 lift_definition delete_cnt_cfc::"aggargs \<Rightarrow> (event_data tuple, (bool \<times> nat agg_map)) comp_fun_commute" is
   "\<lambda>args. delete_cnt args" using delete_cnt_comm by unfold_locales auto

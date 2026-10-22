@@ -4,35 +4,15 @@ theory Log_Byte_Parser
 begin
 (*>*)
 
-section \<open>An efficient executable parser\<close>
+section \<open>Executable parser on byte strings\<close>
 
-text \<open>
-  This theory refines the streaming parser into code that runs on byte strings, which the code
-  generator maps to OCaml's strings. The input arrives in chunks (whatever a read from a channel
-  returns), and a token may straddle chunks. Instead of the text of the incomplete lexeme, the
-  lexer's state records where in the current chunk it began, together with the text from the
-  preceding chunks, if any: a simple string is thus extracted by one @{text String.sub} when it
-  ends. Errors do not stop the parser: they are reported in the output, with the offset of the
-  offending token in the input, and the parser resumes at the next @{text "@"}, @{text ";"} or
-  @{text ">"}. The parser keeps the events of the predicates that its parameter @{text k}
-  accepts (@{theory Log_Parser.Log_Filter}). The main theorem, @{text eparse_correct}, states that
-  for every division of an input into chunks, the output is error-free exactly if the input is a
-  log, and it then lists the log's entries, without the events of the other predicates. For an
-  input that is still being read, @{text efeed_chunks_online} states that the output so far is
-  error-free exactly if the streaming parser has not failed, and it then lists the entries that
-  the streaming parser has output; so an error means that no
-  extension of the input is a log (@{thm [source] stream_run_error}), and the entries are those
-  of every extension that is a log (@{thm [source] stream_run_prefix}), output as soon as the next
-  item begins (@{text efeed_chunks_prompt}). What the parser outputs after an error, and the
-  offsets in the output, are not covered by these theorems.
-\<close>
+text \<open>The streaming parser refined to byte strings read in chunks, which a token may
+  straddle. Errors are output with their offset, and parsing resumes at the next @{text "@"},
+  @{text ";"} or @{text ">"}.\<close>
 
 subsection \<open>Byte strings\<close>
 
-text \<open>The type @{typ bytes} of byte strings is in theory @{theory MFODL_Syntax.Byte_String}.\<close>
-
-text \<open>Indices into byte strings and offsets in the input are of type @{typ integer}, which the code
-  generator maps to Zarith's integers; indices within a chunk are therefore unboxed machine
+text \<open>Indices and offsets are of type @{typ integer}, so that indices within a chunk are machine
   integers at run time.\<close>
 
 definition bytes_length :: "bytes \<Rightarrow> integer" where
@@ -82,12 +62,10 @@ lemma nat_of_integer_le_length:
   "0 \<le> i \<Longrightarrow> i \<le> bytes_length s \<Longrightarrow> nat_of_integer i \<le> length (Rep_bytes s)"
   by (auto simp: bytes_length_def integer_simps)
 
-subsection \<open>The lexer\<close>
+subsection \<open>Lexer states and steps\<close>
 
-text \<open>The states of the lexer. A pending lexeme records its parts in the preceding chunks (the
-  last one first), the index at which its part in the current chunk begins, and the offset of its
-  first character in the input. The parts are concatenated once, when the lexeme ends, so that a
-  lexeme that spans many chunks takes time linear in its length.\<close>
+text \<open>A pending lexeme records its parts in the preceding chunks, last first, where its part in the
+  current chunk begins, and its offset; the parts are concatenated once, when it ends.\<close>
 
 datatype elstate = E_INIT | E_SIMPLE "bytes list" integer integer | E_QUOTED "bytes list" integer integer
   | E_ESCAPE "bytes list" integer integer
@@ -112,18 +90,13 @@ fun wf_l :: "integer \<Rightarrow> elstate \<Rightarrow> bool" where
 | "wf_l i (E_ESCAPE pre st tp) \<longleftrightarrow> 0 \<le> st \<and> st \<le> i"
 | "wf_l i _ \<longleftrightarrow> True"
 
-text \<open>The result of a step of the lexer: the state is unchanged, or there is a new state,
-  possibly with one or two tokens (with their offsets) emitted, or the character cannot be
-  lexed, possibly after the end of a simple string.\<close>
-
 datatype eres = R_SAME | R_NEXT elstate | R_TOK "bytes token" integer elstate
   | R_TOK2 "bytes token" integer "bytes token" integer elstate | R_TOK_ERR "bytes token" integer | R_ERR
 
 definition mk_str :: "bytes list \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> bytes" where
   "mk_str pre s st i = (case pre of [] \<Rightarrow> bytes_sub s st i | _ \<Rightarrow> bytes_concat (rev (bytes_sub s st i # pre)))"
 
-text \<open>Whether the pending simple string is @{text r}, which begins an r-quoted string if a quote
-  follows.\<close>
+text \<open>Whether the pending simple string is @{text r}, which a quote makes an r-quoted string.\<close>
 
 definition is_r :: "bytes list \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> bool" where
   "is_r pre s st i = (case filter (\<lambda>x. \<not> bytes_null x) pre of
@@ -168,8 +141,6 @@ definition elex_step :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rig
    | E_ESCAPE pre st tp \<Rightarrow> R_NEXT (E_QUOTED pre st tp)
    | E_COMMENT \<Rightarrow> (if isLineCommentEnd c then R_NEXT E_INIT else R_SAME))"
 
-text \<open>The tokens emitted by a result and its new state.\<close>
-
 fun eres_toks :: "eres \<Rightarrow> bytes token list" where
   "eres_toks (R_TOK t tp l) = [t]"
 | "eres_toks (R_TOK2 t tp t' tp' l) = [t, t']"
@@ -182,8 +153,10 @@ fun eres_state :: "elstate \<Rightarrow> eres \<Rightarrow> elstate option" wher
 | "eres_state l (R_TOK2 t tp t' tp' l') = Some l'"
 | "eres_state l _ = None"
 
-text \<open>A step of the lexer on the byte at index @{text i} of the chunk @{text s} refines the step
-  of the specification on the abstraction of the state.\<close>
+subsection \<open>Refinement of a lexer step\<close>
+
+text \<open>A step on the byte at index @{text i} of the chunk @{text s} refines the step of the
+  specification on the abstraction of the state.\<close>
 
 definition eres_ok :: "bytes \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> eres \<Rightarrow> (string token list \<times> lstate) option \<Rightarrow> bool" where
   "eres_ok s i l r res = (case res of
@@ -219,8 +192,6 @@ lemma pend_text_empty: "pend_text [] s i i = []"
 
 lemma Rep_mk_str: "Rep_bytes (mk_str pre s st i) = pend_text pre s st i"
   by (cases pre) (simp_all add: mk_str_def pend_text_def pre_text_def)
-
-text \<open>The empty parts do not contribute to the text.\<close>
 
 lemma pre_text_filter: "pre_text (filter (\<lambda>x. \<not> bytes_null x) pre) = pre_text pre"
   by (induction pre) (auto simp: bytes_null_def)
@@ -363,22 +334,17 @@ next
     by (auto simp: elex_step_def eres_ok_def)
 qed
 
-subsection \<open>Errors and the output\<close>
+subsection \<open>Output and error recovery\<close>
 
-text \<open>What was expected where an error occurred, derived from the state of the parser. The
-  messages of MonPoly's parser correspond to these.\<close>
+text \<open>What was expected where an error occurred, as in MonPoly's messages.\<close>
 
 datatype expect = X_ENTRY | X_TIMESTAMP | X_PREDICATE | X_FIELD_OR_RPAREN | X_COMMA_OR_RPAREN | X_FIELD
   | X_CMD_NAME | X_CMD_ARG
 
-text \<open>An unexpected token (or the end of the input), a character that begins no token, or a
-  quoted string that the input ends in.\<close>
-
 datatype perror = E_TOKEN expect "bytes token option" | E_CHAR expect char | E_UNTERMINATED
 
-text \<open>The output: an item, with the offset of its first token (the @{text "@"} of an entry or the
-  @{text ">"} of a command), which locates the errors that the consumer finds in the item; or an
-  error, with its offset.\<close>
+text \<open>An item carries the offset of its first token, which locates the errors that the consumer
+  finds in it.\<close>
 
 datatype out = O_ITEM integer "bytes item" | O_ERROR integer perror
 
@@ -398,22 +364,14 @@ fun expect_of :: "'s fpstate \<Rightarrow> expect" where
 | "expect_of F_CMD = X_CMD_NAME"
 | "expect_of (F_ARGS _ _) = X_CMD_ARG"
 
-text \<open>After an error, the parser skips tokens (state @{const None}) until a token that begins an
-  entry or ends one.\<close>
+text \<open>After an error, the parser skips tokens (state @{const None}) until one that begins or ends
+  an entry.\<close>
 
 definition resync :: "'s token \<Rightarrow> 's fpstate option" where
   "resync t = (case t of T_AT \<Rightarrow> Some F_TS | T_SEMICOLON \<Rightarrow> Some F_INIT | T_RANGLE \<Rightarrow> Some F_CMD | _ \<Rightarrow> None)"
 
-text \<open>The offset of the first token of the item being read, after a token at offset @{text pos}
-  has led to the state @{text p}: the tokens that begin an item lead to @{const F_TS} and
-  @{const F_CMD}.\<close>
-
 definition start :: "integer \<Rightarrow> 's fpstate option \<Rightarrow> integer \<Rightarrow> integer" where
   "start pos p sp = (case p of Some F_TS \<Rightarrow> pos | Some F_CMD \<Rightarrow> pos | _ \<Rightarrow> sp)"
-
-text \<open>The parser keeps the events of the predicates @{text k} accepts
-  (@{theory Log_Parser.Log_Filter}); @{text "sk k"} is the same test on the strings the byte
-  strings represent.\<close>
 
 definition sk :: "(bytes \<Rightarrow> bool) \<Rightarrow> string \<Rightarrow> bool" where
   "sk k s = k (Abs_bytes s)"
@@ -421,8 +379,7 @@ definition sk :: "(bytes \<Rightarrow> bool) \<Rightarrow> string \<Rightarrow> 
 lemma sk_Rep[simp]: "sk k (Rep_bytes x) = k x"
   by (simp add: sk_def Rep_bytes_inverse)
 
-text \<open>Feeding a token, with its offset, to the parser, where @{text sp} is the offset of the first
-  token of the item being read. Outputs are accumulated in reverse.\<close>
+text \<open>Outputs are accumulated in reverse.\<close>
 
 definition efeed :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes token \<Rightarrow> integer \<Rightarrow> bytes fpstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow>
   out list \<times> bytes fpstate option" where
@@ -435,10 +392,7 @@ definition efeed :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes token \<Righ
 definition echar_err :: "integer \<Rightarrow> char \<Rightarrow> bytes fpstate option \<Rightarrow> out list \<Rightarrow> out list" where
   "echar_err pos c p acc = (case p of None \<Rightarrow> acc | Some ps \<Rightarrow> O_ERROR pos (E_CHAR (expect_of ps) c) # acc)"
 
-subsection \<open>Chunks\<close>
-
-text \<open>The loop over the bytes of a chunk @{text s} of length @{text n}, which begins at offset
-  @{text b} of the input.\<close>
+subsection \<open>Parsing chunks\<close>
 
 function eloop :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> bytes fpstate option \<Rightarrow>
   integer \<Rightarrow> out list \<Rightarrow> out list \<times> elstate \<times> bytes fpstate option \<times> integer" where
@@ -459,9 +413,6 @@ termination
 
 declare eloop.simps[simp del]
 
-text \<open>At the end of a chunk, the part of a pending lexeme in it is added to its parts in the
-  preceding chunks.\<close>
-
 definition close_chunk :: "bytes \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> elstate" where
   "close_chunk s n l = (case l of
      E_SIMPLE pre st tp \<Rightarrow> E_SIMPLE (bytes_sub s st n # pre) 0 tp
@@ -469,8 +420,8 @@ definition close_chunk :: "bytes \<Rightarrow> integer \<Rightarrow> elstate \<R
    | E_ESCAPE pre st tp \<Rightarrow> E_ESCAPE (bytes_sub s st n # pre) 0 tp
    | _ \<Rightarrow> l)"
 
-text \<open>The state between chunks: the offset of the next chunk, the states of the lexer and the
-  parser, and the offset of the first token of the item being read.\<close>
+text \<open>Between chunks: the offset of the next chunk, the lexer's and the parser's states, and the
+  offset of the first token of the current item.\<close>
 
 type_synonym estate = "integer \<times> elstate \<times> bytes fpstate option \<times> integer"
 
@@ -488,8 +439,8 @@ definition efinish_p :: "integer \<Rightarrow> bytes fpstate option \<Rightarrow
        None \<Rightarrow> O_ERROR b (E_TOKEN (expect_of ps) None) # acc
      | Some es \<Rightarrow> rev (map (O_ITEM sp) es) @ acc))"
 
-text \<open>The end of the input. A quoted string that has not ended is an error even while the
-  parser skips tokens after an error, since the string contains the rest of the input.\<close>
+text \<open>An unterminated quoted string is an error even while tokens are skipped after an error,
+  since it contains the rest of the input.\<close>
 
 definition efinish :: "(bytes \<Rightarrow> bool) \<Rightarrow> estate \<Rightarrow> out list" where
   "efinish k st = (case st of (b, l, p, sp) \<Rightarrow> (case l of
@@ -508,8 +459,6 @@ definition eparse :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes list \<Righ
   "eparse k ss = (case efeed_chunks k ss einit of (outs, st) \<Rightarrow> outs @ efinish k st)"
 
 subsection \<open>Correctness\<close>
-
-text \<open>The entries of an output without errors.\<close>
 
 fun oks :: "out list \<Rightarrow> bytes item list option" where
   "oks [] = Some []"
@@ -553,7 +502,7 @@ lemma oks_append_Some:
   "oks xs = Some es \<Longrightarrow> oks ys = Some es' \<Longrightarrow> oks (xs @ ys) = Some (es @ es')"
   by (simp add: oks_append)
 
-subsubsection \<open>The accumulator\<close>
+subsubsection \<open>Accumulated outputs\<close>
 
 lemma efeed_acc: "efeed k t pos p sp acc = (case efeed k t pos p sp [] of (new, p') \<Rightarrow> (new @ acc, p'))"
   by (auto simp: efeed_def split: option.splits)
@@ -640,7 +589,7 @@ lemma eloop_step:
 lemma eres_state_None: "eres_state l r = None \<longleftrightarrow> (\<exists>t tp. r = R_TOK_ERR t tp) \<or> r = R_ERR"
   by (cases r) auto
 
-subsubsection \<open>The parser\<close>
+subsubsection \<open>Feeding tokens\<close>
 
 lemma efeeds_acc: "efeeds k tks p sp acc = (case efeeds k tks p sp [] of (new, p', sp') \<Rightarrow> (new @ acc, p', sp'))"
 proof (induction tks arbitrary: p sp acc)
@@ -681,7 +630,7 @@ proof (induction tks arbitrary: ps sp new p' sp')
   qed
 qed simp
 
-subsubsection \<open>The loop over a chunk\<close>
+subsubsection \<open>Loop over a chunk\<close>
 
 lemma fstream_run_Cons_lex:
   "fstream_run (sk k) (c # s) (L, P) = (case lex_step c L of
@@ -811,7 +760,7 @@ next
   qed
 qed
 
-subsubsection \<open>Chunks and the end of the input\<close>
+subsubsection \<open>Chunks and end of input\<close>
 
 fun wf0 :: "elstate \<Rightarrow> bool" where
   "wf0 (E_SIMPLE pre st tp) \<longleftrightarrow> st = 0"
@@ -902,6 +851,11 @@ proof (cases l)
 qed (use assms in \<open>auto simp: efinish_def fstream_finish_def fparse_from_def efinish_p_def abs_l0_def
   fparse_finish_map oks_rev rev_map[symmetric] split: option.splits\<close>)
 
+subsubsection \<open>Main theorems\<close>
+
+text \<open>For every division of the input into chunks, the output is error-free iff the input is a log,
+  and then lists its filtered entries. Output after an error and offsets are not verified.\<close>
+
 theorem eparse_correct: "map_option abs_items (oks (eparse k ss)) = fparse_log (sk k) (concat (map Rep_bytes ss))"
 proof -
   have init: "fstream_init = (abs_l0 E_INIT, map_fpstate Rep_bytes F_INIT)"
@@ -931,6 +885,9 @@ corollary eparse_filter:
   "map_option abs_items (oks (eparse k ss)) =
    map_option (map (filter_item (sk k))) (parse_log (concat (map Rep_bytes ss)))"
   by (simp add: eparse_correct fparse_log_correct)
+
+text \<open>Online: on the chunks read so far, the output agrees with the streaming parser, so an error
+  means that no extension is a log.\<close>
 
 theorem efeed_chunks_online:
   "map_option abs_items (oks (fst (efeed_chunks k ss einit))) =

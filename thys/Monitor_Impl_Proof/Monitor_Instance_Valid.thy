@@ -5,10 +5,14 @@ theory Monitor_Instance_Valid
 begin
 (*>*)
 
-text \<open>The proof theories of the structures do not see @{text Monitor_Instance}'s deletion of
-  @{thm [source] Let_def} from the simplifier; merging them with it would bring it back.\<close>
+section \<open>Correctness of the monitor instances\<close>
+
+text \<open>Merging the structures' proof theories brings @{thm [source] Let_def} back into the
+  simpset, so it is deleted again.\<close>
 
 declare Let_def[simp del]
+
+subsection \<open>Buffers as queues\<close>
 
 lemma Rep_mbuf_t_cases[simp]:
   "mbuf_t_cases xs = (None, xs') \<Longrightarrow> Rep_mbuf_t xs = []"
@@ -156,6 +160,8 @@ proof (induction "\<lambda>xs t (zs, aux). case f xs t aux of (z, aux) \<Rightar
     by (auto simp: mbufnt_take.simps[where ?ts=ts] mbuf_t_append.rep_eq simp del: mbufnt_take.simps split: if_splits prod.splits)
 qed
 
+subsection \<open>Instances of the algorithm\<close>
+
 interpretation verimon_maux: maux valid_vmsaux init_vmsaux add_new_ts_vmsaux join_vmsaux
   add_new_table_vmsaux result_vmsaux valid_vmuaux init_vmuaux add_new_vmuaux length_vmuaux
   eval_vmuaux valid_mmtaux init_mmtaux update_mmtaux result_mmtaux bin_join mmulti_join
@@ -207,12 +213,12 @@ next
 qed (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
 interpretation default_maux: maux 
-  (* msaux *) valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux 
+  valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux 
     add_new_table_mmasaux result_mmasaux
-  (* muaux *) valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq
+  valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq
     length_muaux_dq eval_muaux_dq
-  (* mtaux *) valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
-  (* joins *) bin_join mmulti_join
+  valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
+  bin_join mmulti_join
   by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
 end

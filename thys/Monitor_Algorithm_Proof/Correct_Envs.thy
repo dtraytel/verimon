@@ -6,8 +6,7 @@ theory Correct_Envs
 begin
 (*>*)
 
-
-subsection \<open> Well-formed envs \<close>
+section \<open>Well-formed environments\<close>
 
 declare progress_le_gen[simp]
 
@@ -43,6 +42,8 @@ lemma wf_envs_empty: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
   wf_envs S \<sigma> (j + \<delta>) 0 P' P' V (Mapping.map_values (\<lambda>_ _. []) db)"
   by (auto 0 4 simp: wf_envs_def rel_mapping_alt set_eq_iff domIff lookup_map_values
       map_option_case keys_dom_lookup subset_iff split: option.splits)
+
+subsection \<open>Update by a let-bound predicate\<close>
 
 lemma wf_envs_update:
   assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
@@ -230,6 +231,9 @@ next
       by (simp add: wf_envs_def)
   qed
 qed (use assms in \<open>auto simp: wf_envs_def subset_iff\<close>)
+
+subsection \<open>Finiteness and progress bounds\<close>
+
 lemma wf_envs_finite:
   assumes "wf_envs S \<sigma> j \<delta> P P' V db" "Mapping.lookup db p = Some Rs" "X \<in> set Rs"
   shows "finite X"

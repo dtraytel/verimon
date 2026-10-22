@@ -7,7 +7,7 @@ theory Specification
 begin
 (*>*)
 
-section \<open>Specification\<close>
+section \<open>MFODL formulas as specifications\<close>
 
 locale traces_downward_closed =
   fixes traces :: "Formula.trace set"

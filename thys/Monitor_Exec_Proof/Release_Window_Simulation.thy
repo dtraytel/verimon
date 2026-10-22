@@ -4,7 +4,9 @@ theory Release_Window_Simulation
 begin
 (*>*)
 
-subsection \<open>The Release structure's auxiliary list\<close>
+section \<open>Simulation of the release structure\<close>
+
+subsection \<open>Auxiliary list of Release\<close>
 
 lemma eauxlist3_update_release:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -35,10 +37,7 @@ lemma eauxlist3_wf_update_release:
   using wf t1 t2 sub
   by (auto simp: update_release_def aL aR split: if_splits intro!: table_join_sub table_Int table_Diff)
 
-
-
-
-subsection \<open>The summaries\<close>
+subsection \<open>Summaries of the window\<close>
 
 lemma ecomp_alt: "ecomp (a1, r1) (a2, r2) = (a1 \<inter> a2, r1 \<union> (a1 \<inter> r2))"
   by (auto simp: ecomp_def)
@@ -73,8 +72,6 @@ lemma edisj_esum_of: "edisj (esum_of args msk l r)"
 lemma eout_esum_of: "eout (esum_of args msk l r) = (esemi msk (\<not> args_pos args) r l, r)"
   by (auto simp: esum_of_eq eout_def esemi_def)
 
-text \<open>An entry the list updates is the composition of its summary with the new point's.\<close>
-
 lemma eout_ecomp_esum_of:
   assumes "edisj x"
   shows "(esemi msk (\<not> args_pos args) (fst (eout x) \<inter> r) l, snd (eout x) - (fst (eout x) - r)) =
@@ -83,6 +80,8 @@ lemma eout_ecomp_esum_of:
 
 lemma snd_eout: "snd (eout x) = eunion x"
   by (simp add: eout_def eunion_def)
+
+subsection \<open>Shifting the structure\<close>
 
 lemma erel_init: "erel I eraux_init []"
   by (auto simp: erel_def erel'_def eraux_init_def sw_rel_empty intro!: exI[of _ "[]"])
@@ -224,6 +223,8 @@ proof -
   have sh': "eraux_shift I nt aux = (cur, outs', s')" using sh by (simp add: outs'_def)
   show ?thesis unfolding sh' using rel' tL after lo' outs'' by (simp add: aux)
 qed
+
+subsection \<open>Evaluation and update\<close>
 
 lemma eval_until_takeWhile: "eval_until I nt L =
   (map (\<lambda>(t, a1, a2). a2) (takeWhile (\<lambda>x. \<not> memR I (nt - fst x)) L),

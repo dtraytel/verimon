@@ -5,8 +5,10 @@ begin
 (*>*)
 
 
-section \<open> Verdict delay \<close>
+section \<open> Progress \<close>
 
+
+subsection \<open> Fixpoints and infima \<close>
 
 lemma image_eqD: "f ` A = B \<Longrightarrow> \<forall>x\<in>A. f x \<in> B"
   by blast
@@ -191,8 +193,6 @@ termination
     (simp_all add: less_Suc_eq_le sum_list_mem_leq size'_release_aux(3)
       less_imp_le[OF regex_atms_size'])
 
-(* sanity check for trigger progress *)
-
 lemma progress_FF [simp]: "progress P Formula.FF j = j"
   unfolding Formula.FF_def
   by auto
@@ -300,6 +300,9 @@ lemmas progress_simps[simp]
   = progress.simps[folded progress_regex_def[THEN fun_cong, THEN fun_cong] letpast_progress_def frz_progress_def]
 
 end
+
+
+subsection \<open> Bounds and monotonicity \<close>
 
 lemma progress_fixpoint_ex':
   assumes "(\<And>P. pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> Progress.progress \<sigma> P \<phi> j \<le> j)"
@@ -620,8 +623,6 @@ proof -
     by (simp add: Let_def pn_def jphi_def a_def b_def)
 qed
 
-text \<open> The progress of a freeze operator whose body is not ahead of the frozen formula. \<close>
-
 lemma progress_Frz_eq_le:
   assumes P: "pred_mapping (\<lambda>x. x \<le> j) P"
     and le1: "progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> j)) \<psi> j \<le> progress \<sigma> P \<alpha> j"
@@ -768,7 +769,7 @@ lemma progress_Release_cong:
   by (simp only: progress.simps release_safe_bounded_def always_safe_bounded_def Formula.eventually_def once_def Formula.TT_def)
 
 
-subsection \<open> Progress letpast \<close>
+subsection \<open> Progress of LetPast \<close>
 
 lemma not_contains_letpast_progress[simp]: 
   "\<not> contains_pred p \<phi> \<Longrightarrow> letpast_progress \<sigma> (P(p \<mapsto> x)) q \<phi> j = letpast_progress \<sigma> P q \<phi> j"
@@ -864,6 +865,9 @@ proof (rule cInf_greatest)
   then show "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> k"
     using k(2)[symmetric] by (rule ord_le_eq_trans)
 qed
+
+
+subsection \<open> Progress under safe recursion \<close>
 
 lemma safe_letpast_progress_upd':
   fixes \<phi> :: "'t Formula.formula"
@@ -1607,7 +1611,8 @@ lemma letpast_progress_ignore_upd:
   "letpast_progress \<sigma> (P(p := x)) p \<phi> j = letpast_progress \<sigma> P p \<phi> j"
   by (simp add: letpast_progress_def)
 
-subsection \<open> Progress' formula-trace properties \<close>
+
+subsection \<open> Eventual progress \<close>
 
 lemma progress_ge_gen:
   fixes \<phi> :: "'t Formula.formula"
@@ -1809,7 +1814,6 @@ next
     also have "... \<le> progress \<sigma> (?P12(?pn \<mapsto> letpast_progress \<sigma> P1 ?pn \<phi> j1)) \<psi> (max j1 j2)"
       using le2 by blast
     also have "... \<le> progress \<sigma> (?P12'(?pn \<mapsto> letpast_progress \<sigma> ?P12' ?pn \<phi> (max j1 j2))) \<psi> (max j1 j2)"
-      \<comment> \<open>?P12' only differs from ?P12 at ?pn, which is overwritten anyway\<close>
       unfolding fun_upd_upd letpast_progress_ignore_upd
     proof (rule progress_mono_gen[OF order_refl P12_upd_bound])
       show "pred_mapping (\<lambda>x. x \<le> max j1 j2) (?P12(?pn \<mapsto> letpast_progress \<sigma> ?P12 ?pn \<phi> (max j1 j2)))"
@@ -2184,6 +2188,9 @@ qed auto
 lemma progress_ge: "Safety.future_bounded \<phi> \<Longrightarrow> \<exists>j. i \<le> progress \<sigma> Map.empty \<phi> j"
   using progress_ge_gen[of \<phi> "{}" i \<sigma>]
   by auto
+
+
+subsection \<open> Traces with a common prefix \<close>
 
 lemma progress_time_conv:
   assumes "\<forall>i<j. \<tau> \<sigma> i = \<tau> \<sigma>' i"
@@ -2945,7 +2952,8 @@ lemma sat_prefix_conv:
 lemma progress_remove_neg[simp]: "progress \<sigma> P (remove_neg \<phi>) j = progress \<sigma> P \<phi> j"
   by (cases \<phi>) simp_all
 
-subsection \<open> Progress on prefixes and the specification \<close>
+
+subsection \<open> Prefix progress and specification \<close>
 
 text \<open>The progress on a prefix does not depend on the trace that extends it; with it, every
   future-bounded formula meets the abstract specification of a sliceable monitor.\<close>

@@ -4,9 +4,9 @@ theory Release_Sharing_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of release sharing\<close>
 
-
-subsection \<open>The shared predicate\<close>
+subsection \<open>Shared predicate\<close>
 
 lemma not_contains_pred_preds: "\<not> occurs pn \<phi> \<Longrightarrow> \<not> contains_pred pn \<phi>"
   by (induct pn \<phi> rule: contains_pred.induct) auto
@@ -55,6 +55,8 @@ lemma wty_shr_pred:
   "S((shr, Formula.nfv \<psi>) \<mapsto> tabulate E 0 (Formula.nfv \<psi>)), E \<turnstile> shr_pred \<psi>"
   by (auto simp: shr_pred_def tabulate_map_upt list.rel_map intro!: wty_formula.Pred
     list.rel_refl_strong wty_trm.Var)
+
+subsection \<open>Typing with a fresh predicate\<close>
 
 lemma wty_fresh_upd:
   assumes "S(q \<mapsto> y), E \<turnstile> \<psi>" "q \<noteq> pn \<Longrightarrow> S(q \<mapsto> y, pn \<mapsto> x), E \<turnstile> \<psi>"
@@ -144,7 +146,7 @@ lemma sat_Release_cong:
   shows "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>) = Formula.sat \<sigma> V' v i (Formula.Release \<phi>' I \<psi>')"
   using assms by simp
 
-subsection \<open>The rewrite of the whole formula\<close>
+subsection \<open>Rewrite of the whole formula\<close>
 
 lemma fvi_share_rw[simp]: "Formula.fvi b (share_rw \<phi>) = Formula.fvi b \<phi>"
   by (induct \<phi> arbitrary: b rule: share_rw.induct)
