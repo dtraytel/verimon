@@ -5,6 +5,10 @@ theory Optimized_Agg_Temporal
     Optimized_Until
 begin
 
+section \<open>Aggregation in Since and Until\<close>
+
+subsection \<open>Since with aggregation\<close>
+
 type_synonym mmasaux = "event_data mmsaux \<times> aggaux option"
 
 fun init_maggaux' where
@@ -124,6 +128,8 @@ fun result_mmasaux :: "args \<Rightarrow> mmasaux \<Rightarrow> event_data table
       (Some aggargs, Some aux) \<Rightarrow> result_maggaux aggargs aux |
       (Some aggargs, None) \<Rightarrow> eval_aggargs aggargs table_in |
       (None, _) \<Rightarrow> table_in)"
+
+subsection \<open>Until with aggregation\<close>
 
 type_synonym mmauaux = "event_data mmuaux \<times> aggaux option"
 

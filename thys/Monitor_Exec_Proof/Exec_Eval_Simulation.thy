@@ -537,6 +537,8 @@ qed
 
 subsection \<open>Fused And-Trigger\<close>
 
+subsubsection \<open>Outer buffer\<close>
+
 lemma join_unit_table:
   "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join cs R True [] unit_table = R"
   "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join [] unit_table True cs R = R"
@@ -651,6 +653,8 @@ proof -
     by (intro exI[where x = "(map (etabc ks cs) c1, dys')"])
       (subst du, auto simp: eandbuf_def list_all_iff)
 qed
+
+subsubsection \<open>Firing of the fused node\<close>
 
 lemma tok_weak:
   "tok cR cL args \<Longrightarrow> eframe kR cR \<Longrightarrow> eframe kL cL \<Longrightarrow>

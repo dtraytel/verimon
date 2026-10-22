@@ -5,10 +5,11 @@ theory Multiway
 begin
 (*>*)
 
-unbundle MFODL_notation \<comment> \<open> enable notation \<close>
+section \<open>Multiway conjunctions\<close>
 
+unbundle MFODL_notation
 
-subsection \<open>Translation to n-ary conjunction\<close>
+subsection \<open>Translation to multiway conjunctions\<close>
 
 fun get_and_list :: "'t Formula.formula \<Rightarrow> 't Formula.formula list" where
   "get_and_list (\<And>\<^sub>F l) = (if l = [] then [\<And>\<^sub>F l] else l)"
@@ -147,7 +148,7 @@ lemma convert_multiway_eventually [simp]:
 abbreviation "convert_multiway_regex \<equiv> Regex.map_regex convert_multiway"
 
 
-subsection \<open> convert multiway and fv \<close>
+subsection \<open>Preservation of free variables\<close>
 
 lemma fv_safe_get_and:
   "safe_formula \<phi> \<Longrightarrow> fv \<phi> \<subseteq> (\<Union>x\<in>(set (filter safe_formula (get_and_list \<phi>))). fv x)"
@@ -237,13 +238,14 @@ lemma nfv_convert_multiway: "Formula.nfv (convert_multiway \<phi>) = Formula.nfv
   unfolding Formula.nfv_def by (auto simp: fv_convert_multiway)
 
 
-subsection \<open> convert multiway and safety \<close>
+subsection \<open>Preservation of safety\<close>
+
+subsubsection \<open>Recursion safety\<close>
 
 lemma pred_cmultiway_conjD: "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F \<psi>)) 
   \<Longrightarrow> \<not> contains_pred p (convert_multiway \<psi>)
   \<Longrightarrow> contains_pred p (convert_multiway \<phi>)"
 proof -
-  \<comment> \<open>all cases of @{const convert_multiway} on a conjunction, except bounded release\<close>
   have main: "contains_pred p (convert_multiway \<phi>)"
     if cp: "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F \<chi>))"
       and ncp: "\<not> contains_pred p (convert_multiway \<chi>)"
@@ -451,6 +453,8 @@ next
   then show ?case
     by (simp add: regex.set_map image_image cong: image_cong)
 qed (auto simp add: image_image)
+
+subsubsection \<open>Safe formulas\<close>
 
 lemma safe_convert_multiway: "safe_formula \<phi> \<Longrightarrow> safe_formula (convert_multiway \<phi>)"
 proof (induction \<phi> rule: safe_formula_induct)
@@ -804,7 +808,7 @@ qed (auto simp add: fv_convert_multiway nfv_convert_multiway
     safe_dual_def case_Neg_iff)
 
 
-subsection \<open> convert multiway and future bounded \<close>
+subsection \<open>Preservation of future boundedness\<close>
 
 lemma future_bounded_multiway_Ands: "Safety.future_bounded (convert_multiway \<phi>) = Safety.future_bounded \<phi> 
   \<Longrightarrow> Safety.future_bounded (\<And>\<^sub>F (get_and_list (convert_multiway \<phi>))) = Safety.future_bounded \<phi>"
@@ -931,6 +935,8 @@ next
         elim: safe_regex_safe_formula[THEN disjE_Not2])
 qed (auto simp: list.pred_set convert_multiway_remove_neg is_constraint_iff
     future_bounded_remove_neg case_Neg_iff safe_assignment_iff)
+
+subsection \<open>Preservation of the semantics\<close>
 
 lemma sat_convert_multiway: 
   "safe_formula \<phi> \<Longrightarrow> Formula.sat \<sigma> V v i (convert_multiway \<phi>) \<longleftrightarrow> Formula.sat \<sigma> V v i \<phi>"
