@@ -18,9 +18,6 @@ text \<open>
   bucket.
 \<close>
 
-lemma eidx_empty[simp]: "eidx msk {} = Mapping.empty"
-  by (intro mapping_eqI) (simp add: lookup_eidx)
-
 definition eidx_union :: "('b list, 'b list set) mapping \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow>
     ('b list, 'b list set) mapping" where
   "eidx_union = Mapping.combine (\<union>)"
@@ -330,9 +327,6 @@ lemma nth_etabcs[simp]: "i < length rels \<Longrightarrow> etabcs kss css rels !
 definition wf_atoms :: "cols \<Rightarrow> cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> bool" where
   "wf_atoms ks kss css rels \<longleftrightarrow> length kss = length rels \<and> length css = length rels \<and>
      (\<forall>i < length rels. eframe (kss ! i) (css ! i) \<and> set (kss ! i) \<subseteq> set ks \<and> table (kss ! i) (rels ! i))"
-
-lemma etabc_eq_empty_table[simp]: "etabc ks cs T = empty_table \<longleftrightarrow> T = empty_table"
-  by (simp add: etabc_empty_iff empty_table_def)
 
 locale eregex_frame =
   fixes ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list"

@@ -133,13 +133,6 @@ qed (simp add: csl_infinite)
 lemma gcache_ugres: "gcache q p a = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) False \<omega> pos a)"
   by (simp add: gcache_def ugres_def gres_gvset split: prod.splits)
 
-lemma lookup_nflat: "Mapping.lookup (nflat k M) t = (case Mapping.lookup M (drop k t) of None \<Rightarrow> None
-     | Some aI \<Rightarrow> Mapping.lookup (snd aI) t)"
-  unfolding nflat_def by (simp add: Mapping.lookup.abs_eq)
-
-lemma lookup_nsumm: "Mapping.lookup (nsumm M) g = map_option fst (Mapping.lookup M g)"
-  by (simp add: nsumm_def lookup_map_values)
-
 lemma nflat_nins: "nflat k (nins k si su t M) = ucnt_add1 t (nflat k M)"
   by (rule mapping_eqI)
     (auto simp: lookup_nflat nins_def ucnt_add1_def Let_def lookup_update'
@@ -559,6 +552,12 @@ proof (induct xs arbitrary: R)
   case (Cons t xs)
   show ?case using Cons.hyps[OF rdel(2)[OF Cons.prems]] rdel(1)[OF Cons.prems] by simp
 qed simp
+
+lemma nflat_empty[simp]: "nflat k Mapping.empty = Mapping.empty"
+  by (rule mapping_eqI) (simp add: lookup_nflat)
+
+lemma nsumm_empty[simp]: "nsumm Mapping.empty = Mapping.empty"
+  by (rule mapping_eqI) (simp add: lookup_nsumm)
 
 lemma is_empty_eq_empty: "Mapping.is_empty m \<longleftrightarrow> m = Mapping.empty"
   by (metis Mapping.is_empty_empty Mapping.keys_empty Mapping.is_empty_def mapping_eqI
