@@ -1138,6 +1138,8 @@ proof -
     unfolding r cc reorder_def using etabc_restrict[OF fk e[symmetric] t] by simp
 qed
 
+context eregex_frame begin
+
 lemma wf_atoms: "wfrels rels \<Longrightarrow> wf_atoms ks (map Formula.fv_list \<psi>s) css rels"
   using lc fa sub by (auto simp: wf_atoms_def list_all2_conv_all_nth)
 
@@ -1372,6 +1374,8 @@ lemma etabc_foldr_lookup:
        = foldr (\<union>) [lookup rel ms. (t, rel) \<leftarrow> daux, P t] {}"
   using assms by (induct rule: emrd_rel_induct) (auto simp: etabc_Un_img etabc_def)
 
+context ematchP_frame begin
+
 lemma wfa: "wf_atoms ks kss css rels" by (rule wf_atoms[OF ops])
 
 lemma tabT: "ms \<in> set mrs \<Longrightarrow> table ks (r\<epsilon>_strict ks kss rels ms)"
@@ -1478,6 +1482,8 @@ lemma emld_rel_induct[consumes 1, case_names Nil Cons]:
   shows "P aux daux"
   using assms(1)[unfolded emld_rel_def]
   by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: emld_rel_def\<close>)
+
+context ematchF_frame begin
 
 lemma okms: "ms \<in> set mrs \<Longrightarrow> wfrels rels \<Longrightarrow> ok (length rels) ms"
   using mrsok lr by auto

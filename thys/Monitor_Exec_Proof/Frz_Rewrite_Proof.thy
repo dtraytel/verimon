@@ -1,6 +1,6 @@
 (*<*)
 theory Frz_Rewrite_Proof
-  imports "Monitor_Exec.Frz_Rewrite" "MFODL_Monitor_Proof.Progress" "Monitor_Impl_Proof.Monitor_Impl_Proof"
+  imports "Monitor_Exec.Frz_Rewrite" "MFODL_Monitor_Proof.Progress"
 begin
 (*>*)
 
