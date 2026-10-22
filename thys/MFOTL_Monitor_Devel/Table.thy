@@ -59,17 +59,11 @@ subsection \<open>Well-formed tuples and tables\<close>
 definition wf_tuple :: "nat list \<Rightarrow> 'a tuple \<Rightarrow> bool" where
   "wf_tuple cs x \<longleftrightarrow> length x = length cs"
 
-lemma wf_tuple_length: "wf_tuple cs x \<Longrightarrow> length x = length cs"
-  by (simp add: wf_tuple_def)
-
 lemma wf_tuple_Nil[simp]: "wf_tuple [] x \<longleftrightarrow> x = []" "wf_tuple cs [] \<longleftrightarrow> cs = []"
   by (auto simp: wf_tuple_def)
 
 lemma wf_tuple_Cons[simp]: "wf_tuple (c # cs) x \<longleftrightarrow> (\<exists>a y. x = a # y \<and> wf_tuple cs y)"
   by (cases x) (auto simp: wf_tuple_def)
-
-lemma wf_tuple_append: "wf_tuple cs x \<Longrightarrow> wf_tuple ds y \<Longrightarrow> wf_tuple (cs @ ds) (x @ y)"
-  by (simp add: wf_tuple_def)
 
 lemma wf_tuple_upt: "wf_tuple [0..<n] x \<longleftrightarrow> length x = n"
   by (simp add: wf_tuple_def)
@@ -84,9 +78,6 @@ lemma tableD: "table cs X \<Longrightarrow> x \<in> X \<Longrightarrow> wf_tuple
   unfolding table_def by auto
 
 lemma table_Un[simp]: "table cs X \<Longrightarrow> table cs Y \<Longrightarrow> table cs (X \<union> Y)"
-  unfolding table_def by auto
-
-lemma table_InterI: "\<R> \<noteq> {} \<Longrightarrow> \<forall>R\<in>\<R>. table cs R \<Longrightarrow> table cs (\<Inter> \<R>)"
   unfolding table_def by auto
 
 lemma table_empty[simp]: "table cs {}"
@@ -240,27 +231,6 @@ lemma union_empty_table_eq[simp]: "empty_table \<union> R = R" "R \<union> empty
 lemma table_empty_vars_iff: "table [] R \<longleftrightarrow> R = empty_table \<or> R = unit_table"
   unfolding table_def empty_table_def unit_table_def by auto
 
-lemmas table_empty_varsD = iffD1[OF table_empty_vars_iff]
-
-primrec tabulate :: "(nat \<Rightarrow> 'a) \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a list" where
-  "tabulate f x 0 = []"
-| "tabulate f x (Suc n) = f x # tabulate f (Suc x) n"
-
-lemma tabulate_alt: "tabulate f x n = map f [x ..< x + n]"
-  by (induct n arbitrary: x) (auto simp: not_le Suc_le_eq upt_rec)
-
-lemma length_tabulate[simp]: "length (tabulate f x n) = n"
-  by (induction n arbitrary: x) simp_all
-
-lemma map_tabulate[simp]: "map f (tabulate g x n) = tabulate (\<lambda>x. f (g x)) x n"
-  by (induction n arbitrary: x) simp_all
-
-lemma nth_tabulate[simp]: "k < n \<Longrightarrow> tabulate f x n ! k = f (x + k)"
-proof (induction n arbitrary: x k)
-  case (Suc n)
-  then show ?case by (cases k) simp_all
-qed simp
-
 definition "singleton_table x = {[x]}"
 
 lemma singleton_table[simp]: "table [i] (singleton_table x)"
@@ -411,8 +381,6 @@ next
     by (auto simp: U)
 qed
 
-lemmas join_restrict_table = join_restrict
-
 lemma join_table:
   assumes "table cs X" "table ds Y" "\<not> b \<Longrightarrow> set ds \<subseteq> set cs" "cols_union cs ds = es"
   shows "table es (join cs X b ds Y)"
@@ -434,60 +402,12 @@ next
   with False assms(1) show ?thesis
     by (auto simp: table_def join_False_code)
 qed
-lemma in_joinI:
-  "distinct cs \<Longrightarrow> distinct ds \<Longrightarrow> table cs X \<Longrightarrow> table ds Y \<Longrightarrow> (\<not> b \<Longrightarrow> set ds \<subseteq> set cs) \<Longrightarrow>
-    wf_tuple (cols_union cs ds) v \<Longrightarrow> restrict cs (cols_union cs ds) v \<in> X \<Longrightarrow>
-    (b \<Longrightarrow> restrict ds (cols_union cs ds) v \<in> Y) \<Longrightarrow> (\<not> b \<Longrightarrow> restrict ds (cols_union cs ds) v \<notin> Y) \<Longrightarrow>
-    v \<in> join cs X b ds Y"
-  by (subst join_restrict) auto
-
-lemma in_joinE:
-  "v \<in> join cs X b ds Y \<Longrightarrow> distinct cs \<Longrightarrow> distinct ds \<Longrightarrow> table cs X \<Longrightarrow> table ds Y \<Longrightarrow>
-    (\<not> b \<Longrightarrow> set ds \<subseteq> set cs) \<Longrightarrow>
-    (wf_tuple (cols_union cs ds) v \<Longrightarrow> restrict cs (cols_union cs ds) v \<in> X \<Longrightarrow>
-      (if b then restrict ds (cols_union cs ds) v \<in> Y else restrict ds (cols_union cs ds) v \<notin> Y) \<Longrightarrow> P) \<Longrightarrow> P"
-  by (subst (asm) join_restrict) auto
-
-lemma join_unit_table:
-  "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join cs R True [] unit_table = R"
-  "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join [] unit_table True cs R = R"
-  by (auto simp: join_True_code unit_table_def join1.simps table_def restrict_idle)
 
 lemma join_empty[simp]:
   "join cs R True ds {} = {}"
   "join cs {} True ds R = {}"
   by (auto simp: join_True_code)
 
-lemma join_union_distrib:
-  "join cs R1 True ds (R2 \<union> R3) = join cs R1 True ds R2 \<union> join cs R1 True ds R3"
-  "join cs (R1 \<union> R2) True ds R3 = join cs R1 True ds R3 \<union> join cs R2 True ds R3"
-  by (auto simp: join_True_code)
-
-lemma join_Un_distrib:
-  "join cs R True ds (\<Union>i\<in>\<I>. \<R> i) = (\<Union>i\<in>\<I>. join cs R True ds (\<R> i))"
-  "join cs (\<Union>i\<in>\<I>. \<R> i) True ds R = (\<Union>i\<in>\<I>. join cs (\<R> i) True ds R)"
-  by (auto simp: join_True_code)
-
-lemma join_sub_tables_eq:
-  assumes "distinct cs" "distinct ds" "table cs R1" "table ds R2" "set ds \<subseteq> set cs"
-  shows "join cs R1 True ds R2 = {v \<in> R1. restrict ds cs v \<in> R2}"
-proof -
-  have R1: "wf_tuple cs v \<and> restrict cs cs v \<in> R1 \<longleftrightarrow> v \<in> R1" for v
-    using tableD[OF assms(3), of v] restrict_idle[OF assms(1), of v] by auto
-  show ?thesis
-    using join_restrict[OF assms(1-4), where b=True] R1
-    by (auto simp: cols_union_subset[OF assms(5)])
-qed
-
-lemma join_eq_interI:
-  assumes "distinct cs" "table cs R1" "table cs R2"
-  shows "join cs R1 True cs R2 = R1 \<inter> R2"
-proof -
-  have "restrict cs cs v = v" if "v \<in> R1" for v
-    using restrict_idle[OF assms(1) tableD[OF assms(2) that]] .
-  then show ?thesis
-    by (subst join_sub_tables_eq[OF assms(1,1,2,3) subset_refl]) auto
-qed
 
 subsection \<open>Correctness predicate\<close>
 
@@ -508,29 +428,8 @@ lemma qtable_iff: "qtable cs P Q R \<longleftrightarrow>
 lemma qtable_cong: "qtable cs P Q X \<Longrightarrow> cs = ds \<Longrightarrow> (\<And>v. P v \<Longrightarrow> Q v \<longleftrightarrow> Q' v) \<Longrightarrow> qtable ds P Q' X"
   by (auto simp: qtable_def)
 
-lemma qtable_cong_strong: "cs = ds \<Longrightarrow> (\<And>v. wf_tuple cs v \<Longrightarrow> P v \<Longrightarrow> Q v \<longleftrightarrow> Q' v) \<Longrightarrow>
-  qtable cs P Q = qtable ds P Q'"
-  unfolding qtable_iff fun_eq_iff by blast
-
-lemma qtable_wf_tuple_cong: "qtable cs P Q X \<Longrightarrow> cs = ds \<Longrightarrow>
-  (\<And>v. wf_tuple cs v \<Longrightarrow> P v \<Longrightarrow> Q v = Q' v) \<Longrightarrow> qtable ds P Q' X"
-  using qtable_cong_strong[of cs ds P Q] by simp
-
-lemma qtable_unique_pred:
-  "qtable cs P Q1 R \<Longrightarrow> qtable cs P Q2 R \<Longrightarrow> (\<forall>v. P v \<longrightarrow> wf_tuple cs v \<longrightarrow> Q1 v = Q2 v)"
-  by (auto simp: qtable_iff)
-
-lemma qtable_singleton_table: "qtable [i] P (\<lambda>v. v = [x]) (singleton_table x)"
-  unfolding qtable_def singleton_table_def table_def by auto
-
 abbreviation wf_table where
   "wf_table cs Q X \<equiv> qtable cs (\<lambda>_. True) Q X"
-
-lemma wf_table_iff: "wf_table cs Q X \<longleftrightarrow> finite X \<and> (\<forall>x. x \<in> X \<longleftrightarrow> (Q x \<and> wf_tuple cs x))"
-  unfolding qtable_def table_def by auto
-
-lemma table_wf_table: "finite X \<Longrightarrow> table cs X = wf_table cs (\<lambda>v. v \<in> X) X"
-  unfolding table_def wf_table_iff by auto
 
 lemma qtableI: "table cs X \<Longrightarrow> finite X \<Longrightarrow>
   (\<And>x. x \<in> X \<Longrightarrow> wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x) \<Longrightarrow>
@@ -558,11 +457,6 @@ subsubsection \<open>No columns\<close>
 
 lemma qtable_empty_vars_iff:
   "qtable [] P Q R \<longleftrightarrow> (R = empty_table \<or> R = unit_table) \<and> (\<forall>v. P v \<longrightarrow> (v \<in> R) = (Q v \<and> v = []))"
-  unfolding qtable_iff table_empty_vars_iff by (auto simp: empty_table_def unit_table_def)
-
-lemma qtable_empty_varsI:
-  "(\<And>v. P v \<Longrightarrow> Q v \<Longrightarrow> v \<noteq> []) \<Longrightarrow> qtable [] P Q empty_table"
-  "(\<And>v. P v \<Longrightarrow> (v = []) = Q v) \<Longrightarrow> qtable [] P Q unit_table"
   unfolding qtable_iff table_empty_vars_iff by (auto simp: empty_table_def unit_table_def)
 
 lemmas qtable_empty_varsD =
@@ -593,30 +487,15 @@ lemma qtable_empty: "(\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightar
 lemma qtable_empty_iff: "qtable cs P Q empty_table = (\<forall>x. wf_tuple cs x \<longrightarrow> P x \<longrightarrow> Q x \<longrightarrow> False)"
   unfolding qtable_def table_def empty_table_def by auto
 
-lemma qtable_unit_iff: "qtable cs P Q unit_table \<longleftrightarrow> (cs = [] \<and> (P [] \<longrightarrow> Q []))"
-  unfolding qtable_iff table_def unit_table_def by (cases cs) auto
-
-lemma qtable_unitI: "(P [] \<Longrightarrow> Q []) \<Longrightarrow> cs = [] \<Longrightarrow> qtable cs P Q unit_table"
-  by (simp add: qtable_unit_iff)
-
 lemma qtable_unit_table: "(\<And>x. wf_tuple [] x \<Longrightarrow> P x \<Longrightarrow> Q x) \<Longrightarrow> qtable [] P Q unit_table"
   unfolding qtable_def table_def by (auto simp: in_unit_table unit_table_def)
 
 
 subsubsection \<open>Union\<close>
 
-lemma qtable_union_iff: "qtable cs P Q1 R1 \<Longrightarrow> qtable cs P Q2 R2 \<Longrightarrow>
-  qtable cs P Q (R1 \<union> R2) \<longleftrightarrow> (\<forall>v. P v \<longrightarrow> wf_tuple cs v \<longrightarrow> Q v = (Q1 v \<or> Q2 v))"
-  by (auto simp: qtable_iff)
-
 lemma qtable_union: "qtable cs P Q1 X \<Longrightarrow> qtable cs P Q2 Y \<Longrightarrow>
   (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<or> Q2 x) \<Longrightarrow> qtable cs P Q (X \<union> Y)"
   unfolding qtable_def table_def by blast
-
-lemma qtable_union_emptyI:
-  "qtable cs P Q R \<Longrightarrow> qtable cs P Q (R \<union> empty_table)"
-  "qtable cs P Q R \<Longrightarrow> qtable cs P Q (empty_table \<union> R)"
-  by simp_all
 
 lemma qtable_Union: "finite I \<Longrightarrow> (\<And>i. i \<in> I \<Longrightarrow> qtable cs P (Qi i) (Xi i)) \<Longrightarrow>
   (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x \<longleftrightarrow> (\<exists>i \<in> I. Qi i x)) \<Longrightarrow> qtable cs P Q (\<Union>i \<in> I. Xi i)"
@@ -761,14 +640,6 @@ proof (rule qtableI)
   qed
 qed
 
-lemma qtable_join_fixed:
-  assumes "qtable cs P1 Q1 X" "qtable ds P2 Q2 Y" "distinct cs" "distinct ds"
-    "\<not> b \<Longrightarrow> set ds \<subseteq> set cs" "es = cols_union cs ds"
-    "\<And>x. wf_tuple es x \<Longrightarrow> P x \<Longrightarrow> P1 (restrict cs es x) \<and> P2 (restrict ds es x)"
-  shows "qtable es P (\<lambda>x. Q1 (restrict cs es x) \<and>
-    (if b then Q2 (restrict ds es x) else \<not> Q2 (restrict ds es x))) (join cs X b ds Y)"
-  by (rule qtable_join[OF assms]) auto
-
 
 subsubsection \<open>Assignment\<close>
 
@@ -857,12 +728,6 @@ lemma mem_restrE:
 lemma mem_restr_wf_tuple: "mem_restr A cs x \<Longrightarrow> wf_tuple cs x"
   by (auto simp: mem_restr_def wf_tuple_def dest: list_all2_lengthD)
 
-lemma mem_restr_IntD: "mem_restr (A \<inter> B) cs v \<Longrightarrow> mem_restr A cs v \<and> mem_restr B cs v"
-  unfolding mem_restr_def by auto
-
-lemma mem_restr_Un_iff: "mem_restr (A \<union> B) cs x \<longleftrightarrow> mem_restr A cs x \<or> mem_restr B cs x"
-  unfolding mem_restr_def by blast
-
 lemma mem_restr_UNIV[simp]: "distinct cs \<Longrightarrow> wf_tuple cs x \<Longrightarrow> mem_restr UNIV cs x"
   by (rule mem_restrI[where y = "val (Suc (Max (insert 0 (set cs)))) cs x"])
     (auto simp: le_imp_less_Suc)
@@ -881,35 +746,6 @@ proof -
   then show ?thesis
     unfolding qtable_iff table_def fun_eq_iff by blast
 qed
-
-
-subsubsection \<open>Semijoin\<close>
-
-text \<open>A join whose right operand's columns are among the left one's keeps the left columns,
-  in their order; with the operands restricted to the same set of valuations.\<close>
-
-lemma qtable_semijoin:
-  assumes "qtable cs (mem_restr R cs) Q1 X" "qtable ds (mem_restr R ds) Q2 Y"
-    "distinct cs" "distinct ds" "set ds \<subseteq> set cs"
-    "\<And>x. wf_tuple cs x \<Longrightarrow> mem_restr R cs x \<Longrightarrow>
-      Q x \<longleftrightarrow> Q1 x \<and> (if b then Q2 (restrict ds cs x) else \<not> Q2 (restrict ds cs x))"
-  shows "qtable cs (mem_restr R cs) Q (join cs X b ds Y)"
-proof -
-  have U: "cols_union cs ds = cs"
-    by (rule cols_union_subset[OF assms(5)])
-  have "qtable (cols_union cs ds) (mem_restr R cs) Q (join cs X b ds Y)"
-    using assms(3-6)
-    by (intro qtable_join[OF assms(1-4)]) (auto simp: U restrict_idle[OF assms(3)] intro: restrict_mem_restr)
-  then show ?thesis
-    by (simp only: U)
-qed
-
-lemma qtable_semijoin_fixed:
-  assumes "qtable cs (mem_restr R cs) Q1 X" "qtable ds (mem_restr R ds) Q2 Y"
-    "distinct cs" "distinct ds" "set ds \<subseteq> set cs"
-  shows "qtable cs (mem_restr R cs)
-    (\<lambda>x. Q1 x \<and> (if b then Q2 (restrict ds cs x) else \<not> Q2 (restrict ds cs x))) (join cs X b ds Y)"
-  by (rule qtable_semijoin[OF assms]) simp
 
 
 subsubsection \<open>Projection\<close>
@@ -1009,29 +845,6 @@ proof -
   qed
   with y(1) show ?thesis
     by (intro mem_restrI[OF assms(1) _ assms(2)]) (auto simp: lift_envs_def)
-qed
-
-lemma mem_restr_ex_proj:
-  assumes "distinct cs" "mem_restr (lift_envs A) cs x"
-  shows "mem_restr A (ex_cols cs) (ex_proj cs x)"
-proof -
-  obtain y where y: "y \<in> lift_envs A" "wf_tuple cs x" "\<forall>c\<in>set cs. c < length y \<and> y ! c = tup_get cs x c"
-    using assms(2) by (auto elim: mem_restrE[OF _ assms(1)])
-  then obtain a y' where y': "y = a # y'" "y' \<in> A"
-    by (auto simp: lift_envs_def)
-  have "\<forall>c\<in>set (ex_cols cs). c < length y' \<and> y' ! c = tup_get (ex_cols cs) (ex_proj cs x) c"
-  proof
-    fix c
-    assume "c \<in> set (ex_cols cs)"
-    then obtain d where d: "d \<in> set cs" "d \<noteq> 0" "c = d - 1"
-      by (auto simp: set_ex_cols)
-    then have c: "Suc c \<in> set cs"
-      by (cases d) simp_all
-    then show "c < length y' \<and> y' ! c = tup_get (ex_cols cs) (ex_proj cs x) c"
-      using y(3)[rule_format, OF c] y'(1) tup_get_ex_proj[OF c, of x] by simp
-  qed
-  then show ?thesis
-    by (rule mem_restrI[OF distinct_ex_cols[OF assms(1)] y'(2) wf_tuple_ex_proj])
 qed
 
 lemma qtable_project:

@@ -62,21 +62,6 @@ code_printing
   | constant "empty_string :: string8" \<rightharpoonup> (Eval) "\"\""
   | constant "Code_Evaluation.term_of :: string8 \<Rightarrow> term" \<rightharpoonup> (Eval) "String8.to'_term"
 
-ML \<open>
-structure String8 =
-struct
-  fun to_term x = @{term Abs_string8} $ HOLogic.mk_string x;
-end;
-\<close>
-
-code_printing
-  type_constructor string8 \<rightharpoonup> (Eval) "string"
-  | constant "string8_literal :: String.literal \<Rightarrow> string8" \<rightharpoonup> (Eval) "_"
-  | constant "HOL.equal :: string8 \<Rightarrow> string8 \<Rightarrow> bool" \<rightharpoonup> (Eval) infixl 6 "="
-  | constant "(\<le>) :: string8 \<Rightarrow> string8 \<Rightarrow> bool" \<rightharpoonup> (Eval) infixl 6 "<="
-  | constant "(<) :: string8 \<Rightarrow> string8 \<Rightarrow> bool" \<rightharpoonup> (Eval) infixl 6 "<"
-  | constant "Code_Evaluation.term_of :: string8 \<Rightarrow> term" \<rightharpoonup> (Eval) "String8.to'_term"
-
 derive (eq) ceq string8
 derive (linorder) compare string8
 derive (compare) ccompare string8
@@ -91,10 +76,6 @@ definition div_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" 
 definition mod_to_zero :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
   "mod_to_zero x y = (let z = snd (Code_Numeral.divmod_abs x y) in
     if x < 0 then - z else z)"
-
-lemma "b \<noteq> 0 \<Longrightarrow> div_to_zero a b * b + mod_to_zero a b = a"
-  unfolding div_to_zero_def mod_to_zero_def Let_def
-  by (auto simp: minus_mod_eq_mult_div[symmetric] div_minus_right mod_minus_right ac_simps)
 
 
 text \<open>Hash codes (of the Isabelle Collections Framework) for the values of events: those of the

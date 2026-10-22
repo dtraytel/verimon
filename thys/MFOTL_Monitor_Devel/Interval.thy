@@ -157,16 +157,6 @@ lift_definition clopen_ivlL :: "nat \<Rightarrow> enat \<Rightarrow> \<I>" is
   using enat_iless Suc_ile_eq
   by (auto simp: upclosed_def downclosed_def not_le order_subst2)
 
-lemma interval_bounds:
-  fixes a:: nat
-  fixes b:: enat
-  fixes I::\<I>
-  assumes "a \<le> b"
-  assumes "I = interval a b"
-  shows "memL I = (\<lambda>i. a \<le> i) \<and> memR I = (\<lambda>i. enat i \<le> b) \<and> (bounded I = (b \<noteq> \<infinity>))"
-  using assms
-  by transfer auto
-
 (* [a, b] \<Rightarrow> [b+1, \<infinity>] *)
 lift_definition flip_int :: "\<I> \<Rightarrow> \<I>" is
   "\<lambda>I. if bounded I then ((\<lambda>i. \<not>memR I i), (\<lambda>i. True), False) else ((\<lambda>i. True), (\<lambda>i. True), False)"
@@ -245,18 +235,6 @@ lemma flip_int_less_lower_props:
   shows "mem I' 0 \<and> bounded I'"
   using assms by (transfer') (auto split: if_splits)
 
-lemma flip_int_less_lower_memL:
-  assumes "\<not>memL I x" (* [a, b], x < a *)
-  shows "memL (flip_int_less_lower I) x" (* x \<in> [0, a-1] *)
-  using assms
-  by (transfer') (simp)
-
-lemma flip_int_less_lower_memR:
-  assumes "\<not>memL I 0" (* I = [a, b], I' = [0, a-1]. x \<le> a-1 *)
-  shows "(memR (flip_int_less_lower I) x) = (\<not>memL I x)" (* x \<notin> [a, b] *)
-  using assms
-  by (transfer') (simp)
-
 lemma flip_int_less_lower_mem:
   assumes "\<not>bounded I" "\<not>mem I x" (* [a, \<infinity>], x < a *)
   shows "mem (flip_int_less_lower I) x" (* x \<in> [0, a-1] *)
@@ -287,13 +265,7 @@ lemma flip_int_double_upper_bounded[simp]: "bounded (flip_int_double_upper I) = 
 lemma int_remove_lower_bound_bounded[simp]: "bounded (int_remove_lower_bound I) = bounded I"
   by (transfer') (auto)
 
-lemma int_remove_lower_bound_mem: "mem I x \<Longrightarrow> mem (int_remove_lower_bound I) x"
-  by (transfer') (auto)
-
-lemma memR_flip_int_double_upper: "memR I t \<Longrightarrow> memR (flip_int_double_upper I) t"
-  by transfer auto
-
-lemma int_remove_lower_bound_simps [simp]: 
+lemma int_remove_lower_bound_simps [simp]:
   "memL (int_remove_lower_bound I) 0"
   "mem (int_remove_lower_bound I) 0"
   by (transfer, clarsimp)+

@@ -39,9 +39,6 @@ lemma ssorted_monoI: "\<forall>i j. i \<le> j \<longrightarrow> s !! i \<le> s !
 lemma ssorted_iff_mono: "ssorted s \<longleftrightarrow> (\<forall>i j. i \<le> j \<longrightarrow> s !! i \<le> s !! j)"
   using ssorted_monoI ssorted_monoD by metis
 
-lemma ssorted_iff_le_Suc: "ssorted s \<longleftrightarrow> (\<forall>i. s !! i \<le> s !! Suc i)"
-  using mono_iff_le_Suc[of "snth s"] by (simp add: mono_def ssorted_iff_mono)
-
 definition "sincreasing s = (\<forall>x. \<exists>i. x < s !! i)"
 
 lemma sincreasingI: "(\<And>x. \<exists>i. x < s !! i) \<Longrightarrow> sincreasing s"
@@ -89,9 +86,6 @@ unfolding sincreasing_def proof
   qed
 qed
 
-lemma sincreasing_stl: "sincreasing s \<Longrightarrow> sincreasing (stl s)" for s :: "'a :: semilattice_sup stream"
-  by (auto 0 4 simp: gr0_conv_Suc intro!: sincreasingI dest: sincreasing_grD[of s 0])
-
 typedef 'a trace = "{s :: ('a \<times> nat) stream. ssorted (smap snd s) \<and> sincreasing (smap snd s)}"
   by (intro exI[of _ "smap (\<lambda>i. (undefined, i)) nats"])
     (auto simp: stream.map_comp stream.map_ident cong: stream.map_cong)
@@ -105,9 +99,6 @@ lift_definition \<tau> :: "'a trace \<Rightarrow> nat \<Rightarrow> nat" is
 
 lemma stream_eq_iff: "s = s' \<longleftrightarrow> (\<forall>n. s !! n = s' !! n)"
   by (metis stream.map_cong0 stream_smap_nats)
-
-lemma trace_eqI: "(\<And>i. \<Gamma> \<sigma> i = \<Gamma> \<sigma>' i) \<Longrightarrow> (\<And>i. \<tau> \<sigma> i = \<tau> \<sigma>' i) \<Longrightarrow> \<sigma> = \<sigma>'"
-  by transfer (auto simp: stream_eq_iff intro!: prod_eqI)
 
 lemma \<tau>_mono[simp]: "i \<le> j \<Longrightarrow> \<tau> s i \<le> \<tau> s j"
   by transfer (auto simp: ssorted_iff_mono)
@@ -136,12 +127,6 @@ lemma \<tau>_map_\<Gamma>[simp]: "\<tau> (map_\<Gamma> f s) i = \<tau> s i"
 lemma map_\<Gamma>_id[simp]: "map_\<Gamma> id s = s"
   by transfer (simp add: stream.map_id)
 
-lemma map_\<Gamma>_comp: "map_\<Gamma> g (map_\<Gamma> f s) = map_\<Gamma> (g \<circ> f) s"
-  by transfer (simp add: stream.map_comp comp_def prod.case_eq_if case_prod_beta')
-
-lemma map_\<Gamma>_cong: "\<sigma>\<^sub>1 = \<sigma>\<^sub>2 \<Longrightarrow> (\<And>x. f\<^sub>1 x = f\<^sub>2 x) \<Longrightarrow> map_\<Gamma> f\<^sub>1 \<sigma>\<^sub>1 = map_\<Gamma> f\<^sub>2 \<sigma>\<^sub>2"
-  by transfer (auto intro!: stream.map_cong)
-
 
 subsection \<open>Finite trace prefixes\<close>
 
@@ -156,9 +141,6 @@ lift_definition pmap_\<Gamma> :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a prefix 
 
 lift_definition last_ts :: "'a prefix \<Rightarrow> nat" is
   "\<lambda>p. (case p of [] \<Rightarrow> 0 | _ \<Rightarrow> snd (last p))" .
-
-lift_definition first_ts :: "nat \<Rightarrow> 'a prefix \<Rightarrow> nat" is
-  "\<lambda>n p. (case p of [] \<Rightarrow> n | _ \<Rightarrow> snd (hd p))" .
 
 lift_definition pnil :: "'a prefix" is "[]" by simp
 
@@ -221,9 +203,6 @@ lemma prefix_of_psnocE: "prefix_of (psnoc p x) s \<Longrightarrow> last_ts p \<l
 
 lemma le_pnil[simp]: "pnil \<le> \<pi>"
   by transfer auto
-
-lemma le_psnocI: "last_ts \<pi> \<le> snd x \<Longrightarrow> \<pi> \<le> psnoc \<pi> x"
-  by transfer (simp split: list.split)
 
 lift_definition take_prefix :: "nat \<Rightarrow> 'a trace \<Rightarrow> 'a prefix" is stake
   by (auto dest: sorted_stake)
@@ -294,97 +273,6 @@ lemma \<tau>_prefix_conv: "prefix_of p s \<Longrightarrow> prefix_of p s' \<Long
 lemma \<Gamma>_prefix_conv: "prefix_of p s \<Longrightarrow> prefix_of p s' \<Longrightarrow> i < plen p \<Longrightarrow> \<Gamma> s i = \<Gamma> s' i"
   by transfer (simp add: stake_nth[symmetric])
 
-lemma sincreasing_sdrop:
-  fixes s :: "('a :: semilattice_sup) stream"
-  assumes "sincreasing s"
-  shows "sincreasing (sdrop n s)"
-proof (rule sincreasingI)
-  fix x
-  obtain i where "n < i" and "x < s !! i"
-    using sincreasing_grD[OF assms] by blast
-  then have "x < sdrop n s !! (i - n)"
-    by (simp add: sdrop_snth)
-  then show "\<exists>i. x < sdrop n s !! i" ..
-qed
-
-lemma ssorted_shift:
-  "ssorted (xs @- s) = (sorted xs \<and> ssorted s \<and> (\<forall>x\<in>set xs. \<forall>y\<in>sset s. x \<le> y))"
-proof safe
-  assume *: "ssorted (xs @- s)"
-  then show "sorted xs"
-    by (auto simp: ssorted_iff_mono shift_snth sorted_iff_nth_mono split: if_splits)
-  from ssorted_sdrop[OF *, of "length xs"] show "ssorted s"
-    by (auto simp: sdrop_shift)
-  fix x y assume "x \<in> set xs" "y \<in> sset s"
-  then obtain i j where "i < length xs" "xs ! i = x" "s !! j = y"
-    by (auto simp: set_conv_nth sset_range)
-  with ssorted_monoD[OF *, of i "j + length xs"] show "x \<le> y" by auto
-next
-  assume "sorted xs" "ssorted s" "\<forall>x\<in>set xs. \<forall>y\<in>sset s. x \<le> y"
-  then show "ssorted (xs @- s)"
-  proof (coinduction arbitrary: xs s)
-    case (ssorted xs s)
-    with \<open>ssorted s\<close> show ?case
-      by (subst (asm) ssorted.simps) (auto 0 4 simp: neq_Nil_conv shd_sset intro: exI[of _ "_ # _"])
-  qed
-qed
-
-lemma sincreasing_shift:
-  assumes "sincreasing s"
-  shows "sincreasing (xs @- s)"
-proof (rule sincreasingI)
-  fix x
-  from assms obtain i where "x < s !! i"
-    unfolding sincreasing_def by blast
-  then have "x < (xs @- s) !! (length xs + i)"
-    by simp
-  then show "\<exists>i. x < (xs @- s) !! i" ..
-qed
-
-lift_definition replace_prefix :: "'a prefix \<Rightarrow> 'a trace \<Rightarrow> 'a trace" is
-   "\<lambda>\<pi> \<sigma>. if ssorted (smap snd (\<pi> @- sdrop (length \<pi>) \<sigma>)) then
-     \<pi> @- sdrop (length \<pi>) \<sigma> else smap (\<lambda>i. (undefined, i)) nats"
-  by (auto split: if_splits simp: stream.map_comp stream.map_ident sdrop_smap[symmetric]
-    simp del: sdrop_smap intro!: sincreasing_shift sincreasing_sdrop cong: stream.map_cong)
-
-lemma prefix_of_replace_prefix:
-  "prefix_of (pmap_\<Gamma> f \<pi>) \<sigma> \<Longrightarrow> prefix_of \<pi> (replace_prefix \<pi> \<sigma>)"
-proof (transfer; safe; goal_cases)
-  case (1 f \<pi> \<sigma>)
-  then show ?case
-    by (subst (asm) (2) stake_sdrop[symmetric, of _ "length \<pi>"])
-      (auto 0 3 simp: ssorted_shift split_beta o_def stake_shift sdrop_smap[symmetric]
-        ssorted_sdrop not_le simp del: sdrop_smap)
-qed
-
-lemma map_\<Gamma>_replace_prefix:
-  "\<forall>x. f (f x) = f x \<Longrightarrow> prefix_of (pmap_\<Gamma> f \<pi>) \<sigma> \<Longrightarrow> map_\<Gamma> f (replace_prefix \<pi> \<sigma>) = map_\<Gamma> f \<sigma>"
-proof (transfer; safe; goal_cases)
-  case (1 f \<pi> \<sigma>)
-  then show ?case
-    by (subst (asm) (2) stake_sdrop[symmetric, of \<sigma> "length \<pi>"],
-        subst (3) stake_sdrop[symmetric, of \<sigma> "length \<pi>"])
-      (auto simp: ssorted_shift split_beta o_def stake_shift sdrop_smap[symmetric] ssorted_sdrop
-        not_le simp del: sdrop_smap cong: map_cong)
-qed
-
-lemma prefix_of_pmap_\<Gamma>_D:
-  assumes "prefix_of (pmap_\<Gamma> f \<pi>) \<sigma>"
-  shows "\<exists>\<sigma>'. prefix_of \<pi> \<sigma>' \<and> prefix_of (pmap_\<Gamma> f \<pi>) (map_\<Gamma> f \<sigma>')"
-proof -
-  from assms(1) obtain \<sigma>' where 1: "prefix_of \<pi> \<sigma>'"
-    using ex_prefix_of by blast
-  then have "prefix_of (pmap_\<Gamma> f \<pi>) (map_\<Gamma> f \<sigma>')"
-    by transfer simp
-  with 1 show ?thesis by blast
-qed
-
-lemma prefix_of_map_\<Gamma>_D:
-  assumes "prefix_of \<pi>' (map_\<Gamma> f \<sigma>)"
-  shows "\<exists>\<pi>''. \<pi>' = pmap_\<Gamma> f \<pi>'' \<and> prefix_of \<pi>'' \<sigma>"
-  using assms
-  by transfer (auto intro!: exI[of _ "stake (length _) _"] elim: sym dest: sorted_stake)
-
 lift_definition pts :: "'a prefix \<Rightarrow> nat list" is "map snd" .
 
 lemma pts_pmap_\<Gamma>[simp]: "pts (pmap_\<Gamma> f \<pi>) = pts \<pi>"
@@ -398,6 +286,9 @@ lemma length_pts_eq_plen: "length (pts \<pi>) = plen \<pi>"
 
 lemma nth_pts_eq_\<tau>: "prefix_of \<pi> \<sigma> \<Longrightarrow> i < plen \<pi> \<Longrightarrow> pts \<pi> ! i = \<tau> \<sigma> i"
   by transfer (metis nth_map stake_nth)
+
+lemma nth_pts_prefix_cong: "\<pi> \<le> \<pi>' \<Longrightarrow> i < plen \<pi> \<Longrightarrow> pts \<pi> ! i = pts \<pi>' ! i"
+  by transfer (auto simp add: nth_append)
 
 (*<*)
 end
