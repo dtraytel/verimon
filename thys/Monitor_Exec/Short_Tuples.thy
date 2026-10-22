@@ -4,31 +4,20 @@ theory Short_Tuples
 begin
 (*>*)
 
-
-
-section \<open>The operations of the executable monitor that read a field\<close>
+section \<open>Field-reading operations on short tuples\<close>
 
 text \<open>
-  The executable monitor keeps every table over the columns of its formula in ascending order, the
-  kernel over the columns in the order of @{const Formula.fv_list}.  Most executable operations move
-  fields without looking at them and are generic in the element type.  The ones below read a
-  field -- the term evaluation, the match, the constraint, the assignment and the aggregation --
-  and are stated here, over the short tuples, once.  Their agreement with the kernel's
-  operations is proved in @{text Exec_Tables}, through the reordering that relates the two column
-  orders.
+  The executable operations that read a field, over tuples holding a formula's columns in
+  ascending order (the kernel orders them by @{const Formula.fv_list}).
 \<close>
 
 type_synonym utable = "event_data list set"
 
-subsection \<open>The sorted list of a table\<close>
+subsection \<open>Sorted list of a table\<close>
 
 text \<open>
-  The operations that walk a table walk @{const csorted_list_of_set} of it, which is unspecified
-  on an infinite set.  The walks below go through this wrapper instead, which is the sorted list
-  on a finite table and empty otherwise, and which the generated code computes with one
-  finiteness test (constant time on a tree).  Every table the monitor handles is finite, so
-  nothing changes at run time; what changes is that no statement about a walk needs a
-  finiteness assumption to be well defined.
+  Unlike @{const csorted_list_of_set}, the wrapper is specified on infinite sets, so statements
+  about a walk need no finiteness assumption.
 \<close>
 
 definition csl :: "'a :: ccompare set \<Rightarrow> 'a list" where
@@ -43,9 +32,7 @@ lemma csl_infinite: "\<not> finite X \<Longrightarrow> csl X = []"
 lemma set_csl_ed: "finite (X :: event_data list set) \<Longrightarrow> set (csl X) = X"
   using ID_ccompare_etuple_dq by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 
-subsection \<open>Term evaluation\<close>
-
-text \<open>A term of the executable monitor is re-indexed to the positions of its tuple's fields.\<close>
+subsection \<open>Terms and assignment\<close>
 
 fun umeval_trm :: "Formula.trm \<Rightarrow> event_data list \<Rightarrow> event_data" where
   "umeval_trm (Formula.Var x) v = v ! x"
@@ -59,21 +46,17 @@ fun umeval_trm :: "Formula.trm \<Rightarrow> event_data list \<Rightarrow> event
 | "umeval_trm (Formula.F2i x) v = EInt (integer_of_event_data (umeval_trm x v))"
 | "umeval_trm (Formula.I2f x) v = EFloat (double_of_event_data (umeval_trm x v))"
 
-subsection \<open>The assignment\<close>
-
 definition uassign1 :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data list \<Rightarrow> event_data list" where
   "uassign1 p t d = take p d @ umeval_trm t d # drop p d"
 
 definition uassign :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
   "uassign p t D = uassign1 p t ` D"
 
-subsection \<open>The time point and time stamp terms\<close>
-
 fun umtrm :: "mtrm \<Rightarrow> event_data \<Rightarrow> event_data list set" where
   "umtrm (MVar v) x = {[x]}"
 | "umtrm (MConst c) x = (if c = x then {[]} else {})"
 
-subsection \<open>The match\<close>
+subsection \<open>Match and constraint\<close>
 
 fun umatch :: "Formula.trm list \<Rightarrow> event_data list \<Rightarrow> (nat \<rightharpoonup> event_data) option" where
   "umatch [] [] = Some Map.empty"
@@ -90,14 +73,12 @@ definition umatch_table :: "Formula.trm list \<Rightarrow> nat list \<Rightarrow
   "umatch_table tms cs X =
      Option.these ((\<lambda>x. map_option (\<lambda>f. map (\<lambda>c. the (f c)) cs) (umatch tms x)) ` X)"
 
-subsection \<open>The constraint\<close>
-
 definition ueval_constraint :: "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow>
     event_data list \<Rightarrow> bool" where
   "ueval_constraint conf x = (case conf of (t1, p, c, t2) \<Rightarrow>
      eval_constraint0 c (umeval_trm t1 x) (umeval_trm t2 x) = p)"
 
-subsection \<open>The aggregation\<close>
+subsection \<open>Aggregation\<close>
 
 definition uagg_values :: "Formula.trm \<Rightarrow> event_data list set \<Rightarrow> (event_data \<times> enat) set" where
   "uagg_values f G = (let vals = cluster (Some \<circ> umeval_trm f) G in

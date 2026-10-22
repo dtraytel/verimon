@@ -1,11 +1,10 @@
 chapter AFP
 
-session Monitor_Algorithm_Proof (AFP) = VeriMon_CLI +
+session Monitor_Algorithm_Proof (AFP) = Monitor_Exec +
   description
-    "The progress of the monitoring algorithm and its correctness: the invariant wf_mformula, its
-     preservation by meval, and the correctness of VeriMon's preparation for the algorithm.  The
-     theories need only session Monitor_Algorithm; the parent is the top of the code sessions, so
-     that the proof sessions form one chain on top of the code chain and check no theory twice."
+    "Progress and correctness of the monitoring algorithm.  The theories need only
+     Monitor_Algorithm; the parent is the top of the monitor's code sessions, so that the
+     proof sessions form one chain on top of them and check no theory twice."
   theories
     Progress
     Progress_Rewriting
