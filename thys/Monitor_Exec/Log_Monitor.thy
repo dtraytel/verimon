@@ -6,12 +6,9 @@ begin
 
 
 
-section \<open>From the log to the verdicts\<close>
+section \<open>From logs to verdicts\<close>
 
 subsection \<open>Strings\<close>
-
-text \<open>The parser's byte strings and the monitor's strings both represent character lists, and
-  both are OCaml strings in the generated code.\<close>
 
 definition string8_of_bytes :: "bytes \<Rightarrow> string8" where
   "string8_of_bytes b = Abs_string8 (Rep_bytes b)"
@@ -22,18 +19,16 @@ lemma Rep_string8_of_bytes[simp]: "Rep_string8 (string8_of_bytes b) = Rep_bytes 
 lemma string8_of_bytes_inject[simp]: "string8_of_bytes a = string8_of_bytes b \<longleftrightarrow> a = b"
   by (metis Rep_bytes_inject Rep_string8_of_bytes)
 
-text \<open>Trusted: both types are printed as OCaml's strings, a character list as the string of the
-  characters' codes (@{theory Log_Parser.Log_OCaml} prints @{typ char} so; the printings of
-  @{theory MFOTL_Monitor_Devel.Event_Data} compare strings byte-wise, as the characters' codes
-  are compared), so the conversion is the identity.\<close>
+text \<open>Trusted: both types are OCaml strings of the characters' codes
+  (@{theory Log_Parser.Log_OCaml}, @{theory MFOTL_Monitor_Devel.Event_Data}), so the conversion
+  is the identity.\<close>
 
 declare [[code drop: string8_of_bytes]]
 
 code_printing
   constant string8_of_bytes \<rightharpoonup> (OCaml) "(fun x -> x)"
 
-text \<open>Trusted as well: the equality of strings is that of OCaml's strings. (The code of
-  @{text "HOL.equal"} on @{typ string8} is OCaml's polymorphic equality, which is slower.)\<close>
+text \<open>Trusted: the equality of strings is that of OCaml's strings.\<close>
 
 definition str8_eq :: "string8 \<Rightarrow> string8 \<Rightarrow> bool" where
   "str8_eq a b \<longleftrightarrow> a = b"
@@ -43,9 +38,8 @@ declare [[code drop: str8_eq]]
 code_printing
   constant str8_eq \<rightharpoonup> (OCaml) "String.equal"
 
-text \<open>The hash code of a string (@{theory MFOTL_Monitor_Devel.Event_Data}) is the fold over its
-  characters; its code reads the bytes of the OCaml string, through the conversion to byte strings,
-  trusted like @{const string8_of_bytes}.\<close>
+text \<open>The hash code of a string reads its bytes, through a conversion trusted like
+  @{const string8_of_bytes}.\<close>
 
 definition bytes_of_string8 :: "string8 \<Rightarrow> bytes" where
   "bytes_of_string8 s = Abs_bytes (Rep_string8 s)"
@@ -124,8 +118,6 @@ lemma hashcode_string8_code[code]:
 
 subsection \<open>Signatures\<close>
 
-text \<open>The signature as the front end reads it: the predicates with their argument types.\<close>
-
 type_synonym lsig = "(string8 \<times> ty list) list"
 
 definition lsig_lookup :: "lsig \<Rightarrow> string8 \<times> nat \<Rightarrow> ty list option" where
@@ -143,9 +135,6 @@ fun lsig_find :: "lsig \<Rightarrow> string8 \<Rightarrow> nat \<Rightarrow> ty 
 lemma lsig_lookup_code[code]: "lsig_lookup S (q, n) = lsig_find S q n"
   by (induction S q n rule: lsig_find.induct) (auto simp: lsig_lookup_def str8_eq_def)
 
-text \<open>For large signatures, the code looks predicates up in a mapping from their names to their
-  arities and argument types.\<close>
-
 definition ix_list :: "(Formula.name, (nat \<times> ty list) list) mapping \<Rightarrow> Formula.name \<Rightarrow> (nat \<times> ty list) list" where
   "ix_list m p = (case Mapping.lookup m p of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
 
@@ -159,16 +148,15 @@ definition lsig_index :: "lsig \<Rightarrow> (Formula.name, (nat \<times> ty lis
 definition index_lookup :: "(Formula.name, (nat \<times> ty list) list) mapping \<Rightarrow> Formula.name \<times> nat \<Rightarrow> ty list option" where
   "index_lookup I pn = map_option snd (find (\<lambda>(n, _). n = snd pn) (ix_list I (fst pn)))"
 
-text \<open>The lookup the conversion uses: in the list for small signatures, in the mapping for the
-  others.\<close>
+text \<open>Small signatures are searched as lists, the others through a mapping from names.\<close>
 
 definition lsig_lookup_fun :: "lsig \<Rightarrow> Formula.name \<times> nat \<Rightarrow> ty list option" where
   "lsig_lookup_fun S = (if length S < 32 then lsig_lookup S else (let I = lsig_index S in index_lookup I))"
 
 subsection \<open>Converting events\<close>
 
-text \<open>A field of a given type. Integers are read as in @{theory Log_Parser.Log_Integers}; floats
-  by a parameter @{text pf}, the platform's reader, about which nothing is assumed.\<close>
+text \<open>Floats are read by a parameter @{text pf}, the platform's reader, about which nothing is
+  assumed.\<close>
 
 definition conv_field :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty \<Rightarrow> bytes \<Rightarrow> event_data option" where
   "conv_field pf t f = (case t of
@@ -176,21 +164,14 @@ definition conv_field :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty \
    | TFloat \<Rightarrow> map_option EFloat (pf f)
    | TString \<Rightarrow> Some (EString (string8_of_bytes f)))"
 
-text \<open>The field conversion uses the fused integer conversion.\<close>
-
 lemma conv_field_code[code]: "conv_field pf t f = (case t of
      TInt \<Rightarrow> map_option EInt (ibint_of f)
    | TFloat \<Rightarrow> map_option EFloat (pf f)
    | TString \<Rightarrow> Some (EString (string8_of_bytes f)))"
   by (simp add: conv_field_def ibint_of_def option.map_comp comp_def split: ty.splits)
 
-text \<open>The errors the conversion reports.\<close>
-
 datatype verror = VE_PARSE perror | VE_TIMESTAMP bytes | VE_ORDER nat nat | VE_PREDICATE bytes nat
   | VE_FIELD bytes nat ty | VE_COMMAND bytes
-
-text \<open>The fields of an event, by their types; on failure, the index of the first field that does
-  not convert.\<close>
 
 fun conv_fields :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty list \<Rightarrow> bytes list \<Rightarrow> nat \<Rightarrow> (nat \<times> ty) + event_data list" where
   "conv_fields pf (t # ts) (f # fs) i = (case conv_field pf t f of
@@ -212,8 +193,7 @@ fun conv_events :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.n
      Inl err \<Rightarrow> Inl err
    | Inr x \<Rightarrow> map_sum id (Cons x) (conv_events pf L es))"
 
-text \<open>The code converts the events of a time point with an accumulator, so that the depth of the
-  recursion does not grow with their number.\<close>
+text \<open>The code uses an accumulator, so that the recursion depth does not grow with the events.\<close>
 
 fun conv_events_acc :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow>
     Formula.event list \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list" where
@@ -228,19 +208,15 @@ lemma conv_events_acc: "conv_events_acc pf L acc es = map_sum id ((@) (rev acc))
 lemma conv_events_code[code]: "conv_events pf L es = conv_events_acc pf L [] es"
   by (cases "conv_events pf L es") (simp_all add: conv_events_acc)
 
-text \<open>The first event of a predicate whose name the signature does not declare. Which error is
-  reported for an entry follows MonPoly's parser, which checks the names of the predicates, then
-  the order of the timestamps, and then the arity and the fields of each event in turn.\<close>
+text \<open>Errors are reported in MonPoly's order: undeclared predicates, then the timestamps' order,
+  then each event's arity and fields.\<close>
 
 fun pred_error :: "lsig \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror option" where
   "pred_error S [] = None"
 | "pred_error S ((p, fs) # es) = (if list_ex (\<lambda>(q, _). str8_eq q (string8_of_bytes p)) S
      then pred_error S es else Some (VE_PREDICATE p (length fs)))"
 
-text \<open>The error of the first event that does not convert, as MonPoly's parser reports it: it
-  converts the fields against the types that the signature declares for the name of the predicate
-  one after the other, and reports a wrong number of fields only if the fields they have in
-  common convert.\<close>
+text \<open>As in MonPoly, a wrong number of fields is reported only if the common fields convert.\<close>
 
 fun conv_error :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow> lsig \<Rightarrow>
     (bytes \<times> bytes list) list \<Rightarrow> verror option" where
@@ -258,13 +234,8 @@ fun conv_error :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.na
 
 subsection \<open>Sorting\<close>
 
-text \<open>The tuples of a table are sorted, without duplicates, before the table is built, so that
-  the tree is built in one pass. The merge sort below merges the runs of increasing elements of
-  the list, so that a sorted list is one run, and is tail recursive, since a time point may hold
-  many events: merging onto an accumulator reverses the order, so a round of merges turns lists
-  that increase into lists that decrease, and the next round merges those with the comparator
-  turned around. It drops duplicates as it merges, and is proved to sort strictly, so that the
-  tree can be built without checking that it is.\<close>
+text \<open>A tail-recursive merge sort of runs that drops duplicates; merging onto an accumulator
+  reverses, so every other round uses the converse comparator.\<close>
 
 lemma comparator_converse:
   assumes "comparator c"
@@ -371,8 +342,6 @@ next
     by simp
 qed simp
 
-text \<open>The runs of increasing elements of the list.\<close>
-
 fun runs_tc :: "'a comparator \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list list \<Rightarrow> 'a list \<Rightarrow> 'a list list" where
   "runs_tc c x cur acc [] = rev (x # cur) # acc"
 | "runs_tc c x cur acc (y # ys) = (if c x y = order.Lt then runs_tc c y (x # cur) acc ys
@@ -436,8 +405,6 @@ qed
 
 subsection \<open>Databases\<close>
 
-text \<open>The events of a time point, grouped by predicate and arity.\<close>
-
 fun add_ev :: "Formula.event \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
     ((Formula.name \<times> nat) \<times> event_data list list) list" where
   "add_ev (p, vs) [] = [((p, length vs), [vs])]"
@@ -471,11 +438,9 @@ proof -
     by (simp add: map_t_def)
 qed
 
-subsection \<open>Building the tables faster\<close>
+subsection \<open>Table construction\<close>
 
-text \<open>The tree of a table is built by @{const rbtreeify}, whose generated code computes with the
-  natural numbers of the generated code, which wrap the integers. The copy below computes with the
-  integers directly, and is proved to build the same tree.\<close>
+text \<open>A copy of @{const rbtreeify} that computes with integers instead of natural numbers.\<close>
 
 lemma nat_of_integer_half: "\<not> n \<le> 0 \<Longrightarrow> n \<noteq> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
   "\<not> n \<le> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
@@ -564,9 +529,7 @@ proof -
     by (simp add: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
 qed
 
-text \<open>The tables of a time point are built with this sort and tree construction. The groups
-  hold their tuples in the reverse order of the log; the code reverses them before sorting them,
-  so that tuples that come sorted in the log are sorted in linear time.\<close>
+text \<open>The groups are reversed before sorting, so that tuples sorted in the log take linear time.\<close>
 
 lemma comparator_edl: "comparator ed_comparator"
   by (rule ID_ccompare'[OF ID_ccompare_etuple])
@@ -593,11 +556,9 @@ proof -
     by (simp add: build_db_def)
 qed
 
-subsection \<open>Converting events faster\<close>
+subsection \<open>Faster conversion\<close>
 
-text \<open>The fields are converted by a tail-recursive loop, which computes the index of a field only
-  if it does not convert, and the lengths of lists are counted as integers rather than as natural
-  numbers.\<close>
+text \<open>A tail-recursive loop computes a field's index only on failure; lengths are integers.\<close>
 
 fun conv_fields_a :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty list \<Rightarrow> bytes list \<Rightarrow> event_data list \<Rightarrow>
     (nat \<times> ty) + event_data list" where
@@ -629,9 +590,7 @@ lemma lsig_find_fast[code]: "lsig_find [] q n = None"
 lemma add_ev_fast[code]: "add_ev (p, vs) g = add_evk (p, nat_of_integer (ilen 0 vs)) vs g"
   by (simp add: add_ev_code ilen)
 
-subsection \<open>The predicates of the formula\<close>
-
-text \<open>The predicates that occur freely in a formula (@{const Rewriting.preds}), as a list.\<close>
+subsection \<open>Free predicates\<close>
 
 fun free_preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) list" where
   "free_preds (Formula.Pred e ts) = [(e, length ts)]"
@@ -661,23 +620,16 @@ fun free_preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) 
 lemma set_free_preds[simp]: "set (free_preds \<phi>) = Rewriting.preds \<phi>"
   by (induction \<phi> rule: free_preds.induct) (auto simp: fv_regex_alt)
 
-subsection \<open>The monitor on the log\<close>
-
-text \<open>The configuration: which predicates' events to skip, the signature, the lookup of a
-  predicate in it, and the reader of floats.\<close>
+subsection \<open>Monitor on the log\<close>
 
 datatype vconf = VConf (vc_skip: "Formula.name \<Rightarrow> bool") (vc_lsig: lsig)
   (vc_lookup: "Formula.name \<times> nat \<Rightarrow> ty list option") (vc_pf: "bytes \<Rightarrow> double option")
 
-text \<open>The parser keeps the events of the predicates whose names occur freely in the formula,
-  and those of the predicates the signature does not declare, which the conversion reports. The
-  events of the other predicates are neither converted nor checked.\<close>
+text \<open>The parser keeps the events of free and of undeclared predicates; the others are neither
+  converted nor checked.\<close>
 
 definition vkeep :: "vconf \<Rightarrow> bytes \<Rightarrow> bool" where
   "vkeep cf b = (\<not> vc_skip cf (string8_of_bytes b))"
-
-text \<open>The predicates whose events the parser skips: in a list for few predicates, in a set for
-  many.\<close>
 
 definition vskip :: "bool \<Rightarrow> tysym Formula.formula \<Rightarrow> lsig \<Rightarrow> Formula.name list" where
   "vskip filt \<phi> S = (if filt then (let F = set (map fst (free_preds \<phi>)) in filter (\<lambda>q. q \<notin> F) (map fst S))
@@ -686,13 +638,8 @@ definition vskip :: "bool \<Rightarrow> tysym Formula.formula \<Rightarrow> lsig
 definition vskip_fun :: "Formula.name list \<Rightarrow> Formula.name \<Rightarrow> bool" where
   "vskip_fun xs = (if length xs < 32 then (\<lambda>q. list_ex (str8_eq q) xs) else (let A = set xs in (\<lambda>q. q \<in> A)))"
 
-text \<open>The state of the monitor proper is that of the executable monitor and the last timestamp; that of
-  the whole monitor includes the parser's.\<close>
-
 type_synonym vmstate = "emstate \<times> nat"
 type_synonym vstate = "estate \<times> vmstate"
-
-text \<open>The output: the verdicts of a time point, or an error at an offset in the input.\<close>
 
 datatype vout = VO_VERDICTS "(nat \<times> ts \<times> utable) list" | VO_ERROR integer verror
 
@@ -700,10 +647,7 @@ definition vtp :: "integer \<Rightarrow> Formula.event list \<Rightarrow> nat \<
   "vtp sp xs t z = (if t < snd z then (VO_ERROR sp (VE_ORDER t (snd z)), z)
      else (case emstep (build_db xs, t) (fst z) of (vs, ust) \<Rightarrow> (VO_VERDICTS vs, (ust, t))))"
 
-text \<open>An item that does not denote a time point is reported, and the monitor's state does not
-  change. If the events do not convert, the error reported is the first of, in the order of
-  MonPoly's parser: an event of an undeclared predicate, a decreasing timestamp, and the first
-  event that does not convert (@{const conv_error}).\<close>
+text \<open>An item that is not a time point is reported and leaves the state unchanged.\<close>
 
 definition vitem :: "vconf \<Rightarrow> out \<Rightarrow> vmstate \<Rightarrow> vout \<times> vmstate" where
   "vitem cf x z = (case x of
@@ -733,9 +677,8 @@ lemma vitems_acc: "vitems_acc cf xs z acc = (case vitems cf xs z of (vs, z') \<R
 lemma vitems_code[code]: "vitems cf xs z = vitems_acc cf xs z []"
   by (simp add: vitems_acc split: prod.splits)
 
-text \<open>A chunk of the input, the end of the input, with an optional last time point with no events,
-  and the initial state, if the formula is well-formed, its preparation succeeds, and the executable
-  compiler covers it. Unless @{text filt} is set, the parser keeps all events.\<close>
+text \<open>The initial state requires a well-formed formula whose preparation succeeds and that the
+  compiler covers.\<close>
 
 definition vfeed_chunk :: "vconf \<Rightarrow> bytes \<Rightarrow> vstate \<Rightarrow> vout list \<times> vstate" where
   "vfeed_chunk cf s z = (case efeed_chunk (vkeep cf) s (fst z) of
@@ -756,9 +699,7 @@ definition vinit :: "ipolicy \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow>
          if n = 0 then Inr (VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf, (einit, ust, 0))
          else Inl (VI_FRAGMENT n))))"
 
-text \<open>For the driver: the least offset in the input that later outputs may report, except that
-  of the pending item -- that of the pending lexeme, if any, and otherwise the number of bytes
-  read.\<close>
+text \<open>The least input offset that later outputs may report, besides the pending item's.\<close>
 
 definition vpending :: "vstate \<Rightarrow> integer" where
   "vpending z = (case fst z of (b, l, _) \<Rightarrow> (case l of

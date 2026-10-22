@@ -3,13 +3,13 @@ theory Tree_List
   "Containers.Set_Impl"
 begin
 
+section \<open>Lists as order statistic trees\<close>
+
+subsection \<open>Operations on tree lists\<close>
 
 typedef 'a treelist = "UNIV :: 'a list set" ..
 setup_lifting type_definition_treelist
 
-
-
-(* Lifting all required operations *)
 lift_definition empty_treelist :: "'a treelist" is "[]" .
 lift_definition insert_treelist :: "'a::linorder \<Rightarrow> 'a treelist \<Rightarrow> 'a treelist" is insort1 .
 lift_definition get_treelist :: "'a::linorder treelist \<Rightarrow> nat \<Rightarrow> 'a" is "\<lambda>l n. (sort l) ! n" . 
@@ -148,6 +148,8 @@ lemma mset_remove_treelist:
 lemma mset_remove_treelist_funpow:
   "mset_treelist ((remove_treelist t ^^ n) l) = mset_treelist l - replicate_mset n t"
   by (induction n) (simp_all add: mset_remove_treelist)
+
+subsection \<open>Implementation by trees\<close>
 
 lift_definition Collapse :: "'a::linorder wf_wbt \<Rightarrow> 'a treelist" is "inorder" .
 

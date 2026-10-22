@@ -2,6 +2,10 @@ theory Cluster
   imports "Containers.Mapping_Impl"
 begin
 
+section \<open>Clustering by key\<close>
+
+subsection \<open>Clusters as mappings\<close>
+
 lemma these_Un[simp]: "Option.these (A \<union> B) = Option.these A \<union> Option.these B"
   by (auto simp: Option.these_def)
 
@@ -26,6 +30,8 @@ lemma keys_cluster: "Mapping.keys (cluster (Some \<circ> g) X) = g ` X"
 
 lemma lookup_cluster_Some: "k \<in> g ` X \<Longrightarrow> Mapping.lookup (cluster (Some \<circ> g) X) k = Some (Set.filter (\<lambda>x. g x = k) X)"
   by (auto simp: lookup_cluster image_iff)
+
+subsection \<open>Clustering into red-black trees\<close>
 
 context ord
 begin
@@ -127,7 +133,7 @@ next
       unfolding fold_simps comp_def Some option.case(2) Branch(2)[OF valid'] keys_add_to_rbt[OF valid] keys_fold_add_to_rbt[OF Branch(3)]
         rbt_lookup_add_to_rbt[OF valid] Branch(1)[OF Branch(3)] fold_set F1 F2
       using rbt_lookup_iff_keys(2,3)[OF is_rbt_rbt_sorted[OF Branch(3)]]
-      by (auto simp: Some split: option.splits) (auto dest: these_imageI) (* slow *)
+      by (auto simp: Some split: option.splits) (auto dest: these_imageI)
   qed
 qed
 
@@ -161,6 +167,8 @@ lemma cluster_rbt_comp: "cluster_rbt_comp = ord.cluster_rbt (lt_of_comp c)"
 end
 
 end
+
+subsection \<open>Code equation\<close>
 
 lift_definition mapping_of_cluster :: "('b \<Rightarrow> 'a :: ccompare option) \<Rightarrow> ('b, unit) rbt \<Rightarrow> ('a, 'b set) mapping_rbt" is
   "cluster_rbt_comp ccomp"
