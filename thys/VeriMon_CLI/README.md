@@ -25,12 +25,13 @@ errors in the log by line and column.
 | `Formula_Conv` | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax`, as MonPoly's front end applied it for VeriMon 1), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
 | `CLI_Options` | MonPoly's options and `Arg.parse`'s messages: `parse_command`, `config` |
 | `CLI_Output` | Verdicts (`show_results`), timestamps (`-unix`), MonPoly's tuple order, and the messages for errors in the log |
-| `CLI` | `cli_main`, and the correctness theorems `cli_run` and `verimon_correct` |
+| `CLI` | `cli_main` |
+| `CLI_Proof` (session `VeriMon_CLI_Proof`) | The correctness theorems `cli_run`, `verimon_correct` and `verimon_correct_online` |
 | `CLI_Code` | The code export (`src/verimon_code.ml`) |
 
 ## Correctness
 
-`CLI.verimon_correct`: if `cli_main` starts the monitor on the contents of
+`CLI_Proof.verimon_correct`: if `cli_main` starts the monitor on the contents of
 the formula file and the signature file, then
 
 - the formula file is lexed into tokens that the grammar of MonPoly's formulas
@@ -49,7 +50,7 @@ the formula file and the signature file, then
   well-typed trace `σ` that extends `π`, where `φ'` is `φ` with the inferred
   types.
 
-`CLI.verimon_correct_online` states the same online, as the driver runs the
+`CLI_Proof.verimon_correct_online` states the same online, as the driver runs the
 monitor. After the chunks read so far:
 
 - the outputs so far contain an error exactly when the bytes read so far
@@ -77,12 +78,14 @@ whether a string is quoted).
 ## Building
 
 ```
-cd thys && isabelle build -b -e -d . VeriMon_CLI
+cd thys && isabelle build -b -e -d . VeriMon_CLI VeriMon_CLI_Proof
 cp VeriMon_CLI/verimon_code.ocaml ../src/verimon_code.ml
 ```
 
-The session processes the grammar and the parser from source (its parent is
-`MFODL_Monitor_Exec`), which takes about 22 minutes.
+`VeriMon_CLI` holds the definitions and the code export and builds on the code
+sessions only (`Monitor_Exec`, whose ancestors contain no correctness proof);
+`VeriMon_CLI_Proof` checks the end-to-end theorems on top of the proof sessions.
+Exporting the code alone needs only `isabelle build -e -d . VeriMon_CLI`.
 
 The parser's tables are large: under `Code_Target_Nat`, natural number
 literals would be exported as calls of `nat_of_integer` that ocamlopt compiles

@@ -185,19 +185,22 @@ The formalization
 | `thys/Log_Parser` | `Log_Parser` | The log and signature formats and their verified parsers |
 | `thys/grammar` | `Grammar_Command`, `LR_Parser` | Grammars and verified LR parsers generated from them (a submodule) |
 | `thys/MFODL_Parser` | `MFODL_Grammar`, `MFODL_Parser`, `MFODL_Parser_Code` | MonPoly's formula syntax and its verified parser |
-| `thys/VeriMon_CLI` | `VeriMon_CLI` | The command line, the outputs, the end-to-end theorems, and the code export |
+| `thys/VeriMon_CLI` | `VeriMon_CLI` | The command line, the outputs, and the code export |
+| `thys/VeriMon_CLI_Proof` | `VeriMon_CLI_Proof` | The end-to-end theorems |
 
 The theories are checked with Isabelle2025-2 and the
 [Archive of Formal Proofs](https://www.isa-afp.org). After `git submodule update --init`,
 
 ```
 cd thys
-isabelle build -b -e -d . VeriMon_CLI
+isabelle build -b -e -d . VeriMon_CLI VeriMon_CLI_Proof
 cp VeriMon_CLI/verimon_code.ocaml ../src/verimon_code.ml
 ```
 
 checks all theories and exports the generated code, which is in the repository as
-`src/verimon_code.ml`.
+`src/verimon_code.ml`. The sessions without `_Proof` contain the definitions and code
+equations only, so `isabelle build -e -d . VeriMon_CLI` exports the code without checking
+the correctness proofs.
 
 
 Performance
