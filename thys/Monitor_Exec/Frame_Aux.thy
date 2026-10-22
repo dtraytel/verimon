@@ -3,10 +3,6 @@ theory Frame_Aux
   imports Frame "MFODL_Logic.Specification"
 begin
 (*>*)
-text \<open>The proofs below were written where @{thm [source] Let_def} is a simplification rule
-  (the kernel's correctness theories, imported with it, bring it back).\<close>
-
-declare Let_def[simp]
 
 
 
