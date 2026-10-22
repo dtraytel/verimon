@@ -6,7 +6,7 @@ begin
 
 
 
-section \<open>Monomorphic code of the executable monitor\<close>
+section \<open>Monomorphic executable monitor code\<close>
 
 subsection \<open>Entry points\<close>
 
@@ -47,7 +47,7 @@ text \<open>The tree's projection is boxed too, or the dictionary is built in it
 setup \<open>Monomorphize.box_cmd
   [("RBT_Mapping2.impl_of", "ed_impl_of_tuples_v", ["event_data tuple", "event_data tuple list"])]\<close>
 
-subsection \<open>Tree primitives at the tuples' comparator\<close>
+subsection \<open>Tree primitives at the comparator\<close>
 
 text \<open>Copies of the tree primitives at @{const ed_comparator} call it directly rather than as an
   unknown function argument.\<close>

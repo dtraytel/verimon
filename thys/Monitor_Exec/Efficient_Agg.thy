@@ -60,7 +60,7 @@ lemma delete_p_eq: "wbt t \<Longrightarrow> delete_p x t = delete x t"
 lemma tree_remove_code[code]: "Rep_wf_wbt (tree_remove x t) = delete_p x (Rep_wf_wbt t)"
   using Rep_wf_wbt[of t] by (simp add: tree_remove.rep_eq delete_p_eq)
 
-subsection \<open>Extremes from the ends of the tree\<close>
+subsection \<open>Extremes from tree ends\<close>
 
 text \<open>MIN and MAX read the leftmost and rightmost node instead of selecting by rank.\<close>
 

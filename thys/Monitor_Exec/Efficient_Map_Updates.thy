@@ -243,7 +243,7 @@ lemma gd_rank_mupd2[code]:
      else (v, m))"
   by (auto simp: mupd2_def mupd_def Let_def split: option.splits event_data.splits type.splits list_aux.splits)
 
-subsection \<open>Union and difference at the tuples' comparator\<close>
+subsection \<open>Tree union and difference\<close>
 
 text \<open>Copies with the specialised insertion, deletion and split call the comparator directly.\<close>
 
@@ -824,7 +824,7 @@ lemma cstep_ins_unfold[code_unfold]: "cstep gstep_ins = cstep_ins"
 lemma cstep_del_unfold[code_unfold]: "cstep gstep_del = cstep_del"
   by (simp add: cstep_del_def)
 
-subsection \<open>Result with a guard on the value\<close>
+subsection \<open>Guards read off values\<close>
 
 text \<open>The result folds over the tree, builds a group's tuple in one pass only if it passes the
   guard, and reads a guard's variable or constant off the value.\<close>

@@ -35,7 +35,7 @@ definition icnt_add :: "event_data table \<Rightarrow> icntset \<Rightarrow> icn
 definition icnt_del :: "event_data table \<Rightarrow> icntset \<Rightarrow> icntset" where
   "icnt_del T cc = fold icnt_del1 (csl T) cc"
 
-subsection \<open>Window of a closed left operand\<close>
+subsection \<open>Window for closed left operands\<close>
 
 type_synonym iswaux = "ts \<times> (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> icntset"
 
@@ -109,7 +109,7 @@ definition isw_ensure :: "bool list list \<Rightarrow> iswaux \<Rightarrow> iswa
 lemma isw_abs_ensure[simp]: "isw_abs (isw_ensure msks aux) = isw_abs aux"
   by (simp add: isw_abs_def isw_ensure_def icnt_abs_def split: prod.splits)
 
-subsection \<open>Since of a general left operand\<close>
+subsection \<open>Since for general left operands\<close>
 
 type_synonym iemsaux = "ts \<times> ts \<times> bool list \<times>
   (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> event_data itab \<times>
@@ -289,7 +289,7 @@ lemma iejoin_msaux_code[code]:
   by (simp only: iejoin_msaux.simps Let_def igjoin_idx_def gjoin_idx1_def del_buckets1_def
       mfilter_keys_def esemi_idx_def prod.case)
 
-subsection \<open>Until of a closed left operand\<close>
+subsection \<open>Until for closed left operands\<close>
 
 type_synonym iuwaux = "ts queue \<times> uw_entry queue \<times> uw_entry queue \<times> nat \<times> bool \<times> icntset \<times>
   event_data itab list"

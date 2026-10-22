@@ -5,44 +5,15 @@ theory CLI
 begin
 (*>*)
 
-section \<open>The verified monitor with MonPoly's command line\<close>
+section \<open>Verified monitor with MonPoly's command line\<close>
 
-text \<open>
-  This theory composes the verified parts into the monitor that the program @{text verimon}
-  runs, with MonPoly's command line (theory @{theory VeriMon_CLI.CLI_Options}):
+text \<open>The verified parts composed into the program @{text verimon}: the driver only reads the files
+  that @{text cli_main} asks for, prints what it says, and runs the loop over the log.\<close>
 
-  \<^enum> the arguments are parsed (@{const parse_command});
-  \<^enum> the formula file is parsed by the verified parser (@{const parse_formula}, session
-    @{text MFODL_Parser}), and negated with @{text "-negate"};
-  \<^enum> the signature file is read (@{const read_sig}, theory @{theory Log_Parser.Signature_Reader});
-  \<^enum> the formula is converted into the monitor's (@{const conv_formula}, theory
-    @{theory MFODL_Frontend.Surface_Conversion}), and the signature into the monitor's (@{text lsig_of});
-  \<^enum> the monitor is started (@{const vinit}, theory @{theory Monitor_Exec.Log_Monitor}),
-    which type checks the formula and prepares it as VeriMon does;
-  \<^enum> the log is read in chunks (@{const vfeed_chunk} and @{const vfinish}), and the verdicts are
-    printed as MonPoly prints them (theory @{theory VeriMon_CLI.CLI_Output}).
+subsection \<open>Signature of the monitor\<close>
 
-  The decisions, and the order in which MonPoly's front end takes them, are those of
-  @{text cli_main}: the driver only reads the files it asks for (@{text NeedFile}), prints what
-  it says, and runs the loop over the log. The driver also locates the errors in the log and
-  reports them, as for @{text "monpoly -verified"}.
-
-  @{text verimon_correct} states the correctness of the whole: if @{text cli_main} starts the
-  monitor on the contents of the formula and signature files, then the formula file is derived by
-  the grammar of formulas from a formula @{text \<psi>}, the signature file by the grammar of
-  signatures from a signature @{text S}, and for every log that denotes a prefix @{text \<pi>}, the
-  monitor reports no error and its verdicts are exactly the satisfactions on @{text \<pi>} of the
-  conversion of @{text \<psi>} (negated with @{text "-negate"}), as the semantics of MFODL defines
-  them. @{text verimon_correct_online} states the same online, for the chunks of the log read so
-  far and for each further chunk, as the driver runs the monitor.
-\<close>
-
-subsection \<open>The monitor's signature\<close>
-
-text \<open>The signature as the monitor reads it (@{text Verified_adapter.lsig_of_schema}): the
-  types of the arguments of each predicate. The monitor has no type of regular expressions: a
-  formula with a predicate with such an argument is refused, and the arguments of the other such
-  predicates are read as strings.\<close>
+text \<open>The monitor has no type of regular expressions: a formula with a predicate with such an
+  argument is refused, and the other such arguments are read as strings.\<close>
 
 fun ty_of_sty :: "sty \<Rightarrow> ty" where
   "ty_of_sty SInt = TInt"
@@ -56,13 +27,12 @@ definition lsig_of :: "schema \<Rightarrow> tysym Formula.formula \<Rightarrow> 
      then Inl (unsupported ''Regular expressions constants are not supported'')
      else Inr (map (\<lambda>(p, fs). (str8_of_string p, map (ty_of_sty \<circ> snd) fs)) S))"
 
-subsection \<open>Messages\<close>
+subsection \<open>Types of the free variables\<close>
 
 definition str_of_ty :: "ty \<Rightarrow> string" where
   "str_of_ty t = (case t of TInt \<Rightarrow> ''int'' | TString \<Rightarrow> ''string'' | TFloat \<Rightarrow> ''float'')"
 
-text \<open>@{text "-sigout"}: the free variables with their types (@{text Predicate.print_vartypes_list}),
-  as the monitor's type checker infers them.\<close>
+text \<open>@{text "-sigout"}: the free variables with the types that the type checker infers.\<close>
 
 definition sigout_text :: "string list \<Rightarrow> (tysym \<Rightarrow> tysym) \<Rightarrow> string" where
   "sigout_text vs f = concat (between '', '' (map (\<lambda>(i, v). v @ '':'' @ str_of_ty (convert_tysym (f (TAny i))))
@@ -73,11 +43,8 @@ definition fv_text :: "string list \<Rightarrow> string" where
 
 subsection \<open>MonPoly's checks of the input formula\<close>
 
-text \<open>Before the conversion, MonPoly's front end checks the intervals and the bounds of the
-  future operators (@{text Rewriting.check_wff}) and that the predicates are declared
-  (@{text Rewriting.check_syntax}); the formula is that of the input, with its syntactic sugar.
-  The checks of @{text LET} and of aggregations, whose messages print subformulas, are left to
-  the conversion and to the verified type checker.\<close>
+text \<open>MonPoly checks the intervals, the bounds of future operators and the declarations on the input
+  formula; the checks of @{text LET} and aggregations are left to the conversion and the type checker.\<close>
 
 fun bnd_ok :: "bound \<Rightarrow> bool" where
   "bnd_ok (OBnd a) = (0 \<le> a)"
@@ -162,8 +129,7 @@ and bounds_ok_r :: "regex \<Rightarrow> bool" where
 | "bounds_ok_r (RStar r) = bounds_ok_r r"
 | "bounds_ok_r (RSkip _) = True"
 
-text \<open>The first predicate, in the order of MonPoly's type checker, that is neither declared nor
-  bound by an enclosing @{text LET}, @{text LETPAST} (also in its definition) or @{text FRZ}.\<close>
+text \<open>The first predicate, in the order of MonPoly's type checker, that is neither declared nor bound.\<close>
 
 definition oelse :: "'a option \<Rightarrow> 'a option \<Rightarrow> 'a option" where
   "oelse x y = (case x of None \<Rightarrow> y | Some _ \<Rightarrow> x)"
@@ -210,13 +176,10 @@ definition input_error :: "schema \<Rightarrow> formula \<Rightarrow> string opt
      else map_option (\<lambda>(p, n). ''[Rewriting.check_syntax] unknown predicate '' @ p @ ''/'' @ dec_nat n @
        '' in input formula'') (unknown_pred (map (\<lambda>(p, fs). (p, length fs)) S) \<psi>))"
 
-subsection \<open>The main program\<close>
+subsection \<open>Main program\<close>
 
-text \<open>What the driver does next: print the two texts (on standard output and on standard error)
-  and exit with the code; print the version; read a file and continue with its contents; or print
-  the text on standard error and run the monitor on the log, with the configuration, the
-  monitor's configuration and state, the last time point to add at the end of the log, the number
-  of free variables, and the signature.\<close>
+text \<open>What the driver does next: exit with two texts and a code, print the version, read a file, or
+  run the monitor on the log.\<close>
 
 type_synonym otext = "string8 list"
 
@@ -226,8 +189,7 @@ definition otxt :: "string \<Rightarrow> otext" where
 datatype step = Done otext otext nat | Version | NeedFile bytes "bytes \<Rightarrow> step"
   | Run otext config vconf vstate "nat option" nat lsig
 
-text \<open>MonPoly adds the last time point only for formulas with future operators
-  (@{text Rewriting.is_future}).\<close>
+text \<open>MonPoly adds the last time point only for formulas with future operators.\<close>
 
 fun is_future :: "formula \<Rightarrow> bool"
 and is_future_r :: "regex \<Rightarrow> bool" where
@@ -261,21 +223,15 @@ and is_future_r :: "regex \<Rightarrow> bool" where
 | "is_future_r (RStar r) = is_future_r r"
 | "is_future_r (RSkip _) = False"
 
-text \<open>The formula of the input, negated with @{text "-negate"}.\<close>
-
 definition input_formula :: "config \<Rightarrow> formula \<Rightarrow> formula" where
   "input_formula conf \<psi> = (if c_negate conf then FNeg \<psi> else \<psi>)"
-
-text \<open>The message of a failure of the preparation, whose text is the type checker's.\<close>
 
 definition prep_msg :: "String.literal \<Rightarrow> otext" where
   "prep_msg e = [S8 STR ''Fatal error: exception Failure(\"Error during the verified preparation of the formula: '',
      string8_literal e, S8 STR ''\")'', S8 STR ''\<newline>'']"
 
-text \<open>After the signature is read: convert the formula and start the monitor, or report why it
-  cannot start, as MonPoly's front end does. With @{text "-sigout"} the types of the free
-  variables are printed; with @{text "-check"} whether the formula is monitorable (with
-  @{text "-no_rw"}, also with @{text "-verbose"}, as MonPoly words it without rewriting).\<close>
+text \<open>Converts the formula and starts the monitor, or reports why it cannot start, as MonPoly's
+  front end does.\<close>
 
 definition start_monitor :: "config \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> formula \<Rightarrow> schema \<Rightarrow> step" where
   "start_monitor conf pf \<psi> S = (case input_error S \<psi> of
@@ -305,8 +261,6 @@ definition start_monitor :: "config \<Rightarrow> (bytes \<Rightarrow> double op
              if c_sigout conf then Done (otxt (sigout_text vs f)) msg 0
              else if c_check conf then Done [] msg 0
              else Run msg conf cf z (if c_newlastts conf \<and> is_future \<psi> then Some ts_max else None) (length vs) L))))))"
-
-text \<open>The main program, from the program name and the arguments.\<close>
 
 definition cli_main :: "bytes \<Rightarrow> bytes list \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> step" where
   "cli_main prog args pf = (case parse_command (string_of_bytes prog) (map string_of_bytes args) of

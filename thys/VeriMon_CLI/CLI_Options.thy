@@ -6,19 +6,10 @@ begin
 
 section \<open>MonPoly's command line\<close>
 
-text \<open>
-  The verified monitor reads MonPoly's command line (\<^verbatim>\<open>src/main.ml\<close>): the same options,
-  parsed as OCaml's @{text Arg.parse} parses them, with the same messages for unknown options,
-  missing or wrong arguments, @{text "-help"}, and arguments that are not options. The options
-  that concern MonPoly's own algorithm, or that MonPoly accepts and ignores, are accepted and
-  ignored; @{text "-load"} and @{text "-combine"}, which resume or combine MonPoly's own monitor
-  state, are refused.
-\<close>
+text \<open>MonPoly's options, parsed as by OCaml's @{text Arg.parse}, with the same messages. Options of
+  MonPoly's own algorithm are accepted and ignored; @{text "-load"} and @{text "-combine"} are refused.\<close>
 
-subsection \<open>The table of options\<close>
-
-text \<open>The kind of argument an option takes: none, a string, an integer, or one of a list of
-  symbols.\<close>
+subsection \<open>Table of options\<close>
 
 datatype okind = OFlag | OStr | OInt | OSym "string list"
 
@@ -28,8 +19,7 @@ definition tab :: string where
 definition nl :: string where
   "nl = [CHR 0x0A]"
 
-text \<open>MonPoly's options with their documentation, in MonPoly's order, as @{text "-help"} lists
-  them.\<close>
+text \<open>In MonPoly's order, as @{text "-help"} lists them.\<close>
 
 definition opt_table :: "(string \<times> okind \<times> string) list" where
   "opt_table = [
@@ -81,9 +71,6 @@ definition usage_string :: string where
      ''               [-check] [-sigout] [-unix] [-mem] [-nonewlastts] [-nofilterrel]'' @ nl @
      ''               [-ignore_parse_errors] [-stop_at_first_viol]''"
 
-text \<open>@{text Arg.usage_string}: the usage, then a line per option, then @{text "-help"} and
-  @{text "--help"}.\<close>
-
 definition help_doc :: string where
   "help_doc = ''  Display this list of options''"
 
@@ -109,16 +96,11 @@ type_synonym opts = "(string \<times> string) list"
 definition opt_lookup :: "string \<Rightarrow> okind option" where
   "opt_lookup k = map_option fst (map_of opt_table k)"
 
-text \<open>@{text int_of_string} on the arguments of the integer options: decimal, with an optional
-  sign.\<close>
-
 definition is_int_arg :: "string \<Rightarrow> bool" where
   "is_int_arg s = (let d = (case s of CHR ''-'' # d \<Rightarrow> d | CHR ''+'' # d \<Rightarrow> d | _ \<Rightarrow> s) in
      d \<noteq> [] \<and> list_all (\<lambda>c. CHR ''0'' \<le> c \<and> c \<le> CHR ''9'') d)"
 
-text \<open>The outcome: run with the options, or print a message and exit with a code. The messages
-  are those of @{text Arg.parse}, with the program name as it was invoked; an argument that is not
-  an option makes MonPoly print its usage and exit.\<close>
+text \<open>An argument that is not an option makes MonPoly print its usage and exit.\<close>
 
 datatype args_result = ARun opts | AExit string string nat
 
@@ -146,8 +128,6 @@ fun parse_args :: "string \<Rightarrow> string list \<Rightarrow> opts \<Rightar
 definition oflag :: "opts \<Rightarrow> string \<Rightarrow> bool" where
   "oflag os k \<longleftrightarrow> k \<in> fst ` set os"
 
-text \<open>The argument of the last occurrence of a string option, or the empty string.\<close>
-
 definition ostr :: "opts \<Rightarrow> string \<Rightarrow> string" where
   "ostr os k = (case map_of os k of Some v \<Rightarrow> v | None \<Rightarrow> [])"
 
@@ -158,10 +138,9 @@ definition oint :: "opts \<Rightarrow> string \<Rightarrow> int" where
    | Some d \<Rightarrow> int (foldl (\<lambda>n c. 10 * n + (of_char c - 48)) 0 d)
    | None \<Rightarrow> 0)"
 
-subsection \<open>The configuration of a run\<close>
+subsection \<open>Configuration of a run\<close>
 
-text \<open>What the options select. The driver reads the files and the log, and applies the settings of
-  the OCaml runtime.\<close>
+text \<open>The driver reads the files and the log, and applies the settings of the OCaml runtime.\<close>
 
 record config =
   c_sig :: string
@@ -201,10 +180,6 @@ definition config_of :: "opts \<Rightarrow> config" where
      c_filter = \<not> oflag os ''-nofilterrel'', c_ignore_errors = oflag os ''-ignore_parse_errors'',
      c_stop_first = oflag os ''-stop_at_first_viol'', c_version = oflag os ''-version'',
      c_gc_space_overhead = oint os ''-gc_space_overhead'', c_gc_minor_heap = oint os ''-gc_minor_heap''\<rparr>"
-
-text \<open>The command line: a configuration to run with, or a message (on standard output and on
-  standard error) and an exit code. @{text "-load"} and @{text "-combine"} are refused, as MonPoly's
-  verified kernel cannot resume or combine MonPoly's own states.\<close>
 
 datatype command = CRun config | CExit string string nat
 

@@ -6,7 +6,7 @@ begin
 
 
 
-section \<open>Key-driven code for the Since index\<close>
+section \<open>Key-driven Since index code\<close>
 
 text \<open>Code equations that update the index (@{const eidx}) per moving tuple and restrict it by
   the probing table's keys, instead of walking the whole index.\<close>
@@ -269,7 +269,7 @@ lemmas mfilter_keys_fallback_code[code] =
   mfilter_keys_code[of _ "DList_set _"] mfilter_keys_code[of _ "Set_Monad _"]
   mfilter_keys_code[of _ "Collect_set _"] mfilter_keys_code[of _ "Complement _"]
 
-subsection \<open>Folds over key sets on trees\<close>
+subsection \<open>Key-set folds on trees\<close>
 
 text \<open>On a tree the fold applies its step directly, so that the step's specialisation at the
   monitor's types reaches it.\<close>
@@ -543,7 +543,7 @@ proof -
         mfilter_keys_def esemi_idx_def prod.case)
 qed
 
-subsection \<open>Until's map of the left operand\<close>
+subsection \<open>Until's left operand map\<close>
 
 text \<open>The map is restricted to the latest left table by @{const mfilter_keys}.\<close>
 
