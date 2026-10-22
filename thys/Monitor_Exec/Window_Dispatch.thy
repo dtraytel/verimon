@@ -266,6 +266,9 @@ lemma usx_q_join[simp]: "usx_q (udsx_join args X d) = usx_q d"
 lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
   by (cases d) simp_all
 
+lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
+  by (simp add: esx_init_def udsx_init_def)
+
 lemma esx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = esx_init_agg args p"
   by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsc[symmetric])
 
@@ -300,6 +303,9 @@ fun udux_eval :: "args \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> uta
 | "udux_eval args nt (UDUX_win w) = (let (zs, w') = uw_eval args nt w in (zs, UDUX_win w'))"
 | "udux_eval args nt (UDUX_wagg p a) =
      (let (zs, a') = uua_eval args p (args_n args) nt a in (zs, UDUX_wagg p a'))"
+
+lemma eux_init_agg_rdux: "eux_init_agg args p = rdux (udux_init_agg args p)"
+  by (simp add: eux_init_agg_def udux_init_agg_def rua_init)
 
 subsection \<open>The buffers\<close>
 
@@ -340,6 +346,33 @@ fun uedsx_eval_since :: "args \<Rightarrow> utable list \<Rightarrow> uebuf2S \<
            in uedsx_eval_since args (udsx_result args aux1 # rs) (xs1, ys', ts1, False) aux1)
         | (None, ts1) \<Rightarrow> (rev rs, (x1 ## xs1, y ## ys', ts1, skew), aux))
       | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
+
+lemma mebuf2t_take_nat:
+  assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"
+  shows "mebuf2t_take f (h z) buf t ts
+    = (case mebuf2t_take g z buf t ts of (z', b) \<Rightarrow> (h z', b))"
+  using assms
+proof (induct g z buf t ts rule: mebuf2t_take.induct)
+  case (1 g z xs ys t0 ts)
+  obtain ot ts' where t: "mbuf_t_cases ts = (ot, ts')" by fastforce
+  obtain ox xs' where x: "mbuf_t_cases xs = (ox, xs')" by fastforce
+  obtain oy ys' where y: "mbuf_t_cases ys = (oy, ys')" by fastforce
+  show ?case
+  proof (cases "ot = None \<or> ox = None \<or> oy = None")
+    case True
+    then show ?thesis
+      using t x y by (subst (1 2) mebuf2t_take.simps) (auto simp del: mebuf2t_take.simps split: option.splits)
+  next
+    case False
+    then obtain t1 x1 y1 where s: "ot = Some t1" "ox = Some x1" "oy = Some y1"
+      by auto
+    have IH: "mebuf2t_take f (h (g x1 y1 t1 z)) (xs', ys') t1 ts' =
+        (case mebuf2t_take g (g x1 y1 t1 z) (xs', ys') t1 ts' of (z', b) \<Rightarrow> (h z', b))"
+      by (rule 1(1)[OF t[symmetric] s(1) x[symmetric] s(2) y[symmetric] s(3) 1(2)])
+    show ?thesis
+      by (subst (1 2) mebuf2t_take.simps) (simp only: t x y s prod.case option.case 1(2) IH)
+  qed
+qed
 
 end
 (*>*)

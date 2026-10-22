@@ -9,6 +9,12 @@ begin
 lemma efail_nodes_eset_q: "eset_q c d = Some d' \<Longrightarrow> efail_nodes d' = efail_nodes d"
   by (cases d) (auto split: udsaux_x.splits option.splits)
 
+lemma rdux_udux_init[simp]: "rdux (udux_init args) = eux_init args"
+  by (rule eux_init_rdux[symmetric])
+
+lemma set_ecols[simp]: "set (ecols k) = set k"
+  by (simp add: ecols_def set_cols)
+
 lemma eframe_dcols: "distinct k \<Longrightarrow> eframe k (ecols k)"
   by (simp add: ecols_def eframe_set_cols)
 

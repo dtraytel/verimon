@@ -138,6 +138,9 @@ fun uuwm :: "uuwauxm \<Rightarrow> uwaux" where
 
 declare uuwm.simps[simp del]
 
+lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
+  by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)
+
 function uua_extend :: "args \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uw_entry queue \<Rightarrow> uw_entry queue \<Rightarrow> bool \<Rightarrow>
     ucnt \<Rightarrow> ugagg option \<Rightarrow>
     uw_entry queue \<times> uw_entry queue \<times> bool \<times> ucnt \<times> ugagg option" where
@@ -218,5 +221,9 @@ lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
 lemma snd_rua[simp]: "snd (rua a) = snd a"
   by (cases a) (simp add: rua.simps)
 
+lemma rua_init: "rua (uua_init args p) = ua_init args p"
+  by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc)
+
+(*<*)
 end
 (*>*)

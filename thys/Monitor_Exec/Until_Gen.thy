@@ -53,6 +53,9 @@ fun nth_def :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" whe
 | "nth_def (x # xs) 0 z = x"
 | "nth_def (x # xs) (Suc k) z = nth_def xs k z"
 
+lemma nth_def_eq: "nth_def xs k z = (if k < length xs then xs ! k else z)"
+  by (induct xs k z rule: nth_def.induct) auto
+
 lemma dq_nth_l_code[code]:
   "dq_nth_l d k z = (if k < dq_nf d then nth_def (dq_f d) k z
      else nth_def (dq_b d) (dq_nb d - 1 - (k - dq_nf d)) z)"

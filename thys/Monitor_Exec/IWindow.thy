@@ -44,6 +44,24 @@ definition icnt_add :: "event_data table \<Rightarrow> icntset \<Rightarrow> icn
 definition icnt_del :: "event_data table \<Rightarrow> icntset \<Rightarrow> icntset" where
   "icnt_del T cc = fold icnt_del1 (csl T) cc"
 
+lemma icnt_abs_add1: "icnt_abs (icnt_add1 t cc) = cnt_add1 t (icnt_abs cc)"
+  by (cases cc) (simp add: icnt_abs_def icnt_add1_def cnt_add1_def split: option.splits)
+
+lemma icnt_abs_del1: "icnt_abs (icnt_del1 t cc) = cnt_del1 t (icnt_abs cc)"
+  by (cases cc) (simp add: icnt_abs_def icnt_del1_def cnt_del1_def split: option.splits)
+
+lemma icnt_abs_fold_add1: "icnt_abs (fold icnt_add1 xs cc) = fold cnt_add1 xs (icnt_abs cc)"
+  by (induct xs arbitrary: cc) (simp_all add: icnt_abs_add1)
+
+lemma icnt_abs_fold_del1: "icnt_abs (fold icnt_del1 xs cc) = fold cnt_del1 xs (icnt_abs cc)"
+  by (induct xs arbitrary: cc) (simp_all add: icnt_abs_del1)
+
+lemma icnt_abs_add: "icnt_abs (icnt_add T cc) = cnt_add T (icnt_abs cc)"
+  by (simp add: icnt_add_def cnt_add_def icnt_abs_fold_add1)
+
+lemma icnt_abs_del: "icnt_abs (icnt_del T cc) = cnt_del T (icnt_abs cc)"
+  by (simp add: icnt_del_def cnt_del_def icnt_abs_fold_del1)
+
 subsection \<open>The window\<close>
 
 type_synonym iswaux = "ts \<times> (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> icntset"
@@ -93,6 +111,35 @@ termination
 
 declare isw_expire.simps[simp del]
 
+lemma isw_move_abs:
+  "isw_move args nt pend win cc = (pend', win', cc') \<Longrightarrow>
+     sw_move args nt pend win (icnt_abs cc) = (pend', win', icnt_abs cc')"
+proof (induct args nt pend win cc arbitrary: pend' win' cc' rule: isw_move.induct)
+  case (1 args nt pend win cc)
+  obtain eo pq where h: "safe_hd pend = (eo, pq)" by (cases "safe_hd pend")
+  show ?case
+  proof (cases eo)
+    case None
+    then show ?thesis using 1(3) by (simp add: sw_move.simps[of args nt pend] isw_move.simps[of args nt pend] h)
+  next
+    case (Some e)
+    then show ?thesis
+      using 1(1)[OF h[symmetric] Some] 1(2)[OF h[symmetric] Some] 1(3)
+      by (simp add: sw_move.simps[of args nt pend] isw_move.simps[of args nt pend] h icnt_abs_add
+          split: if_splits)
+  qed
+qed
+
+lemma isw_expire_abs:
+  "isw_expire args nt win cc = (win', cc') \<Longrightarrow>
+     sw_expire args nt win (icnt_abs cc) = (win', icnt_abs cc')"
+proof (induct args nt win cc arbitrary: win' cc' rule: isw_expire.induct)
+  case (1 args nt win cc)
+  show ?case
+    using 1 by (subst sw_expire.simps, subst (asm) isw_expire.simps)
+      (auto simp: icnt_abs_del split: prod.splits option.splits if_splits)
+qed
+
 definition isw_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> iswaux \<Rightarrow> iswaux" where
   "isw_add_new_ts args nt aux = (case aux of (t, pend, win, cc) \<Rightarrow>
      (case isw_move args nt pend win cc of (pend', win', cc') \<Rightarrow>
@@ -114,6 +161,20 @@ definition isw_result :: "iswaux \<Rightarrow> event_data itab" where
 
 definition isw_ensure :: "bool list list \<Rightarrow> iswaux \<Rightarrow> iswaux" where
   "isw_ensure msks aux = (case aux of (t, pend, win, c, s) \<Rightarrow> (t, pend, win, c, iensure msks s))"
+
+lemma isw_abs_add_new_ts: "isw_abs (isw_add_new_ts args nt aux) = sw_add_new_ts args nt (isw_abs aux)"
+  by (auto simp: isw_abs_def isw_add_new_ts_def sw_add_new_ts_def
+      dest!: isw_move_abs isw_expire_abs split: prod.splits)
+
+lemma isw_abs_join: "isw_abs (isw_join args X aux) = sw_join args X (isw_abs aux)"
+  by (simp add: isw_abs_def isw_join_def sw_join_def icnt_abs_def split: prod.splits)
+
+lemma isw_abs_add_new_table:
+  "isw_abs (isw_add_new_table args X aux) = sw_add_new_table args X (isw_abs aux)"
+  by (simp add: isw_abs_def isw_add_new_table_def sw_add_new_table_def icnt_abs_add split: prod.splits)
+
+lemma iset_isw_result: "iset (isw_result aux) = sw_result args (isw_abs aux)"
+  by (simp add: isw_abs_def isw_result_def sw_result_def icnt_abs_def split: prod.splits)
 
 lemma isw_abs_ensure[simp]: "isw_abs (isw_ensure msks aux) = isw_abs aux"
   by (simp add: isw_abs_def isw_ensure_def icnt_abs_def split: prod.splits)
@@ -241,6 +302,42 @@ fun iems_ensure :: "bool list list \<Rightarrow> iemsaux \<Rightarrow> iemsaux" 
   "iems_ensure msks (nt, gc, msk, dp, di, ti, ii, tui, is, tus) =
      (nt, gc, msk, dp, di, iensure msks ti, ii, tui, is, tus)"
 
+lemma iemsaux_cases:
+  fixes daux :: iemsaux
+  obtains t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since
+  where "daux = (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+    idx_since, tuple_since)"
+  by (metis prod.collapse)
+
+lemma ims_abs_shift_end: "ims_abs (ieshift_end args nt a) = eshift_end args nt (ims_abs a)"
+  by (cases a rule: iemsaux_cases) (simp add: Let_def fold_filter_set_def split: prod.splits)
+
+lemma ims_abs_add_new_ts': "ims_abs (ieadd_new_ts_msaux' args nt a) = eadd_new_ts_msaux' args nt (ims_abs a)"
+  by (cases a rule: iemsaux_cases) (simp add: Let_def split: prod.splits)
+
+lemma ims_abs_add_new_ts: "ims_abs (ieadd_new_ts_msaux args nt a) = eadd_new_ts_msaux args nt (ims_abs a)"
+  by (simp add: ieadd_new_ts_msaux_def eadd_new_ts_msaux_def ims_abs_shift_end ims_abs_add_new_ts')
+
+lemma ims_abs_gc: "ims_abs (iegc_msaux args a) = egc_msaux args (ims_abs a)"
+  by (cases a rule: iemsaux_cases) (simp add: Let_def)
+
+lemma ims_abs_add_new_table_lz:
+  "ims_abs (ieadd_new_table_lz args X a) = eadd_new_table_lz args X (ims_abs a)"
+  by (cases a rule: iemsaux_cases) (simp add: Let_def)
+
+lemma ims_abs_join: "ims_abs (iejoin_msaux args Y a) = ejoin_msaux args Y (ims_abs a)"
+  by (cases a rule: iemsaux_cases) (auto simp: Let_def)
+
+lemma ims_abs_gc_join: "ims_abs (iegc_join_msaux args Y a) = egc_join_msaux args Y (ims_abs a)"
+  by (cases a rule: iemsaux_cases) (simp only: iegc_join_msaux.simps egc_join_msaux.simps ims_abs.simps
+      if_distrib[of "ims_abs"] ims_abs_join ims_abs_gc)
+
+lemma ims_abs_gc_join_lz: "ims_abs (iegc_join_lz args Y a) = egc_join_lz args Y (ims_abs a)"
+  by (simp add: iegc_join_lz_def egc_join_lz_def ims_abs_join ims_abs_gc_join)
+
+lemma iset_ieresult: "iset (ieresult_msaux a) = eresult_msaux args (ims_abs a)"
+  by (cases a rule: iemsaux_cases) simp
+
 lemma ims_abs_ensure[simp]: "ims_abs (iems_ensure msks a) = ims_abs a"
   by (cases a rule: iemsaux_cases) simp
 
@@ -253,6 +350,12 @@ definition igjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b list s
   "igjoin_idx pos Y M acc = (mfilter_keys pos Y M,
      (case acc of (A, tm) \<Rightarrow> (isub (set_of_idx (mfilter_keys (\<not> pos) Y M)) A,
         mapping_delete_set tm (set_of_idx (mfilter_keys (\<not> pos) Y M)))))"
+
+lemma fold_idel_buckets:
+  "fold (\<lambda>p (A, tm). (isub (snd p) A, mapping_delete_set tm (snd p))) xs (A, tm)
+   = (isub (\<Union>(snd ` set xs)) A, mapping_delete_set tm (\<Union>(snd ` set xs)))"
+  by (induct xs arbitrary: A tm)
+    (auto simp: isub_isub mapping_delete_set_Un[symmetric] mapping_delete_set_empty)
 
 lemma igjoin_idx_code[code]:
   fixes t :: "('k :: ccompare, 'b list set) mapping_rbt"
@@ -488,6 +591,14 @@ fun iudux_ensure :: "bool list list \<Rightarrow> iuduaux_x \<Rightarrow> iuduau
   "iudux_ensure msks (IUDUX_win w) = IUDUX_win (iuw_ensure msks w)"
 | "iudux_ensure msks d = d"
 
+lemma riud_eval:
+  "udux_eval args nt (riud d) = (case iudux_eval args nt d of (zs, d') \<Rightarrow> (map iset zs, riud d'))"
+proof (cases d)
+  case (IUDUX_win w)
+  then show ?thesis
+    using iuw_eval_abs[of args nt w] by (cases "iuw_eval args nt w") simp
+qed (simp add: comp_def split: prod.splits)
+
 lemma riud_ensure[simp]: "riud (iudux_ensure msks d) = riud d"
   by (induct msks d rule: iudux_ensure.induct) simp_all
 
@@ -517,5 +628,60 @@ fun iuedsx_eval_since :: "args \<Rightarrow> event_data itab list \<Rightarrow> 
 
 declare iuedsx_eval_since.simps[simp del]
 
+lemma iuedsx_eval_since_abs:
+  "uedsx_eval_since args (map iset rs) buf (riu aux) =
+     (case iuedsx_eval_since args rs buf aux of (zs, b, a) \<Rightarrow> (map iset zs, b, riu a))"
+proof (induct args rs buf aux rule: iuedsx_eval_since.induct)
+  case (1 args rs xs ys ts skew aux)
+  obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
+  obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
+  obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
+  note simps = uedsx_eval_since.simps[of args _ xs ys ts skew]
+    iuedsx_eval_since.simps[of args _ xs ys ts skew]
+  show ?case
+  proof (cases y)
+    case None
+    then show ?thesis
+      unfolding simps using x y t by (cases x; cases t) (simp_all add: rev_map Let_def)
+  next
+    case Y: (Some y1)
+    show ?thesis
+    proof (cases skew)
+      case True
+      have IH: "uedsx_eval_since args (map iset rs) (xs, ys', ts, False)
+          (udsx_add_new_table args y1 (riu aux)) =
+        (case iuedsx_eval_since args rs (xs, ys', ts, False) (iudsx_add_new_table args y1 aux) of
+          (zs, b, a) \<Rightarrow> (map iset zs, b, riu a))"
+        using 1(1)[OF y[symmetric] Y True] by simp
+      show ?thesis
+        unfolding simps using y Y True IH by simp
+    next
+      case False
+      show ?thesis
+      proof (cases x)
+        case None
+        then show ?thesis unfolding simps using x y Y False by (simp add: rev_map)
+      next
+        case X: (Some x1)
+        show ?thesis
+        proof (cases t)
+          case None
+          then show ?thesis unfolding simps using x y t Y X False by (simp add: rev_map)
+        next
+          case T: (Some t1)
+          let ?a = "iudsx_add_new_table args y1 (iudsx_join args x1 (iudsx_add_new_ts args t1 aux))"
+          have IH: "uedsx_eval_since args (map iset (iudsx_result args ?a # rs)) (xs', ys', ts', False)
+              (riu ?a) =
+            (case iuedsx_eval_since args (iudsx_result args ?a # rs) (xs', ys', ts', False) ?a of
+              (zs, b, a) \<Rightarrow> (map iset zs, b, riu a))"
+            by (rule 1(2)[OF y[symmetric] Y False x[symmetric] X t[symmetric] T refl])
+          show ?thesis
+            unfolding simps using x y t Y X T False IH by (simp add: Let_def)
+        qed
+      qed
+    qed
+  qed
+qed
+(*<*)
 end
 (*>*)

@@ -48,6 +48,9 @@ definition etabw :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightar
 lemma etabc_empty[simp]: "etabc ks cs {} = {}"
   by (simp add: etabc_def)
 
+lemma etabc_empty_iff: "(etabc ks cs T = {}) = (T = {})"
+  by (auto simp: etabc_def)
+
 subsection \<open>Merging two column lists\<close>
 
 datatype mrg = MLft | MRgt | MBth
@@ -290,6 +293,14 @@ subsection \<open>Turning a set of columns into a column list\<close>
 definition set_cols :: "nat set \<Rightarrow> cols" where
   "set_cols A = csorted_list_of_set A"
 
+lemma set_cols_eqI:
+  assumes f: "finite A" and s: "sorted_wrt (<) xs" and e: "set xs = A"
+  shows "xs = set_cols A"
+  by (rule strict_sorted_equal) (use s e set_cols[OF f] in auto)
+
+lemma set_cols_empty: "set_cols {} = []"
+  by (rule set_cols_eqI[symmetric]) simp_all
+
 subsection \<open>A predicate whose arguments are distinct variables in ascending order\<close>
 
 text \<open>Then the kernel's columns are already ascending: the argument tuples of the database are
@@ -439,5 +450,29 @@ definition esemi_idx :: "bool list \<Rightarrow> bool \<Rightarrow> ('b list, 'b
     'b list set" where
   "esemi_idx msk pos idx X = set_of_idx (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) idx)"
 
+lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
+  by transfer (auto simp: ran_def)
+
+lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
+  (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
+  unfolding eidx_def by transfer auto
+
+theorem esemi_idx_dsemi: "esemi_idx msk pos (eidx msk T) X = esemi msk pos T X"
+proof (intro set_eqI iffI)
+  fix y assume "y \<in> esemi_idx msk pos (eidx msk T) X"
+  then show "y \<in> esemi msk pos T X"
+    by (auto simp: esemi_idx_def esemi_def in_set_of_idx Mapping.lookup_filter lookup_eidx
+        split: if_splits option.splits)
+next
+  fix y assume "y \<in> esemi msk pos T X"
+  then have yT: "y \<in> T" and yp: "(eproj msk y \<in> X) = pos" by (auto simp: esemi_def)
+  have "Mapping.lookup (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (eidx msk T)) (eproj msk y)
+      = Some {z \<in> T. eproj msk z = eproj msk y}"
+    using yT yp by (simp add: Mapping.lookup_filter lookup_eidx)
+  then show "y \<in> esemi_idx msk pos (eidx msk T) X"
+    using yT by (auto simp: esemi_idx_def in_set_of_idx)
+qed
+
+(*<*)
 end
 (*>*)

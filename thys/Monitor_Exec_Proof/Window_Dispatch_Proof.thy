@@ -316,9 +316,6 @@ next
     by (auto simp: euxaux'_def)
 qed
 
-lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
-  by (simp add: esx_init_def udsx_init_def)
-
 lemma esx_add_new_ts_rdsx: "esx_add_new_ts args nt (rdsx d) = rdsx (udsx_add_new_ts args nt d)"
   by (cases d) (simp_all add: sa_add_new_ts_rsc)
 
@@ -338,9 +335,6 @@ lemma esx_result_rdsx:
 
 lemma eux_init_rdux: "eux_init args = rdux (udux_init args)"
   by (simp add: eux_init_def udux_init_def)
-
-lemma eux_init_agg_rdux: "eux_init_agg args p = rdux (udux_init_agg args p)"
-  by (simp add: eux_init_agg_def udux_init_agg_def rua_init)
 
 lemma eux_add_new_rdux:
   "eux_add_new args msk rel1 rel2 nt (rdux d) = rdux (udux_add_new args msk rel1 rel2 nt d)"
@@ -499,33 +493,6 @@ lemma esx_eval_since_rdsx0:
   using esx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
 
 subsection \<open>The Until buffer's traversal, and the two buffers of the fused And-Trigger\<close>
-
-lemma mebuf2t_take_nat:
-  assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"
-  shows "mebuf2t_take f (h z) buf t ts
-    = (case mebuf2t_take g z buf t ts of (z', b) \<Rightarrow> (h z', b))"
-  using assms
-proof (induct g z buf t ts rule: mebuf2t_take.induct)
-  case (1 g z xs ys t0 ts)
-  obtain ot ts' where t: "mbuf_t_cases ts = (ot, ts')" by fastforce
-  obtain ox xs' where x: "mbuf_t_cases xs = (ox, xs')" by fastforce
-  obtain oy ys' where y: "mbuf_t_cases ys = (oy, ys')" by fastforce
-  show ?case
-  proof (cases "ot = None \<or> ox = None \<or> oy = None")
-    case True
-    then show ?thesis
-      using t x y by (subst (1 2) mebuf2t_take.simps) (auto simp del: mebuf2t_take.simps split: option.splits)
-  next
-    case False
-    then obtain t1 x1 y1 where s: "ot = Some t1" "ox = Some x1" "oy = Some y1"
-      by auto
-    have IH: "mebuf2t_take f (h (g x1 y1 t1 z)) (xs', ys') t1 ts' =
-        (case mebuf2t_take g (g x1 y1 t1 z) (xs', ys') t1 ts' of (z', b) \<Rightarrow> (h z', b))"
-      by (rule 1(1)[OF t[symmetric] s(1) x[symmetric] s(2) y[symmetric] s(3) 1(2)])
-    show ?thesis
-      by (subst (1 2) mebuf2t_take.simps) (simp only: t x y s prod.case option.case 1(2) IH)
-  qed
-qed
 
 lemma mbuf2t_take_until:
   "mbuf2t_take (eux_add_new dags msk) (rdux aux) (rbuf2 buf) t (Rep_mbuf_t nts @ ts)

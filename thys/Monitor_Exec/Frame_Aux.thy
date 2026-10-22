@@ -25,6 +25,23 @@ definition eidx_union :: "('b list, 'b list set) mapping \<Rightarrow> ('b list,
     ('b list, 'b list set) mapping" where
   "eidx_union = Mapping.combine (\<union>)"
 
+lemma eidx_union_eq: "eidx msk (S \<union> A) = eidx_union (eidx msk S) (eidx msk A)"
+proof -
+  have "Mapping.lookup (eidx msk (S \<union> A)) k
+      = Mapping.lookup (eidx_union (eidx msk S) (eidx msk A)) k" for k
+  proof -
+    have eS: "k \<notin> eproj msk ` S \<Longrightarrow> {y \<in> S. eproj msk y = k} = {}" by auto
+    have eA: "k \<notin> eproj msk ` A \<Longrightarrow> {y \<in> A. eproj msk y = k} = {}" by auto
+    have u: "{y \<in> S \<union> A. eproj msk y = k}
+        = {y \<in> S. eproj msk y = k} \<union> {y \<in> A. eproj msk y = k}" by auto
+    have iU: "(k \<in> eproj msk ` (S \<union> A)) = (k \<in> eproj msk ` S \<or> k \<in> eproj msk ` A)" by auto
+    show ?thesis
+      by (simp add: eidx_union_def Mapping.lookup_combine lookup_eidx combine_options_def
+          u iU eS eA) blast
+  qed
+  then show ?thesis by (simp add: mapping_eqI)
+qed
+
 definition ebucket :: "('b list, 'b list set) mapping \<Rightarrow> 'b list \<Rightarrow> 'b list set" where
   "ebucket d k = (case Mapping.lookup d k of None \<Rightarrow> {} | Some Z \<Rightarrow> Z)"
 
@@ -32,6 +49,20 @@ definition eidx_minus :: "('b list, 'b list set) mapping \<Rightarrow> ('b list,
     ('b list, 'b list set) mapping" where
   "eidx_minus i d = Mapping.filter (\<lambda>k Y. Mapping.lookup d k = None \<or> Y \<noteq> {})
      (Mapping.map_values (\<lambda>k Y. Y - ebucket d k) i)"
+
+lemma eidx_minus_eq: "eidx msk (S - D) = eidx_minus (eidx msk S) (eidx msk D)"
+proof -
+  have "Mapping.lookup (eidx msk (S - D)) k
+      = Mapping.lookup (eidx_minus (eidx msk S) (eidx msk D)) k" for k
+  proof -
+    have b: "{y \<in> S. eproj msk y = k} - ebucket (eidx msk D) k = {y \<in> S - D. eproj msk y = k}"
+      by (auto simp: ebucket_def lookup_eidx split: if_splits)
+    show ?thesis
+      by (auto simp: eidx_minus_def Mapping.lookup_filter Mapping.lookup_map_values lookup_eidx b
+          split: option.splits if_splits intro: rev_image_eqI)
+  qed
+  then show ?thesis by (simp add: mapping_eqI)
+qed
 
 text \<open>
   The mask and the arguments describe the same frame: both column lists are ascending, the left
@@ -204,6 +235,13 @@ fun egc_join_msaux :: "args \<Rightarrow> 'a table \<Rightarrow> 'a emsaux \<Rig
        tuple_in, idx_since, tuple_since))
      else ejoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
        idx_since, tuple_since))"
+
+lemma emsaux_cases:
+  fixes daux :: "'a emsaux"
+  obtains t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since
+  where "daux = (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+    idx_since, tuple_since)"
+  by (metis prod.collapse)
 
 subsection \<open>A window that starts at the current time point\<close>
 

@@ -232,16 +232,10 @@ lemma rbufS_init[simp]: "rbufS init_mebuf2S = init_mbuf2S"
 lemma rdsx_udsx_init[simp]: "rdsx (udsx_init args msk) = esx_init args msk"
   by (rule esx_init_rdsx[symmetric])
 
-lemma rdux_udux_init[simp]: "rdux (udux_init args) = eux_init args"
-  by (rule eux_init_rdux[symmetric])
-
 lemma rdux_udux_init_agg[simp]: "rdux (udux_init_agg args p) = eux_init_agg args p"
   by (rule eux_init_agg_rdux[symmetric])
 
 subsection \<open>Column lists in ascending order\<close>
-
-lemma set_ecols[simp]: "set (ecols k) = set k"
-  by (simp add: ecols_def set_cols)
 
 lemma ecols_Nil[simp]: "ecols [] = []"
   by (simp add: ecols_def set_cols_empty)

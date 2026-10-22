@@ -46,8 +46,6 @@ lemma ceq_nat_Some: "CEQ(nat) = Some ((=) :: nat \<Rightarrow> _)"
 
 lemmas nat_dict_simps = ID_ccompare_nat ccompare_nat_Some ID_ceq_nat ceq_nat_Some
 
-lemma ID_ccompare_ed: "ID CCOMPARE(event_data) = Some comparator_event_data"
-  by (simp add: ccompare_event_data_def ID_Some)
 lemma ccompare_ed_Some: "CCOMPARE(event_data) = Some comparator_event_data"
   by (simp add: ccompare_event_data_def)
 lemma ID_ceq_ed: "ID CEQ(event_data) = Some ((=) :: event_data \<Rightarrow> _)"

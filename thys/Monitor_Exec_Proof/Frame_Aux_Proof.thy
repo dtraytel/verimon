@@ -42,41 +42,10 @@ proof -
   then show ?thesis by (simp add: mapping_eqI)
 qed
 
-lemma eidx_union_eq: "eidx msk (S \<union> A) = eidx_union (eidx msk S) (eidx msk A)"
-proof -
-  have "Mapping.lookup (eidx msk (S \<union> A)) k
-      = Mapping.lookup (eidx_union (eidx msk S) (eidx msk A)) k" for k
-  proof -
-    have eS: "k \<notin> eproj msk ` S \<Longrightarrow> {y \<in> S. eproj msk y = k} = {}" by auto
-    have eA: "k \<notin> eproj msk ` A \<Longrightarrow> {y \<in> A. eproj msk y = k} = {}" by auto
-    have u: "{y \<in> S \<union> A. eproj msk y = k}
-        = {y \<in> S. eproj msk y = k} \<union> {y \<in> A. eproj msk y = k}" by auto
-    have iU: "(k \<in> eproj msk ` (S \<union> A)) = (k \<in> eproj msk ` S \<or> k \<in> eproj msk ` A)" by auto
-    show ?thesis
-      by (simp add: eidx_union_def Mapping.lookup_combine lookup_eidx combine_options_def
-          u iU eS eA) blast
-  qed
-  then show ?thesis by (simp add: mapping_eqI)
-qed
-
 text \<open>Only the buckets that the subtrahend touches are dropped when they empty: a bucket at a key
   the subtrahend does not have is left as it is.  On a clustering, which has no empty buckets, the
   two readings agree; the executable version of the subtraction, which only visits the
   subtrahend's keys, realises this one exactly.\<close>
-
-lemma eidx_minus_eq: "eidx msk (S - D) = eidx_minus (eidx msk S) (eidx msk D)"
-proof -
-  have "Mapping.lookup (eidx msk (S - D)) k
-      = Mapping.lookup (eidx_minus (eidx msk S) (eidx msk D)) k" for k
-  proof -
-    have b: "{y \<in> S. eproj msk y = k} - ebucket (eidx msk D) k = {y \<in> S - D. eproj msk y = k}"
-      by (auto simp: ebucket_def lookup_eidx split: if_splits)
-    show ?thesis
-      by (auto simp: eidx_minus_def Mapping.lookup_filter Mapping.lookup_map_values lookup_eidx b
-          split: option.splits if_splits intro: rev_image_eqI)
-  qed
-  then show ?thesis by (simp add: mapping_eqI)
-qed
 
 subsection \<open>The mask of the left operand's columns among the right operand's\<close>
 
@@ -246,13 +215,6 @@ lemma fold_upd_set_keys_keys':
   using fold_upd_set_keys_keys[of Z ds m "{}" m' Y'] by simp
 
 subsection \<open>The executable operations are the verified ones\<close>
-
-lemma emsaux_cases:
-  fixes daux :: "'a emsaux"
-  obtains t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since
-  where "daux = (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
-    idx_since, tuple_since)"
-  by (metis prod.collapse)
 
 lemma emsaux_of_dinit: "emsaux_of args (einit_msaux args msk) = init_mmsaux args"
   by (simp add: einit_msaux_def wf_table_of_set_args_def)

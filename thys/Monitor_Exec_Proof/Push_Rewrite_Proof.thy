@@ -9,60 +9,29 @@ begin
 text \<open>The conjunction's equation with its case distinction folded into a test, so that the
   lemmas below can go by structural induction without splitting over every constructor.\<close>
 
-lemma push_ex_And:
-  "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
-     then Formula.And \<phi> \<psi> else and_cstr (push_ex \<phi>) (push_ex \<psi>))"
-  by (cases \<psi>) simp_all
-
 subsection \<open>The comparison's move\<close>
 
 text \<open>The move keeps the conjunction's operands and only regroups them; its result is a
   conjunction or a multiway conjunction.\<close>
 
-lemma ands_cstr_Some:
-  "ands_cstr c l = Some l' \<Longrightarrow> \<exists>xs e ys. l = xs @ e # ys \<and> l' = xs @ Formula.And e c # ys \<and>
-     safe_formula e \<and> Formula.fv c \<subseteq> Formula.fv e"
-proof (induct l arbitrary: l')
-  case (Cons e es)
-  show ?case
-  proof (cases "is_wagg e \<and> safe_formula e \<and> Formula.fv c \<subseteq> Formula.fv e")
-    case True
-    with Cons.prems show ?thesis by (intro exI[of _ "[]"]) auto
-  next
-    case False
-    with Cons.prems obtain l'' where l'': "ands_cstr c es = Some l''" "l' = e # l''" by auto
-    from Cons.hyps[OF l''(1)] obtain xs e' ys where
-      "es = xs @ e' # ys" "l'' = xs @ Formula.And e' c # ys" "safe_formula e'" "Formula.fv c \<subseteq> Formula.fv e'"
-      by blast
-    with l''(2) show ?thesis by (intro exI[of _ "e # xs"]) auto
-  qed
-qed simp
-
-lemma and_cstr_cases:
-  obtains "and_cstr X c = Formula.And X c"
-  | xs e ys where "X = Formula.Ands (xs @ e # ys)" "is_cmp c" "safe_formula e"
-    "Formula.fv c \<subseteq> Formula.fv e" "and_cstr X c = Formula.Ands (xs @ Formula.And e c # ys)"
-proof (cases "\<exists>l l'. X = Formula.Ands l \<and> is_cmp c \<and> ands_cstr c l = Some l'")
-  case True
-  then obtain l l' where s: "X = Formula.Ands l" "is_cmp c" "ands_cstr c l = Some l'" by blast
-  from ands_cstr_Some[OF s(3)] obtain xs e ys where
-    t: "l = xs @ e # ys" "l' = xs @ Formula.And e c # ys" "safe_formula e" "Formula.fv c \<subseteq> Formula.fv e"
-    by blast
-  show thesis by (rule that(2)[of xs e ys]) (simp_all add: and_cstr_def s(1,2) t s(3)[unfolded t])
-next
-  case False
-  then have "and_cstr X c = Formula.And X c"
-    unfolding and_cstr_def by (auto split: Formula.formula.split option.split)
-  then show thesis by (rule that(1))
-qed
-
-lemma and_cstr_shape: "(\<exists>a b. and_cstr X c = Formula.And a b) \<or> (\<exists>l. and_cstr X c = Formula.Ands l)"
-  by (cases rule: and_cstr_cases[of X c]) auto
-
 lemma is_cmp_cases:
   assumes "is_cmp c"
   obtains t1 t2 where "c = Formula.Less t1 t2" | t1 t2 where "c = Formula.LessEq t1 t2"
   using assms by (cases c) (simp_all add: is_cmp_def)
+
+lemma future_bounded_and_cstr[simp]:
+  "Safety.future_bounded (and_cstr X c) = Safety.future_bounded (Formula.And X c)"
+  by (cases rule: and_cstr_cases[of X c]) auto
+
+lemma progress_and_cstr[simp]: "progress \<sigma> P (and_cstr X c) j = progress \<sigma> P (Formula.And X c) j"
+proof (cases rule: and_cstr_cases[of X c])
+  case (2 xs e ys)
+  from 2(2) have pc: "progress \<sigma> P c j = j" by (cases rule: is_cmp_cases) simp_all
+  show ?thesis
+    using 2 pc
+    by (cases "set (map (\<lambda>\<phi>. progress \<sigma> P \<phi> j) xs) \<union> set (map (\<lambda>\<phi>. progress \<sigma> P \<phi> j) ys) = {}")
+      (auto simp: min.assoc min.commute min.left_commute)
+qed simp
 
 lemma safe_And_cmp: "is_cmp c \<Longrightarrow> safe_formula (Formula.And X c) = (safe_formula X \<and> Formula.fv c \<subseteq> Formula.fv X)"
   by (erule is_cmp_cases) (simp_all add: safe_assignment_def)
@@ -71,6 +40,19 @@ lemma safe_Ands_replace:
   assumes "safe_formula e" "safe_formula e'" "Formula.fv e' = Formula.fv e"
   shows "safe_formula (Formula.Ands (xs @ e' # ys)) = safe_formula (Formula.Ands (xs @ e # ys))"
   using assms by simp
+
+lemma safe_and_cstr[simp]: "safe_formula (and_cstr X c) = safe_formula (Formula.And X c)"
+proof (cases rule: and_cstr_cases[of X c])
+  case (2 xs e ys)
+  have l: "safe_formula (Formula.Ands (xs @ Formula.And e c # ys)) = safe_formula (Formula.Ands (xs @ e # ys))"
+    by (rule safe_Ands_replace) (use 2 safe_And_cmp[OF 2(2)] in auto)
+  have "Formula.fv c \<subseteq> Formula.fv (Formula.Ands (xs @ e # ys))"
+    using 2(4) by auto
+  then have r: "safe_formula (Formula.And X c) = safe_formula (Formula.Ands (xs @ e # ys))"
+    unfolding safe_And_cmp[OF 2(2)] 2(1) by blast
+  show ?thesis
+    by (simp only: 2(5) l r)
+qed simp
 
 lemma wty_and_cstr:
   assumes "S, E \<turnstile> Formula.And X c"
@@ -85,6 +67,9 @@ proof (cases rule: and_cstr_cases[of X c])
     unfolding 2(5) by (rule wty_formula.Ands)
 qed (use assms in simp)
 
+lemma sat_push_ex[simp]: "Formula.sat \<sigma> V v i (push_ex \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (induct \<phi> arbitrary: V v i) (auto simp: push_ex_And split: nat.splits)
+
 subsection \<open>Shapes\<close>
 
 text \<open>The safety conditions look at a few syntactic shapes of their operands: comparisons,
@@ -94,6 +79,18 @@ text \<open>The safety conditions look at a few syntactic shapes of their operan
 lemma ex_into_shape: "(\<exists>\<psi>. ex_into t \<phi> = Formula.Exists t \<psi>) \<or>
   (\<exists>I \<psi>. ex_into t \<phi> = Formula.Since Formula.TT I \<psi>) \<or> (\<exists>I \<psi>. ex_into t \<phi> = Formula.Until Formula.TT I \<psi>)"
   by (cases "(t, \<phi>)" rule: ex_into.cases) simp_all
+
+lemma ex_into_shapes[simp]:
+  "\<not> is_constraint (ex_into t \<phi>)"
+  "\<not> safe_assignment X (ex_into t \<phi>)"
+  "ex_into t \<phi> \<noteq> Formula.Neg \<psi>"
+  "remove_neg (ex_into t \<phi>) = ex_into t \<phi>"
+  "\<not> Formula.is_Trigger (ex_into t \<phi>)"
+  "\<not> Formula.is_Release (ex_into t \<phi>)"
+  "ex_into t \<phi> \<noteq> Formula.Eq t1 t2"
+  "ex_into t \<phi> \<noteq> Formula.Less t1 t2"
+  "ex_into t \<phi> \<noteq> Formula.LessEq t1 t2"
+  using ex_into_shape[of t \<phi>] by (elim disjE exE; simp add: safe_assignment_def)+
 
 lemma push_ex_Neg_iff:
   "push_ex \<phi> = Formula.Neg \<psi> \<longleftrightarrow> (\<exists>\<phi>'. \<phi> = Formula.Neg \<phi>' \<and> \<psi> = push_ex \<phi>')"
@@ -116,6 +113,12 @@ lemma case_Neg_push_ex:
   "(case push_ex \<phi> of Formula.Neg \<psi> \<Rightarrow> f \<psi> | _ \<Rightarrow> False)
    = (case \<phi> of Formula.Neg \<psi> \<Rightarrow> f (push_ex \<psi>) | _ \<Rightarrow> False)"
   by (simp add: case_Neg_iff push_ex_Neg_iff) blast
+
+lemma progress_ex_into[simp]: "progress \<sigma> P (ex_into t \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct t \<phi> arbitrary: P rule: ex_into.induct) (simp_all add: Formula.TT_def)
+
+lemma progress_push_ex[simp]: "progress \<sigma> P (push_ex \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct \<phi> arbitrary: P) (auto simp: push_ex_And o_def cong: map_cong)
 
 subsection \<open>Typing\<close>
 

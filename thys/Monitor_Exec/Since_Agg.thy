@@ -275,6 +275,36 @@ fun ucc :: "ucnt \<Rightarrow> cntset" where
 
 declare ucc.simps[simp del]
 
+lemma lookup_None_keys: "(Mapping.lookup c t = None) = (t \<notin> Mapping.keys c)"
+  by (simp add: Mapping.keys_dom_lookup domIff)
+
+lemma cnt_add1_ucc: "cnt_add1 t (ucc c) = ucc (ucnt_add1 t c)"
+proof (cases "Mapping.lookup c t")
+  case None
+  then show ?thesis by (simp add: cnt_add1_def ucnt_add1_def ucc.simps)
+next
+  case (Some k)
+  have "t \<in> Mapping.keys c" using Some lookup_None_keys[of c t] by simp
+  with Some show ?thesis by (simp add: cnt_add1_def ucnt_add1_def ucc.simps insert_absorb)
+qed
+
+lemma cnt_del1_ucc: "cnt_del1 t (ucc c) = ucc (ucnt_del1 t c)"
+proof (cases "Mapping.lookup c t")
+  case None
+  then show ?thesis by (simp add: cnt_del1_def ucnt_del1_def ucc.simps)
+next
+  case (Some k)
+  have "t \<in> Mapping.keys c" using Some lookup_None_keys[of c t] by simp
+  with Some show ?thesis
+    by (simp add: cnt_del1_def ucnt_del1_def ucc.simps insert_absorb)
+qed
+
+lemma fold_cnt_add1_ucc: "fold cnt_add1 xs (ucc c) = ucc (fold ucnt_add1 xs c)"
+  by (induct xs arbitrary: c) (simp_all add: cnt_add1_ucc)
+
+lemma fold_cnt_del1_ucc: "fold cnt_del1 xs (ucc c) = ucc (fold ucnt_del1 xs c)"
+  by (induct xs arbitrary: c) (simp_all add: cnt_del1_ucc)
+
 lemma cnt_add_ucc[simp]: "cnt_add T (ucc c) = ucc (ucnt_add T c)"
   by (simp add: cnt_add_def ucnt_add_def fold_cnt_add1_ucc)
 
@@ -338,6 +368,11 @@ text \<open>The result writes the aggregate into each group and keeps what passe
 definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow>
     (event_data list, 'b) mapping \<Rightarrow> event_data list set" where
   "ugmr q p f m = Set.filter q (gmr p (\<lambda>x. x) f m)"
+
+lemma fold_insert_filter_image:
+  "fold (\<lambda>x A. let v = g x in if q v then Set.insert v A else A) xs A
+   = Set.filter q (g ` set xs) \<union> A"
+  by (induct xs arbitrary: A) (auto simp: Let_def)
 
 lemma ugmr_code[code]:
   fixes t :: "(event_data list, 'b) mapping_rbt"
@@ -408,6 +443,9 @@ lemma uag_res_code[code]:
      None \<Rightarrow> ufilt q (eagg_p p (Mapping.keys c))
    | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) g0 \<omega> pos a))"
   by (simp add: uag_res_def ugres_def ufilt_def split: option.splits prod.splits)
+
+lemma ag_res_ucc: "ufilt q (ag_res p w (ucc c) ax) = uag_res q p w c ax"
+  by (cases ax; cases p) (simp_all add: uag_res_def ag_res_def ucc.simps id_def)
 
 lemma ag_res_ucc_None[simp]: "ag_res p w (ucc c) ax = uag_res None p w c ax"
   using ag_res_ucc[of None] by simp

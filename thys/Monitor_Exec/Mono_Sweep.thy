@@ -6,6 +6,8 @@ begin
 
 
 
+lemma ID_ccompare_ed: "ID CCOMPARE(event_data) = Some comparator_event_data"
+  by (simp add: ccompare_event_data_def ID_Some)
 ML \<open>
 val mono = Monomorphize.monomorphize_cmd
 val dicts = ["nat_dict_simps", "ed_dict_simps", "mregex_dict_simps", "s8_dict_simps",

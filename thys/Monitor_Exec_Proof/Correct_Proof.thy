@@ -38,31 +38,6 @@ proof (induct vs arbitrary: i tq acc i' tq' vs')
   qed
 qed simp
 
-lemma emstep_eforget:
-  assumes "eforget s1 = eforget s2"
-  shows "fst (emstep tdb s1) = fst (emstep tdb s2) \<and>
-    eforget (snd (emstep tdb s1)) = eforget (snd (emstep tdb s2))"
-proof -
-  obtain xs1 m1 where e1: "ieval [] (emstate_j s1 + 1) [snd tdb] (demb (fst tdb)) (emstate_m s1) = (xs1, m1)"
-    by fastforce
-  obtain xs2 m2 where e2: "ieval [] (emstate_j s2 + 1) [snd tdb] (demb (fst tdb)) (emstate_m s2) = (xs2, m2)"
-    by fastforce
-  have "map iset xs1 = map iset xs2 \<and> eabs m1 = eabs m2"
-    using ieval_eeval[OF e1] ieval_eeval[OF e2] assms by (simp add: eforget_def)
-  then show ?thesis
-    using assms by (simp only: emstep_def e1 e2 prod.case) (auto simp: eforget_def split: prod.splits)
-qed
-
-lemma emsteps0_stateless_eforget:
-  "eforget s1 = eforget s2 \<Longrightarrow> emsteps0_stateless \<pi> s1 = emsteps0_stateless \<pi> s2"
-proof (induct \<pi> arbitrary: s1 s2)
-  case (Cons tdb \<pi>)
-  note e = emstep_eforget[OF Cons(2), of "apfst mk_db tdb"]
-  show ?case
-    using e Cons(1)[OF conjunct2[OF e]]
-    by (simp add: Let_def split: prod.splits) (metis fst_conv snd_conv)
-qed simp
-
 lemma enumerate_zip_map:
   "List.enumerate i (zip us (map f xs))
      = map (\<lambda>(k, u, X). (k, u, f X)) (List.enumerate i (zip us xs))"

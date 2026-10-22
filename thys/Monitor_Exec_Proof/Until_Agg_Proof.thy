@@ -309,9 +309,6 @@ proof -
   qed
 qed
 
-lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
-  by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)
-
 lemma ua_extend_rua:
   "ua_extend args p w ts0 win rest bend (ucc cc) ax
    = (case uua_extend args p w ts0 win rest bend cc ax of
@@ -417,9 +414,5 @@ proof -
     by (simp add: ua_eval_def uua_eval_def rua.simps uuwm.simps s)
 qed
 
-lemma rua_init: "rua (uua_init args p) = ua_init args p"
-  by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc)
-
-(*<*)
 end
 (*>*)
