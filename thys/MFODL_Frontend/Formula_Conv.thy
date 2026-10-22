@@ -1,6 +1,6 @@
 (*<*)
 theory Formula_Conv
-  imports "MFODL_Logic.Typing" "MFODL_Syntax.String_Escape" "MFODL_Syntax.MFODL_Post"
+  imports "MFODL_Logic.Typing" "MFODL_Syntax.String_Escape" "MFODL_Syntax.Byte_String" "MFODL_Syntax.MFODL_Post"
 begin
 (*>*)
 

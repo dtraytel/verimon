@@ -15,5 +15,6 @@ session VeriMon_Parsers = Containers +
   theories
     "MFODL_Syntax.MFODL_Post"
     "MFODL_Syntax.String_Escape"
+    "MFODL_Syntax.Byte_String"
     "Log_Parser.Log_Code"
     "MFODL_Parser_Code.MFODL_Parser_Code"

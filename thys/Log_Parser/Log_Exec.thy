@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Exec
-  imports Log_Filter
+  imports Log_Filter "MFODL_Syntax.Byte_String"
 begin
 (*>*)
 
@@ -29,7 +29,7 @@ text \<open>
 
 subsection \<open>Byte strings\<close>
 
-typedef bytes = "UNIV :: char list set" ..
+text \<open>The type @{typ bytes} of byte strings is in theory @{theory MFODL_Syntax.Byte_String}.\<close>
 
 text \<open>Indices into byte strings and offsets in the input are of type @{typ integer}, which the code
   generator maps to Zarith's integers; indices within a chunk are therefore unboxed machine

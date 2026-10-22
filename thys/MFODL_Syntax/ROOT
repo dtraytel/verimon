@@ -3,7 +3,8 @@ chapter AFP
 session MFODL_Syntax = HOL +
   description
     "The parse trees of MonPoly's formula syntax (MFODL_Syntax) and their post-processing
-     (MFODL_Post), and OCaml's escaping of strings in MonPoly's messages (String_Escape). The
+     (MFODL_Post), byte strings (Byte_String), and OCaml's escaping of strings in MonPoly's
+     messages (String_Escape). The
      bottom of the logic layer: the formula parser produces these parse trees, and the front end
      (session MFODL_Frontend) converts them into the logic's formulas, so neither the logic nor
      the front end depends on a parser."
@@ -11,3 +12,4 @@ session MFODL_Syntax = HOL +
     MFODL_Syntax
     MFODL_Post
     String_Escape
+    Byte_String
