@@ -176,8 +176,12 @@ The formalization
 | `thys/MFODL_Frontend` | `MFODL_Frontend` | From the parsed formula and signature to typed formulas |
 | `thys/Monitor_DS` | `Monitor_DS` | Generic data structures: queues, order-statistic trees, red-black-tree sets, sliding-window aggregation |
 | `thys/Generic_Join_Devel` | `Generic_Join_Devel` | Multi-way joins |
-| `thys/MFODL_Monitor_Devel` | `MFODL_Monitor_Devel` | The monitoring algorithm, its progress and correctness, and its concrete data structures |
-| `thys/MFODL_Monitor_Exec` | `MFODL_Monitor_Exec` | The executable monitor and its refinement, and the monitor on the bytes of a log |
+| `thys/MFODL_Monitor` | `MFODL_Monitor` | The monitoring algorithm, in a locale over its auxiliary structures and joins |
+| `thys/MFODL_Monitor_Proof` | `MFODL_Monitor_Proof` | Progress, the algorithm's invariant and correctness |
+| `thys/Monitor_Impl` | `Monitor_Impl` | The concrete auxiliary structures and joins and the algorithm's instance with them (definitions and code equations) |
+| `thys/Monitor_Impl_Proof` | `Monitor_Impl_Proof` | The invariants of the concrete structures; the instance meets the algorithm's assumptions |
+| `thys/Monitor_Exec` | `Monitor_Exec` | The executable monitor, the monitor on the bytes of a log, and the code-generator setup (definitions and code equations) |
+| `thys/Monitor_Exec_Proof` | `Monitor_Exec_Proof` | The executable monitor simulates the algorithm and inherits its correctness |
 | `thys/Log_Parser` | `Log_Parser` | The log and signature formats and their verified parsers |
 | `thys/grammar` | `Grammar_Command`, `LR_Parser` | Grammars and verified LR parsers generated from them (a submodule) |
 | `thys/MFODL_Parser` | `MFODL_Grammar`, `MFODL_Parser`, `MFODL_Parser_Code` | MonPoly's formula syntax and its verified parser |
