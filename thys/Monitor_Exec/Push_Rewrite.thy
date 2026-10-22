@@ -202,10 +202,6 @@ qed (simp_all add: push_ex_And safe_assignment_def)
 lemma remove_neg_push_ex[simp]: "remove_neg (push_ex \<phi>) = push_ex (remove_neg \<phi>)"
   by (cases \<phi>) (auto simp: push_ex_And)
 
-lemma is_Trigger_push_ex[simp]: "Formula.is_Trigger (push_ex \<phi>) = Formula.is_Trigger \<phi>"
-  and is_Release_push_ex[simp]: "Formula.is_Release (push_ex \<phi>) = Formula.is_Release \<phi>"
-  by (cases \<phi>; simp add: push_ex_And)+
-
 subsection \<open>Safety\<close>
 
 lemma safe_ex_into[simp]: "safe_formula (ex_into t \<phi>) = (safe_formula \<phi> \<and> 0 \<in> Formula.fv \<phi>)"

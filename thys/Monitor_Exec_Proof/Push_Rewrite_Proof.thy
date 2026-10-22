@@ -102,6 +102,10 @@ lemma push_ex_comparison:
   "push_ex \<phi> = Formula.LessEq t1 t2 \<longleftrightarrow> \<phi> = Formula.LessEq t1 t2"
   by (cases \<phi>; simp add: push_ex_And)+
 
+lemma is_Trigger_push_ex[simp]: "Formula.is_Trigger (push_ex \<phi>) = Formula.is_Trigger \<phi>"
+  and is_Release_push_ex[simp]: "Formula.is_Release (push_ex \<phi>) = Formula.is_Release \<phi>"
+  by (cases \<phi>; simp add: push_ex_And)+
+
 lemma safe_And_not_TR:
   "\<not> Formula.is_Trigger \<psi> \<Longrightarrow> \<not> Formula.is_Release \<psi> \<Longrightarrow>
    safe_formula (Formula.And \<phi> \<psi>) = (safe_formula \<phi> \<and>
