@@ -2,24 +2,15 @@ theory MFODL_Efficient_Lexer
   imports MFODL_Parser.MFODL_Parser "HOL-Library.Code_Target_Int" "HOL-Library.Code_Abstract_Char"
 begin
 
-text \<open>Code equations for the lexer model and the semantic actions, proved equal to their
-  definitions. They do not depend on the representation of natural numbers in the code, so that
-  both the export of the parser (theory \<^verbatim>\<open>MFODL_Parser_Examples\<close>, with binary
-  naturals) and that of the verified monitor (session \<^verbatim>\<open>VeriMon_CLI\<close>, with Zarith's
-  integers) use them.\<close>
+section \<open>Efficient code for formula parsing\<close>
 
-section \<open>Code for the lexer\<close>
+text \<open>Code equations proved equal to the definitions. They do not depend on the representation of
+  natural numbers in the code, so that both the examples and the monitor use them.\<close>
 
-text \<open>Code equations for the lexer model of \<^theory>\<open>MFODL_Parser.MFODL_Lexer\<close>,
-  proved equal to its definitions. With binary naturals the definitions spend
-  most of their time in arithmetic: character classes compute character codes
-  as naturals, every keyword rule takes a prefix of the input of the keyword's
-  length at every position, and the look-ahead of \<^const>\<open>m_unit\<close> and
-  \<^const>\<open>m_rat\<close> computes the length of the rest of the input. Here character
-  codes are integers, keywords are compared character by character, the
-  look-ahead inspects the input after the digits, and only the rules that can
-  match an input starting with its first character are tried (a table indexed
-  by the character code).\<close>
+subsection \<open>Code for the lexer\<close>
+
+text \<open>Character codes are integers, keywords are compared character by character, and the
+  look-ahead after digits does not compute the length of the rest of the input.\<close>
 
 lemma integer_of_char_nat: \<open>integer_of_char c = integer_of_nat (of_char c)\<close>
   unfolding integer_of_char_def integer_of_nat_eq_of_nat by (rule of_nat_of_char[symmetric])
@@ -89,9 +80,10 @@ proof -
     unfolding m_rat_def Let_def nth_eq_case d e ..
 qed
 
-text \<open>Dispatch on the first character: each rule comes with a condition on the
-  first character of every input it matches, and only the rules whose
-  condition holds are tried.\<close>
+subsection \<open>Dispatch on the first character\<close>
+
+text \<open>Only the rules whose condition on the first character holds are tried, by a table indexed
+  by the character code.\<close>
 
 definition rule_starts :: \<open>(char \<Rightarrow> bool) list\<close> where
   \<open>rule_starts =
@@ -226,11 +218,10 @@ next
 qed
 
 
-section \<open>Code for the semantic actions\<close>
+subsection \<open>Code for the semantic actions\<close>
 
-text \<open>Integer literals: the character code as an integer, and a comparison
-  instead of a pattern match on a character literal, which the code generator
-  implements by taking the character apart into its bits.\<close>
+text \<open>Character codes as integers, and a comparison instead of a pattern match on a character
+  literal, which the code takes apart into its bits.\<close>
 
 lemma digit_val_code [code]: \<open>digit_val c = int_of_integer (integer_of_char c) - 48\<close>
 proof -

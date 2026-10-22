@@ -1325,8 +1325,8 @@ subsection \<open>Step function of the freeze\<close>
 
 subsubsection \<open>Replay mode\<close>
 
-text \<open>The copy at the first frozen table without a verdict yet is kept as the live copy and fed only
-the new time points next. It replaces its slot only at equal size, for termination.\<close>
+text \<open>In the replay mode, each pending frozen table gets a copy of the replay base, replayed over the
+window. The first copy without a verdict stays live, replacing its slot only at equal size.\<close>
 
 definition frz_keep_lv :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> nat option" where
   "frz_keep_lv lv \<rho>L = (case lv of Some (g, st) \<Rightarrow> if size st = size \<rho>L then Some g else None | None \<Rightarrow> None)"
@@ -1337,8 +1337,9 @@ definition frz_keep_st :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<R
 lemma size_frz_keep_st[simp]: "size (frz_keep_st lv \<rho>L) = size \<rho>L"
   by (auto simp: frz_keep_st_def split: option.splits)
 
-text \<open>The replay window drops the time points beyond the body's past reach @{term d} from every
-pending verdict. With @{term po}, the copy at @{term i} is fed the frozen predicate only up to @{term i}.\<close>
+text \<open>The window drops the time points beyond the body's past reach @{term d} from every pending
+verdict. With @{term po}, the copy at @{term i} gets the frozen predicate only up to @{term i}.\<close>
+
 definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> nat" where
   "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> w < j
      then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (min jfrz (j - 1) - w))) tq) else 0)"
@@ -2017,7 +2018,7 @@ qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map
 
 lemma total_meval: "All meval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
-    case 7
+  case 7
   then show ?case
     by simp
 next

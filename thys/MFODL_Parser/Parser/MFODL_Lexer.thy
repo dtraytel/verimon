@@ -2,20 +2,10 @@ theory MFODL_Lexer
   imports MFODL_Grammar.MFODL_Grammar
 begin
 
-section \<open>Lexer\<close>
+section \<open>Lexer of MFODL formulas\<close>
 
-text \<open>
-  An executable model of MonPoly's formula lexer
-  (\<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly). Like ocamllex, it takes the longest
-  match at every position and resolves ties by rule order. Characters are
-  bytes, so the Unicode spellings \<open>\<triangleright>\<close> and \<open>\<triangleleft>\<close> of \<open>|>\<close> and \<open><|\<close> are matched by their
-  UTF-8 encodings. Unlike MonPoly, a time unit other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close>, \<open>s\<close>
-  is rejected here already; MonPoly lexes it as \<open>TU\<close> and fails in every
-  context the token can appear in.
-
-  The lexer is not verified; it only splits the input into the tokens that
-  the verified parser consumes.
-\<close>
+text \<open>An unverified model of MonPoly's formula lexer: longest match, ties by rule order, bytes as
+  characters. Unlike MonPoly, it rejects time units other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close> and \<open>s\<close>.\<close>
 
 definition in_range :: \<open>char \<Rightarrow> char \<Rightarrow> char \<Rightarrow> bool\<close> where
   \<open>in_range a b c = ((of_char a :: nat) \<le> of_char c \<and> (of_char c :: nat) \<le> of_char b)\<close>
@@ -37,8 +27,7 @@ definition is_space :: \<open>char \<Rightarrow> bool\<close> where
 
 subsection \<open>Matchers\<close>
 
-text \<open>Each matcher returns the length of the longest match at the beginning of
-  the input, if any.\<close>
+text \<open>Each matcher returns the length of the longest match at the start of the input, if any.\<close>
 
 definition m_fixed :: \<open>string \<Rightarrow> string \<Rightarrow> nat option\<close> where
   \<open>m_fixed k s = (if k \<noteq> [] \<and> take (length k) s = k then Some (length k) else None)\<close>
@@ -130,8 +119,6 @@ definition rules :: \<open>((string \<Rightarrow> nat option) \<times> action) l
      (m_regexp, Emit REGEXP_CST), (m_string, Emit NAME),
      (m_fixed ''(*'', Comment), (m_fixed ''#'', LineComment)]\<close>
 
-text \<open>The longest match, the first rule among equally long ones.\<close>
-
 fun best_match :: \<open>(nat \<times> action) option \<Rightarrow> ((string \<Rightarrow> nat option) \<times> action) list \<Rightarrow> string \<Rightarrow>
     (nat \<times> action) option\<close> where
   \<open>best_match b [] s = b\<close>
@@ -139,8 +126,6 @@ fun best_match :: \<open>(nat \<times> action) option \<Rightarrow> ((string \<R
      (case m s of None \<Rightarrow> b
       | Some n \<Rightarrow> (case b of None \<Rightarrow> Some (n, a) | Some (n', _) \<Rightarrow> if n' < n then Some (n, a) else b))
      rs s\<close>
-
-text \<open>Position of the end of the first \<open>*)\<close>.\<close>
 
 fun comment_end :: \<open>string \<Rightarrow> nat option\<close> where
   \<open>comment_end (c # d # s) =

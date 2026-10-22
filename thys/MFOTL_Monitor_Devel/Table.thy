@@ -6,17 +6,8 @@ begin
 
 section \<open>Finite tables\<close>
 
-text \<open>
-  A table is a set of tuples over a list of \<^emph>\<open>columns\<close>: variable indices, one per field of
-  the tuple, in the tuple's order.  A tuple holds the values of exactly those variables, so it is
-  as long as its column list.  The columns are not stored with the table; they are a parameter of
-  every statement about it, as the free variables of the formula a table evaluates are.
-
-  Column lists are free of duplicates wherever it matters, and otherwise in any order.  The order
-  the monitor uses is MonPoly's: the columns of a conjunction are those of its left operand
-  followed by the new ones of its right operand (@{text cols_union}), so a join produces its
-  output in the order the conjunction's own columns are listed, without reordering.
-\<close>
+text \<open>A table is a set of tuples over a list of columns, the variables whose values a tuple holds
+  in order. The columns are not stored but are a parameter of every statement about a table.\<close>
 
 type_synonym 'a tuple = "'a list"
 type_synonym 'a table = "'a tuple set"
@@ -24,8 +15,8 @@ type_synonym 'a table = "'a tuple set"
 
 subsection \<open>Columns\<close>
 
-text \<open>The union of two column lists in MonPoly's order: the first list, then the columns of the
-  second that are new, in the second's order.\<close>
+text \<open>Columns are united in MonPoly's order, so that a join yields the conjunction's columns
+  without reordering.\<close>
 
 definition cols_union :: "nat list \<Rightarrow> nat list \<Rightarrow> nat list" where
   "cols_union xs ys = xs @ filter (\<lambda>y. y \<notin> set xs) ys"
@@ -92,10 +83,6 @@ lemma table_filter: "table cs {a \<in> T. wf_tuple cs a}"
 
 subsection \<open>Reading a variable\<close>
 
-text \<open>The value a tuple over @{term cs} gives variable @{term i}.  At a variable that is not a
-  column it is @{term "the None"}, the unspecified value the previous representation read off a
-  hole; only the values at the columns ever matter.\<close>
-
 definition tup_get :: "nat list \<Rightarrow> 'a tuple \<Rightarrow> nat \<Rightarrow> 'a" where
   "tup_get cs x i = the (map_of (zip cs x) i)"
 
@@ -151,8 +138,6 @@ proof (rule nth_equalityI)
     by simp
 qed
 
-text \<open>The valuation of the first @{term n} variables a tuple determines, for the semantics.\<close>
-
 definition val :: "nat \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> 'a list" where
   "val n cs x = map (tup_get cs x) [0..<n]"
 
@@ -161,8 +146,6 @@ lemma length_val[simp]: "length (val n cs x) = n"
 
 lemma nth_val[simp]: "i < n \<Longrightarrow> val n cs x ! i = tup_get cs x i"
   by (simp add: val_def)
-
-text \<open>An assignment appends its column to the tuple.\<close>
 
 lemma val_snoc:
   assumes "wf_tuple cs y" "x \<notin> set cs" "x < n"
@@ -180,10 +163,6 @@ qed simp
 
 
 subsection \<open>Restriction\<close>
-
-text \<open>The restriction of a tuple over @{term cs} to the columns @{term ds}, in the order of
-  @{term ds}.  It projects when @{term ds} lists fewer columns and reorders when it lists the same
-  ones in another order.\<close>
 
 definition restrict :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
   "restrict ds cs x = map (tup_get cs x) ds"
@@ -227,9 +206,6 @@ lemma restrict_cong:
 lemma val_restrict: "i \<in> set ds \<Longrightarrow> i < n \<Longrightarrow> val n ds (restrict ds cs x) ! i = val n cs x ! i"
   by (simp add: tup_get_restrict)
 
-text \<open>Two valuations of the same length agree beyond it, so reading a restricted tuple needs no
-  bound on the variables.\<close>
-
 lemma nth_beyond_length: "length xs = length ys \<Longrightarrow> length xs \<le> i \<Longrightarrow> xs ! i = ys ! i"
 proof (induct xs arbitrary: ys i)
   case (Cons x xs)
@@ -264,9 +240,6 @@ lemma restrict_append:
   "wf_tuple cs x \<Longrightarrow> set ds \<subseteq> set cs \<Longrightarrow> restrict ds (cs @ cs') (x @ y) = restrict ds cs x"
   by (rule restrict_cong) (auto simp: tup_get_append)
 
-text \<open>A tuple whose restrictions to a cover of its columns lie in finite tables takes its values
-  from those tables, so there are finitely many.\<close>
-
 lemma finite_restrict_cover:
   assumes "distinct C" "set C \<subseteq> (\<Union>A\<in>set As. set A)" "\<forall>X \<in> set Xs. finite X"
   shows "finite {x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs}"
@@ -300,7 +273,7 @@ proof -
 qed
 
 
-subsection \<open>Empty, unit, and singleton tables\<close>
+subsection \<open>Empty, unit and singleton tables\<close>
 
 definition "empty_table = {}"
 
@@ -309,8 +282,6 @@ lemma in_empty_table[simp]: "\<not> x \<in> empty_table"
 
 lemma empty_table[simp]: "table cs empty_table"
   unfolding table_def empty_table_def by simp
-
-text \<open>The unit table holds the one tuple over no columns.\<close>
 
 definition "unit_table = {[]}"
 
@@ -338,9 +309,6 @@ lemma singleton_table[simp]: "table [i] (singleton_table x)"
 subsection \<open>Join\<close>
 
 subsubsection \<open>Joining tuples\<close>
-
-text \<open>Two tuples join if they agree on their common columns; the joined tuple is over the union
-  of their columns, in the order of @{const cols_union}.\<close>
 
 fun join1 :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<times> 'a tuple \<Rightarrow> 'a tuple option" where
   "join1 cs ds (x, y) = (if \<forall>c \<in> set cs \<inter> set ds. tup_get cs x c = tup_get ds y c
@@ -398,9 +366,6 @@ lemma join1_wf_tuple:
   "wf_tuple cs x \<Longrightarrow> wf_tuple ds y \<Longrightarrow> join1 cs ds (x, y) = Some z \<Longrightarrow> wf_tuple (cols_union cs ds) z"
   by (auto simp: join1.simps wf_tuple_def cols_union_def split: if_splits)
 
-text \<open>When the second tuple's columns are among the first's, the two join exactly if the first
-  restricts to the second, and then the joined tuple is the first.\<close>
-
 lemma join1_sub:
   assumes "distinct cs" "distinct ds" "wf_tuple cs x" "wf_tuple ds y" "set ds \<subseteq> set cs"
   shows "join1 cs ds (x, y) = (if restrict ds cs x = y then Some x else None)"
@@ -429,8 +394,8 @@ qed
 
 subsubsection \<open>Joining tables\<close>
 
-text \<open>The join and, for @{term "pos = False"}, the antijoin, whose second operand's columns are
-  among the first's.\<close>
+text \<open>With @{term "pos = False"} this is the antijoin, whose second operand's columns are among
+  the first's.\<close>
 
 definition join :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
   "join cs A pos ds B = (if pos then Option.these (join1 cs ds ` (A \<times> B))
@@ -509,8 +474,8 @@ lemma join_empty[simp]:
 
 subsection \<open>Correctness predicate\<close>
 
-text \<open>@{term "qtable cs P Q X"}: @{term X} is a finite table over @{term cs} and, among the tuples
-  that satisfy @{term P}, holds exactly those that satisfy @{term Q}.\<close>
+text \<open>Among the tuples that satisfy @{term P}, the finite table @{term X} over @{term cs} holds
+  exactly those that satisfy @{term Q}.\<close>
 
 definition qtable :: "nat list \<Rightarrow> ('a tuple \<Rightarrow> bool) \<Rightarrow> ('a tuple \<Rightarrow> bool) \<Rightarrow> 'a table \<Rightarrow> bool" where
   "qtable cs P Q X \<longleftrightarrow> table cs X \<and> finite X \<and>
@@ -550,9 +515,6 @@ lemma qtableD:
     and "finite R"
   using assms unfolding qtable_iff by auto
 
-
-subsubsection \<open>No columns\<close>
-
 lemma qtable_empty_vars_iff:
   "qtable [] P Q R \<longleftrightarrow> (R = empty_table \<or> R = unit_table) \<and> (\<forall>v. P v \<longrightarrow> (v \<in> R) = (Q v \<and> v = []))"
   unfolding qtable_iff table_empty_vars_iff by (auto simp: empty_table_def unit_table_def)
@@ -576,9 +538,6 @@ lemma qtable_nonempty_empty_table:
   "qtable [] R P X \<Longrightarrow> x \<in> X \<Longrightarrow> qtable [] R (\<lambda>v. \<not> P v) empty_table"
   by (frule qtable_empty_varsD(1)) (auto dest: qtable_unit_empty_table)
 
-
-subsubsection \<open>Empty and unit table\<close>
-
 lemma qtable_empty: "(\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x \<Longrightarrow> False) \<Longrightarrow> qtable cs P Q empty_table"
   unfolding qtable_def table_def empty_table_def by auto
 
@@ -589,7 +548,9 @@ lemma qtable_unit_table: "(\<And>x. wf_tuple [] x \<Longrightarrow> P x \<Longri
   unfolding qtable_def table_def by (auto simp: in_unit_table unit_table_def)
 
 
-subsubsection \<open>Union\<close>
+subsection \<open>Correctness of table operations\<close>
+
+subsubsection \<open>Set operations\<close>
 
 lemma qtable_union: "qtable cs P Q1 X \<Longrightarrow> qtable cs P Q2 Y \<Longrightarrow>
   (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<or> Q2 x) \<Longrightarrow> qtable cs P Q (X \<union> Y)"
@@ -634,8 +595,6 @@ qed
 
 subsubsection \<open>Reordering\<close>
 
-text \<open>A table over @{term cs} read in the order of @{term ds}, a permutation of @{term cs}.\<close>
-
 lemma qtable_reorder:
   assumes "qtable cs P Q X" "distinct cs" "distinct ds" "set ds = set cs"
     "\<And>v. wf_tuple ds v \<Longrightarrow> P' v \<Longrightarrow> P (restrict cs ds v)"
@@ -674,8 +633,6 @@ qed
 
 
 subsubsection \<open>Join\<close>
-
-text \<open>The operands' restriction predicates are their own, at their own columns.\<close>
 
 lemma qtable_join:
   assumes "qtable cs P1 Q1 X" "qtable ds P2 Q2 Y" "distinct cs" "distinct ds"
@@ -745,8 +702,6 @@ qed
 
 subsubsection \<open>Assignment\<close>
 
-text \<open>A new column appended to a table, its value computed from the tuple.\<close>
-
 lemma qtable_assign:
   assumes "qtable cs P Q X" "cs' = cs @ [y]"
     "\<And>x'. wf_tuple cs' x' \<Longrightarrow> P' x' \<Longrightarrow> P (butlast x')"
@@ -785,10 +740,9 @@ proof (rule qtableI)
 qed
 
 
-subsubsection \<open>Restriction to a set of valuations\<close>
+subsection \<open>Restriction to valuations\<close>
 
-text \<open>A tuple over @{term cs} agrees with some valuation in @{term A}.  This is what restricts
-  the monitor's tables to the part of the valuation space a slice covers.\<close>
+text \<open>Restriction of the monitor's tables to the valuations that a slice covers.\<close>
 
 definition mem_restr :: "'a list set \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> bool" where
   "mem_restr A cs x \<longleftrightarrow> (\<exists>y\<in>A. list_all2 (\<lambda>c a. c < length y \<and> y ! c = a) cs x)"
@@ -839,8 +793,6 @@ lemma restrict_mem_restr:
     mem_restr A ds (restrict ds cs x)"
   by (auto simp: mem_restr_iff tup_get_restrict)
 
-text \<open>A join whose second operand's columns are among the first's keeps the first's columns.\<close>
-
 lemma qtable_join_sub:
   assumes "qtable A (mem_restr R A) Q1 X" "qtable B (mem_restr R B) Q2 Y" "distinct A" "distinct B"
     "set B \<subseteq> set A"
@@ -865,9 +817,6 @@ proof -
   then show ?thesis
     unfolding qtable_iff table_def fun_eq_iff by blast
 qed
-
-text \<open>Over the columns 0, ..., m - 1 a tuple is a whole valuation, and a table over them is the
-  set of the valuations that satisfy its predicate.\<close>
 
 lemma val_upt:
   assumes "length v = m"
@@ -905,10 +854,9 @@ proof -
 qed
 
 
-subsubsection \<open>Projection\<close>
+subsection \<open>Projection\<close>
 
-text \<open>An existential quantifier binds variable @{term 0} and shifts the others down by one.  The
-  projection drops the column of variable @{term 0} and keeps the order of the others.\<close>
+text \<open>A quantifier binds variable 0; the other columns shift down by one and keep their order.\<close>
 
 definition ex_cols :: "nat list \<Rightarrow> nat list" where
   "ex_cols cs = map (\<lambda>x. x - 1) (filter (\<lambda>x. x \<noteq> 0) cs)"
@@ -961,8 +909,6 @@ lemma ex_cols_fold_cols_union:
   "(\<And>t. t \<in> set ts \<Longrightarrow> ex_cols (f t) = g t) \<Longrightarrow>
     ex_cols (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0) = fold (\<lambda>t cs. cols_union cs (g t)) ts (ex_cols cs0)"
   by (induct ts arbitrary: cs0) (simp_all add: ex_cols_cols_union)
-
-text \<open>Under @{term k} binders, the columns are those at least @{term k}, shifted down.\<close>
 
 definition shift_cols :: "nat \<Rightarrow> nat list \<Rightarrow> nat list" where
   "shift_cols k cs = map (\<lambda>x. x - k) (filter (\<lambda>x. k \<le> x) cs)"

@@ -6,7 +6,7 @@ begin
 
 section \<open>Correctness of the indexed join\<close>
 
-subsection \<open>Probing an index\<close>
+subsection \<open>Indices and probes\<close>
 
 lemma iensure_has:
   "msk \<in> set msks \<Longrightarrow> Mapping.lookup (iidxs (iensure msks A)) msk \<noteq> None"

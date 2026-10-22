@@ -134,7 +134,7 @@ proof -
     by (auto simp: wf_frz_queue_def)
 qed
 
-text \<open>Rows of the two copies of the separable evaluation at time point @{term k}.\<close>
+text \<open>Rows of the two copies of the separable evaluation at a time point.\<close>
 
 definition frz_row :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow>
     event_data list set \<Rightarrow> Formula.name \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow>

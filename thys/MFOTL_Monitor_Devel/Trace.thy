@@ -6,7 +6,7 @@ begin
 
 section \<open>Traces and trace prefixes\<close>
 
-subsection \<open>Infinite traces\<close>
+subsection \<open>Sorted and increasing streams\<close>
 
 coinductive ssorted :: "'a :: linorder stream \<Rightarrow> bool" where
   "shd s \<le> shd (stl s) \<Longrightarrow> ssorted (stl s) \<Longrightarrow> ssorted s"
@@ -85,6 +85,8 @@ unfolding sincreasing_def proof
     then show ?case ..
   qed
 qed
+
+subsection \<open>Infinite traces\<close>
 
 typedef 'a trace = "{s :: ('a \<times> nat) stream. ssorted (smap snd s) \<and> sincreasing (smap snd s)}"
   by (intro exI[of _ "smap (\<lambda>i. (undefined, i)) nats"])
