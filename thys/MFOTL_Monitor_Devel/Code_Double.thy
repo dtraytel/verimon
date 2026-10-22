@@ -10,16 +10,13 @@ begin
 
 section \<open>Code adaptation for IEEE double-precision floats\<close>
 
-subsection \<open>copysign\<close>
+subsection \<open>Sign copying and NaN on floats\<close>
 
 lift_definition copysign :: "('e, 'f) float \<Rightarrow> ('e, 'f) float \<Rightarrow> ('e, 'f) float" is
   "\<lambda>(_, e::'e word, f::'f word) (s::1 word, _, _). (s, e, f)" .
 
 lemma is_nan_copysign[simp]: "is_nan (copysign x y) \<longleftrightarrow> is_nan x"
   unfolding is_nan_def by transfer auto
-
-
-subsection \<open>Additional lemmas about generic floats\<close>
 
 lemma is_nan_some_nan[simp]: "is_nan (some_nan :: ('e, 'f) float)"
   unfolding some_nan_def
@@ -68,6 +65,8 @@ lemma zero_not_infinity: "is_zero x \<Longrightarrow> \<not> is_infinity x"
 lemma zero_not_nan: "is_zero x \<Longrightarrow> \<not> is_nan x"
   unfolding is_zero_def is_nan_def by simp
 
+
+subsection \<open>Values of floats\<close>
 
 lemma minus_one_power_one_word: "(-1 :: real) ^ unat (x :: 1 word) = (if unat x = 0 then 1 else -1)"
 proof -
@@ -255,8 +254,7 @@ lift_definition copysign_double :: "double \<Rightarrow> double \<Rightarrow> do
   "\<lambda>x y. if IEEE.is_nan y then some_nan else copysign x y"
   by auto
 
-text \<open>Note: @{const copysign_double} deviates from the IEEE standard in cases where
-  the second argument is a NaN.\<close>
+text \<open>Unlike IEEE, @{const copysign_double} yields NaN if its second argument is NaN.\<close>
 
 lift_definition fcompare_double :: "double \<Rightarrow> double \<Rightarrow> ccode" is fcompare
   by (auto simp: nan_fcompare)
@@ -297,7 +295,7 @@ lift_definition integer_of_double :: "double \<Rightarrow> integer" is
 definition int_of_double: "int_of_double x = int_of_integer (integer_of_double x)"
 
 
-subsection \<open>Linear ordering\<close>
+subsection \<open>Linear order on doubles\<close>
 
 definition lcompare_double :: "double \<Rightarrow> double \<Rightarrow> integer" where
   "lcompare_double x y = (if is_zero x \<and> is_zero y then
@@ -458,7 +456,7 @@ local_setup \<open>
 derive ccompare double
 
 
-subsubsection \<open>Code setup\<close>
+subsection \<open>Code setup\<close>
 
 declare [[code drop:
       "0 :: double"
@@ -474,6 +472,9 @@ declare [[code drop:
       sqrt_double infinity nan is_zero is_infinite is_nan copysign_double fcompare_double
       double_of_integer integer_of_double
       ]]
+
+text \<open>The OCaml adaptation relies on OCaml's @{text float} being IEEE double precision and on
+  Zarith's conversions rounding as @{const double_of_integer} and @{const integer_of_double}.\<close>
 
 code_printing
   code_module FloatUtil \<rightharpoonup> (OCaml)
@@ -514,6 +515,8 @@ code_printing
   | constant "compare_double :: double \<Rightarrow> double \<Rightarrow> integer" \<rightharpoonup> (OCaml) "FloatUtil.compare"
   | constant "double_of_integer :: integer \<Rightarrow> double" \<rightharpoonup> (OCaml) "Z.to'_float"
   | constant "integer_of_double :: double \<Rightarrow> integer" \<rightharpoonup> (OCaml) "Z.of'_float"
+
+text \<open>The Eval adaptation relies on Standard ML's @{text real} being IEEE double precision.\<close>
 
 ML \<open>
 if Real.precision <> 53 then
