@@ -16,6 +16,9 @@ lemma dq_hd_s_nth: "dq_inv d \<Longrightarrow> 0 < dq_len d \<Longrightarrow> dq
 lemma dq_nth_l_in: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth_l d k z = dq_nth d k"
   by (auto simp: dq_nth_l_def dq_nth_def dq_inv_def dq_len_def Let_def)
 
+lemma nth_def_eq: "nth_def xs k z = (if k < length xs then xs ! k else z)"
+  by (induct xs k z rule: nth_def.induct) auto
+
 lemma gupd_nested_step_dq_eq:
   assumes inv: "dq_inv dq"
   shows "gupd_nested_step_dq base d f x dq = upd_nested_step_dq base d f x dq"

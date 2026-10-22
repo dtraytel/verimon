@@ -42,9 +42,6 @@ proof -
   then show ?thesis by (simp add: mapping_eqI)
 qed
 
-lemma eidx_empty[simp]: "eidx msk {} = Mapping.empty"
-  by (intro mapping_eqI) (simp add: lookup_eidx)
-
 lemma eidx_union_eq: "eidx msk (S \<union> A) = eidx_union (eidx msk S) (eidx msk A)"
 proof -
   have "Mapping.lookup (eidx msk (S \<union> A)) k
@@ -1046,9 +1043,6 @@ lemma wf_atomsD:
 
 lemma table_unit_table_Nil: "table ks unit_table \<Longrightarrow> ks = []"
   by (simp add: table_def unit_table_def)
-
-lemma etabc_eq_empty_table[simp]: "etabc ks cs T = empty_table \<longleftrightarrow> T = empty_table"
-  by (simp add: etabc_empty_iff empty_table_def)
 
 subsection \<open>The lax epsilon\<close>
 

@@ -113,15 +113,8 @@ definition nflat :: "nat \<Rightarrow> 'a nmap \<Rightarrow> ucnt" where
   "nflat k M = Mapping.Mapping (\<lambda>t. case Mapping.lookup M (drop k t) of None \<Rightarrow> None
      | Some aI \<Rightarrow> Mapping.lookup (snd aI) t)"
 
-lemma lookup_nflat: "Mapping.lookup (nflat k M) t = (case Mapping.lookup M (drop k t) of None \<Rightarrow> None
-     | Some aI \<Rightarrow> Mapping.lookup (snd aI) t)"
-  unfolding nflat_def by (simp add: Mapping.lookup.abs_eq)
-
 definition nsumm :: "'a nmap \<Rightarrow> (event_data list, 'a) mapping" where
   "nsumm M = Mapping.map_values (\<lambda>_ v. fst v) M"
-
-lemma lookup_nsumm: "Mapping.lookup (nsumm M) g = map_option fst (Mapping.lookup M g)"
-  by (simp add: nsumm_def lookup_map_values)
 
 text \<open>A tuple entering: its count, and the summary of its group when it is new.\<close>
 
@@ -238,6 +231,12 @@ fun rdel :: "nat \<Rightarrow> (event_data list \<Rightarrow> event_data) \<Righ
 
 definition ek :: "eaggp \<Rightarrow> nat" where
   "ek p = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> k)"
+
+lemma nflat_empty[simp]: "nflat k Mapping.empty = Mapping.empty"
+  by (rule mapping_eqI) (simp add: lookup_nflat)
+
+lemma nsumm_empty[simp]: "nsumm Mapping.empty = Mapping.empty"
+  by (rule mapping_eqI) (simp add: lookup_nsumm)
 
 definition urmk :: "eaggp \<Rightarrow> ucnt \<Rightarrow> ugagg option \<Rightarrow> ucrep" where
   "urmk p c ax = (if \<not> cachedp p \<and> Mapping.is_empty c then (case ax of

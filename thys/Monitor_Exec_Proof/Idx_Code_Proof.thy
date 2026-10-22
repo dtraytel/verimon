@@ -45,6 +45,11 @@ qed
 lemma eidx_add_fold: "finite X \<Longrightarrow> eidx_add msk X i = Finite_Set.fold (eidx_add1 msk) i X"
   by (intro mapping_eqI) (simp add: lookup_eidx_add lookup_fold_eidx_add1)
 
+lemma eidx_add_code:
+  "eidx_add msk X i = (if finite X then set_fold_cfi (eidx_add1_cfi msk) i X
+     else Code.abort (STR ''eidx_add: infinite'') (\<lambda>_. eidx_add msk X i))"
+  by (simp add: set_fold_cfi.rep_eq eidx_add1_cfi.rep_eq eidx_add_fold)
+
 lemma lookup_eidx_del1: "Mapping.lookup (eidx_del1 msk x i) k =
   (if k = eproj msk x then (if ebucket i k - {x} = {} then None else Some (ebucket i k - {x}))
    else Mapping.lookup i k)"
@@ -104,6 +109,11 @@ qed
 
 lemma eidx_del_fold: "finite D \<Longrightarrow> eidx_del msk D i = Finite_Set.fold (eidx_del1 msk) i D"
   by (intro mapping_eqI) (simp add: lookup_eidx_del lookup_fold_eidx_del1)
+
+lemma eidx_del_code:
+  "eidx_del msk D i = (if finite D then set_fold_cfi (eidx_del1_cfi msk) i D
+     else Code.abort (STR ''eidx_del: infinite'') (\<lambda>_. eidx_del msk D i))"
+  by (simp add: set_fold_cfi.rep_eq eidx_del1_cfi.rep_eq eidx_del_fold)
 
 lemma lookup_mfilter_keys: "Mapping.lookup (mfilter_keys pos Y m) k =
   (if (k \<in> Y) = pos then Mapping.lookup m k else None)"
