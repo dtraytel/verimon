@@ -2,8 +2,10 @@ chapter AFP
 
 session MFOTL_Monitor_Devel (AFP) = VeriMon_Parsers +
   description
-    "Placeholder MFODL_Base: traces, intervals, tables, the event data and the abstract
-     specification of a monitor, which neither the logic nor any monitoring algorithm changes."
+    "The base of the logic: traces, intervals, tables, the event data and the abstract
+     specification of a monitor, which neither the logic nor any monitoring algorithm changes.
+     The development version of the AFP entry MFOTL_Monitor; session Generic_Join_Devel
+     imports its theory Table."
   options [timeout = 1200]
   sessions
     IEEE_Floating_Point

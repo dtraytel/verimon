@@ -18,6 +18,7 @@ session MFODL_Parser in Parser = MFODL_Grammar +
   sessions
     MFODL_Syntax
   theories
+    MFODL_Lexer
     MFODL_Parser
 
 session MFODL_Parser_Code in "Parser/Code" = MFODL_Parser +
