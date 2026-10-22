@@ -87,7 +87,7 @@ proof (cases "dq_f d = []")
   case True
   have "rev (drop h (dq_b d)) @ rev (take h (dq_b d)) = rev (dq_b d)" for h
     by (metis append_take_drop_id rev_append)
-  then show ?thesis using True by (simp add: dq_list_def dq_norm_def)
+  then show ?thesis using True by (simp add: dq_list_def dq_norm_def Let_def)
 qed (simp add: dq_list_def dq_norm_def)
 
 lemma dq_f_norm:
@@ -98,7 +98,7 @@ proof (cases "dq_f d = []")
   then have "dq_b d \<noteq> []" using assms(2) by (simp add: dq_list_def)
   then have "0 < length (dq_b d)" by simp
   then have "length (dq_b d) div 2 < length (dq_b d)" by presburger
-  then show ?thesis using True assms(1) by (simp add: dq_norm_def dq_inv_def)
+  then show ?thesis using True assms(1) by (simp add: dq_norm_def dq_inv_def Let_def)
 qed (simp add: dq_norm_def)
 
 lemma dq_inv_tl[simp]:

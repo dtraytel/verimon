@@ -236,7 +236,7 @@ proof -
   have "min (\<Sqinter> {i. \<forall>k. k < j \<and> k \<le> local.progress P \<phi> j \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)})
      (\<Sqinter> {i. \<forall>k. k < j \<and> k \<le> local.progress P \<phi> j \<and> k \<le> j - Suc 0 \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}) =
     \<Sqinter> {i. \<forall>k. k < j \<and> k \<le> local.progress P \<phi> j \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
-    using cInf_superset_mono[OF non_empty subset]
+    using cInf_superset_mono[OF non_empty bdd_below_bot subset]
     by auto
   
   then show ?thesis
@@ -3003,7 +3003,7 @@ proof -
   obtain \<sigma> where "prefix_of \<pi> \<sigma>"
     using ex_prefix_of by blast
   then have "pprogress \<phi> \<pi> \<le> plen \<pi>"
-    by (simp add: pprogress_eq)
+    by (simp add: pprogress_eq progress_le_gen)
   with assms show ?thesis
     unfolding M_def by simp
 qed

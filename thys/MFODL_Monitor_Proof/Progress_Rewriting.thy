@@ -103,7 +103,7 @@ next
   show ?case
   proof (cases "safe_assignment (fv \<psi>) \<phi> \<or> is_constraint \<phi> 
   \<or> (case \<phi> of 
-    formula.Neg \<phi>' \<Rightarrow> safe_formula \<phi>' 
+    Formula.formula.Neg \<phi>' \<Rightarrow> safe_formula \<phi>' 
         \<and> (\<forall>x. progress \<sigma> x (convert_multiway \<phi>') j = progress \<sigma> x \<phi>' j) 
     | _ \<Rightarrow> False)")
     case True
@@ -125,11 +125,11 @@ next
     }
     moreover {
       assume "(case \<phi> of 
-        formula.Neg \<phi>' \<Rightarrow> safe_formula \<phi>' 
+        Formula.formula.Neg \<phi>' \<Rightarrow> safe_formula \<phi>' 
           \<and> (\<forall>x. progress \<sigma> x (convert_multiway \<phi>') j = progress \<sigma> x \<phi>' j) 
         | _ \<Rightarrow> False)"
       then obtain \<phi>' where \<phi>'_props:
-        "\<phi> = formula.Neg \<phi>'"
+        "\<phi> = Formula.formula.Neg \<phi>'"
         "safe_formula \<phi>'"
         "\<forall>x. progress \<sigma> x (convert_multiway \<phi>') j = progress \<sigma> x \<phi>' j"
         by (auto split: formula.splits)
