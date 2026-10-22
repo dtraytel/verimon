@@ -489,8 +489,6 @@ proof (induct args rs buf aux arbitrary: Rs rule: uedsx_eval_since.induct)
     by (cases y; cases x; cases t; simp only: rbufS.simps; subst uedsx_eval_since.simps)
       (auto simp: x y t Let_def rev_map[symmetric] esx_join_rdsx esx_add_new_ts_rdsx
         esx_add_new_table_rdsx esx_result_rdsx mbuf_t_Cons.rep_eq mbuf_t_empty.rep_eq
-        Rep_mbuf_t_cases(1,2)[where xs = ts and xs' = ts'] Rep_mbuf_t_cases(1,2)[where xs = xs and xs' = xs']
-        Rep_mbuf_t_cases(1,2)[where xs = ys and xs' = ys']
         simp del: uedsx_eval_since.simps split: prod.splits)
 qed
 

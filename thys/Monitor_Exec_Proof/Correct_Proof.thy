@@ -247,8 +247,8 @@ begin
 theorem emonitor_monitor:
   assumes r: "emsim_state n (Formula.fv_list \<phi>) cs 0 (minit_safe \<phi>) dst"
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
-  shows "emonitor dst \<pi> = map (\<lambda>(i, t, X). (i, t, etabc (Formula.fv_list \<phi>) cs X)) (monitor \<phi> \<pi>)"
-    and "\<forall>(i, t, X) \<in> set (monitor \<phi> \<pi>). table (Formula.fv_list \<phi>) X"
+  shows "emonitor dst \<pi> = map (\<lambda>(i, t, X). (i, t, etabc (Formula.fv_list \<phi>) cs X)) (Monitor_Impl.monitor \<phi> \<pi>)"
+    and "\<forall>(i, t, X) \<in> set (Monitor_Impl.monitor \<phi> \<pi>). table (Formula.fv_list \<phi>) X"
   using emsteps_stateless_rel[OF r kmaux_wf_mstate_minit_safe[OF well_typed monitorable] f wty]
   by (simp_all add: emonitor_def default_maux.monitor_def)
 
@@ -259,7 +259,7 @@ text \<open>Widening the verdicts back recovers the kernel's exactly, because @{
 theorem emonitor_widen:
   assumes r: "emsim_state n (Formula.fv_list \<phi>) cs 0 (minit_safe \<phi>) dst"
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
-  shows "map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) cs X)) (emonitor dst \<pi>) = monitor \<phi> \<pi>"
+  shows "map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) cs X)) (emonitor dst \<pi>) = Monitor_Impl.monitor \<phi> \<pi>"
   unfolding emonitor_monitor(1)[OF r f wty]
   by (rule map_etabw_etabc[OF emsim_state_dframe[OF r] emonitor_monitor(2)[OF r f wty]])
 
