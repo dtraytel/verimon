@@ -8,7 +8,8 @@ MFODL_Monitor
 MFODL_Monitor_Proof
 Monitor_Impl
 Monitor_Impl_Proof
-MFODL_Monitor_Exec
+Monitor_Exec
+Monitor_Exec_Proof
 Log_Parser
 grammar
 MFODL_Parser

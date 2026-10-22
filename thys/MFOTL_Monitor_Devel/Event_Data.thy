@@ -100,7 +100,7 @@ lemma "b \<noteq> 0 \<Longrightarrow> div_to_zero a b * b + mod_to_zero a b = a"
 text \<open>Hash codes (of the Isabelle Collections Framework) for the values of events: those of the
   monitor only sample the tuples whose sizes the separable evaluation of @{text FRZ} estimates.
   A string is hashed by its bytes (its code equation, which reads the bytes of OCaml's string,
-  is in @{text MFODL_Monitor_Exec.Log_Monitor}), a floating-point number by its integer part (NaN
+  is in @{text Monitor_Exec.Log_Monitor}), a floating-point number by its integer part (NaN
   and the infinities by 0).
 
   The code equations below compute the hash codes of integers and lists with the constants of

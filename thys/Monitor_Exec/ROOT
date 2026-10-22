@@ -1,0 +1,46 @@
+chapter AFP
+
+session Monitor_Exec = Monitor_Impl +
+  description
+    "The executable monitor: the evaluator emstep/eeval over short tuples with executable window
+     structures, its compiler from the kernel's state, the formula rewrites it runs with, the
+     monitor on the bytes of the log (with the verified log parser of session Log_Parser), and the
+     code-generator setup of VeriMon's code export.  Definitions only: their correctness is in
+     session Monitor_Exec_Proof."
+  sessions
+    Monitor_DS
+    Log_Parser
+  theories
+    Tuple_Fields
+    Frame
+    Frame_Aux
+    Until_Gen
+    Window
+    Agg_Gen
+    Since_Agg
+    Until_Agg
+    Agg_Cache
+    Match_Window
+    Window_Dispatch
+    Release_Window
+    Trigger_Window
+    Eval
+    Idx_Code
+    ITable
+    IWindow
+    IEval
+    Correct
+    Compile
+    Frz_Rewrite
+    Share_Rewrite
+    Push_Rewrite
+    Prepare
+    Tuple_Code
+    Mono_Sweep
+    Agg_Code
+    Map_Upd_Code
+    RBT_Code
+    Mono_Hot
+    Log_Monitor
+  theories [document=false]
+    Monitor_Code

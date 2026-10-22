@@ -1,6 +1,6 @@
 (*<*)
 theory CLI_Code
-  imports CLI "MFODL_Parser_Code.MFODL_Lexer_Code" "MFODL_Monitor_Exec.Monitor_Code"
+  imports CLI "MFODL_Parser_Code.MFODL_Lexer_Code" "Monitor_Exec.Monitor_Code"
 begin
 (*>*)
 
@@ -8,7 +8,7 @@ section \<open>Code export\<close>
 
 text \<open>
   The code of the program @{text verimon} (\<^verbatim>\<open>src/verimon_code.ml\<close>), with the code setup of
-  the monitor's export (@{theory MFODL_Monitor_Exec.Monitor_Code}) and the parser's code equations
+  the monitor's export (@{theory Monitor_Exec.Monitor_Code}) and the parser's code equations
   for the lexer (@{theory MFODL_Parser_Code.MFODL_Lexer_Code}). The trusted part beyond theirs is
   the code printing of the four functions below on byte strings and integers, each by the OCaml
   function with the same meaning: the strings of bytes of a list of characters, the decimal

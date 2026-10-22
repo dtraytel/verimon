@@ -1,7 +1,7 @@
 (*<*)
 theory CLI
   imports "MFODL_Frontend.Formula_Conv" CLI_Output "MFODL_Parser.MFODL_Parser"
-    "MFODL_Monitor_Exec.Log_Monitor_Online"
+    "Monitor_Exec_Proof.Log_Monitor_Online"
 begin
 (*>*)
 
@@ -17,7 +17,7 @@ text \<open>
   \<^enum> the signature file is read (@{const read_sig}, theory @{theory Log_Parser.Signature});
   \<^enum> the formula is converted into the monitor's (@{const conv_formula}, theory
     @{theory MFODL_Frontend.Formula_Conv}), and the signature into the monitor's (@{text lsig_of});
-  \<^enum> the monitor is started (@{const vinit}, theory @{theory MFODL_Monitor_Exec.Log_Monitor}),
+  \<^enum> the monitor is started (@{const vinit}, theory @{theory Monitor_Exec.Log_Monitor}),
     which type checks the formula and prepares it as VeriMon does;
   \<^enum> the log is read in chunks (@{const vfeed_chunk} and @{const vfinish}), and the verdicts are
     printed as MonPoly prints them (theory @{theory VeriMon_CLI.CLI_Output}).
@@ -347,7 +347,7 @@ text \<open>The main theorem: the monitor runs on the formula of the input and t
   satisfy the assumptions of @{locale verimon_log}. So for every log that denotes a prefix, the
   monitor reports no error and outputs the verdicts that the specification of the formula
   prescribes for the prefix (@{thm [source] verimon_log.vrun_log}, theory
-  @{theory MFODL_Monitor_Exec.Log_Monitor_Online}), and an error on every log whose events of
+  @{theory Monitor_Exec_Proof.Log_Monitor_Online}), and an error on every log whose events of
   the formula's predicates denote no prefix (@{thm [source] verimon_log.vrun_filtered}).\<close>
 
 theorem cli_run:
@@ -379,7 +379,7 @@ definition verdict_spec :: "lsig \<Rightarrow> tysym Formula.formula \<Rightarro
          (Formula.formula.map_formula (convert_tysym \<circ> f) \<phi>))}"
 
 text \<open>The verdicts of the monitor's specification (@{text monitor_\<phi>.Mt}, theory
-  @{theory MFODL_Monitor_Exec.Log_Monitor}) are those of @{const verdict_spec}.\<close>
+  @{theory Monitor_Exec.Log_Monitor}) are those of @{const verdict_spec}.\<close>
 
 context verimon_log
 begin
