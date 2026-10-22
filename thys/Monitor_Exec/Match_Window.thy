@@ -4,9 +4,9 @@ theory Match_Window
 begin
 (*>*)
 
-section \<open>The match structures over ascending columns\<close>
+section \<open>Match windows over ascending columns\<close>
 
-text \<open>The atoms' tables, reordered each at its own columns.\<close>
+subsection \<open>Atoms and their frames\<close>
 
 definition etabcs :: "cols list \<Rightarrow> cols list \<Rightarrow> 'b list set list \<Rightarrow> 'b list set list" where
   "etabcs kss css rels = map (\<lambda>i. etabc (kss ! i) (css ! i) (rels ! i)) [0..<length rels]"
@@ -39,14 +39,9 @@ lemma lr: "wfrels rels \<Longrightarrow> length \<psi>s = length rels"
 
 end
 
-subsection \<open>The past-match structure\<close>
+subsection \<open>Past-match structure\<close>
 
-text \<open>
-  A past-match structure is a list of tabulations indexed by a time stamp; the executable one is the
-  same list with every entry reordered.  Since a tabulation is only ever read through
-  @{const lookup}, the relation below says just that, and adds the invariant the derivatives
-  need: every entry is a table over the node's columns.
-\<close>
+text \<open>A tabulation is only read through @{const lookup}, so the relation compares lookups.\<close>
 
 definition emrd_rel :: "cols \<Rightarrow> cols \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> bool" where
   "emrd_rel ks cs = list_all2 (\<lambda>(t, X) (t', X'). t = t' \<and>
@@ -75,12 +70,7 @@ abbreviation (input) "kss \<equiv> map Formula.fv_list \<psi>s"
 
 end
 
-subsection \<open>The future-match structure\<close>
-
-text \<open>
-  A future-match structure keeps, per time stamp, the operands' tables at that time point and the
-  result accumulated for it so far.  The executable one keeps the same list with both reordered.
-\<close>
+subsection \<open>Future-match structure\<close>
 
 definition emld_rel :: "cols \<Rightarrow> cols \<Rightarrow> ty Formula.formula list \<Rightarrow> cols list \<Rightarrow>
     event_data ml\<delta>aux \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> bool" where
@@ -114,30 +104,11 @@ end
 
 
 
-section \<open>The match windows over the operands' own columns\<close>
-
-subsection \<open>The match structures over short tuples\<close>
+subsection \<open>Derivatives over short tuples\<close>
 
 text \<open>
-  The two match structures are lists of tables indexed by a time stamp and, for the past one, by
-  a marked regular expression, so they carry over on their own.  The derivative operations that
-  fill them do not, in two places.
-
-  The first is the join against an atom.  The kernel's lax epsilon joins the guard -- a table over
-  the node's columns -- with an atom's table, whose columns are a subset of them; over the
-  ascending columns that is the semi-join against the atom's mask, and the masks are computed
-  once, at compile time, one per atom.  Where both sides are results of the lax epsilon they are
-  both over the node's columns, so the join is an intersection.
-
-  The second is the unit table that the two strict epsilons return at a
-  @{term "Regex.Skip 0"} and at a star.  That table is a table over the node's columns only
-  because the safety condition forces those columns to be empty where it arises -- a star or an
-  empty skip that could match the empty word while the node still binds a variable would make
-  the formula unsafe.  With no columns the unit table is the one empty tuple, which is what the
-  operations below return.
-
-  An atom's table is read with @{text gnth}, the empty table past the end of the list.  A
-  well-formed node never reads past it; reading it totally makes the operations total.
+  An atom is joined by a semi-join on its mask, computed at compile time; the strict epsilons'
+  unit table is the empty tuple, as safety forces the node's columns to be empty there.
 \<close>
 
 definition gnth :: "'b list set list \<Rightarrow> nat \<Rightarrow> 'b list set" where
@@ -153,9 +124,7 @@ lift_definition gmrtabulate :: "mregex list \<Rightarrow> (mregex \<Rightarrow> 
     (mregex, 'b list set) mapping"
   is "\<lambda>ks f. map_of (List.map_filter (\<lambda>k. let fk = f k in if fk = {} then None else Some (k, fk)) ks)" .
 
-text \<open>The lifted definition on its own would build the function-backed mapping, which the
-  mapping operations cannot look a key up in; it needs the same tree code equation the kernel's
-  tabulation has.\<close>
+text \<open>Without this code equation the mapping is function-backed, where keys cannot be looked up.\<close>
 
 lemma gmrtabulate_rbt_code[code]: "gmrtabulate (xs :: mregex list) f =
   (case ID CCOMPARE(mregex) of
@@ -248,12 +217,10 @@ fun geval_matchF :: "\<I> \<Rightarrow> mregex \<Rightarrow> ts \<Rightarrow> 'b
     then (let (xs, aux) = geval_matchF I mr nt aux in (rel # xs, aux))
     else ([], (t, rels, rel) # aux))"
 
-subsection \<open>The windows at the ascending columns\<close>
+subsection \<open>Masks of the atoms\<close>
 
 definition emb_msk :: "nat option list \<Rightarrow> bool list" where
   "emb_msk p = map (\<lambda>q. q \<noteq> None) p"
-
-subsection \<open>The strict epsilons\<close>
 
 context eregex_frame
 begin

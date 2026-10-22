@@ -2,15 +2,10 @@ theory MFODL_Parser
   imports MFODL_Lexer "MFODL_Syntax.Surface_Postprocessing"
 begin
 
-section \<open>The verified parser\<close>
+section \<open>Verified parser of formulas\<close>
 
-text \<open>
-  \<^theory_text>\<open>parser\<close> generates an LALR(1) parser for \<^const>\<open>mfodl\<close> with the
-  theorems \<open>mfodl_parse.sound\<close> and \<open>mfodl_parse.complete\<close> relating it to the
-  inductive relation \<open>mfodl_Formula\<close> of the start symbol: the parser returns
-  \<open>Some \<phi>\<close> on a token word \<open>w\<close> iff \<open>w\<close> derives \<open>\<phi>\<close> in the grammar. That
-  there is at most one such \<open>\<phi>\<close> follows, since the parser is a function.
-\<close>
+text \<open>\<^theory_text>\<open>parser\<close> generates an LALR(1) parser for \<^const>\<open>mfodl\<close>, sound and
+  complete for the derivations of its start symbol.\<close>
 
 parser mfodl_parse for mfodl
 
@@ -21,8 +16,6 @@ corollary mfodl_parse_iff: \<open>mfodl_parse w = Some \<phi> \<longleftrightarr
 
 corollary mfodl_Formula_unique: \<open>mfodl_Formula w \<phi> \<Longrightarrow> mfodl_Formula w \<psi> \<Longrightarrow> \<phi> = \<psi>\<close>
   by (metis mfodl_parse_iff option.inject)
-
-text \<open>The complete pipeline: lexing, parsing and post-processing.\<close>
 
 definition parse_formula :: \<open>string \<Rightarrow> formula option\<close> where
   \<open>parse_formula s = (case lex s of

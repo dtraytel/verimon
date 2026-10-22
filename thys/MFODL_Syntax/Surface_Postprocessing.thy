@@ -2,30 +2,15 @@ theory Surface_Postprocessing
   imports Surface_Syntax
 begin
 
-section \<open>Post-processing\<close>
+section \<open>Post-processing of parsed formulas\<close>
 
-text \<open>
-  MonPoly's semantic actions do more than build the syntax tree: they name
-  anonymous predicate arguments, quantify them, and reject some formulas. The
-  grammar's actions are pure, so these steps are a separate pass over the
-  parsed formula.
-
-  \<^descr>[Anonymous arguments] \<open>_\<close> in a predicate argument becomes a fresh
-  variable \<open>_1\<close>, \<open>_2\<close>, \<dots>, numbered in textual order (MonPoly's counter
-  \<^verbatim>\<open>var_cnt\<close> is incremented whenever the rule \<^verbatim>\<open>termarg: LD\<close> is reduced,
-  which happens left to right). The grammar leaves the placeholder
-  \<^term>\<open>TVar ''_''\<close>, which the lexer never produces for a named variable.
-
-  \<^descr>[Existential closure] (\<^verbatim>\<open>add_ex\<close>) a predicate with arguments that are
-  variables starting with \<open>_\<close> is wrapped in an existential quantifier over them.
-
-  \<^descr>[Checks] the formula is rejected if a quantifier has no variables, if the
-  predicate defined by \<open>LET\<close>, \<open>LETPAST\<close> or \<open>FRZ\<close> would be quantified by
-  \<^verbatim>\<open>add_ex\<close>, or if the aggregated variable or a group-by variable of an
-  aggregation is not free in the aggregated formula (\<^verbatim>\<open>MFOTL.free_vars\<close>).
-\<close>
+text \<open>MonPoly's semantic actions number anonymous arguments, quantify them and reject some
+  formulas; as the grammar's actions are pure, this is a separate pass.\<close>
 
 subsection \<open>Numbering anonymous arguments\<close>
+
+text \<open>The placeholder \<^term>\<open>TVar ''_''\<close>, which the lexer never produces for a named
+  variable, becomes \<open>_1\<close>, \<open>_2\<close>, \<dots>, numbered left to right as in MonPoly.\<close>
 
 fun digits_of_nat :: \<open>nat \<Rightarrow> string\<close> where
   \<open>digits_of_nat n = (if n < 10 then [char_of (48 + n)] else digits_of_nat (n div 10) @ [char_of (48 + n mod 10)])\<close>
@@ -85,8 +70,6 @@ subsection \<open>Existential closure of predicates\<close>
 definition is_anon :: \<open>string \<Rightarrow> bool\<close> where
   \<open>is_anon v = (case v of c # _ \<Rightarrow> c = CHR ''_'' | [] \<Rightarrow> False)\<close>
 
-text \<open>The variables starting with \<open>_\<close> among the arguments, with repetitions.\<close>
-
 definition anon_vars :: \<open>predicate \<Rightarrow> string list\<close> where
   \<open>anon_vars p = concat (map (\<lambda>t. case t of TVar v \<Rightarrow> if is_anon v then [v] else [] | _ \<Rightarrow> []) (snd p))\<close>
 
@@ -123,11 +106,9 @@ and add_ex_r :: \<open>regex \<Rightarrow> regex\<close> where
 | \<open>add_ex_r (RStar r) = RStar (add_ex_r r)\<close>
 | \<open>add_ex_r r = r\<close>
 
-subsection \<open>Checks\<close>
+subsection \<open>Free variables and checks\<close>
 
-text \<open>Variables of terms (\<^verbatim>\<open>Predicate.tvars\<close>) and free variables of formulas
-  (\<^verbatim>\<open>MFOTL.free_vars\<close>), as lists; only membership is tested. A predicate
-  contributes only its arguments that are variables (\<^verbatim>\<open>Predicate.pvars\<close>).\<close>
+text \<open>Variables as lists, as in MonPoly's @{text MFOTL.free_vars}; only membership is tested.\<close>
 
 fun tvars :: \<open>trm \<Rightarrow> string list\<close> where
   \<open>tvars (TVar v) = [v]\<close>

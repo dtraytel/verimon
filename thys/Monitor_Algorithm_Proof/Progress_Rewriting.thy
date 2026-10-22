@@ -163,6 +163,7 @@ next
       (auto 0 4 simp: safe_atms_def elim!: disjE_Not2 dest: safe_regex_safe_formula)
 qed (auto simp add: nfv_convert_multiway frz_progress_def)
 
+
 subsection \<open> Normalization \<close>
 
 declare progress_le_gen[simp]
@@ -203,11 +204,10 @@ lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \
   unfolding normalize_def by auto
 
 
-
 subsection \<open> Rewriting \<close>
 
-text \<open>The rules that push a range restriction into a temporal operator freeze its current
-  satisfactions; the frozen predicate is ready whenever the outer conjunction makes progress.\<close>
+text \<open>Rewriting pushes a range restriction into a temporal operator by freezing its satisfactions
+  in a fresh predicate, available whenever the outer conjunction makes progress.\<close>
 
 lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
 proof (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)

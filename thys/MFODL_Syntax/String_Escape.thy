@@ -6,9 +6,7 @@ begin
 
 section \<open>Escaped strings\<close>
 
-text \<open>OCaml's @{text String.escaped}, by which MonPoly's messages show strings: quotes,
-  backslashes, the usual control characters, and the other unprintable bytes as decimal
-  escapes.\<close>
+text \<open>OCaml's @{text String.escaped}, by which MonPoly's messages show strings.\<close>
 
 definition digit_char :: "nat \<Rightarrow> char" where
   "digit_char n = char_of (48 + n)"

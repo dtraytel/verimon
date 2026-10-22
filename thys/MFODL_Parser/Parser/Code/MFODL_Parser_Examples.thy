@@ -2,33 +2,22 @@ theory MFODL_Parser_Examples
   imports MFODL_Efficient_Lexer "HOL-Library.Code_Binary_Nat"
 begin
 
-text \<open>Examples, checked by evaluation. A separate session,
-  so that the heap image of \<^session>\<open>MFODL_Parser\<close>, whose \<^theory_text>\<open>parser\<close>
-  command takes long, does not depend on them.\<close>
+section \<open>Examples of the formula parser\<close>
 
-section \<open>Code for the parser tables\<close>
+text \<open>A separate session, so that the heap image of \<^session>\<open>MFODL_Parser\<close>, whose
+  \<^theory_text>\<open>parser\<close> command takes long, does not depend on the examples.\<close>
+
+subsection \<open>Code for the parser tables\<close>
 
 text \<open>The parser's tables are binary tries; with binary naturals, a lookup
   follows the constructors of the index.\<close>
 
 declare tlookup_binary [code]
 
-section \<open>Examples\<close>
+subsection \<open>Examples\<close>
 
-text \<open>
-  Checked by a single evaluation, since each evaluation compiles the parser's
-  tables anew:
-  \<^item> \<open>AND\<close> binds tighter than \<open>OR\<close>, both tighter than \<open>SINCE\<close>, which is
-    right associative;
-  \<^item> a unary temporal operator absorbs the Boolean connectives to its right but not
-    a binary temporal operator, and \<open>NOT\<close> binds tightest;
-  \<^item> \<open>LET\<close> absorbs everything, also as the right operand of \<open>AND\<close>;
-  \<^item> terms, intervals in time units, and \<open>>\<close> as a flipped \<open><\<close>;
-  \<^item> anonymous arguments are numbered and existentially quantified;
-  \<^item> the aggregated variable must be free in the aggregated formula;
-  \<^item> a bare atom of a regular expression is a test followed by a step (\<open>MATCHF\<close>);
-  \<^item> comments and synonyms of keywords; syntax errors.
-\<close>
+text \<open>One evaluation, since each compiles the parser's tables anew: precedences, terms and
+  intervals, anonymous variables, aggregations, regular expressions, comments and errors.\<close>
 
 lemma mfodl_examples:
   \<open>(parse_formula ''P(x) OR Q(x) AND R(x) SINCE S(x) SINCE [0,5] T(x)'' = Some

@@ -4,16 +4,8 @@ begin
 
 section \<open>Surface syntax of MFODL formulas\<close>
 
-text \<open>
-  The abstract syntax produced by MonPoly's formula parser
-  (\<^verbatim>\<open>src/MFOTL.mli\<close> of MonPoly, \<^verbatim>\<open>src/predicate.mli\<close> of MonPoly), with named
-  variables. Constructor names carry a prefix to avoid clashes with
-  constants of \<^theory>\<open>Main\<close>. Numeric literals are kept as they are
-  written: integers as \<^typ>\<open>int\<close> (MonPoly uses arbitrary precision
-  integers), floating point numbers and regular expressions by their
-  lexemes, since their interpretation (\<^verbatim>\<open>float_of_string\<close>,
-  \<^verbatim>\<open>Str.regexp\<close>) is not part of the parser.
-\<close>
+text \<open>The abstract syntax of MonPoly's formula parser, with named variables. Floating point
+  numbers and regular expressions are kept as lexemes, since their interpretation is not parsing.\<close>
 
 datatype cst = CInt int | CStr string | CFloat string | CRegexp string
 
@@ -27,7 +19,7 @@ datatype bound = OBnd int | CBnd int | BInf
 
 type_synonym interval = \<open>bound \<times> bound\<close>
 
-text \<open>The default interval \<open>[0, \<infinity>)\<close> of temporal operators written without one.\<close>
+text \<open>The interval of temporal operators written without one.\<close>
 
 definition dfintv :: interval where
   \<open>dfintv = (CBnd 0, BInf)\<close>
@@ -53,8 +45,6 @@ datatype formula =
   | FUntil interval formula formula | FRelease interval formula formula
   | FFrex interval regex | FPrex interval regex
 and regex = RSkip nat | RTest formula | RConcat regex regex | RPlus regex regex | RStar regex
-
-text \<open>\<^verbatim>\<open>MFOTL.wild\<close>, a single step.\<close>
 
 definition wild :: regex where
   \<open>wild = RSkip 1\<close>
