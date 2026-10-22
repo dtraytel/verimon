@@ -6,8 +6,6 @@ begin
 
 section \<open>Rewriting release\<close>
 
-subsection \<open>Free variables\<close>
-
 unbundle MFODL_notation
 
 lemma release_fvi:
