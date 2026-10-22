@@ -4,7 +4,9 @@ theory Exec_Until
 begin
 (*>*)
 
-section \<open>The executable Until structure over ascending columns\<close>
+section \<open>Executable Until structure\<close>
+
+subsection \<open>Insertion over ascending columns\<close>
 
 definition euntil_elem_step_dq :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
     (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc_dq \<Rightarrow> 'a until_acc_dq" where
@@ -32,7 +34,7 @@ definition eadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> event_data
      tss = append_queue nt tss in
      (tp + 1, tss, tables, len + 1, result', a1_map, a2_dq, tstp_dq, dn))"
 
-subsection \<open>The executable Until structure's validity\<close>
+subsection \<open>Validity over ascending columns\<close>
 
 definition evalid_muaux :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data muaux \<Rightarrow>
     bool" where
@@ -45,50 +47,29 @@ definition euaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> c
      (\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2) \<and>
      evalid_muaux (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
 
-
-
-
-section \<open>The Until structure, over a bare element type\<close>
+subsection \<open>Generic Until structure\<close>
 
 text \<open>
-  The deque structure of @{theory Monitor_Impl.Optimized_Until_Deque} is monomorphised at
-  @{typ event_data} for code generation, so it is restated here over a bare element type
-  \<open>'b\<close>.  Three things change.
-
-  @{const eval_step_dq} passes the finished table through @{const eval_args_agg}, which is an
-  aggregation over @{typ event_data} and cannot be generic.  The executable fragment only ever builds
-  an Until node when @{term "args_agg args = None"}, where that call is the identity, so the
-  generic step omits it and the agreement lemmas below assume it.
-
-  The kernel reads the front of its deques with @{const dq_nth}, which is unspecified past the
-  end.  The generic operations read through @{text dq_nth_s}, which returns a default past the
-  end.  On the well-shaped states the kernel's invariant guarantees the two readings agree, which
-  is what the agreement lemmas say.
-
-  The kernel maintains the verdict of the oldest pending time point as a set of its own; the
-  generic operations read it off the nested deque's front entry instead, whose key set it
-  always is.  The agreement lemmas therefore relate a generic state to the kernel's through
-  @{text fix_res}, which writes that key set into the field.
+  The structure of @{theory Monitor_Impl.Optimized_Until_Deque} over a bare element type: without
+  aggregation, with deque reads defaulting past the end, and the result read off the front entry.
 \<close>
+
+subsubsection \<open>Deque reads with defaults\<close>
 
 definition dq_nth_s :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
   "dq_nth_s d k z = (if k < dq_len d then dq_nth d k else z)"
 
-text \<open>The front of a deque, read off its lists rather than its counters, so that it commutes with
-  a map over the elements on every deque and not only on a consistent one.\<close>
+text \<open>Reads off the lists rather than the counters commute with a map on every deque, not only on
+  a consistent one.\<close>
 
 definition dq_hd_s :: "'a dq \<Rightarrow> 'a \<Rightarrow> 'a" where
   "dq_hd_s d z = (case dq_f d of x # _ \<Rightarrow> x | [] \<Rightarrow> (case dq_b d of [] \<Rightarrow> z | _ \<Rightarrow> last (dq_b d)))"
-
-text \<open>An indexed read off the lists, for the same reason.\<close>
 
 definition dq_nth_l :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
   "dq_nth_l d k z = (if k < dq_nf d then (if k < length (dq_f d) then dq_f d ! k else z)
      else (let j = dq_nb d - 1 - (k - dq_nf d) in if j < length (dq_b d) then dq_b d ! j else z))"
 
-text \<open>Read as written, the bound check walks the list to its end and the indexing walks it again
-  to the index.  @{text nth_def} is the single walk, and the equation below is unconditional --
-  the default past the end is the same one.\<close>
+text \<open>A single walk, for code; the bound check and indexing walk the list twice.\<close>
 
 fun nth_def :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
   "nth_def [] k z = z"
@@ -103,7 +84,7 @@ lemma dq_nth_l_code[code]:
      else nth_def (dq_b d) (dq_nb d - 1 - (k - dq_nf d)) z)"
   by (simp add: dq_nth_l_def nth_def_eq Let_def)
 
-text \<open>The kernel's update of the nested deque, reading the entry off the lists.\<close>
+subsubsection \<open>Operations\<close>
 
 definition gupd_nested_step_dq :: "nat \<Rightarrow> 'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarrow> nat \<times> 'b \<Rightarrow> ('b, 'c) mapping dq \<Rightarrow>
     ('b, 'c) mapping dq" where
@@ -196,10 +177,7 @@ definition gadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> 'b :: ccom
      tss = append_queue nt tss in
      (tp + 1, tss, tables, len + 1, result, a1_map, a2_dq, tstp_dq, dn))"
 
-subsection \<open>The shape of a state\<close>
-
-text \<open>What the safe readings need: the deques are consistent and hold one entry per pending
-  time point (plus the front map), and the time stamp queue holds exactly the pending ones.\<close>
+subsubsection \<open>Shape of a state\<close>
 
 fun ushape :: "'b gmuaux \<Rightarrow> bool" where
   "ushape (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, dn) \<longleftrightarrow>
@@ -215,7 +193,7 @@ fun utp :: "'b gmuaux \<Rightarrow> nat" where
 fun ua1 :: "'b gmuaux \<Rightarrow> ('b list, nat) mapping" where
   "ua1 (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, dn) = a1_map"
 
-subsection \<open>The result, read off the front map\<close>
+subsubsection \<open>Result off the front entry\<close>
 
 fun fix_res :: "'b gmuaux \<Rightarrow> 'b gmuaux" where
   "fix_res (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, dn) =
@@ -232,9 +210,8 @@ lemma ushape_fix_res[simp]: "ushape (fix_res d) = ushape d"
 lemma fix_res_ginit_dq[simp]: "fix_res (ginit_dq args) = ginit_dq args"
   by (simp add: ginit_dq_def dq_hd_s_def dq_push_def dq_empty_def)
 
-text \<open>The insertion.  The kernel's fold carries the result along with the table and the nested
-  deque, and adds a tuple to it exactly when the tuple is entered into the front entry; so if
-  the result starts as the key set of the front entry, it stays that.\<close>
+text \<open>The kernel's insertion adds a tuple to the result exactly when it enters the front entry, so
+  the result stays the front entry's key set.\<close>
 
 definition lift_acc :: "'b guntil_acc \<Rightarrow> 'b list set \<times> ('b list, ts + tp) mapping dq \<times> 'b list set"
   where "lift_acc acc = (fst acc, snd acc, Mapping.keys (dq_hd_s (snd acc) Mapping.empty))"

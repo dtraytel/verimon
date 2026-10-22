@@ -4,6 +4,9 @@ theory Optimized_Agg_Temporal_Valid
 begin
 (*>*)
 
+section \<open>Correctness of aggregating Since and Until\<close>
+
+subsection \<open>Since with aggregation\<close>
 
 lemma valid_init_mmasaux: 
   assumes "set L \<subseteq> set R" "distinct L" "distinct R"
@@ -86,6 +89,8 @@ lemma valid_add_new_table_mmasaux:
     | ((t, y) # ts) \<Rightarrow> if t = cur then (t, y \<union> X) # ts else (cur, X) # auxlist)"
   using valid_add_new_table_mmasaux_unfolded assms
   by (cases mmsaux) fast
+
+subsubsection \<open>Join and garbage collection\<close>
 
 lemma valid_join_mmasaux_unfolded:
   assumes "valid_mmasaux args cur ((nt, gc, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since), aggaux) auxlist"
@@ -233,6 +238,8 @@ lemma valid_gc_join_mmasaux:
     (map (\<lambda>(t, rel). (t, join (args_R args) rel (args_pos args) (args_L args) rel1)) auxlist)"
   using gc_join_mmasaux_alt[of args rel1 mmsaux aux]
   valid_gc_mmasaux[OF assms(1)] valid_join_mmasaux using assms by presburger
+
+subsubsection \<open>New timestamps and result\<close>
 
 lemma valid_shift_end_mmasaux_unfolded:
   assumes valid_before: "valid_mmasaux args cur
@@ -396,6 +403,8 @@ interpretation default_mmasaux: msaux valid_mmasaux init_mmasaux add_new_ts_mmas
     valid_result_mmasaux
   by unfold_locales (auto simp del: valid_mmasaux.simps split:prod.splits)
 
+subsection \<open>Until with aggregation\<close>
+
 lemma valid_length_mmauaux:
   assumes "valid_mmauaux args cur (mmaux, auxs) auxlist"
   shows "length_mmauaux args (mmaux, auxs) = length auxlist"
@@ -418,6 +427,8 @@ proof -
       by(simp only:init_args_def init_mmauaux.simps) (auto simp add: Mapping.lookup_update[of 0 Mapping.empty Mapping.empty] simp del: valid_mmuaux'.simps simp add: init_mmuaux_def valid_mmauaux_def valid_mmuaux_def)
   qed
 qed
+
+subsubsection \<open>Evaluation steps\<close>
 
 lemma valid_eval_step_mmauaux_unfolded:
   assumes "valid_mmauaux' args cur dt ((tp, tss, tables, len, result,  a1_map, a2_map, tstp_map, done), aggaux) auxlist"
@@ -634,6 +645,7 @@ lemma valid_mmauaux'_mono:
   shows "valid_mmauaux' args cur dt' aux auxlist"
   using assms less_le_trans by (cases aux) (fastforce simp: memR_antimono)
 
+subsubsection \<open>New time-points and evaluation\<close>
 
 lemma valid_shift_mmauaux':
   assumes "valid_mmauaux' args cur cur (mmaux, auxs) auxlist" "nt \<ge> cur"

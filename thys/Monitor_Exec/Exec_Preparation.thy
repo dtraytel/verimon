@@ -6,30 +6,14 @@ begin
 
 
 
-section \<open>An existential quantifier moved into a window\<close>
+section \<open>Preparation of the formula\<close>
 
-text \<open>
-  Over a window whose left operand is @{const Formula.TT} -- the past and future diamonds
-  @{text "ONCE"} and @{text "EVENTUALLY"} -- an existential quantifier commutes with the window:
-  @{text "\<exists>y. ONCE[I] \<phi>"} holds exactly when @{text "ONCE[I] (\<exists>y. \<phi>)"} does.  The two monitor
-  very differently.  With the quantifier outside, the window keeps every tuple of @{text \<phi>} over
-  the whole interval and the quantifier projects that whole result at every time point; with it
-  inside, the projection happens once, on the tuples entering the window, and the window keeps
-  only the projected tuples.  On @{text "C(x) AND (EXISTS y. ONCE[0,50] A(x,y))"} the first holds
-  about 2000 pairs where the second holds about 200 values of @{text x}.
+subsection \<open>Quantifiers and comparisons moved inward\<close>
 
-  @{text push_ex} makes that move everywhere it applies, and the lemmas below show that it
-  changes nothing the monitor's specification depends on: the free variables, the satisfaction
-  relation, the progress, the relevant events, safety, future-boundedness and typing.  It goes
-  into both operands of a @{text Let}: the rewrite of @{theory Monitor_Exec.Freeze_Hoisting}
-  turns most freezes into one, and its body is where their windows are.  It leaves alone the
-  subformulas whose treatment builds new formulas from their operands (@{text LetPast},
-  @{text Frz}, the regular expressions, the trigger and release operators, and a conjunction
-  with a trigger or release on the right), which keeps those lemmas structural.
-\<close>
+text \<open>@{text "\<exists>y. ONCE[I] \<phi>"} equals @{text "ONCE[I] (\<exists>y. \<phi>)"}, and likewise for
+  @{text EVENTUALLY}; inside the window the projection happens once, on the entering tuples.\<close>
 
-text \<open>Equality on formulas is not executable -- the intervals have no equality in the generated
-  code -- so the test for @{const Formula.TT} gets a code equation that reads its shape.\<close>
+text \<open>Equality on formulas is not executable, so @{const Formula.TT} is recognised by its shape.\<close>
 
 definition is_TT :: "'t Formula.formula \<Rightarrow> bool" where
   [simp]: "is_TT \<phi> \<longleftrightarrow> \<phi> = Formula.TT"
@@ -52,14 +36,8 @@ fun ex_into :: "'t \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.for
       else Formula.Exists t (Formula.Until \<phi> I \<psi>))"
 | "ex_into t \<phi> = Formula.Exists t \<phi>"
 
-text \<open>A comparison conjoined to a multiway conjunction is moved onto the first of its safe
-  operands that binds the comparison's variables and is an aggregation over a window:
-  @{text "(\<psi>\<^sub>1 AND \<dots> AND \<phi> AND \<dots>) AND c"} becomes the conjunction with @{text \<phi>} replaced by
-  @{text "\<phi> AND c"}.  There the comparison can filter the aggregate's groups before they are
-  built, where above the conjunction it filters the join's and the anti-joins' result.  Onto other operands the move is not made: filtering an operand instead of
-  the join's result pays off only when the operand is the smaller of the two, which the rewrite
-  cannot know.  The multiway conjunction is what the front end's @{const convert_multiway} makes of
-  @{text "\<phi> AND NOT \<psi> AND c"}.\<close>
+text \<open>A comparison conjoined to a multiway conjunction moves onto the first safe window
+  aggregation binding its variables, where it filters the groups before they are built.\<close>
 
 definition is_cmp :: "'t Formula.formula \<Rightarrow> bool" where
   "is_cmp c = (case c of Formula.Less _ _ \<Rightarrow> True | Formula.LessEq _ _ \<Rightarrow> True | _ \<Rightarrow> False)"
@@ -96,8 +74,7 @@ fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "push_ex (Formula.Until \<phi> I \<psi>) = Formula.Until (push_ex \<phi>) I (push_ex \<psi>)"
 | "push_ex \<phi> = \<phi>"
 
-text \<open>The conjunction's equation with its case distinction folded into a test, so that the
-  lemmas below can go by structural induction without splitting over every constructor.\<close>
+text \<open>The conjunction's case distinction, folded into a test for structural induction.\<close>
 
 lemma push_ex_And:
   "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
@@ -124,19 +101,10 @@ lemma matches_ex_into[simp]:
   "Safety.matches v (ex_into t \<phi>) e = (\<exists>z. Safety.matches (z # v) \<phi> e)"
   by (induct t \<phi> arbitrary: v rule: ex_into.induct) (auto simp: Formula.TT_def)
 
-subsection \<open>The rewritten formula\<close>
+subsection \<open>Prepared formula and initial state\<close>
 
-text \<open>
-  The monitor is started on @{term "eprep \<phi>"}: the frozen predicates are taken out of
-  the temporal operators and bound with @{const Formula.Let} where they can be
-  (@{theory Monitor_Exec.Freeze_Hoisting}), the existential quantifiers are moved into the
-  windows, and the right operand of a release is bound with @{const Formula.Let} so that it is
-  evaluated once (@{theory Monitor_Exec.Release_Sharing}).  Everything the specification of
-  the monitor for @{term \<phi>} depends on -- the number and set of free variables, the traces
-  (through the signature), the satisfaction relation and the progress -- is the same for the
-  rewritten formula, which is monitorable and well typed whenever @{term \<phi>} is.  Only the order
-  in which @{const Formula.fv_list} lists the free variables may change.
-\<close>
+text \<open>The monitor starts on @{term "eprep \<phi>"}, which hoists frozen predicates, moves
+  quantifiers into windows and shares the right operands of releases.\<close>
 
 definition eprep :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "eprep \<phi> = share_opt (push_ex (frz_opt \<phi>))"
@@ -161,9 +129,8 @@ next
     by (induction r) auto
 qed (auto simp: fold_map comp_def cong: fold_cong)
 
-text \<open>The multiway conversion copies the right operand of a release into its left operand;
-  @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies are
-  all occurrences of one predicate.\<close>
+text \<open>@{const share_opt} precedes the multiway conversion, which copies a release's right
+  operand.\<close>
 
 definition eminit_verimon where
   "eminit_verimon ix mw rw sig \<phi> =

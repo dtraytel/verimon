@@ -6,21 +6,12 @@ begin
 
 
 
-section \<open>Since and Until structures with indexed results\<close>
+section \<open>Indexed Since and Until structures\<close>
 
-text \<open>
-  The Since structure of a closed left operand keeps the union of its window incrementally, as a
-  count per tuple and the set of tuples whose count is positive.  Below that set is an indexed
-  table (@{typ "event_data itab"}): a tuple whose count becomes positive is inserted into it and
-  into each of its indices, a tuple whose count drops to zero is removed from both.  The window
-  hands its union out as it is, so a join of the window's result probes the indices instead of
-  building one at every time point.  Which indices the set carries is up to the window's
-  consumer, who asks for them (@{text isw_ensure}).  Forgetting the indices
-  (@{text isw_abs}) maps every operation to the one of @{theory Monitor_Exec.Closed_Left_Windows}, so the
-  window's proofs apply unchanged.
-\<close>
+text \<open>A window keeps its union as an indexed table, which a join probes directly.  Forgetting
+  the indices (@{text isw_abs}) gives @{theory Monitor_Exec.Closed_Left_Windows}.\<close>
 
-subsection \<open>The count set\<close>
+subsection \<open>Count set\<close>
 
 type_synonym icntset = "(event_data tuple, nat) mapping \<times> event_data itab"
 
@@ -44,7 +35,7 @@ definition icnt_add :: "event_data table \<Rightarrow> icntset \<Rightarrow> icn
 definition icnt_del :: "event_data table \<Rightarrow> icntset \<Rightarrow> icntset" where
   "icnt_del T cc = fold icnt_del1 (csl T) cc"
 
-subsection \<open>The window\<close>
+subsection \<open>Window of a closed left operand\<close>
 
 type_synonym iswaux = "ts \<times> (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> icntset"
 
@@ -118,12 +109,7 @@ definition isw_ensure :: "bool list list \<Rightarrow> iswaux \<Rightarrow> iswa
 lemma isw_abs_ensure[simp]: "isw_abs (isw_ensure msks aux) = isw_abs aux"
   by (simp add: isw_abs_def isw_ensure_def icnt_abs_def split: prod.splits)
 
-subsection \<open>The Since structure of a general left operand\<close>
-
-text \<open>The structure of a general left operand keeps the tuples whose Since holds now in a table
-  of its own (@{text table_in}).  That table becomes an indexed one: the tuples entering and
-  leaving it at a step update its indices by their own index (@{const iadd}, @{const isub}), and
-  the structure's result is the table itself.\<close>
+subsection \<open>Since of a general left operand\<close>
 
 type_synonym iemsaux = "ts \<times> ts \<times> bool list \<times>
   (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> event_data itab \<times>
@@ -238,9 +224,7 @@ fun iems_ensure :: "bool list list \<Rightarrow> iemsaux \<Rightarrow> iemsaux" 
   "iems_ensure msks (nt, gc, msk, dp, di, ti, ii, tui, is, tus) =
      (nt, gc, msk, dp, di, iensure msks ti, ii, tui, is, tus)"
 
-text \<open>The join of the structure, restated for code as the original is
-  (@{thm [source] ejoin_msaux_code}): one pass over the index collects the entries whose keys fail
-  the probe, and only their tuples leave the table, its indices and the time stamps.\<close>
+text \<open>The join's code equation is restated as @{thm [source] ejoin_msaux_code} is.\<close>
 
 definition igjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b list set) mapping \<Rightarrow>
     'b itab \<times> ('b list, 'v) mapping \<Rightarrow> ('k, 'b list set) mapping \<times> 'b itab \<times> ('b list, 'v) mapping" where
@@ -305,11 +289,7 @@ lemma iejoin_msaux_code[code]:
   by (simp only: iejoin_msaux.simps Let_def igjoin_idx_def gjoin_idx1_def del_buckets1_def
       mfilter_keys_def esemi_idx_def prod.case)
 
-subsection \<open>The Until structure for a closed left operand\<close>
-
-text \<open>The window of the Until structure for a closed left operand keeps the union of its entries
-  as the Since window does, and its answers are that union at the time point's departure; with
-  the union indexed, so are the answers.\<close>
+subsection \<open>Until of a closed left operand\<close>
 
 type_synonym iuwaux = "ts queue \<times> uw_entry queue \<times> uw_entry queue \<times> nat \<times> bool \<times> icntset \<times>
   event_data itab list"
@@ -395,11 +375,9 @@ definition iuw_ensure :: "bool list list \<Rightarrow> iuwaux \<Rightarrow> iuwa
 lemma iuw_abs_ensure[simp]: "iuw_abs (iuw_ensure msks aux) = iuw_abs aux"
   by (simp add: iuw_abs_def iuw_ensure_def icnt_abs_def split: prod.splits)
 
-subsection \<open>The dispatched Since structures\<close>
+subsection \<open>Dispatched Since structures\<close>
 
-text \<open>The aggregating structures are kept as they are; their result is a table without
-  indices.  The other two are embedded indexed if they are to keep indices at all, and kept as
-  they are otherwise (@{text iudsx_emb}); the evaluator's embedding decides which, once.\<close>
+text \<open>Only the windows embedded with some masks keep indices (@{text iudsx_emb}).\<close>
 
 datatype iudsaux_x = IUDSX_u udsaux_x | IUDSX_win iswaux | IUDSX_gen iemsaux
 
@@ -439,10 +417,7 @@ fun iudsx_ensure :: "bool list list \<Rightarrow> iudsaux_x \<Rightarrow> iudsau
 | "iudsx_ensure msks (IUDSX_gen g) = IUDSX_gen (iems_ensure msks g)"
 | "iudsx_ensure msks d = d"
 
-subsection \<open>The dispatched Until structures\<close>
-
-text \<open>Likewise, only the window of a closed left operand has indexed answers, if it is embedded
-  indexed.\<close>
+subsection \<open>Dispatched Until structures\<close>
 
 datatype iuduaux_x = IUDUX_u uduaux_x | IUDUX_win iuwaux
 
@@ -473,7 +448,7 @@ fun iudux_ensure :: "bool list list \<Rightarrow> iuduaux_x \<Rightarrow> iuduau
 lemma riud_ensure[simp]: "riud (iudux_ensure msks d) = riud d"
   by (induct msks d rule: iudux_ensure.induct) simp_all
 
-subsection \<open>The Since buffer's traversal\<close>
+subsection \<open>Traversal of the Since buffer\<close>
 
 fun iuedsx_eval_since :: "args \<Rightarrow> event_data itab list \<Rightarrow> uebuf2S \<Rightarrow> iudsaux_x \<Rightarrow>
     event_data itab list \<times> uebuf2S \<times> iudsaux_x" where

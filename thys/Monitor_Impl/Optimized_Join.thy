@@ -8,10 +8,7 @@ section \<open>Optimized relational join\<close>
 
 subsection \<open>Binary join\<close>
 
-text \<open>The join of @{term t} over the columns @{term cs} with @{term t'} over @{term ds}, with
-  shortcuts for the cases in which one table's columns are among the other's.  The last but one
-  case filters the right table and brings its tuples into the join's column order
-  @{term "cols_union cs ds"}.\<close>
+text \<open>Join with shortcuts for the cases in which one table's columns are among the other's.\<close>
 
 fun bin_join :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
   "bin_join cs t pos ds t' =
@@ -69,9 +66,9 @@ next
   qed
 qed
 
-subsection \<open>Multi-way join\<close>
+subsection \<open>Generic multi-way join\<close>
 
-text \<open>The columns of the positive tables, in the order of the generic join's result.\<close>
+text \<open>The columns of the generic join's result, in its order.\<close>
 
 abbreviation mcols :: "nat list list \<Rightarrow> nat list" where
   "mcols A_pos \<equiv> cols (\<Union>A\<in>set A_pos. set A)"
@@ -160,18 +157,10 @@ termination
   by (relation "measure (\<lambda>(A_pos, A_neg, L). length A_pos + length A_neg)")
     (use find_sub_True_sound find_sub_False_sound in \<open>fastforce split: option.splits\<close>)+
 
-subsection \<open>Multi-way join as a sequence of binary joins\<close>
+subsection \<open>Left-deep binary joins\<close>
 
-text \<open>
-  The worst-case optimal generic join above has large constant factors in the generated code.
-  The monitor therefore evaluates multi-way joins as a left-deep sequence of binary joins
-  (which use an index on the common columns, see @{const bin_join}) followed by anti-joins
-  for the negated conjuncts. The correctness statement @{text mmulti_join_correct} is the same
-  as for the generic join. The two strategies produce their results in different column
-  orders (the generic join sorts the columns, the binary joins accumulate them with
-  @{const cols_union}); @{text mmulti_join} takes the column order of its result as an
-  argument and reorders the tuples if needed.
-\<close>
+text \<open>A left-deep sequence of binary joins followed by antijoins for the negated tables, which
+  avoids the large constant factors of the generic join.\<close>
 
 fun mmulti_join_pos :: "nat list \<Rightarrow> 'a table \<Rightarrow> (nat list \<times> 'a table) list \<Rightarrow> nat list \<times> 'a table" where
   "mmulti_join_pos cs t [] = (cs, t)"
@@ -181,13 +170,8 @@ fun mmulti_join_neg :: "nat list \<Rightarrow> 'a table \<Rightarrow> (nat list 
   "mmulti_join_neg cs t [] = t"
 | "mmulti_join_neg cs t ((cs', t') # L) = mmulti_join_neg cs (bin_join cs t False cs' t') L"
 
-text \<open>
-  The choice between the two evaluation strategies is left open in the formalization: the
-  constant @{text use_generic_join} is unspecified, and the correctness of @{text mmulti_join}
-  (theory @{text Optimized_Join_Correctness}) is proved for both of its values. The generated code
-  reads it from a mutable flag (see theory @{text Efficient_Instance}), which the front end sets from the
-  command line option @{text "-generic_join"}.
-\<close>
+text \<open>The unspecified @{text use_generic_join} selects the strategy, so correctness holds for
+  both; their column orders differ, so the result is reordered to the given columns.\<close>
 
 consts use_generic_join :: bool
 

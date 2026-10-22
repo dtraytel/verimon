@@ -4,23 +4,19 @@ theory Match_Window_Simulation
 begin
 (*>*)
 
-section \<open>The match structures over ascending columns\<close>
+section \<open>Simulation of the match windows\<close>
 
-text \<open>
-  The regular-expression nodes need no executable operations of their own.  Every table a match node
-  handles lives over the node's own columns or over an atom's, and the reordering turns the
-  kernel's operations into the very same operations over the ascending columns: the joins are
-  @{thm [source] etabc_join_sub}, the unions are @{thm [source] etabc_Un_img}.  The one thing
-  that does not come for free is that the guards really are tables over the node's columns: that
-  is the regular expression's safety condition, and the lemmas below carry it.
-\<close>
+subsection \<open>Reordering to ascending columns\<close>
+
+text \<open>The kernel's match operations commute with the reordering, given that every guard is a table
+  over the node's columns, which the regular expression's safety ensures.\<close>
 
 lemma wf_atomsD:
   assumes "wf_atoms ks kss css rels" "i < length rels"
   shows "eframe (kss ! i) (css ! i)" "set (kss ! i) \<subseteq> set ks" "table (kss ! i) (rels ! i)"
   using assms by (auto simp: wf_atoms_def)
 
-subsection \<open>The lax epsilon\<close>
+subsubsection \<open>Lax epsilon\<close>
 
 lemma table_eps_lax:
   assumes wf: "wf_atoms ks kss css rels"
@@ -76,15 +72,7 @@ next
     by (simp add: etabc_join_sub[OF fK fK subset_refl t1 t2])
 qed simp
 
-subsection \<open>The strict epsilons\<close>
-
-text \<open>
-  Unlike the lax one, a strict epsilon does not carry a guard, and its value is a table over the
-  node's columns only because the regular expression is safe.  This is the column part of the
-  kernel's @{thm [source] qtable_r\<epsilon>_strict} and @{thm [source] qtable_l\<epsilon>_strict}:
-  restricted to no valuation at all, a @{const qtable} says only that its table is a finite table
-  over its columns.
-\<close>
+subsubsection \<open>Strict epsilons\<close>
 
 lemma qtable_mem_restr_empty: "qtable cs (mem_restr {} cs) Q X \<longleftrightarrow> table cs X \<and> finite X"
   by (simp add: qtable_def mem_restr_def)
@@ -106,8 +94,6 @@ lemma table_leps_strict:
   shows "table A (l\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr)"
   using qtable_l\<epsilon>_strict[OF assms(1-4), where R = "{}"] assms(5)
   by (simp add: qtable_mem_restr_empty)
-
-text \<open>A tested atom is moved to the node's column order; the executable one is already in it.\<close>
 
 lemma etabc_reorder:
   assumes fK: "eframe ks cs" and f: "eframe k c" and e: "set k = set ks" and t: "table k T"
@@ -250,13 +236,7 @@ qed
 
 end
 
-subsection \<open>The derivatives\<close>
-
-text \<open>
-  The two derivatives read the previous firing's tabulation, which the node keeps reordered, and
-  join what they find against the atoms through the lax epsilon.  Reordering a tabulation is
-  reordering every entry, so the lookups agree; the rest is the lax epsilon again.
-\<close>
+subsubsection \<open>Derivatives\<close>
 
 lemma table_rdelta:
   assumes wf: "wf_atoms ks kss css rels" and X: "\<And>ms. table ks (lookup X ms)"
@@ -330,6 +310,8 @@ next
     by (simp add: etabc_Un_img etabc_eps_lax[OF fK wf o1 tg])
 qed (simp_all add: empty_table_def)
 
+subsubsection \<open>Past-match structure\<close>
+
 lemma emrd_rel_length: "emrd_rel ks cs aux daux \<Longrightarrow> length aux = length daux"
   by (simp add: emrd_rel_def list_all2_lengthD)
 
@@ -343,14 +325,10 @@ lemma emrd_rel_induct[consumes 1, case_names Nil Cons]:
   using assms(1)[unfolded emrd_rel_def]
   by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: emrd_rel_def\<close>)
 
-text \<open>Reordering a tabulation entry by entry is reordering what it tabulates.\<close>
-
 lemma lookup_mrtabulate_cong:
   assumes d: "distinct mrs" and f: "\<And>ms. ms \<in> set mrs \<Longrightarrow> etabc ks cs (f ms) = g ms"
   shows "lookup (mrtabulate mrs g) ms = etabc ks cs (lookup (mrtabulate mrs f) ms)"
   using f by (simp add: lookup_tabulate[OF d] empty_table_def)
-
-text \<open>Reading a structure is a union of lookups, which the reordering distributes over.\<close>
 
 lemma etabc_foldr_lookup:
   assumes "emrd_rel ks cs aux daux"
@@ -457,6 +435,8 @@ qed
 
 end
 
+subsubsection \<open>Future-match structure\<close>
+
 lemma emld_rel_induct[consumes 1, case_names Nil Cons]:
   assumes "emld_rel ks cs \<psi>s css aux daux"
     and "P [] []"
@@ -557,8 +537,6 @@ lemma etabc_update_matchF:
      (update_matchF cs css I mr mrs (erels rels) nt daux)"
   using etabc_matchF_foldr[OF rels rel] by (simp add: update_matchF_def)
 
-text \<open>Reading the structure hands out the entries that have left the window, reordered.\<close>
-
 lemma etabc_eval_matchF:
   assumes "emld_rel ks cs \<psi>s css aux daux"
   shows "fst (eval_matchF I mr nt daux) = map (etabc ks cs) (fst (eval_matchF I mr nt aux)) \<and>
@@ -577,23 +555,12 @@ qed simp
 
 end
 
-section \<open>The match windows the executable evaluator runs\<close>
+subsection \<open>Executable match windows\<close>
 
-text \<open>
-  The section above relates the kernel's match windows at the kernel's
-  columns to the kernel's windows run at the ascending columns, on the reordered operands.  The
-  windows below are what the executable evaluator runs:
-  an operand is probed by the semi-join against its mask instead of the kernel's join, and they
-  are polymorphic in the field type.  This theory shows that at the ascending columns they are
-  the kernel's windows, so the relations @{const emrd_rel} and @{const emld_rel} of
-  @{theory Monitor_Exec.Match_Window} hold of them unchanged.
+text \<open>The executable windows probe an operand by a semi-join against its mask and are polymorphic
+  in the field type; at the ascending columns they are the kernel's windows.\<close>
 
-  Two things differ from the kernel's derivatives.  The join against an atom is a semi-join,
-  which @{thm [source] join_sub_eq} relates to the kernel's join; and the join of two lax
-  epsilons is an intersection, which it is because both are tables over the node's columns.  The
-  unit table is the empty tuple, which is the kernel's, and a strict epsilon's atom needs no
-  reordering, because its columns are the node's.
-\<close>
+subsubsection \<open>Masks, lookup and tabulation\<close>
 
 lemma mrg_left_key_map:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
@@ -633,8 +600,6 @@ lemma eproj_dmsk:
   using emsk_args_dproj[OF emsk_args_dargs[OF s1 s2 sub, of undefined], of a] l
   by (simp add: emsk_def)
 
-text \<open>The window's lookup and tabulation are the kernel's.\<close>
-
 lemma glookup_lookup: "glookup = lookup"
   by (simp add: glookup_def Monitor.lookup_def empty_table_def)
 
@@ -656,7 +621,7 @@ proof -
   then show ?thesis unfolding mrtabulate.abs_eq by simp
 qed
 
-subsection \<open>The lax epsilon\<close>
+subsubsection \<open>Epsilons and derivatives\<close>
 
 lemma join_same:
   assumes d: "distinct cs" and tA: "table cs A" and tB: "table cs B"
@@ -820,7 +785,7 @@ qed
 
 end
 
-subsection \<open>The past-match window\<close>
+subsubsection \<open>Past-match window\<close>
 
 lemma emrd_rel_table:
   "emrd_rel ks cs aux daux \<Longrightarrow> (t, X) \<in> set daux \<Longrightarrow> table cs (lookup X ms)"
@@ -891,7 +856,7 @@ lemma etabc_gupdate_matchP:
 
 end
 
-subsection \<open>The future-match window\<close>
+subsubsection \<open>Future-match window\<close>
 
 lemma geval_matchF_eval_matchF: "geval_matchF I mr nt aux = eval_matchF I mr nt aux"
   by (induct aux rule: eval_matchF.induct) simp_all

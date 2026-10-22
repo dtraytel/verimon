@@ -4,23 +4,12 @@ theory Log_Monitor_Online
 begin
 (*>*)
 
-section \<open>The online interface of the monitor on the log\<close>
+section \<open>Online correctness of the log monitor\<close>
 
-text \<open>
-  This theory describes the monitor's online interface, as VeriMon's correctness theorem describes @{const minit} and
-  @{const mstep} (@{thm [source] verimon_rewrite.wf_mstate_mstep},
-  @{thm [source] verimon_rewrite.mstep_mverdicts}): an invariant @{text wf_vstate} relates the
-  state to the bytes read so far and to the prefix they denote; @{const vinit} establishes it,
-  and @{const vfeed_chunk} preserves it as long as the bytes read denote a prefix, reporting no
-  error and outputting exactly the verdicts that the specification prescribes for that prefix and
-  not for the one before, and reports an error as soon as they denote none; likewise for
-  @{const vfinish}. The prefixes are those of the events that the parser keeps; the corollaries
-  for logs whose events all denote a prefix follow, and from them, at the end, the theorems for
-  all of the log, or for all of it that has been read, from the initial state
-  (@{text verimon_log.vrun_log}).
-\<close>
+text \<open>The invariant @{text wf_vstate} relates the state to the bytes read and the prefix they
+  denote; each chunk preserves it and outputs exactly the verdicts the longer prefix adds.\<close>
 
-subsection \<open>The executable monitor's state after a prefix\<close>
+subsection \<open>Monitor state after a prefix\<close>
 
 primrec emsteps0_state :: "(Formula.database \<times> nat) list \<Rightarrow> emstate \<Rightarrow> emstate" where
   "emsteps0_state [] ds = ds"
@@ -34,9 +23,6 @@ lemma emsteps0_stateless_append: "emsteps0_stateless (\<pi> @ \<pi>') ds =
 
 lemma emsteps0_state_append: "emsteps0_state (\<pi> @ \<pi>') ds = emsteps0_state \<pi>' (emsteps0_state \<pi> ds)"
   by (induction \<pi> arbitrary: ds) simp_all
-
-text \<open>A step outputs the verdicts of time points from the index of the first one whose verdict
-  is pending on, which only increases.\<close>
 
 lemma emstep_indices:
   assumes "emstep tdb ds = (vs, ds')"
@@ -87,8 +73,6 @@ proof (induction \<pi> arbitrary: ds)
   qed
 qed simp
 
-text \<open>So the verdicts output after a prefix are disjoint from those output for it.\<close>
-
 lemma flatten_verdicts_dmsteps0_append:
   fixes f :: "event_data table \<Rightarrow> event_data table"
   defines "W \<equiv> map (\<lambda>(i, t, X). (i, t, f X))"
@@ -111,7 +95,7 @@ proof -
     by blast
 qed
 
-subsection \<open>The executable monitor from any state\<close>
+subsection \<open>Feeding the parsed items\<close>
 
 lemma usteps_state:
   "(snd (usteps tps ust)) = emsteps0_state (map (apfst set) tps) (ust)"
@@ -126,9 +110,6 @@ proof (induction tps arbitrary: ust)
   then show ?case
     using Cons.IH[of ust1] u by (cases "usteps tps ust1") (simp add: tp)
 qed simp
-
-text \<open>The items that the parser outputs are converted, and the time points they denote are fed
-  to the monitor, as long as their timestamps do not decrease from the last one fed.\<close>
 
 lemma vitems_from:
   assumes oks: "oks xs = Some es" and v: "vitems cf xs (ust, lt) = (vs, z')"
@@ -147,7 +128,7 @@ proof -
     using ok tps by fastforce
 qed
 
-subsection \<open>The prefix grows with the items\<close>
+subsection \<open>Prefix denoted by the items\<close>
 
 lemma those_append: "those (xs @ ys) = Option.bind (those xs) (\<lambda>as. map_option ((@) as) (those ys))"
 proof (induction xs)
@@ -177,10 +158,6 @@ lemma last_ts_append:
 
 lemma less_eq_prefix_append: "Rep_prefix \<pi>' = Rep_prefix \<pi> @ xs \<Longrightarrow> \<pi> \<le> \<pi>'"
   by transfer auto
-
-text \<open>The prefix that items denote, when they follow items that denote a prefix: the time points
-  of the new items, which are converted as by @{const conv_item}, are appended to it if their
-  timestamps do not decrease.\<close>
 
 lemma prefix_of_items_append:
   assumes lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
@@ -223,8 +200,6 @@ proof -
   qed
 qed
 
-text \<open>With the last time point with no events at the end of the input, if any.\<close>
-
 lemma vitems_fin:
   fixes fin :: "nat option" and pos :: integer
   assumes oks: "oks xs = Some es" and v: "vitems cf xs (ust, lt) = (vs, z')"
@@ -264,10 +239,9 @@ proof -
     by auto
 qed
 
-subsection \<open>The invariant\<close>
+subsection \<open>Prefix denoted by the bytes read\<close>
 
-text \<open>The prefix that the bytes read so far denote: that of the items the streaming parser has
-  output (@{thm [source] efeed_chunks_online}), if they denote one.\<close>
+text \<open>The prefix of the items the streaming parser has output for the bytes read, if they denote one.\<close>
 
 definition stream_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> string \<Rightarrow>
     Formula.prefix option" where
@@ -379,6 +353,8 @@ proof -
     by (intro that[of \<pi>]) (simp_all add: stream_prefix_def r)
 qed
 
+subsection \<open>Invariant of the state\<close>
+
 context verimon_log
 begin
 
@@ -390,10 +366,8 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
   "map_sig (convert_tysym o check_subst) (lsig_tsig S)" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
-text \<open>The state @{text z} is the one after the bytes @{text s} are read, whose events that the
-  parser keeps denote the prefix @{text \<pi>}, from the state @{const vinit} started with the
-  configuration @{text cf}: its parser state is the streaming parser's after @{text s}, and its
-  monitor state is the executable monitor's after @{text \<pi>}, with the last timestamp of @{text \<pi>}.\<close>
+text \<open>The parser state of @{text z} is the streaming parser's after the bytes @{text s}, and its
+  monitor state the executable monitor's after the prefix @{text \<pi>} of the kept events.\<close>
 
 definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> vconf \<Rightarrow> string \<Rightarrow> Formula.prefix \<Rightarrow> vstate \<Rightarrow> bool" where
   "wf_vstate filt pf cf s \<pi> z \<longleftrightarrow> (\<exists>ust0 b l ps sp ust es.
@@ -402,9 +376,6 @@ definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) 
      fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps) \<and>
      prefix_of_items (sf pf) S None es = Some \<pi> \<and>
      ust = emsteps_state \<pi> (ust0))"
-
-text \<open>The verdicts of the executable monitor on a prefix that items denote are those the
-  specification prescribes (@{thm [source] eminit_verimon_mverdicts}).\<close>
 
 lemma emonitor_Mt:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
@@ -419,8 +390,6 @@ proof -
     by (rule eminit_verimon_mverdicts[OF vinit_Inr_state(4,5)[OF init] w(2)])
 qed
 
-text \<open>The verdicts are monotone in the prefix.\<close>
-
 lemma Mt_mono_items:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S fin es = Some \<pi>" and p': "prefix_of_items (sf pf) S fin' es' = Some \<pi>'"
@@ -433,9 +402,6 @@ proof -
     unfolding emonitor_Mt[OF init p, symmetric] emonitor_Mt[OF init p', symmetric]
     by (auto simp: emonitor_Rep R emsteps0_stateless_append)
 qed
-
-text \<open>The verdicts of the time points that follow a prefix are those that the specification
-  prescribes for the longer prefix and not for the shorter one.\<close>
 
 lemma usteps_mverdicts:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
@@ -459,7 +425,7 @@ proof -
     unfolding V flatten_verdicts_dmsteps0_append A B ..
 qed
 
-text \<open>The initial state is the one after no bytes, which denote the empty prefix.\<close>
+subsection \<open>Preservation of the invariant\<close>
 
 theorem wf_vstate_vinit:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
@@ -478,10 +444,8 @@ proof -
       (simp add: init' Z fstream_init_def abs_l0_def prefix_of_items_Nil emsteps_state_Rep pnil.rep_eq)
 qed
 
-text \<open>A chunk of the input: if the bytes read so far no longer denote a prefix, the monitor
-  reports an error; otherwise, it reports none, the invariant holds for the longer prefix, and the
-  verdicts are exactly those that the specification prescribes for the longer prefix and not
-  for the shorter one.\<close>
+text \<open>A chunk reports an error once the bytes read denote no prefix; otherwise it preserves the
+  invariant and outputs exactly the verdicts the longer prefix adds.\<close>
 
 theorem vfeed_chunk_online:
   assumes wf: "wf_vstate filt pf cf s \<pi> z" and step: "vfeed_chunk cf c z = (outs, z')"
@@ -599,10 +563,7 @@ proof -
     using main by simp
 qed
 
-text \<open>The end of the input, followed by a last time point with no events at timestamp
-  @{text t} if @{text "fin = Some t"}: if the bytes read do not denote a prefix, the monitor reports
-  an error; otherwise, it reports none, and its verdicts are exactly those that the specification
-  prescribes for the prefix and not for the one before.\<close>
+text \<open>The end of the input adds a last time point with no events at @{text t} if @{text "fin = Some t"}.\<close>
 
 theorem vfinish_online:
   assumes wf: "wf_vstate filt pf cf s \<pi> z"
@@ -719,8 +680,6 @@ proof -
     by blast
 qed
 
-text \<open>Several chunks at once, as long as the bytes read denote a prefix.\<close>
-
 theorem vfeed_chunks_online_step:
   assumes "wf_vstate filt pf cf s \<pi> z" and "vfeed_chunks cf cs z = (outs, z')"
     and "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ concat (map Rep_bytes cs)) = Some \<pi>'"
@@ -800,7 +759,10 @@ next
   qed
 qed
 
-text \<open>The verdicts do not depend on the events that the parser skips.\<close>
+subsection \<open>Events skipped by the parser\<close>
+
+text \<open>If @{text filt}, the parser skips the events of declared predicates that do not occur in the
+  formula; the verdicts do not depend on them.\<close>
 
 lemma Mt_filter:
   assumes "prefix_of_items (sf pf) S fin es = Some \<rho>"
@@ -813,14 +775,6 @@ proof -
   show ?thesis
     using monitor_\<phi>.Mt_restrict[OF _ E] prefix_of_items_wty(1)[OF assms] by (simp add: map_sig_lsig)
 qed
-
-text \<open>The online versions of @{text vrun_log} below: for bytes whose events all denote a
-  prefix, a chunk and the end of the input report no error, and output exactly the verdicts that
-  the specification prescribes for the longer prefix and not for the shorter one, although the
-  parser skips the events of the other declared predicates if @{text filt}.\<close>
-
-text \<open>The state after the bytes read so far is that of the filtered prefix, and the verdicts
-  that the filtered prefixes prescribe are those of the unfiltered ones.\<close>
 
 lemma online_log_transfer:
   assumes wf: "wf_vstate filt pf cf s \<pi>0 z"
@@ -893,18 +847,12 @@ proof -
     by (rule stream_prefix_mono[OF p p'])
 qed
 
-subsection \<open>The whole input, from the initial state\<close>
-
-text \<open>The theorems for all of the log, or for all of it that has been read, follow from the
-  online ones from the initial state, which denotes the empty prefix.\<close>
+subsection \<open>Whole input from the initial state\<close>
 
 lemma Mt_pnil:
   assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
   shows "monitor_\<phi>.Mt pnil = {}"
   using emonitor_Mt[OF assms prefix_of_items_Nil] by (simp add: emonitor_Rep pnil.rep_eq flatten_verdicts_def)
-
-text \<open>For an input that is still being read: the verdicts output so far are those of the entries
-  the streaming parser has output (@{thm [source] Log_Byte_Parser.efeed_chunks_online}).\<close>
 
 theorem vfeed_chunks_online:
   fixes ss
@@ -927,12 +875,8 @@ proof -
     using vfeed_chunks_online_step[OF wf v] unfolding Mt_pnil[OF init'] by (simp add: L v)
 qed
 
-text \<open>The monitor on a log whose events of the predicates whose names occur freely in the
-  formula, and of those the signature does not declare, denote a prefix (all events, unless
-  @{text filt}): it reports no error, and its verdicts are those the specification prescribes
-  for this prefix, and thus for every well-typed prefix with the same events of the predicates
-  that occur freely in the formula (@{thm [source] Mt_preds}); otherwise, it reports an
-  error.\<close>
+text \<open>The monitor reports no error exactly on a log whose kept events denote a prefix, and then
+  outputs the verdicts the specification prescribes for that prefix.\<close>
 
 theorem vrun_filtered:
   fixes fin ss
@@ -989,10 +933,6 @@ proof -
     by blast+
 qed
 
-text \<open>The monitor on a log that denotes a prefix: it reports no error, and its verdicts are those
-  the specification prescribes for the prefix, although, if @{text filt}, it does not convert
-  the events of the other predicates.\<close>
-
 theorem vrun_log:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
     and log: "log_prefix (\<lambda>_. True) (sf pf) S fin (concat (map Rep_bytes ss)) = Some \<pi>"
@@ -1007,9 +947,6 @@ proof -
   show "flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
     using vrun_filtered(2)[OF init L] unfolding Mt_filter[OF e] .
 qed
-
-text \<open>At the level of the grammar: if the input read so far extends to a log, the verdicts output
-  so far are those of a prefix of the log's entries, if there was no error.\<close>
 
 corollary vfeed_chunks_log:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
@@ -1036,8 +973,7 @@ proof -
     using that p es1 by blast
 qed
 
-text \<open>In particular, the verdicts of the entries of a log are output as soon as the next item
-  begins, if they denote a prefix.\<close>
+text \<open>The verdicts of a log's entries are output as soon as the next item begins.\<close>
 
 corollary vfeed_chunks_prompt:
   assumes init: "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"
@@ -1058,23 +994,6 @@ proof -
   show "flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
     using vfeed_chunks_online(2)[OF init L] unfolding Mt_filter[OF p] .
 qed
-
-text \<open>In summary, for the monitor on the log, as for VeriMon's kernel
-  (@{thm [source] verimon_rewrite.wf_mstate_minit}, @{thm [source] verimon_rewrite.wf_mstate_mstep},
-  @{thm [source] verimon_rewrite.mstep_mverdicts}):
-  \begin{itemize}
-  \item @{thm [source] wf_vstate_vinit}: @{thm wf_vstate_vinit[no_vars]}
-  \item @{thm [source] vfeed_chunk_online}: @{thm vfeed_chunk_online[no_vars]}
-  \item @{thm [source] vfinish_online}: @{thm vfinish_online[no_vars]}
-  \item @{thm [source] vfeed_chunks_online_step}: @{thm vfeed_chunks_online_step[no_vars]}
-  \item @{thm [source] vfeed_chunk_online_log}: @{thm vfeed_chunk_online_log[no_vars]}
-  \item @{thm [source] vfinish_online_log}: @{thm vfinish_online_log[no_vars]}
-  \item @{thm [source] vfeed_chunks_online_log}: @{thm vfeed_chunks_online_log[no_vars]}
-  \item @{thm [source] vfeed_chunks_online_error}: @{thm vfeed_chunks_online_error[no_vars]}
-  \end{itemize}
-  The prefixes are those of the events that the parser keeps; by
-  @{thm [source] Mt_preds}, the verdicts are those of every well-typed prefix with the same events
-  of the predicates that occur freely in the formula.\<close>
 
 end
 

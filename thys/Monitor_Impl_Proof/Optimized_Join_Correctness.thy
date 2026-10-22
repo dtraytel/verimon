@@ -4,9 +4,9 @@ theory Optimized_Join_Correctness
 begin
 (*>*)
 
-section \<open>Correctness of the optimized relational join\<close>
+section \<open>Correctness of the optimized join\<close>
 
-subsection \<open>Multi-way join\<close>
+subsection \<open>Generic multi-way join\<close>
 
 lemma mmulti_join'_correct:
   assumes "A_pos \<noteq> []"
@@ -45,11 +45,13 @@ proof -
     unfolding eq vars pos_iff neg_iff .
 qed
 
+subsection \<open>Merging dominated tables\<close>
+
+text \<open>Merging two positive tables into their join, or a negative table into a positive one
+  that covers its columns, leaves the result unchanged.\<close>
+
 lemma Cons_ne_append: "xs @ y # ys \<noteq> []"
   by simp
-
-text \<open>Merging two positive tables into their join, and a negative table into a positive one
-  that covers its columns, leaves the result unchanged.\<close>
 
 lemma list_all2_opt_True:
   assumes "list_all2 (\<lambda>A X. distinct A \<and> table A X) ((A_zs @ A_x # A_xs @ A_y # A_ys) @ A_neg)
@@ -154,6 +156,8 @@ proof -
       using assms(2-5) by (auto simp: list_all2_append res simp del: mmulti_join'.simps)
   qed
 qed
+
+subsection \<open>Soundness of the dominance search\<close>
 
 lemma proj_list_3_same:
   assumes "proj_list_3 xs (ys, z, zs) = (ys', z', zs')"
@@ -284,6 +288,8 @@ proof -
     using find_sub_False_proj_list_3_length_right[OF find assms(3) proj(2)] .
 qed
 
+subsection \<open>Generic join with merging\<close>
+
 lemma mmulti_join_gen_link:
   assumes "A_pos \<noteq> []"
       and "list_all2 (\<lambda>A X. distinct A \<and> table A X) (A_pos @ A_neg) L"
@@ -395,7 +401,7 @@ lemma mmulti_join_gen_correct:
     list_all2 (\<lambda>A X. restrict A (mcols A_pos) z \<notin> X) A_neg (drop (length A_pos) L)"
   unfolding mmulti_join_gen_link[OF assms] using mmulti_join'_correct[OF assms] .
 
-subsection \<open>Multi-way join as a sequence of binary joins\<close>
+subsection \<open>Left-deep binary joins\<close>
 
 lemma restrict_mem_join:
   assumes "distinct cs" "distinct ds" "table cs X" "table ds Y" "\<not> b \<Longrightarrow> set ds \<subseteq> set cs"
@@ -549,6 +555,8 @@ proof -
     unfolding pw fst_conv snd_conv L_pos_def[symmetric] L_neg_def[symmetric]
     using pos_corr neg_corr z by (intro conjI allI) simp_all
 qed
+
+subsection \<open>Correctness of the multi-way join\<close>
 
 lemma mmulti_join_correct:
   assumes "A_pos \<noteq> []"

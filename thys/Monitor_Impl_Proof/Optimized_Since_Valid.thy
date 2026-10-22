@@ -4,6 +4,9 @@ theory Optimized_Since_Valid
 begin
 (*>*)
 
+section \<open>Correctness of the optimized Since structure\<close>
+
+subsection \<open>Folds over the tuple mappings\<close>
 
 lemma fold_filter_set_sub: "fold filter_set xs (m, Y) = (m', Y') \<Longrightarrow> Y' \<subseteq> Y \<union> \<Union>(snd ` set xs)"
 proof (induction xs arbitrary: m Y)
@@ -140,6 +143,8 @@ proof -
     by auto
 qed
 
+subsection \<open>Time-stamped tuples and indexed tables\<close>
+
 lemma ts_tuple_rel_ext_Cons: "tas \<in> ts_tuple_rel_f f {(nt, X)} \<Longrightarrow>
   tas \<in> ts_tuple_rel_f f (set ((nt, X) # tass))"
   by (auto simp add: ts_tuple_rel_f_def)
@@ -233,6 +238,8 @@ lemma wf_table_sig_upd: "distinct (args_R args) \<Longrightarrow> wf_table_sig (
 lemma wf_table_set_upd: "distinct (args_R args) \<Longrightarrow> table (args_R args) (Mapping.keys m) \<Longrightarrow>
   wf_table_set (w ()) = Mapping.keys m \<Longrightarrow> wf_table_set (wf_table_upd args m w) = Mapping.keys m"
   by (simp add: wf_table_upd_def wf_table_set_of_keys)
+
+subsection \<open>Initialization and shifting the window\<close>
 
 lemma valid_init_mmsaux: "set L \<subseteq> set R \<Longrightarrow> distinct L \<Longrightarrow> distinct R \<Longrightarrow>
   valid_mmsaux (init_args I n L R b agg) 0 (init_mmsaux (init_args I n L R b agg)) []"
@@ -412,6 +419,8 @@ lemma valid_shift_end_mmsaux: "valid_mmsaux args cur aux auxlist \<Longrightarro
   valid_mmsaux args cur (shift_end args nt aux)
   (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
   using valid_shift_end_mmsaux_unfolded by (cases aux) fast
+
+subsection \<open>Adding a new time stamp\<close>
 
 lemma Mapping_lookup_fold_upd_set_max: "{(t, X) \<in> set xs. as \<in> Z X t} \<noteq> {} \<Longrightarrow>
   sorted (map fst xs) \<Longrightarrow>
@@ -625,7 +634,7 @@ proof -
       nt_mono valid_before ts_tuple_rel' lookup' memL_mono[of "args_ivl args" "ot - a" "nt - a" for a]
       table_in' keys_tuple_in' sig_in'' keys_tuple_in'' sig_since keys_since unfolding I_def
     unfolding valid_mmsaux.simps Let_def n_def R_def
-    by (auto split: option.splits) (* takes long *)
+    by (auto split: option.splits)
   ultimately show ?thesis
     by (auto simp only: add_new_ts_mmsaux'.simps Let_def data_in'_def aux tuple_in'_def I_def
         split: prod.splits)
@@ -642,6 +651,8 @@ lemma valid_add_new_ts_mmsaux:
     (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
   using valid_add_new_ts_mmsaux'[OF valid_shift_end_mmsaux[OF assms] assms(2)]
   unfolding add_new_ts_mmsaux_def .
+
+subsection \<open>Join with the left operand\<close>
 
 lemma join_mmsaux_abs_eq:
   assumes valid_before: "valid_mmsaux args cur
@@ -960,6 +971,8 @@ lemma valid_join_mmsaux: "valid_mmsaux args cur aux auxlist \<Longrightarrow>
   (join_mmsaux args X aux) (map (\<lambda>(t, rel). (t, join (args_R args) rel (args_pos args) (args_L args) X)) auxlist)"
   using valid_join_mmsaux_unfolded by (cases aux) fast
 
+subsection \<open>Garbage collection\<close>
+
 lemma valid_gc_mmsaux_unfolded:
   assumes valid_before: "valid_mmsaux args cur (nt, gc, data_prev, data_in,
     table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) ys"
@@ -1039,6 +1052,8 @@ lemma valid_gc_join_mmsaux:
   using valid_join_mmsaux[OF valid_gc_mmsaux[OF assms(1)] assms(2)]
     valid_join_mmsaux[OF assms]
   by auto
+
+subsection \<open>Adding a new table\<close>
 
 lemma valid_add_new_table_mmsaux_unfolded:
   assumes valid_before: "valid_mmsaux args cur
@@ -1322,7 +1337,7 @@ proof -
         valid_before table_since' keys_tuple_since' sig_since'' keys_tuple_since'' table_in'
       unfolding add_def auxlist'_def[symmetric] wf_table_since'_def[symmetric] cur_nt I_def n_def R_def
         valid_mmsaux.simps
-      by (fastforce simp: lin_data_prev') (* SLOW *)
+      by (fastforce simp: lin_data_prev')
   qed
 qed
 
@@ -1335,6 +1350,8 @@ lemma valid_add_new_table_mmsaux:
     | ((t, y) # ts) \<Rightarrow> if t = cur then (t, y \<union> X) # ts else (cur, X) # auxlist)"
   using valid_add_new_table_mmsaux_unfolded assms
   by (cases aux) fast
+
+subsection \<open>Result and interpretation\<close>
 
 lemma foldr_ts_tuple_rel:
   "as \<in> foldr (\<union>) (concat (map (\<lambda>(t, rel). if P t then [rel] else []) auxlist)) {} \<longleftrightarrow>

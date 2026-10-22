@@ -4,26 +4,15 @@ theory Exec_Agg
 begin
 (*>*)
 
-
-
-section \<open>The aggregation structure, over a bare element type\<close>
+section \<open>Generic aggregation structure\<close>
 
 text \<open>
-  The kernel keeps a fused aggregation's aggregate in @{typ aggaux}: a mapping from the group to
-  a count, to a count and a sum, or to the sorted multiset of the values, for tuples of the
-  kernel's wide frame (@{theory Monitor_Impl.Optimized_Agg}).  The executable window fed it the
-  window's tuples widened by a slot for the result column, and the unboxed window widened its
-  short tuples to the same frame, only for the kernel to cut the group back off them and compare
-  it as a list of options.
-
-  The structure below is the kernel's, restated over tuples @{typ "'b list"} of a bare element
-  type and a group that is the tuple's suffix after the @{text k} bound columns -- @{typ
-  "event_data option"} at the ascending frame, @{typ event_data} over the short tuples.  The value a
-  tuple contributes is a parameter @{text ev}, and the result writes the aggregate into the group
-  at position @{text p} through a parameter @{text ij}.  The steps are the kernel's, with the
-  group and the value read through these; the folds are over lists, the sorted list of the table
-  in use, where the kernel folds over the set.
+  The kernel's @{typ aggaux} over tuples of a bare element type, grouped by the suffix after the
+  @{text k} bound columns; reading a value (@{text ev}) and writing the result (@{text ij}) are
+  parameters.
 \<close>
+
+subsection \<open>Update steps\<close>
 
 datatype 'b gagg = GCnt "('b list, nat) mapping" | GSum "('b list, nat \<times> integer) mapping"
   | GRank "('b list, list_aux) mapping" type
@@ -89,8 +78,10 @@ fun gd_rank :: "nat \<Rightarrow> ('b list \<Rightarrow> event_data) \<Rightarro
         in (v', m'))
       else (v, m))"
 
-text \<open>The structure is optional as in the kernel: an operation that cannot maintain it drops it,
-  and the aggregate is then recomputed from the window.\<close>
+subsection \<open>Operations\<close>
+
+text \<open>An operation that cannot maintain the structure drops it, and the aggregate is then
+  recomputed from the window.\<close>
 
 definition ginit :: "ty Formula.agg_op \<Rightarrow> 'b gagg option" where
   "ginit \<omega> = (case (fst \<omega>, snd \<omega>) of
@@ -127,9 +118,6 @@ definition gins :: "nat \<Rightarrow> ('b list \<Rightarrow> event_data) \<Right
 definition gdel :: "nat \<Rightarrow> ('b list \<Rightarrow> event_data) \<Rightarrow> 'b list list \<Rightarrow> 'b gagg option \<Rightarrow> 'b gagg option"
   where "gdel k ev xs ax = fold (gstep_del k ev) xs ax"
 
-text \<open>The result writes the aggregate into the group at position @{text p}; with no group
-  variables and nothing in the window it is the aggregate of the empty set alone.\<close>
-
 definition gmr :: "nat \<Rightarrow> (event_data \<Rightarrow> 'b) \<Rightarrow> ('a \<Rightarrow> event_data) \<Rightarrow> ('b list, 'a) mapping \<Rightarrow> 'b list set"
   where
   "gmr p ij f m = (\<lambda>g. case Mapping.lookup m g of
@@ -157,11 +145,6 @@ fun gres :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> nat \<Rightarrow
      | _ \<Rightarrow> {}))"
 
 subsection \<open>Folds that drop the structure\<close>
-
-text \<open>The kernel's steps carry a flag and keep folding once it is down; the steps here stop at
-  the first failure.  The two agree, and a fold of steps that commute with a map @{text R} is
-  the map of the fold.  The keys a fold leaves are the ones it started with and the groups of
-  the tuples it inserted.\<close>
 
 lemma fold_flag_False:
   assumes "\<And>t m. S t (False, m) = (False, m)"

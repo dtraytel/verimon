@@ -4,14 +4,10 @@ theory Exec_Eval_Simulation
 begin
 (*>*)
 
+section \<open>Simulation of the kernel's evaluation\<close>
 
-
-text \<open>
-  Every theorem of @{theory Monitor_Exec.Exec_Tables} needs its operand tables to be finite and
-  well formed over the node's columns.  The simulation below takes that from the kernel: it is
-  stated for the calls of @{const meval} that @{const kgood} covers, whose tables the kernel's
-  correctness theorem describes (@{thm [source] kgood_tables}).
-\<close>
+text \<open>The simulation is stated for the calls of @{const meval} that @{const kgood} covers, whose
+  tables are finite tables over their columns (@{thm [source] kgood_tables}).\<close>
 
 lemma enext_ge: "\<forall>t \<in> set ts. tw \<le> t \<Longrightarrow> tw \<le> enext tw ts"
   by (auto simp: enext_def)
@@ -23,12 +19,7 @@ qed (simp add: enext_def)
 
 lemmas size_snd_eeval = psize_snd_eeval[OF total_eeval[THEN spec]]
 
-text \<open>
-  @{term "esim n ks cs tw \<phi>d \<phi>"} relates a executable formula to a kernel one whose tables are over
-  the column list @{term ks}, read by the executable one over its ascending order @{term cs}.  The
-  relation is about the state alone; the operand well-formedness that the
-  @{theory Monitor_Exec.Exec_Tables} theorems ask for comes from the call (@{const kgood}).
-\<close>
+subsection \<open>Aggregation at a structure's output\<close>
 
 lemma esres_none:
   assumes "args_agg args = None" and "esres ks cs args zs dzs"
@@ -91,6 +82,8 @@ proof -
   show ?thesis unfolding e d by (rule esresh_Cons[OF tw esresh_Nil])
 qed
 
+subsection \<open>Since structure and its buffer\<close>
+
 lemma esince_relI:
   "valid_mmasaux args cur aux auxlist \<Longrightarrow> esxaux' kR cR cL args cur daux auxlist \<Longrightarrow>
    cur \<le> tw \<Longrightarrow>
@@ -114,13 +107,6 @@ lemma esince_relD_buf:
      dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (fst (snd buf)),
              fst (snd (snd buf)), snd (snd (snd buf)))"
   by (cases buf) (auto elim!: esince_relE)
-
-text \<open>Widening the bound is harmless, which is what the node needs when a new batch of
-  timestamps arrives.\<close>
-
-text \<open>A fresh batch of operand tables and timestamps enters the buffer at both representations at
-  once.  The batch's timestamps are all at or after the old bound, and the buffer's are all at or
-  before it, so the concatenation stays sorted and the new bound is the batch's last timestamp.\<close>
 
 lemma esince_rel_add:
   assumes r: "esince_rel kR cR kL cL args tw aux daux buf dbuf"
@@ -146,6 +132,8 @@ proof (cases buf)
       lu lx lv ly
     by simp
 qed
+
+subsection \<open>Until structure and its buffer\<close>
 
 lemma euaux_rel_step:
   assumes v: "euaux_rel kR cR kL cL args u aux daux"
@@ -207,12 +195,6 @@ proof -
   qed
   show ?thesis using w d tr unfolding euaux_rel_def esresh_def by blast
 qed
-
-text \<open>
-  One firing of the Until node: the buffer traversal steps the two structures in lockstep, and
-  then one evaluation at the timestamp the traversal reports yields the reordering of what the
-  kernel's one yields.
-\<close>
 
 lemma until_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -293,13 +275,7 @@ proof -
   then show ?thesis using ev dn dns dbf bfs by simp
 qed
 
-subsection \<open>The release structure at the ascending frame\<close>
-
-text \<open>
-  The release node steps its structure through the buffer like the Until node, with the
-  timestamp-indexed relation, and reads it with @{const eraux_eval}, which pops the same entries
-  as @{const eval_until} pops from the list the structure stands for.
-\<close>
+subsection \<open>Release structure\<close>
 
 lemma release_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -401,6 +377,8 @@ proof -
   then show ?thesis using dz dn dns dbf lb1 lb2 bfs by simp
 qed
 
+subsection \<open>Trigger structure\<close>
+
 lemma etrigger_relI:
   "valid_mmtaux args cur aux auxlist \<Longrightarrow>
    (\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r) \<Longrightarrow>
@@ -422,11 +400,6 @@ lemma etrigger_relE:
     and "sorted nts" and "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
     and "dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))"
   using assms unfolding etrigger_rel_def by (elim exE conjE) (rule that)
-
-text \<open>One firing of the trigger structure: the buffer traversal that steps it once per pending
-  timestamp and collects what it answers.  The two runs stay in step by
-  @{thm [source] mbuf2T_take_rel}, and each individual step is @{thm [source] etw_update}
-  followed by @{thm [source] etw_result}.\<close>
 
 lemma etrigger_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -562,6 +535,8 @@ proof -
   then show ?thesis using dz dn1 bfs dbf1 by simp
 qed
 
+subsection \<open>Fused And-Trigger\<close>
+
 lemma join_unit_table:
   "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join cs R True [] unit_table = R"
   "distinct cs \<Longrightarrow> table cs R \<Longrightarrow> join [] unit_table True cs R = R"
@@ -595,8 +570,8 @@ next
     by (simp add: cols_union_subset[OF sub] merge_cols_sub_left[OF eframeD(2)[OF fK] eframeD(2)[OF fR] sc])
 qed
 
-text \<open>The outer buffer's two sides are therefore related rather than mapped, so the traversal
-  that drains it needs a relational counterpart of @{thm [source] mbuf2_take_map}.\<close>
+text \<open>The outer buffer's sides are related rather than mapped, hence a relational counterpart of
+  @{thm [source] mbuf2_take_map}.\<close>
 
 lemma mbuf2_take_rel2:
   assumes eq: "\<And>a b db. a \<in> set xs \<Longrightarrow> Q b db \<Longrightarrow> g (h a) db = m (f a b)"
@@ -681,10 +656,6 @@ lemma tok_weak:
   "tok cR cL args \<Longrightarrow> eframe kR cR \<Longrightarrow> eframe kL cL \<Longrightarrow>
      mem (args_ivl args) 0 \<or> (args_pos args \<and> set kL = set kR)"
   by (auto simp: tok_def eframe_def)
-
-text \<open>One firing of the fused node's trigger structure.  It differs from the standalone node's
-  only in what each step appends: the kernel keeps the read's column list beside its table, and
-  the executable side keeps the empty window as @{term None}.\<close>
 
 lemma eandtrigger_step_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -841,8 +812,7 @@ proof -
   then show ?thesis using dz dn1 bfs dbf1 by simp
 qed
 
-text \<open>The executable tables are read at the frozen predicate's variables through their own
-  columns: reading a tuple's restriction there is reading the tuple.\<close>
+subsection \<open>Frozen rows and frames\<close>
 
 lemma val_restrict:
   assumes "eframe ks cs"
@@ -873,12 +843,10 @@ lemma etabc_frz_cmb:
   shows "fo_cmb (frz_kops m cs) (etabc ks cs yS) (etabc ks cs yE) \<alpha> = etabc ks cs (fo_cmb (frz_kops m ks) yS yE \<alpha>)"
   by (auto simp: frz_kops_def etabc_def val_restrict[OF assms])
 
-text \<open>The fact the relation is designed to hand out at every node.\<close>
-
 lemma esim_dframe: "esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> eframe ks cs"
   by (erule esim.cases) (auto simp: eframe_def)
 
-section \<open>The simulation\<close>
+subsection \<open>Buffers of reordered tables\<close>
 
 lemma ebuf2_add:
   assumes b: "ebuf2 k1 c1 k2 c2 buf dbuf"
@@ -905,8 +873,6 @@ proof -
     using mbuf2_take_sub[of f b1 b2 zs d1 d2] t1 buf buf' by auto
   ultimately show ?thesis using d l1 l2 buf' by (auto simp: ebuf2_def list_all_iff)
 qed
-
-subsection \<open>The multi-way buffer of reordered tables\<close>
 
 lemma map2_apply_etabcs:
   "length kss = length as \<Longrightarrow> length css = length as \<Longrightarrow>
@@ -993,9 +959,8 @@ proof -
   then show ?thesis using e2 r by auto
 qed
 
-text \<open>The timestamped take, which the two match nodes use, keeps the buffers related in the same
-  way; the accumulator is a parameter here because the past node threads a pair of the reported
-  tables and the structure, and the future node the structure alone.\<close>
+text \<open>The accumulator is a parameter: the past-match node threads a pair of the reported tables and
+  the structure, the future-match node the structure alone.\<close>
 
 lemma ebufn_nt_take:
   assumes b: "ebufn kss css buf dbuf"
@@ -1053,11 +1018,7 @@ proof -
   then show ?thesis using e2 r by auto
 qed
 
-subsection \<open>The queues the nodes keep\<close>
-
-text \<open>A node keeps its buffers in queues, and the relation is stated on the lists they represent.
-  Each queue operation commutes with the representation, so a step of a queue is a step of the
-  list it represents.\<close>
+subsection \<open>Queues of the nodes\<close>
 
 lemma ebuf2_estep:
   assumes b: "ebuf2 k1 c1 k2 c2 buf (rbuf2 dbuf)"
@@ -1186,12 +1147,6 @@ proof -
   show ?thesis using e l1 l2 l3 by (auto intro!: nth_equalityI)
 qed
 
-text \<open>
-  The operand block shared by the multi-operand nodes: given the induction hypotheses for the
-  operands, their executable steps report the reordered tables, stay related, and the buffer
-  stays related after adding their results.
-\<close>
-
 lemma eeval_operands:
   assumes la: "\<forall>i < length L. esim n (kss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
       (\<forall>j ts. (\<forall>t \<in> set ts. tw \<le> t) \<longrightarrow> (\<forall>db xs \<phi>'.
@@ -1234,13 +1189,7 @@ proof -
     unfolding dl by (rule ebufn_eadd[OF bf _ tabs]) (use l2 in simp)
 qed
 
-subsection \<open>One firing of the Since structure\<close>
-
-text \<open>
-  One firing of @{const meval_since} on the executable side reports the same windows as one firing on
-  the kernel's, and the relation is preserved.  The recursion is driven by the buffer alone, so
-  the two sides step in lockstep; the induction is over the kernel's own recursion.
-\<close>
+subsection \<open>Firing of the Since structure\<close>
 
 lemma eval_since_rel:
   fixes kR cR kL cL :: cols and args :: args
@@ -1401,37 +1350,16 @@ next
 qed (all \<open>frule esince_relD_buf, simp add: rev_map,
        (intro conjI)?, (rule esresh_rev'; assumption)?\<close>)
 
-text \<open>
-  The simulation itself.  Every case is one theorem of @{theory Monitor_Exec.Exec_Tables}
-  applied pointwise to the operand's output list, with @{thm [source] kgood_tables} supplying
-  the operand well-formedness: the operands' calls are good when the node's is.
-\<close>
+subsection \<open>Let and recursive let\<close>
 
-text \<open>
-  The induction is over the derivation of the simulation, which gives the statement for an
-  operand's own derivation.  A node that re-enters the evaluator on an operand's \<^emph>\<open>successor\<close>
-  state -- the freeze does -- needs it for a derivation that is not a sub-derivation, so the
-  statement carries a bound \<open>NN\<close> on the formula's size and an assumption \<open>Q\<close> giving
-  it below that bound.  \<open>esim_deval_bound\<close> closes the loop by induction on the
-  bound, and \<open>esim_deval\<close> instantiates it.
-\<close>
-
-text \<open>
-  A let-bound formula's tables are reordered by the kernel from the formula's columns to the
-  positional ones before they enter the database.  The executable formula's are already over the
-  positional columns, which are the ascending order of the same set, so the executable table
-  \<^emph>\<open>is\<close> the reordered one and the two databases are literally the same.\<close>
+text \<open>The kernel reorders a let-bound formula's tables to the positional columns, the ascending order
+  of its columns, so the executable tables are the reordered ones.\<close>
 
 lemma etabc_reorder_eq: "distinct ks \<Longrightarrow> table ks T \<Longrightarrow> etabc ks cs T = reorder cs ks T"
   unfolding reorder_def using etabc_same[of ks T] by (auto simp: etabc_def)
 
-text \<open>
-  The recursive let runs its bound formula against databases it builds itself, feeding the
-  previous round's output back under the bound predicate.  The two runs produce literally the
-  same lists, so their states stay in step round by round.  The guard that rejects a round in
-  which the formula's size changed never fires on either side, because neither evaluator changes
-  its formula's size.
-\<close>
+text \<open>The two runs of the rounds produce the same lists; the guard against a change of the formula's
+  size never fires, as neither evaluator changes it.\<close>
 
 lemma letpast_meval0_rel:
   assumes Q: "\<And>tw' \<chi>d \<chi> ts' db' zs' \<chi>'. size \<chi> < NN \<Longrightarrow> esim m kks [0..<m] tw' \<chi>d \<chi> \<Longrightarrow>
@@ -1513,8 +1441,7 @@ proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j
   qed
 qed
 
-text \<open>One firing of the multi-way join: the operands at their own columns, split into the
-  positive and the negative ones, as @{thm [source] gmulti_join_eq} takes them.\<close>
+subsection \<open>Multi-way join and negation\<close>
 
 lemma map2_zip_etabcs:
   "length K = length as \<Longrightarrow> length C = length as \<Longrightarrow>
@@ -1578,13 +1505,7 @@ lemma etabc_neg:
      = map (etabc [] []) (map (\<lambda>r. if r = empty_table then unit_table else empty_table) ys)"
   by (auto simp: etabc_def restrict_def unit_table_def empty_table_def)
 
-text \<open>One firing of a fused aggregating Since node.  The node reports the aggregated windows,
-  read through its guard; the kernel's node reports the windows, which its aggregation then
-  aggregates.\<close>
-
-text \<open>One firing of a Since node, whatever the post-processing of its window: the executable
-  node's results are the kernel's under the window's post-processing, and the relation carries
-  over to the successor states.\<close>
+subsection \<open>Since and Until nodes\<close>
 
 lemma esince_node_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -1622,8 +1543,6 @@ proof -
   then show ?thesis
     using that step nag2 by simp
 qed
-
-text \<open>One firing of an Until node, likewise.\<close>
 
 lemma euntil_node_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
@@ -1717,6 +1636,11 @@ proof -
   show ?thesis
     by (rule that[OF eu[unfolded agc] rel' nag2 uq])
 qed
+
+subsection \<open>Simulation theorem\<close>
+
+text \<open>The freeze re-enters the evaluator on an operand's successor state, which is no sub-derivation;
+  hence the bound \<open>NN\<close> on the formula's size and the assumption \<open>Q\<close> below it.\<close>
 
 theorem esim_deval_N:
   assumes Q: "\<And>n' ks' cs' tw' \<phi>d' \<chi> j' ts' db' xs' \<chi>'. size \<chi> < NN \<Longrightarrow> esim n' ks' cs' tw' \<phi>d' \<chi> \<Longrightarrow>
@@ -2040,14 +1964,12 @@ next
   have x: "xs = zs"
     and fe: "\<phi>' = mformula.MAnds ks (k0 # kss) nkss (map snd ?R) buf'"
     using m g0 by (simp_all add: Let_def del: mbufn_take.simps mmulti_join.simps)
-  \<comment> \<open>the operands, and their reordering\<close>
   have la0: "\<forall>i < length L. esim n (?ks' ! i) (?cs' ! i) tw (Ld ! i) (L ! i)" using la by blast
   have kgL: "\<forall>i < length L. kgood n (?ks' ! i) j ts db (L ! i)"
     using kgood_MAnds[OF kg] by simp
   have sz: "size_list size L \<le> NN" using EsAnds.prems(3) by simp
   note ops = eeval_operands[OF la l1 l2 l3 mts sz kgL bf]
   note dl0 = ops(1) and dl = ops(2) and dl2 = ops(3) and badd = ops(4)
-  \<comment> \<open>the join at each firing\<close>
   have fs: "\<forall>i < length ?cs'. eframe (?ks' ! i) (?cs' ! i)"
     using la0 l2 by (auto dest: esim_dframe)
   have step: "\<And>as :: event_data table list. length as = length ?cs' \<Longrightarrow>
@@ -2652,7 +2574,6 @@ next
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN" and sz3: "size \<rho> \<le> NN"
     by (rule order_trans[OF _ le], simp)+
   have szr: "size \<rho> < NN" by (rule order.strict_trans2[OF _ le]) simp
-  \<comment> \<open>the bound formula: its tables, reordered to the positional columns, are its executable ones\<close>
   obtain as0 \<phi>2 where e1: "meval j m ts db \<phi> = (as0, \<phi>2)" by (cases "meval j m ts db \<phi>")
   let ?as = "map (reorder [0..<m] kks) as0"
   have fk: "eframe kks [0..<m]" by (rule esim_dframe[OF sim1])
@@ -2663,7 +2584,6 @@ next
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (?as, \<phi>d2)"
     and s1: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2"
     using IH1[OF mts e1 sz1 kg1] unfolding dt by blast
-  \<comment> \<open>the body and the replay base, against the database in which the bound predicate is empty\<close>
   obtain zs0 \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) [] db) \<psi> = (zs0, \<psi>2)"
     by (cases "meval j n ts (Mapping.update (p, m) [] db) \<psi>")
   obtain \<psi>d2 where d2: "eeval j ts (Mapping.update (p, m) [] db) \<psi>d
@@ -2676,7 +2596,6 @@ next
         = (map (etabc ks cs) rs, \<rho>d2)"
     and s4: "esim n ks cs (enext tw ts) \<rho>d2 \<rho>2"
     using IH3[OF mts e4 sz3 kg3] by blast
-  \<comment> \<open>the frozen tuples the two runs are handed are the same list\<close>
   let ?zout = "drop (jfrz - jpsi0) zs0"
   let ?as1 = "drop (jfrz - jphi + length ?zout) (\<alpha>s @ ?as)"
   let ?F = "frz_fill ng (\<alpha>s @ ?as)"
@@ -2687,7 +2606,6 @@ next
     using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<rho>] e4 by simp
   have sz\<rho>d2: "size \<rho>d2 = size \<rho>d"
     using size_snd_eeval[of j ts "Mapping.update (p, m) [] db" \<rho>d] d4 by simp
-  \<comment> \<open>the copies and the window's moves: the two runs evaluate related states on the same tables\<close>
   define R where "R st dst \<longleftrightarrow> esim n ks cs (enext tw ts) dst st \<and> size st = size \<rho> \<and> size dst = size \<rho>d"
     for st dst
   have agree: "fst (eeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>d) =
@@ -2713,7 +2631,6 @@ next
     ultimately show ?thesis
       using du eu sdu by (simp add: R_def enext_def)
   qed
-  \<comment> \<open>the live copy, fed the new time points\<close>
   let ?dbL = "Mapping.update (p, m) (replicate (length ts) (hd ?as1)) db"
   define lrk where "lrk = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
     if ?zout = [] \<and> ?as1 \<noteq> [] then Some (g, meval j n ts ?dbL \<rho>L) else None)"
@@ -2751,7 +2668,6 @@ next
     then show ?thesis
       by (auto simp: lrk_def lrd_def split: option.splits)
   qed
-  \<comment> \<open>the two live copies of the separable mode, fed the new time points\<close>
   define fdk where "fdk = (case sx of FSSep L _ _ _ _ _ _ _ \<Rightarrow>
     Some (meval j n ts (Mapping.update (p, m) (replicate (length ts) L) db) \<rho>S,
       meval j n ts (Mapping.update (p, m) (replicate (length ts) {}) db) \<rho>E)
@@ -2789,7 +2705,6 @@ next
     ultimately show ?thesis
       using FSSep eS eE dS dE sS sE by (simp add: fdk_def fdd_def R_def)
   qed (simp_all add: fdk_def fdd_def)
-  \<comment> \<open>the step: the two runs evaluate related states on the same tables\<close>
   define Rs where "Rs (st :: (mmasaux, muaux_dq, event_data mmtaux) mformula) (dst :: eformula) \<longleftrightarrow>
     size st = size \<rho> \<and> size dst = size \<rho>d" for st dst
   let ?B = "frz_tabs ?A sx"
@@ -2815,7 +2730,6 @@ next
       (\<forall>L nL pX buf rg bo tk Lr. sx3 = FSSep L nL pX buf rg bo tk Lr \<longrightarrow> R \<rho>S3 \<rho>Sd3 \<and> R \<rho>E3 \<rho>Ed3)"
   proof (rule frz_step_rel_inv[where K = "frz_kinv n ks j (p, m) d ?dbe ?A ?B" and A = ?A and B = ?B and Rs = Rs,
         OF _ _ _ _ _ ops _ _ _ subA _ st0 _ _ _ _ _ lrel fdrel e3 d3])
-    \<comment> \<open>the window's move\<close>
     fix s s' i
     assume st: "frz_st_rel R (etabc ks cs) s s'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A ?B s"
     obtain \<rho>' w' pR' tq' rb' where s: "s = (\<rho>', w', pR', tq', rb')"
@@ -2840,7 +2754,6 @@ next
       using frz_kinv_adv[OF K Fa, of i] s s' e e' ag sz
       by (auto simp: frz_adv_st_def Let_def drop_map[symmetric])
   next
-    \<comment> \<open>a copy of the replay mode\<close>
     fix \<rho>' w' pR' tq' rb' \<rho>d' X i
     assume R: "R \<rho>' \<rho>d'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A ?B (\<rho>', w', pR', tq', rb')" and X: "X \<in> ?A"
     show "fst (eeval j [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) X) ?dbe) \<rho>d') =
@@ -2849,7 +2762,6 @@ next
         (snd (eeval j [] (Mapping.update (p, m) (replicate (frz_cut po w' i j) X) ?dbe) \<rho>d'))"
       using agree[OF R frz_kinv_call[OF K X frz_cut_le]] by simp
   next
-    \<comment> \<open>a replay of the separable mode\<close>
     fix \<rho>' w' pR' tq' rb' \<rho>d' X
     assume R: "R \<rho>' \<rho>d'" and K: "frz_kinv n ks j (p, m) d ?dbe ?A ?B (\<rho>', w', pR', tq', rb')" and X: "X \<in> ?B"
     show "fst (eeval j [] (Mapping.update (p, m) (replicate (j - w') X) ?dbe) \<rho>d') =
@@ -2885,7 +2797,6 @@ next
     "frz_keep_lv ?lvk \<rho>L \<noteq> None \<longrightarrow> esim n ks cs (enext tw ts) (frz_keep_st ?lvd \<rho>Ld) (frz_keep_st ?lvk \<rho>L)"
     using frel szL szLd
     by (cases po; cases lvk; cases lvd; auto simp: frz_keep_lv_def frz_keep_st_def R_def)+
-  \<comment> \<open>the two runs agree, component by component\<close>
   let ?jfrz1 = "jfrz + length ?zout + length ys"
   have stk: "(let zs0_out = drop (jfrz - jpsi0) zs0;
        xsr = map (reorder [0..<m] kks) as0;
@@ -2959,7 +2870,6 @@ next
     and mts = EsLetPast.prems(1) and mv = EsLetPast.prems(2) and le = EsLetPast.prems(3)
   have sz2: "size \<psi> \<le> NN" by (rule order_trans[OF _ le]) simp
   have szs: "size \<phi> < NN" by (rule order.strict_trans2[OF _ le]) simp
-  \<comment> \<open>the rounds of the bound formula\<close>
   obtain as i2 buf2 \<phi>2 where e1: "letpast_meval m kks j i [] (list_of_option buf) (p, m) ts db \<phi>
       = (as, i2, buf2, \<phi>2)"
     by (cases "letpast_meval m kks j i [] (list_of_option buf) (p, m) ts db \<phi>") auto
@@ -2973,7 +2883,6 @@ next
   obtain \<phi>d2 where d1: "letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>d
         = (as, i2, buf2, \<phi>d2)"
     and s1: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2" using lr by blast
-  \<comment> \<open>the body, against the database in which the bound predicate holds the rounds' output\<close>
   have kg2: "kgood n ks j ts (Mapping.update (p, m) as db) \<psi>"
     by (rule kgood_MLetPast_body[OF kg e1])
   obtain bs \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) as db) \<psi> = (bs, \<psi>2)"
@@ -3240,7 +3149,6 @@ next
     by (cases "mbufnt_take ?F ([], aux) (mbufn_add (map fst ?R) buf) 0 (nts @ ts)") auto
   have x: "xs = zs" and fe: "\<phi>' = mformula.MMatchP I ks dss mr mrs (map snd ?R) buf2 nts2 aux2"
     using m g0 by (simp_all add: Let_def map_split_alt del: mbufnt_take.simps)
-  \<comment> \<open>the operands, and their reordering\<close>
   have kgL: "\<forall>i < length L. kgood n (dss ! i) j ts db (L ! i)"
     using kgood_MMatchP[OF kg] by blast
   have lcL: "length css = length L" using lcs lL by simp
@@ -3248,7 +3156,6 @@ next
   have sz: "size_list size L \<le> NN" using EsMatchP.prems(3) by simp
   note ops = eeval_operands[OF la lLd lcL ldL mts sz kgL bf]
   note dl0 = ops(1) and dl = ops(2) and dl2 = ops(3) and badd = ops(4)
-  \<comment> \<open>the masks the window probes with\<close>
   have msk: "map emb_msk pls = map (emsk cs) css"
     unfolding pe map_map o_def
   proof (rule map_cong[OF refl])
@@ -3263,7 +3170,6 @@ next
         by simp
     qed
   qed
-  \<comment> \<open>one firing of the window\<close>
   define Rel where "Rel = (\<lambda>(zs :: event_data table list, ax) (dzs :: event_data table list, dax).
       dzs = map (etabc ks cs) zs \<and> emrd_rel ks cs ax dax)"
   have step: "Rel (?F as t u) (?G (etabcs dss css as) t u')"
@@ -3345,7 +3251,6 @@ next
     by (cases "eval_matchF I mr nt2 aux2") auto
   have x: "xs = zs" and fe: "\<phi>' = mformula.MMatchF I ks dss mr mrs (map snd ?R) buf2 nts2 nt2 aux3"
     using m g0 g1 by (simp_all add: Let_def map_split_alt del: mbufnt_take.simps)
-  \<comment> \<open>the operands, and their reordering\<close>
   have kgL: "\<forall>i < length L. kgood n (dss ! i) j ts db (L ! i)"
     using kgood_MMatchF[OF kg] by blast
   have lcL: "length css = length L" using lcs lL by simp
@@ -3353,7 +3258,6 @@ next
   have sz: "size_list size L \<le> NN" using EsMatchF.prems(3) by simp
   note ops = eeval_operands[OF la lLd lcL ldL mts sz kgL bf]
   note dl0 = ops(1) and dl = ops(2) and dl2 = ops(3) and badd = ops(4)
-  \<comment> \<open>one firing of the window\<close>
   interpret ematchF_frame ks cs \<psi>s css mrs
   proof
     show "eframe ks cs" by (rule wf)
@@ -3420,9 +3324,6 @@ next
         (use lL lLd dl2 dl0 bf2 ub in auto)
   qed
 qed
-
-text \<open>Induction on the bound discharges the assumption the theorem above carries, and
-  instantiating it at the formula's own size recovers the statement without it.\<close>
 
 lemma esim_deval_bound:
   "size \<phi> \<le> NN \<Longrightarrow> esim n ks cs tw \<phi>d \<phi> \<Longrightarrow>

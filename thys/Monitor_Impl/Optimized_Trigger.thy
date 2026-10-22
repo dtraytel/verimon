@@ -4,9 +4,10 @@ theory Optimized_Trigger
 begin
 (*>*)
 
-subsection \<open>Optimized data structure for Trigger\<close>
+section \<open>Optimized data structure for Trigger\<close>
 
-(* simply stores all tables for \<phi> and \<psi> in [0, b] *)
+subsection \<open>Invariant\<close>
+
 type_synonym 'a mtaux = "(ts \<times> 'a table \<times> 'a table) list"
 
 definition time :: "(ts \<times> 'a table \<times> 'a table) \<Rightarrow> ts" where
@@ -120,6 +121,8 @@ definition valid_nmtaux :: "args \<Rightarrow> ts \<Rightarrow> 'a mmtaux \<Righ
     ) \<and>
     tuple_in_once_keys = Mapping.keys tuple_in_once)
   "
+
+subsection \<open>Operations\<close>
 
 definition init_mmtaux :: "args \<Rightarrow> 'a mmtaux" where
   "init_mmtaux args = (0, 0, 0, 0, empty_queue, empty_queue, Mapping.empty, {}, Mapping.empty, {}, {})"
@@ -265,11 +268,10 @@ definition update_nmtaux :: "args \<Rightarrow> ts \<Rightarrow> 'a table \<Righ
       )
   )))"
 
-subsection \<open>Left-hand tables over the right-hand columns\<close>
+subsection \<open>Reordered left-hand tables\<close>
 
-text \<open>If the interval does not contain 0, the monitor only guarantees that the two column
-  lists are permutations of each other, while the structure above requires them to be equal.
-  In that case, the structure stores the left-hand tables reordered to the right-hand columns.\<close>
+text \<open>If 0 is not in the interval, the column lists are only permutations of each other; the
+  left-hand tables are then stored reordered to the right-hand columns.\<close>
 
 definition trigger_args :: "args \<Rightarrow> args" where
   "trigger_args args = (if mem (args_ivl args) 0 then args else args\<lparr>args_L := args_R args\<rparr>)"

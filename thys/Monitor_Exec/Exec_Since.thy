@@ -4,7 +4,9 @@ theory Exec_Since
 begin
 (*>*)
 
+section \<open>Executable Since structure\<close>
 
+subsection \<open>Index operations\<close>
 
 definition eidx_union :: "('b list, 'b list set) mapping \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow>
     ('b list, 'b list set) mapping" where
@@ -49,26 +51,15 @@ proof -
   then show ?thesis by (simp add: mapping_eqI)
 qed
 
-text \<open>
-  The mask and the arguments describe the same frame: both column lists are ascending, the left
-  one's columns are among the right one's, and the mask marks them.  This is what @{const eargs}
-  sets up.
-\<close>
+subsection \<open>State and invariant\<close>
 
 definition emsk_args :: "args \<Rightarrow> bool list \<Rightarrow> bool" where
   "emsk_args args msk \<longleftrightarrow> sorted_wrt (<) (args_R args) \<and> sorted_wrt (<) (args_L args) \<and>
      set (args_L args) \<subseteq> set (args_R args) \<and> msk = mrg_left_key (mrg_plan (args_R args) (args_L args))"
 
-subsection \<open>The executable Since structure\<close>
-
 text \<open>
-  The state is the verified one with the two indexed tables replaced by @{const eidx} indices,
-  and the mask carried along.  Everything else -- the two queues, the window's table, and the two
-  mappings that carry the timestamps -- is kept verbatim.
-
-  The verified state a executable state stands for is recovered by \<open>emsaux_of\<close> below.  It is a
-  specification device only: it rebuilds the two indexed tables from the keys of the mappings,
-  which the generated code never does.
+  The verified state with its two indexed tables replaced by @{const eidx} indices; @{text emsaux_of}
+  recovers the verified state, for the specification only.
 \<close>
 
 type_synonym 'a emsaux = "ts \<times> ts \<times> bool list \<times>
@@ -76,11 +67,8 @@ type_synonym 'a emsaux = "ts \<times> ts \<times> bool list \<times>
   ('a tuple, 'a table) mapping \<times> ('a tuple, ts) mapping \<times>
   ('a tuple, 'a table) mapping \<times> ('a tuple, ts) mapping"
 
-text \<open>
-  The index is consulted only by the general branch of the join.  Where the verified structure
-  falls back on the plain key set -- no join columns, or all columns join columns -- the executable
-  structure keeps no index at all.
-\<close>
+text \<open>Only the general branch of the join reads the index, so none is kept without join columns
+  or with only join columns.\<close>
 
 definition eidx_live :: "args \<Rightarrow> bool" where
   "eidx_live args \<longleftrightarrow> args_L args \<noteq> [] \<and> args_L args \<noteq> args_R args"
@@ -112,14 +100,7 @@ definition valid_emsaux :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Righ
   "valid_emsaux args msk cur daux ys \<longleftrightarrow>
      valid_mmsaux args cur (emsaux_of args daux) ys \<and> emsaux_inv args msk daux"
 
-subsection \<open>The operations that do not probe\<close>
-
-text \<open>
-  All but the join leave the probe alone, so each is the verified operation with the index
-  maintenance put in place of the indexed table's.  The window's entry and exit are the only
-  places where the index changes without the join: a table enters or leaves in one piece, so the
-  index is combined with, or reduced by, the index of that table.
-\<close>
+subsection \<open>Operations without probing\<close>
 
 definition einit_msaux :: "args \<Rightarrow> bool list \<Rightarrow> 'a emsaux" where
   "einit_msaux args msk = (0, 0, msk, empty_queue, empty_queue, {},
@@ -174,17 +155,7 @@ fun eresult_msaux :: "args \<Rightarrow> 'a emsaux \<Rightarrow> 'a table" where
   "eresult_msaux args (nt, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) = table_in"
 
-subsection \<open>The join\<close>
-
-text \<open>
-  The three branches are the verified ones, read at the ascending frame.  Without join columns the mask is
-  all-false, the executable projection of every stored tuple is the empty tuple, and the whole window
-  stands or falls with @{term \<open>[] \<in> Y\<close>}.  When every column is a join column the mask is
-  all-true, the executable projection is the identity, and the probe table is compared with the stored
-  tables directly.  Otherwise the index decides: a bucket's key is what the probe table holds, so
-  the surviving tuples are the union of the surviving buckets, and the index of the survivors is
-  the restriction of the index.
-\<close>
+subsection \<open>Join\<close>
 
 fun ejoin_msaux :: "args \<Rightarrow> 'a table \<Rightarrow> 'a emsaux \<Rightarrow> 'a emsaux" where
   "ejoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
@@ -221,20 +192,11 @@ fun egc_join_msaux :: "args \<Rightarrow> 'a table \<Rightarrow> 'a emsaux \<Rig
      else ejoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
        idx_since, tuple_since))"
 
-subsection \<open>A window that starts at the current time point\<close>
+subsection \<open>Intervals containing zero\<close>
 
 text \<open>
-  The two mappings that record since when a tuple has been seen, @{text tuple_since} and its
-  index @{text idx_since}, are read at one place only: when a time point moves from
-  @{text data_prev}, the part of the window not yet old enough to count, into @{text data_in}.
-  When the interval contains zero no time point is ever too young, the insertion puts every
-  table into @{text data_in} directly, and @{text data_prev} stays empty -- so the two mappings,
-  and the garbage collection that prunes them, are bookkeeping that nothing reads.  The
-  operations below skip them in that case.
-
-  Their validity is the verified one for \<^emph>\<open>some\<close> choice of the two mappings and of the time of
-  the last collection, @{text eset_since}; the operations that touch them are the only ones
-  that change, and on the fields they do not touch they agree with the verified ones.
+  Then @{text data_prev} stays empty and nothing reads @{text tuple_since} or @{text idx_since}, so
+  they are not maintained; validity holds for some choice of them.
 \<close>
 
 fun eset_since :: "ts \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a emsaux \<Rightarrow>
@@ -266,11 +228,7 @@ definition valid_emsaux_lz :: "args \<Rightarrow> bool list \<Rightarrow> ts \<R
        (\<exists>gc is ts. valid_emsaux args msk cur (eset_since gc is ts daux) ys)
      else valid_emsaux args msk cur daux ys)"
 
-section \<open>The executable Since structure over ascending columns\<close>
-
-text \<open>
-  The executable structure is valid for the reordering of the kernel's auxiliary list.
-\<close>
+subsection \<open>Validity over ascending columns\<close>
 
 definition emsk :: "cols \<Rightarrow> cols \<Rightarrow> bool list" where
   "emsk cs_R cs_L = mrg_left_key (mrg_plan cs_R cs_L)"

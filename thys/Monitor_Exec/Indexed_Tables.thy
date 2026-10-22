@@ -8,17 +8,8 @@ begin
 
 section \<open>Tables with indices\<close>
 
-text \<open>
-  An indexed table is a table together with any number of indices on it, each clustering the
-  table by its projection at a column mask (@{const eidx}).  The table is what the kernel sees; the
-  indices are a cache that a consumer of the table may use instead of building its own.  Which
-  masks a table carries is its producer's business: a table built at one time point carries
-  none, and a structure that keeps a table across time points may keep indices with it and update
-  them with the tuples that enter and leave.  The type's invariant is that every index is the
-  clustering of the table at its mask, so every operation below is an equality with the
-  operation on the underlying tables: the indices change the cost of an evaluation, never its
-  result, and no proof about the evaluation has to carry an invariant of its indices.
-\<close>
+text \<open>A table with a cache of indices, each its clustering at a column mask (@{const eidx}).
+  By the invariant every operation equals the one on the table: indices change cost, not results.\<close>
 
 type_synonym 'b eindex = "('b list, 'b list set) mapping"
 
@@ -44,7 +35,7 @@ lemma iidxs_eidx: "Mapping.lookup (iidxs A) msk = Some m \<Longrightarrow> m = e
 lemma Rep_itab_inverse': "iinv TI \<Longrightarrow> Rep_itab (Abs_itab TI) = TI"
   by (simp add: Abs_itab_inverse)
 
-subsection \<open>A table without indices, and adding indices\<close>
+subsection \<open>Construction and index creation\<close>
 
 definition itab :: "'b list set \<Rightarrow> 'b itab" where
   "itab T = Abs_itab (T, Mapping.empty)"
@@ -84,11 +75,7 @@ lemma Rep_itab_iensure[code abstract]:
 lemma iset_iensure[simp]: "iset (iensure msks A) = iset A"
   by (simp add: iset_def Rep_itab_iensure)
 
-subsection \<open>Updating a table and its indices\<close>
-
-text \<open>Adding the tuples @{term X} and then removing the tuples @{term D}: every index is updated
-  by the two tables, which the code equations of @{theory Monitor_Exec.Efficient_Index} turn into
-  a visit of the buckets of the moving tuples only.\<close>
+subsection \<open>Updates\<close>
 
 definition iupd :: "'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
   "iupd X D A = Abs_itab ((iset A \<union> X) - D,
@@ -102,8 +89,6 @@ lemma Rep_itab_iupd[code abstract]: "Rep_itab (iupd X D A) = ((iset A \<union> X
 
 lemma iset_iupd[simp]: "iset (iupd X D A) = (iset A \<union> X) - D"
   by (simp add: iset_def Rep_itab_iupd)
-
-text \<open>Inserting and removing one tuple visits one bucket of each index.\<close>
 
 lemma eidx_insert: "eidx msk (Set.insert x T) = eidx_add1 msk x (eidx msk T)"
   by (rule mapping_eqI) (auto simp: lookup_eidx lookup_eidx_add1 ebucket_def image_iff)
@@ -151,8 +136,7 @@ lemma Rep_itab_idel[code abstract]:
 lemma iset_idel[simp]: "iset (idel x A) = Set.remove x (iset A)"
   by (simp add: iset_def Rep_itab_idel)
 
-text \<open>A table without indices, which is most tables, is updated without visiting its (empty)
-  map of indices.\<close>
+text \<open>The code skips the empty map of indices of an unindexed table.\<close>
 
 lemma map_values_no_keys: "Mapping.keys m = {} \<Longrightarrow> Mapping.map_values f m = m"
   by (rule mapping_eqI) (auto simp: Mapping.lookup_map_values Mapping.keys_dom_lookup split: option.splits)
@@ -166,8 +150,6 @@ lemma Rep_itab_idel_code[code abstract]:
   "Rep_itab (idel x A) = (Set.remove x (iset A), if Mapping.keys (iidxs A) = {} then iidxs A
      else Mapping.map_values (\<lambda>msk m. eidx_del1 msk x m) (iidxs A))"
   by (simp add: Rep_itab_idel map_values_no_keys)
-
-text \<open>Adding and removing a set of tuples at once updates each index by the tuples' index.\<close>
 
 definition iadd :: "'b list set \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
   "iadd X A = Abs_itab (iset A \<union> X, Mapping.map_values (\<lambda>msk m. eidx_union m (eidx msk X)) (iidxs A))"
@@ -203,8 +185,6 @@ lemma Rep_itab_isub_code[code abstract]: "Rep_itab (isub D A) =
 lemma iset_isub[simp]: "iset (isub D A) = iset A - D"
   by (simp add: iset_def Rep_itab_isub)
 
-text \<open>An indexed table is determined by its set and the masks of its indices.\<close>
-
 lemma itab_eqI:
   assumes "iset A = iset B" "Mapping.keys (iidxs A) = Mapping.keys (iidxs B)"
   shows "A = B"
@@ -237,9 +217,8 @@ lemma isub_isub: "isub D2 (isub D1 A) = isub (D1 \<union> D2) A"
 
 lemma isub_empty[simp]: "isub {} A = A"
   by (rule itab_eqI) auto
-subsection \<open>Union\<close>
 
-text \<open>The union keeps the left operand's indices, extended by the right operand's tuples.\<close>
+subsection \<open>Union\<close>
 
 definition iunion :: "'b itab \<Rightarrow> 'b itab \<Rightarrow> 'b itab" where
   "iunion A B = Abs_itab (iset A \<union> iset B,
@@ -254,12 +233,7 @@ lemma Rep_itab_iunion[code abstract]: "Rep_itab (iunion A B) = (iset A \<union> 
 lemma iset_iunion[simp]: "iset (iunion A B) = iset A \<union> iset B"
   by (simp add: iset_def Rep_itab_iunion)
 
-subsection \<open>Joins that use the operands' indices\<close>
-
-text \<open>
-  The probe of the general join by an index on the other operand's shared columns: every tuple
-  of the probing side is merged with the bucket at its key.
-\<close>
+subsection \<open>Joins through indices\<close>
 
 definition iprobe :: "mrg list \<Rightarrow> bool list \<Rightarrow> 'b eindex \<Rightarrow> 'b :: ccompare list set \<Rightarrow>
     'b list set" where
@@ -269,16 +243,8 @@ definition iprobe_l :: "mrg list \<Rightarrow> bool list \<Rightarrow> 'b eindex
     'b list set" where
   "iprobe_l p rk m B = fold (\<lambda>b acc. acc \<union> (\<lambda>a. emerge p a b) ` ebucket m (eproj rk b)) (csl B) {}"
 
-text \<open>
-  The join of two indexed tables by a plan: an operand that carries an index at the mask the plan
-  probes is probed through it, and otherwise the join is that of the underlying tables.  An index
-  helps
-  \<^item> for @{const EJGen}: the operand indexed by its shared columns is probed by the other one;
-  \<^item> for a positive @{const EJSup}: the right operand, whose columns include the left one's, is
-    restricted to the keys of the left operand, which visits only those keys instead of filtering
-    all of its tuples;
-  \<^item> for a positive @{const EJSub}: the same with the roles swapped.
-\<close>
+text \<open>An operand with an index at the mask the plan probes is probed through it; otherwise the
+  join is that of the underlying tables.\<close>
 
 fun ijoin0 :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> bool \<Rightarrow> 'b itab \<Rightarrow> 'b list set" where
   "ijoin0 (EJSub msk) A pos B = (case (pos, Mapping.lookup (iidxs A) msk) of

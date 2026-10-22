@@ -4,13 +4,12 @@ theory Good_Kernel_Calls
 begin
 (*>*)
 
-section \<open>The kernel's correctness for the concrete instance\<close>
+section \<open>Good kernel calls\<close>
 
-text \<open>
-  The interpretation @{text default_maux} precedes the kernel's correctness proof, so it does not
-  carry its facts, and a second interpretation with the same parameters would be subsumed by it.
-  We instantiate the facts we need with @{thm [source] default_maux.maux_axioms} instead.
-\<close>
+subsection \<open>Kernel facts for the concrete instance\<close>
+
+text \<open>The interpretation @{text default_maux} precedes the kernel's correctness proof and so lacks its
+  facts; they are instantiated with @{thm [source] default_maux.maux_axioms}.\<close>
 
 abbreviation "kwf_mformula \<equiv> maux.wf_mformula valid_mmasaux valid_muaux_dq length_muaux_dq
   (valid_mmtaux :: _ \<Rightarrow> _ \<Rightarrow> event_data mmtaux \<Rightarrow> _)"
@@ -47,17 +46,10 @@ lemmas kmaux_wf_frz_queue_drop = maux.wf_frz_queue_drop[OF default_maux.maux_axi
 lemmas kmaux_wf_frz_state_def = maux.wf_frz_state_def[OF default_maux.maux_axioms]
 lemmas kmaux_wf_frz_win_def = maux.wf_frz_win_def[OF default_maux.maux_axioms]
 
-section \<open>The calls the kernel's invariant covers\<close>
+subsection \<open>Good calls\<close>
 
-text \<open>
-  The executable evaluator's operations need their operand tables to be finite and well formed
-  over the node's columns.  The kernel's correctness theorem @{thm [source] kmaux_meval_correct}
-  provides exactly that for the tables a well-formed state yields on a database of the trace:
-  its tables are @{const qtable}s, which are finite.  A call of @{const meval} is \<^emph>\<open>good\<close> when it
-  is one of those -- a well-formed state of a well-typed formula, a database that agrees with the
-  trace and the environments, and the trace's time-stamps -- and the column list it is
-  simulated at is the formula's own.
-\<close>
+text \<open>A call of @{const meval} is good when it comes from a well-formed state of a well-typed formula
+  and from the trace; then its tables are finite tables over the formula's columns.\<close>
 
 definition kgood :: "nat \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool" where
@@ -78,9 +70,6 @@ lemma kgoodE:
     "S, E \<turnstile> \<psi>" "ks = Formula.fv_list \<psi>"
   using assms unfolding kgood_def by blast
 
-text \<open>A call on an operand is good when every well-formed, well-typed kernel formula the node can
-  stand for gives the operand one, in the same environments and on the same database.\<close>
-
 lemma kgood_sub:
   assumes "kgood n ks j ts db \<phi>"
     and "\<And>\<sigma> j0 P V R \<chi> S E. kwf_mformula \<sigma> j0 P V n R \<phi> \<chi> \<Longrightarrow> S, E \<turnstile> \<chi> \<Longrightarrow>
@@ -88,8 +77,6 @@ lemma kgood_sub:
       \<exists>R' E' \<psi>. kwf_mformula \<sigma> j0 P V n' R' \<phi>' \<psi> \<and> S, E' \<turnstile> \<psi> \<and> ks' = Formula.fv_list \<psi>"
   shows "kgood n' ks' j ts db \<phi>'"
   using assms(1) by (rule kgoodE) (use assms(2) in \<open>blast intro: kgoodI\<close>)
-
-text \<open>A good call's tables are finite tables over its columns.\<close>
 
 lemma kgood_tables:
   assumes g: "kgood n ks j ts db \<phi>" and e: "meval j n ts db \<phi> = (xs, \<phi>')"
@@ -115,10 +102,7 @@ lemma kgood_sorted: "kgood n ks j ts db \<phi> \<Longrightarrow> sorted ts"
   by (erule kgoodE) (auto simp: sorted_map intro: sorted_wrt_mono_rel[OF _ sorted_upt])
 
 
-subsection \<open>The operands of a good call are good\<close>
-
-text \<open>The operands are evaluated in the same environments and on the same database, except
-  under a binder; the column lists the node records for them are their formulas' own.\<close>
+subsection \<open>Operands of good calls\<close>
 
 lemma kgood_MAndRel:
   assumes "kgood n ks j ts db (MAndRel ks \<phi> conf)"
@@ -220,8 +204,6 @@ proof -
   then show ?thesis
     by (rule kgoodI[OF g wf\<phi> envs _ cols])
 qed
-
-text \<open>A temporal node with an aggregation on top is typed in the aggregation's environment.\<close>
 
 lemma wty_packagg_body:
   assumes "S, E \<turnstile> packagg args \<chi>"
@@ -361,9 +343,6 @@ proof -
 qed
 
 
-text \<open>A disjunction node also evaluates the rewriting of a conjunction with a release; in both
-  shapes its operands are those of a disjunction of well-typed formulas.\<close>
-
 lemma kgood_MOr:
   assumes "kgood n ks j ts db (MOr k1 \<phi> k2 \<psi> buf)"
   shows "kgood n k1 j ts db \<phi>" "kgood n k2 j ts db \<psi>"
@@ -497,11 +476,6 @@ proof -
     using i len by (intro kgoodI[OF g _ envs]) (simp_all add: dss)
 qed
 
-subsection \<open>Under a binder\<close>
-
-text \<open>The body of a let is evaluated on the database the bound formula's tables extend, reordered
-  to the positional columns -- which is what the kernel's own evaluation does.\<close>
-
 lemma kgood_MLet:
   assumes g0: "kgood n ks j ts db (MLet p m kks \<phi> \<psi>)"
   shows "kgood m kks j ts db \<phi>"
@@ -542,12 +516,12 @@ proof -
 qed
 
 
-subsection \<open>The freeze's copies\<close>
+subsection \<open>Freeze nodes\<close>
 
-text \<open>Two runs of the copy loop that evaluate related states on the same tables agree, as long as
-  an invariant @{term K} of the first run's state, which the window's moves preserve, is what the
-  copies need: the evaluation is only required to be related at the states the loop actually
-  reaches, not at every pair of related states.\<close>
+subsubsection \<open>Related runs of the copy loop\<close>
+
+text \<open>The runs need be related only at the states the loop reaches: those satisfying an invariant
+  @{term K} of the first run, which the window's moves preserve.\<close>
 
 lemma frz_loop_rel_inv:
   assumes adv: "\<And>s s' i. frz_st_rel R g s s' \<Longrightarrow> K s \<Longrightarrow>
@@ -681,17 +655,10 @@ next
   qed
 qed
 
-text \<open>The state of the replay base between the copies, read through the kernel's invariant: the
-  window starts at @{term w} and its time-stamps are those of the trace from there, and the base is
-  well formed for every valuation of the frozen predicate from @{term w} on.  The tables in
-  @{term A} are those of the frozen formula at some time point (or empty), which is what the copies
-  and the window's moves feed the base.\<close>
+subsubsection \<open>Related runs of the separable mode\<close>
 
-text \<open>The separable mode under the simulation.  The two runs replay the same tables, from related
-  states; the copies' verdicts are mapped like all others.  Its tables, the frozen ones and their
-  unions, are those of a set @{term B} closed under union, for which the replays are good calls.
-  The operations of the two runs agree on the frozen tables, and the combination of two rows
-  commutes with the map of the verdicts.\<close>
+text \<open>The separable mode's tables, the frozen ones and their unions, lie in a set @{term B} closed
+  under union, for which the replays are good calls.\<close>
 
 definition frz_ops_rel :: "('t \<Rightarrow> 't') \<Rightarrow> ('a, 't) frz_ops \<Rightarrow> ('a, 't') frz_ops \<Rightarrow> bool" where
   "frz_ops_rel g ops ops' \<longleftrightarrow> fo_un ops' = fo_un ops \<and> fo_fr ops' = fo_fr ops \<and> fo_cd ops' = fo_cd ops \<and>
@@ -941,12 +908,10 @@ next
     using A AB by (rule order_trans)
   have LpB: "frz_unions ops \<alpha>s ?Lr1 \<in> B"
     by (rule frz_unions_in[OF Bun Lr1B \<alpha>sB])
-  \<comment> \<open>the replay base, moved or not\<close>
   have s2: "frz_st_rel R g (if b then frz_adv_st sz ev pm dbe fl d j i s else s)
       (if b then frz_adv_st sz' ev' pm dbe' fl d j i s' else s') \<and>
     K (if b then frz_adv_st sz ev pm dbe fl d j i s else s)" for b
     using adv[OF st K] st K by simp
-  \<comment> \<open>the copies, rebuilt or fed\<close>
   have cpr: "rel_option (\<lambda>(\<rho>S, \<rho>E, pX, buf) (\<rho>S', \<rho>E', pX', buf'). R \<rho>S \<rho>S' \<and> R \<rho>E \<rho>E' \<and> pX' = pX \<and>
       buf' = map (map_prod g g) buf)
     (frz_copies sz ev (fo_emp ops) pm dbe j i Ln \<sigma>S \<sigma>E s2)
@@ -1088,12 +1053,14 @@ next
   qed
 qed
 
-text \<open>The tables of the separable evaluation: subsets of the union of the frozen tables and of the
-  tables its state holds.\<close>
+subsubsection \<open>Invariant of the replay base\<close>
 
 definition frz_tabs :: "event_data table set \<Rightarrow> (event_data list set, 't) frz_sep \<Rightarrow> event_data table set" where
   "frz_tabs A sx = {X. X \<subseteq> \<Union> A \<union>
     (case sx of FSOff \<Rightarrow> {} | FSStock _ _ _ Lm _ _ _ rs \<Rightarrow> Lm \<union> \<Union> (set rs) | FSSep L _ _ _ _ _ _ Lr \<Rightarrow> L \<union> Lr)}"
+
+text \<open>The replay base is well formed for every valuation of the frozen predicate from its window's
+  start on.\<close>
 
 definition frz_kinv :: "nat \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow> Formula.name \<times> nat \<Rightarrow> enat \<Rightarrow> database \<Rightarrow>
     event_data table set \<Rightarrow> event_data table set \<Rightarrow>
@@ -1146,8 +1113,6 @@ lemma frz_adv_le: "d \<noteq> \<infinity> \<longrightarrow> length tq = J - w \<
 lemma frz_cut_le: "frz_cut po w i J \<le> J - w"
   unfolding frz_cut_def by simp
 
-text \<open>A call the copy loop makes, from such a state and with one of those tables, is good.\<close>
-
 lemma frz_kinv_call:
   assumes inv: "frz_kinv n ks J pm d dbe A B (\<rho>', w', pR', tq', rb')" and X: "X \<in> A"
     and c: "c \<le> J - w'"
@@ -1181,8 +1146,6 @@ proof -
       (use envs' in simp_all)
 qed
 
-text \<open>So is a replay of the window with a table of the separable evaluation.\<close>
-
 lemma frz_kinv_call_B:
   assumes inv: "frz_kinv n ks J pm d dbe A B (\<rho>', w', pR', tq', rb')" and X: "X \<in> B"
     and c: "c \<le> J - w'"
@@ -1212,9 +1175,6 @@ proof -
     unfolding pm
     by (rule kgoodI[OF order_refl _ wf[OF frz_tab_sup[OF tX]] _ wty2 ks]) (use envs' in simp_all)
 qed
-
-text \<open>The window's move preserves the invariant: the base, fed the filling table for the time
-  points that leave the window, is well formed for every valuation from the window's new start on.\<close>
 
 lemma frz_kinv_adv:
   assumes inv: "frz_kinv n ks J pm d dbe A B s" and fl: "fl \<in> A"
@@ -1286,8 +1246,7 @@ proof -
 qed
 
 
-text \<open>What a good call of a freeze node provides: the facts of the kernel's invariant the four
-  kinds of calls below need.\<close>
+subsubsection \<open>Good calls of a freeze node\<close>
 
 lemma kgood_MFrzE:
   assumes "kgood n ks j ts db (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)"
@@ -1411,9 +1370,6 @@ proof (erule kgood_MFrzE)
   show "kgood n ks j ts (Mapping.update (p, m) [] db) \<rho>"
     by (rule kgoodI[OF g wf\<rho>[OF frz_sup_False, unfolded frz_ext_False] envs' wty2 ks])
 qed
-
-text \<open>The frozen tables a step replays: the queue of the kernel's state and the frozen formula's
-  new tables, each the frozen formula's value at its time point, from the first pending one on.\<close>
 
 lemma frz_queue_tables:
   assumes "maux.wf_frz_queue \<sigma> V m \<phi>1 ks Xs" and "X \<in> set Xs" and "{0..<m} \<subseteq> Formula.fv \<phi>1"
@@ -1557,8 +1513,6 @@ proof (rule kgood_MFrzE)
     by (rule frz_kinvI[OF fv(1) base wty1 wty2 fv(2) safe1 ks A B _ _ wf\<rho>2]) (use w g(1) tqs in auto)
 qed
 
-text \<open>The live copy, fed the new time points with the frozen table of the first pending one.\<close>
-
 lemma kgood_MFrz_live:
   assumes g0: "kgood n ks j ts db (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)"
     and e1: "meval j m ts db \<phi> = (as0, \<phi>2)" and lv: "lv = Some g"
@@ -1624,9 +1578,6 @@ proof (rule kgood_MFrzE)
 qed
 
 
-text \<open>The two live copies of the separable evaluation, fed the new time points with the table
-  @{term L} and with the empty table.\<close>
-
 lemma kgood_MFrz_sep:
   assumes g0: "kgood n ks j ts db (MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L sx cS \<rho>S \<rho>E)"
     and sx: "sx = FSSep L nL pX buf rg bo tk Lr"
@@ -1686,7 +1637,7 @@ proof (rule kgood_MFrzE)
 qed
 
 
-subsection \<open>The rounds of a recursive let\<close>
+subsection \<open>Rounds of a recursive let\<close>
 
 text \<open>The state of the rounds of @{const letpast_meval0}, read through the kernel's invariant
   @{const kletpast_meval_invar}.\<close>
@@ -1708,9 +1659,6 @@ lemma lpgoodE:
     "safe_letpast (p, m) \<phi>1 \<le> PastRec" "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> Formula.fv \<phi>1"
     "safe_formula \<phi>1" "kks = Formula.fv_list \<phi>1" "S((p, m) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>1)), E' \<turnstile> \<phi>1"
   using assms unfolding lpgood_def by fastforce
-
-text \<open>A round's call: the bound formula, on the database in which the bound predicate holds the
-  previous round's tables, is a good call, and its tables are those of the recursion.\<close>
 
 lemma lpgood_correct:
   assumes "lpgood m kks j i ys xs (p, m) ts db \<phi>"
@@ -1825,9 +1773,6 @@ proof -
         exI[of _ n] exI[of _ k]) (use invar' envs' safe fv safe1 kks wty in simp)
 qed
 
-text \<open>The rounds start from the node's state, and the body is evaluated on the database in which
-  the bound predicate holds the rounds' tables.\<close>
-
 lemma kgood_MLetPastE:
   assumes "kgood n ks j ts db (MLetPast p m kks \<phi> \<psi> i buf)"
   obtains S E E' \<sigma> j0 P P' V R \<phi>1 \<psi>1 where "j0 \<le> j" "ts = map (\<tau> \<sigma>) [j0..<j]"
@@ -1931,9 +1876,7 @@ proof (rule kgood_MLetPastE)
 qed
 
 
-subsection \<open>The monitor's steps\<close>
-
-text \<open>A step of the kernel's monitor from a well-formed state is a good call of its formula.\<close>
+subsection \<open>Steps of the monitor\<close>
 
 lemma kgood_mstep:
   assumes wf: "kwf_mstate S E \<phi> \<pi> R st" and wty: "wty_db S (fst tdb)"

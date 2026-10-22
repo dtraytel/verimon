@@ -4,6 +4,7 @@ theory Optimized_Common_Facts
 begin
 (*>*)
 
+section \<open>Properties of the shared notions\<close>
 
 lemma fold_append_queue_map: "linearize (fold (\<lambda>(t, l, r) q. append_queue (t, r) q) xs q) = linearize q @ (map (\<lambda>(t, l, r). (t, r)) xs)"
   by (induction xs arbitrary: q) (auto simp add: append_queue_rep)
@@ -70,7 +71,6 @@ lemma ts_tuple_rel_set_filter: "x \<in> ts_tuple_rel_f f (set (filter P xs)) \<L
   x \<in> ts_tuple_rel_f f (set xs)"
   by (auto simp add: ts_tuple_rel_f_def)
 
-(* TODO: combine with shift_end *)
 lemma ts_tuple_rel_empty: "ts_tuple_rel_f (\<lambda>_. {}) A = {}"
   unfolding ts_tuple_rel_f_def
   by auto

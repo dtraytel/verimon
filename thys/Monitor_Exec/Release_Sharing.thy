@@ -6,23 +6,10 @@ begin
 
 
 
-section \<open>The right operand of a release, evaluated once\<close>
+section \<open>Sharing the release's right operand\<close>
 
-text \<open>
-  VeriMon's multiway conversion (@{const convert_multiway}) turns a release with 0 in its
-  interval into a release whose left operand is the conjunction with the right operand, and the
-  monitor evaluates a release without 0 by the formula that defines it in terms of the past and
-  future operators (@{const and_release_safe_bounded}); both contain the right operand several
-  times, each copy a subformula of its own that the monitor evaluates.  Binding the right operand
-  with @{const Formula.Let} to a predicate that occurs nowhere else, and releasing that
-  predicate, has it evaluated once.  The executable monitor's start state
-  (@{text eminit_verimon}, theory @{text Exec_Preparation}) applies the rewrite before the multiway
-  conversion.
-\<close>
-
-subsection \<open>The rewrite\<close>
-
-text \<open>Whether a formula mentions a predicate, bound or not.\<close>
+text \<open>@{const convert_multiway} and @{const and_release_safe_bounded} copy a release's right
+  operand; binding it with @{const Formula.Let} to a fresh predicate evaluates it once.\<close>
 
 fun occurs :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> bool" where
   "occurs pn (Formula.Pred e ts) = ((e, length ts) = pn)"
@@ -76,7 +63,7 @@ fun share_rw :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "share_rw (Formula.Until \<phi> I \<psi>) = Formula.Until (share_rw \<phi>) I (share_rw \<psi>)"
 | "share_rw \<phi> = \<phi>"
 
-text \<open>As for the frozen predicates, the rewrite is applied only when its result is monitorable.\<close>
+text \<open>The rewrite applies only if its result is monitorable.\<close>
 
 definition share_opt :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "share_opt \<phi> = (let \<phi>' = share_rw \<phi> in if mmonitorable_exec \<phi>' then \<phi>' else \<phi>)"

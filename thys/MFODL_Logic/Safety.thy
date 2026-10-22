@@ -4,16 +4,11 @@ theory Safety
 begin
 (*>*)
 
+section \<open>Safety of formulas\<close>
 
-section \<open> Safety \<close>
+subsection \<open>Constraints and assignments\<close>
 
-
-subsection \<open> Safety definition \<close>
-
-
-subsubsection \<open> Constraints \<close>
-
-unbundle MFODL_notation \<comment> \<open> enable notation \<close>
+unbundle MFODL_notation
 
 fun is_constraint :: "'t Formula.formula \<Rightarrow> bool" 
   where "is_constraint (t1 =\<^sub>F t2) = True"
@@ -36,9 +31,6 @@ lemma no_constr_release_safe_bounded [simp]:
   "\<not> is_constraint (release_safe_bounded \<phi>'' I \<psi>')"
   unfolding is_constraint_iff release_safe_bounded_def 
   by simp
-
-
-subsubsection \<open> Equalities for conjunctions \<close>
 
 definition safe_assignment :: "nat set \<Rightarrow> 'a Formula.formula \<Rightarrow> bool" where
   "safe_assignment X \<alpha> = (case \<alpha> of
@@ -73,7 +65,12 @@ lemma no_safe_assign_trigger: "\<not> safe_assignment (fv \<phi>) (formula.Trigg
   by auto
 
 
-subsubsection \<open> Let past \<close>
+subsection \<open>Recursion safety\<close>
+
+subsubsection \<open>Recursion safety values\<close>
+
+text \<open>How a formula refers to a predicate: not at all, only at past time points, at no future time
+point, or arbitrarily.\<close>
 
 datatype rec_safety = Unused | PastRec | NonFutuRec | AnyRec
 
@@ -247,6 +244,8 @@ lemma frz_dep_eq_Unused_iff[simp]: "frz_dep x y = Unused \<longleftrightarrow> x
 
 lemma frz_dep_le_NonFutuRec_iff[simp]: "frz_dep x y \<le> NonFutuRec \<longleftrightarrow> x = Unused \<or> y \<le> NonFutuRec"
   by (cases x; cases y) (simp_all add: frz_dep_def)
+
+subsubsection \<open>Recursion safety of formulas\<close>
 
 context begin
 
@@ -614,7 +613,9 @@ lemma V_subst_letpast:
   by (intro V_subst_letpast_gen) (auto intro: order_trans)
 
 
-subsubsection \<open> Dual operators \<close>
+subsection \<open>Safe formulas\<close>
+
+subsubsection \<open>Dual operators\<close>
 
 fun remove_neg :: "'t Formula.formula \<Rightarrow> 't Formula.formula" 
   where "remove_neg (\<not>\<^sub>F \<phi>) = \<phi>"
@@ -632,13 +633,13 @@ lemma fv_remove_neg: "fv \<phi> = fv (remove_neg \<phi>)"
 definition safe_dual where "
   safe_dual conjoined safety_pred \<phi> I \<psi> = (if mem I 0 then
     (safety_pred \<psi> \<and> fv \<phi> \<subseteq> fv \<psi> 
-        \<and> (safety_pred \<phi> 
+        \<and> (safety_pred \<phi>
         \<comment> \<open> \<or> is_constraint \<phi> \<close>
         \<or> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> safety_pred \<phi>' | _ \<Rightarrow> False)
         ))
     else (conjoined \<and> safety_pred \<phi> \<and> safety_pred \<psi> \<and> fv \<phi> = fv \<psi>))"
 
-subsubsection \<open> Termination lemmas \<close>
+subsubsection \<open>Termination measure\<close>
 
 lemma size_remove_neg[termination_simp]: "size (remove_neg \<phi>) \<le> size \<phi>"
   by (cases \<phi>) simp_all
@@ -654,6 +655,9 @@ lemma safe_dual_size [fundef_cong]:
   shows "safe_dual b safety_pred \<phi> I \<psi> = safe_dual b safety_pred' \<phi> I \<psi>"
   using assms
   by (auto simp add: safe_dual_def split: formula.splits)
+
+text \<open>The weights of releases and of conjunctions with a release exceed the sizes of their safe
+rewritings.\<close>
 
 fun size' :: "'t Formula.formula \<Rightarrow> nat" 
   where "size' (r \<dagger> ts) = 0"
@@ -732,7 +736,7 @@ lemma size'_release_aux:
   by (auto split: formula.split)
 
 
-subsubsection \<open> Safe formula predicate \<close>
+subsubsection \<open>Safety predicate\<close>
 
 function (sequential) safe_formula :: "'t Formula.formula \<Rightarrow> bool" 
   where "safe_formula (t1 =\<^sub>F t2) = (Formula.is_Const t1 
@@ -815,14 +819,8 @@ lemma eventually_safe[simp]: "safe_formula (eventually I \<phi>) = safe_formula 
 lemma safe_eventually_TT [simp]: "safe_formula (\<not>\<^sub>F Formula.eventually I Formula.TT)"
   by (simp add: eventually_def)
 
-(* always *)
-
-(* [0, b] *)
-
 lemma always_safe_0_safe[simp]: "safe_formula (always_safe_0 I \<phi>) = safe_formula \<phi>"
   by (auto simp add: always_safe_0_def)
-
-(* [a, b] *)
 
 lemma always_safe_bounded_safe[simp]: "safe_formula (always_safe_bounded I \<phi>) = safe_formula \<phi>"
   by (auto simp add: always_safe_bounded_def)
@@ -839,7 +837,7 @@ lemma safe_formula_release_bounded:
   by blast
 
 
-subsubsection \<open> Regular expressions \<close>
+subsubsection \<open>Safe atoms of regular expressions\<close>
 
 definition safe_neg :: "'t Formula.formula \<Rightarrow> bool" where
   "safe_neg \<phi> \<longleftrightarrow> safe_formula (remove_neg \<phi>)"
@@ -942,7 +940,7 @@ lemma atms_empty_safe_atms: "Regex.safe_regex fv rgx_safe_pred m g r
   by (induct r rule: safe_regex_induct) (auto split: if_splits simp: case_Neg_iff)
 
 
-subsubsection \<open> Induction principle for safety \<close>
+subsection \<open>Induction on safe formulas\<close>
 
 lemma safe_formula_induct[consumes 1, case_names Eq_Const Eq_Var1 Eq_Var2 Pred Let Frz LetPast
     And_assign And_safe And_constraint And_Not And_Trigger And_Release
@@ -988,7 +986,7 @@ lemma safe_formula_induct[consumes 1, case_names Eq_Const Eq_Var1 Eq_Var2 Pred L
     and Or: "\<And>\<phi> \<psi>. fv \<psi> = fv \<phi> \<Longrightarrow> safe_formula \<phi> \<Longrightarrow> safe_formula \<psi> 
       \<Longrightarrow> P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (\<phi> \<or>\<^sub>F \<psi>)"
     and Exists: "\<And>t \<phi>. safe_formula \<phi> \<Longrightarrow> 0 \<in> fv \<phi> 
-      \<Longrightarrow> P \<phi> \<Longrightarrow> P (\<exists>\<^sub>F:t. \<phi>)" (* any t?*)
+      \<Longrightarrow> P \<phi> \<Longrightarrow> P (\<exists>\<^sub>F:t. \<phi>)"
     and Agg: "\<And>y \<omega> tys f \<phi>. y + length tys \<notin> fv \<phi> \<Longrightarrow> {0..<length tys} \<subseteq> fv \<phi> 
       \<Longrightarrow> fv_trm f \<subseteq> fv \<phi> \<Longrightarrow> safe_formula \<phi> 
       \<Longrightarrow> (\<And>\<phi>'. size' \<phi>' \<le> size' \<phi> \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> P \<phi>') \<Longrightarrow> P (Formula.Agg y \<omega> tys f \<phi>)"
@@ -1269,7 +1267,7 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
 qed
 
 
-subsection \<open>Future reach definition \<close>
+subsection \<open>Future boundedness\<close>
 
 qualified fun future_bounded :: "'t Formula.formula \<Rightarrow> bool" where
   "future_bounded (Formula.Pred _ _) = True"
@@ -1344,7 +1342,7 @@ lemma is_constraint_future_bounded: "is_constraint \<phi> \<Longrightarrow> futu
   by (induction rule: is_constraint.induct) simp_all
 
 
-subsection \<open>Slicing traces\<close>
+subsection \<open>Slicing of traces\<close>
 
 qualified fun matches ::
   "Formula.env \<Rightarrow> 't Formula.formula \<Rightarrow> Formula.name \<times> event_data list \<Rightarrow> bool" where
@@ -1612,9 +1610,9 @@ next
     by auto
 qed simp_all
 
-end (*context*)
+end
 
-unbundle MFODL_no_notation \<comment> \<open> disable notation \<close>
+unbundle MFODL_no_notation
 
 
 (*<*)

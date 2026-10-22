@@ -5,7 +5,7 @@ begin
 (*>*)
 
 
-subsection \<open> Trigger \<close>
+section \<open> Correctness of Trigger \<close>
 
 lemma zip_map_el: "(i, x) \<in> set (zip xs (map f xs)) \<Longrightarrow> x = f i"
   by (metis fst_conv in_set_zip nth_map snd_conv)
@@ -29,7 +29,7 @@ proof -
 qed
 
 
-subsubsection \<open> Buffers \<close> (* TODO: replace these with those for until *)
+subsection \<open> Buffers \<close> (* TODO: replace these with those for until *)
 
 lemma mbuf2T_take_eqD:
   assumes "mbuf2T_take f z buf nts = (z', buf', nts')"
@@ -159,9 +159,7 @@ proof -
 qed
 
 
-text \<open>The trigger's result is finite if the latest entry of the window is in the interval
-  (each result tuple is then in that entry's right table) or if the left operand is positive
-  and has the result's columns (each result tuple then occurs in some left or right table).\<close>
+subsection \<open> Finiteness of the result \<close>
 
 lemma finite_trigger_results:
   assumes fin: "\<And>t l r. (t, l, r) \<in> set auxlist \<Longrightarrow> finite l \<and> finite r"
@@ -299,7 +297,7 @@ next
     using cond len lst by auto
 qed
 
-subsubsection \<open> Invariants \<close>
+subsection \<open> Invariant of the auxiliary state \<close>
 
 definition (in mtaux) wf_trigger_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>
   ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> 'mtaux \<Rightarrow> nat \<Rightarrow> bool" 
@@ -512,6 +510,8 @@ proof -
     unfolding wf_trigger_aux_def diff_Suc_1
     by blast
 qed
+
+subsection \<open> Correctness of the result \<close>
 
 lemma (in maux) trigger_sat_equiv:
   assumes restr: "mem_restr R (Formula.fv_list \<beta>) x"

@@ -4,20 +4,12 @@ theory Optimized_Until_Deque
 begin
 (*>*)
 
-section \<open>Until with deques instead of time-point-indexed mappings\<close>
+section \<open>Until structure with deques\<close>
 
-text \<open>
-  The Until structure of @{theory Monitor_Impl.Optimized_Until} keeps two mappings indexed
-  by the time points of the window, @{text a2_map} (one mapping of tuples per time point) and
-  @{text tstp_map} (the time stamp of every time point). Their keys always form the contiguous
-  ranges @{term "{tp - len..tp}"} and @{term "{tp - len..<tp}"}: entries are removed at the
-  smallest key and added at the largest one. We replace both by the deques of
-  @{theory Monitor_Data_Structures.Deque} (two lists with cached lengths) with constant-time access at both
-  ends, and connect the resulting structure to the original one by a simulation relation, so that
-  the existing invariant proofs are reused.
-\<close>
+text \<open>The time-point-indexed mappings of @{theory Monitor_Impl.Optimized_Until} change only at
+  the ends of their contiguous key ranges; deques replace them, related by a simulation.\<close>
 
-section \<open>The Until structure with deques for the time-point-indexed mappings\<close>
+subsection \<open>Simulation relation\<close>
 
 type_synonym 'a mmuaux_dq = "tp \<times> ts queue \<times> ('a table \<times> (ts + tp)) queue \<times> nat \<times>
   'a table \<times> ('a tuple, tp) mapping \<times> ('a tuple, ts + tp) mapping dq \<times> ts dq \<times> 'a table list"
@@ -80,7 +72,7 @@ definition init_dq :: "args \<Rightarrow> event_data mmuaux_dq" where
 fun length_dq :: "args \<Rightarrow> event_data mmuaux_dq \<Rightarrow> nat" where
   "length_dq args (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) = length done + len"
 
-subsection \<open>Nested update on the deque\<close>
+subsection \<open>Nested update and conversions\<close>
 
 definition upd_nested_step_dq :: "nat \<Rightarrow> 'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarrow> nat \<times> 'b \<Rightarrow> ('b, 'c) mapping dq \<Rightarrow> ('b, 'c) mapping dq" where
   "upd_nested_step_dq base d f x dq = (case x of (k, k') \<Rightarrow>
@@ -114,13 +106,8 @@ fun dq_of_uaux :: "event_data mmuaux \<Rightarrow> event_data mmuaux_dq" where
 
 subsection \<open>Adding a new time point\<close>
 
-text \<open>
-  The candidate pairs (time point, tuple) of the new operand table are processed in one fold
-  over the table: each pair that passes the interval check is inserted into the table appended
-  to the queue, into the deque entry of its time point and, if its time point is the oldest of
-  the window, into the result. The fold is over the sorted list of the table, so no commutativity
-  argument is needed; the definition is executable as it stands.
-\<close>
+text \<open>One fold over the sorted operand table inserts each candidate pair passing the interval
+  check into the new table, its deque entry and, at the oldest time point, the result.\<close>
 
 type_synonym 'a until_acc_dq = "'a table \<times> ('a tuple, ts + tp) mapping dq \<times> 'a table"
 
@@ -168,7 +155,7 @@ definition add_new_dq :: "args \<Rightarrow> event_data table \<Rightarrow> even
     (tp + 1, tss, tables, len + 1, result', a1_map, a2_dq, tstp_dq, done))
   else dq_of_uaux (add_new_mmuaux args rel1 rel2 nt (uaux_of_dq aux)))"
 
-subsection \<open>Combined structure: deques without aggregation, the aggregation structure otherwise\<close>
+subsection \<open>Combined Until structure\<close>
 
 datatype muaux_dq = MU_agg mmauaux | MU_dq "event_data mmuaux_dq"
 

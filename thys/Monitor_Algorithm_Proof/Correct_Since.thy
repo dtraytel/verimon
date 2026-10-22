@@ -5,10 +5,10 @@ begin
 (*>*)
 
 
-subsection \<open> Since \<close>
+section \<open> Correctness of Since \<close>
 
 
-subsubsection \<open> Buffers \<close>
+subsection \<open> Invariant of the buffer \<close>
 
 definition "Sincep pos \<phi> I \<psi> \<equiv> Formula.Since (if pos then \<phi> else Formula.Neg \<phi>) I \<psi>"
 
@@ -87,7 +87,7 @@ proof -
 qed
 
 
-subsubsection \<open> Invariants \<close>
+subsection \<open> Since points \<close>
 
 definition "sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t x \<longleftrightarrow>
   (\<exists>j<pIn. \<tau> \<sigma> j = t \<and> Formula.sat \<sigma> V x j \<psi> \<and>
@@ -95,8 +95,6 @@ definition "sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t x \<longleftrig
 
 lemma sat_since_point_Suc: "sat_since_point pos \<sigma> V \<phi> \<psi> (Suc i) i (\<tau> \<sigma> i) x =
     (sat_since_point pos \<sigma> V \<phi> \<psi> i i (\<tau> \<sigma> i) x \<or> Formula.sat \<sigma> V x i \<psi>)"
-  \<comment> \<open>the extra witness allowed by @{term "Suc i"} is @{term i} itself, where the
-    condition on the points in between is vacuous\<close>
   unfolding sat_since_point_def Ex_less_Suc by auto
 
 lemma sat_since_point_Suc': "t < \<tau> \<sigma> i \<Longrightarrow>
@@ -106,7 +104,6 @@ proof -
   then have "\<tau> \<sigma> i \<noteq> t"
     by simp
   then show ?thesis
-    \<comment> \<open>the extra witness i is excluded by its time-stamp\<close>
     unfolding sat_since_point_def Ex_less_Suc by simp
 qed
 
@@ -124,7 +121,6 @@ proof -
     then obtain j where j: "j \<le> i" "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)" "Formula.sat \<sigma> V x j \<psi>"
       "\<forall>k\<in>{j<..i}. if pos then Formula.sat \<sigma> V x k \<phi> else \<not> Formula.sat \<sigma> V x k \<phi>"
       unfolding Sincep_def sat.simps sat_pos by blast
-    \<comment> \<open>the witness j is also a witness for @{const sat_since_point}, as it lies before pIn\<close>
     have "j < pIn"
       using complete
     proof
@@ -152,7 +148,6 @@ proof -
       and j': "j' < pIn" "\<tau> \<sigma> j' = \<tau> \<sigma> j" "Formula.sat \<sigma> V x j' \<psi>"
       "\<forall>k\<in>{j'<..i}. if pos then Formula.sat \<sigma> V x k \<phi> else \<not> Formula.sat \<sigma> V x k \<phi>"
       unfolding sat_since_point_def by blast
-    \<comment> \<open>the witness j' of @{const sat_since_point} is a witness for the Since formula\<close>
     have "j' \<le> i"
     proof (rule ccontr)
       assume "\<not> j' \<le> i"
@@ -180,7 +175,7 @@ proof -
   qed
 qed
 
-text \<open>The tables of the auxiliary state are over the columns of the right operand.\<close>
+subsection \<open> Invariant of the auxiliary state \<close>
 
 definition (in msaux) wf_since_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>
   ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> 'msaux \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
@@ -222,7 +217,6 @@ proof -
     and complete: "\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - \<tau> \<sigma> i) \<longrightarrow>
         (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
     unfolding wf_since_aux_def by blast
-  \<comment> \<open>extending the since point by one time-point amounts to checking the left subformula there\<close>
   have since_point_step: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t v \<longleftrightarrow>
       sat_since_point pos \<sigma> V \<phi> \<psi> pIn (pOut - 1) t v \<and>
       (if pos then Formula.sat \<sigma> V v pOut \<phi> else \<not> Formula.sat \<sigma> V v pOut \<phi>)" for pos t v
@@ -297,13 +291,11 @@ proof -
     unfolding pOut_pIn wf_since_aux_def args_ivl args_n by auto
   have ts_le: "t \<le> \<tau> \<sigma> pIn" if "(t, X) \<in> set auxlist" for t X
     using in_auxlist[OF that] by auto
-  \<comment> \<open>entries for earlier time-stamps are unaffected by the new time-point\<close>
   have old_entry: "(\<exists>i<Suc pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
       qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
         (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (val n (Formula.fv_list \<psi>) x)) X"
     if "(t, X) \<in> set auxlist" "t < \<tau> \<sigma> pIn" for t X
     using in_auxlist[OF that(1)] by (auto simp: sat_since_point_Suc'[OF that(2)] less_Suc_eq)
-  \<comment> \<open>the entry for the current time-stamp is extended by the new table\<close>
   have new_entry: "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
       (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (val n (Formula.fv_list \<psi>) x)) (y \<union> rel2)"
     if "(\<tau> \<sigma> pIn, y) \<in> set auxlist" for y
@@ -314,7 +306,6 @@ proof -
     then show ?thesis
       using rel2 by (rule qtable_union) (simp add: sat_since_point_Suc)
   qed
-  \<comment> \<open>without an entry for the current time-stamp, the new table is the entry\<close>
   have fresh_entry: "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
       (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (val n (Formula.fv_list \<psi>) x)) rel2"
     if "\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn"
@@ -337,7 +328,6 @@ proof -
   define auxlist' where "auxlist' = (case auxlist of
         [] => [(\<tau> \<sigma> pIn, rel2)]
       | ((t, y) # ts) \<Rightarrow> if t = \<tau> \<sigma> pIn then (t, y \<union> rel2) # ts else (\<tau> \<sigma> pIn, rel2) # auxlist)"
-  \<comment> \<open>either a new entry is prepended, or the head entry for the current time-stamp is extended\<close>
   have shape: "(auxlist' = (\<tau> \<sigma> pIn, rel2) # auxlist \<and> (\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn)) \<or>
     (\<exists>y ps. auxlist = (\<tau> \<sigma> pIn, y) # ps \<and> auxlist' = (\<tau> \<sigma> pIn, y \<union> rel2) # ps \<and>
       (\<forall>q\<in>set ps. fst q < \<tau> \<sigma> pIn))"
@@ -418,7 +408,6 @@ proof -
   moreover have "\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist'"
     if "i < Suc pIn" "memR I (\<tau> \<sigma> pIn - \<tau> \<sigma> i)" for i
   proof -
-    \<comment> \<open>the new list contains the current time-stamp and all time-stamps of the old one\<close>
     have "fst ` set auxlist' = insert (\<tau> \<sigma> pIn) (fst ` set auxlist)"
       using shape by (elim disjE exE conjE) simp_all
     moreover have "i = pIn \<or> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
@@ -429,6 +418,8 @@ proof -
   ultimately show ?thesis
     unfolding pOut_pIn wf_since_aux_def args_ivl args_n using aggargs by auto
 qed
+
+subsection \<open> Result of the auxiliary state \<close>
 
 lemma (in msaux) wf_since_aux_result':
   assumes valid_msaux: 
@@ -454,7 +445,6 @@ proof -
   have complete_aux: "\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist"
     if "i < pIn" "memR I (\<tau> \<sigma> pOut - \<tau> \<sigma> i)" for i
     using valid_msaux(4) that by (simp add: args_ivl)
-  \<comment> \<open>the result is the union of all tables whose time-stamp satisfies the lower bound\<close>
   have result_iff: "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {} \<longleftrightarrow>
       (\<exists>t X. (t, X) \<in> set auxlist \<and> memL I (\<tau> \<sigma> pOut - t) \<and> x \<in> X)" for x
     using valid_msaux(5) by (auto simp: foldr_union args_ivl)
@@ -492,7 +482,6 @@ proof -
     from this(3) obtain j where "mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)"
       and sp: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> j) (val n ?cs x)"
       unfolding sat_Sincep_alt[OF complete] by blast
-    \<comment> \<open>the since point has a witness j' before pIn with the same time-stamp, which is in the list\<close>
     from sp obtain j' where "j' < pIn" "\<tau> \<sigma> j' = \<tau> \<sigma> j"
       unfolding sat_since_point_def by blast
     with \<open>mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)\<close> obtain X where X: "(\<tau> \<sigma> j, X) \<in> set auxlist"
@@ -537,6 +526,8 @@ proof -
     using qtable_eval_args_agg[OF ** mr valid_aggargs[folded args_R] fv] valid_result_msaux[OF valid_ms] agg_n
     by auto
 qed 
+
+subsection \<open> Evaluation step \<close>
 
 lemma (in maux) eval_since_gen:
   assumes pre:
@@ -683,7 +674,6 @@ next
   then show ?case by (auto simp add: progress_Sincep)
 next
   case ("4_4" zs v vd ve aux)
-  \<comment> \<open>no time-stamps are buffered and there is no skew, so all progresses coincide\<close>
   have "j = 0 \<or> j \<le> pOut" "pOut = pIn"
     using "4_4.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by auto
   moreover have "progress \<sigma> P \<phi> j \<le> j" "progress \<sigma> P \<psi> j \<le> j" "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
@@ -713,7 +703,6 @@ next
     using "4_5" by (simp only: eval_since.simps prod.inject)
 next
   case ("4_6" zs v vb aux)
-  \<comment> \<open>no time-stamps are buffered and there is no skew, so all progresses coincide\<close>
   have "j = 0 \<or> j \<le> pOut" "pOut = pIn"
     using "4_6.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by auto
   moreover have "progress \<sigma> P \<phi> j \<le> j" "progress \<sigma> P \<psi> j \<le> j" "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
@@ -755,14 +744,12 @@ lemma (in maux) eval_since:
       ?wf_buf P' (j + \<delta>) buf' \<and>
       ?wf_aux P' (j + \<delta>) aux'"
 proof -
-  \<comment> \<open>the progresses only increase when the trace is extended\<close>
   have "min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     by (simp add: min.coboundedI1 progress_mono_gen[OF _ bounded rm])
   moreover have "min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> P' \<psi> (j + \<delta>)"
     by (simp add: min.coboundedI2 progress_mono_gen[OF _ bounded rm])
   moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> progress \<sigma> P' (Sincep pos \<phi> I \<psi>) (j + \<delta>)"
     by (simp add: progress_mono_gen[OF _ bounded rm])
-  \<comment> \<open>the extended buffer is well-formed, so the general lemma applies with no initial results\<close>
   ultimately show ?thesis
     by (intro eval_since_gen[OF _ wf_mbuf2S_add[OF pre(1) bounded rm xs ys] pre(2) _ _ _ order.refl eq
           bounded(2) fvi_subset args_ivl args_n args_L args_R args_pos agg_n mr]) simp_all

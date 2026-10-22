@@ -4,9 +4,9 @@ theory Freeze_Hoisting_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of freeze hoisting\<close>
 
-
-subsection \<open>The split of a conjunction\<close>
+subsection \<open>Split of a conjunction\<close>
 
 lemma is_frz_predD: "is_frz_pred pn q \<Longrightarrow> \<exists>e ts. q = Formula.Pred e ts \<and> (e, length ts) = pn"
   by (cases q) auto
@@ -142,6 +142,8 @@ next
   show ?case
     using 3(1)[OF s(1) 3(3)] s(3,4) by simp
 qed (auto split: if_splits)
+
+subsection \<open>Hoisting the frozen predicate\<close>
 
 lemma hoist_Exists_cases:
   obtains (None) "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = None"
@@ -317,6 +319,8 @@ next
     using \<psi> frz_split_sat_const[where V=V and pn=pn and \<psi>="hoist fl pn \<psi>" and \<sigma>=\<sigma> and v=v and i=i] 11(2,3)
     by (auto simp: Let_def split: option.splits if_splits nat.splits)
 qed auto
+subsection \<open>Progress of the hoisted formula\<close>
+
 lemma progress_frz_pred: "is_frz_pred pn q \<Longrightarrow> P pn = Some k \<Longrightarrow> progress \<sigma> P q j = k"
   by (cases q) auto
 
@@ -325,9 +329,6 @@ lemma frz_split_progress_const:
   shows "progress \<sigma> P \<psi> j = min k (progress \<sigma> P \<alpha> j)" "progress \<sigma> P q j = k"
   using frz_split_progress[OF assms(1,2)] progress_frz_pred[of pn q P k \<sigma> j] assms(3) frz_split_pred[OF assms(1)]
   by auto
-
-text \<open>The frozen predicate's progress is either the whole prefix or none of it, and the whole
-  prefix when the flag is set.\<close>
 
 lemma progress_hoist:
   assumes "pred_mapping (\<lambda>x. x \<le> j) P" "P pn = Some k" "k = 0 \<or> k = j" "fl \<Longrightarrow> k = j"
@@ -456,7 +457,7 @@ next
       using s c \<psi> le k by (auto simp: Let_def min_def)
   qed (use \<psi> in \<open>simp add: Let_def\<close>)
 qed auto
-subsection \<open>A frozen predicate at the current time point only\<close>
+subsection \<open>Freezing at the current time point\<close>
 
 lemma not_contains_pred_sat_upd:
   "\<not> contains_pred pn \<psi> \<Longrightarrow> Formula.sat \<sigma> (V(pn \<mapsto> X)) v i \<psi> = Formula.sat \<sigma> (V(pn \<mapsto> Y)) v i \<psi>"
@@ -679,7 +680,7 @@ proof -
   finally show ?thesis .
 qed
 
-subsection \<open>The rewrite of the whole formula\<close>
+subsection \<open>Rewrite of the whole formula\<close>
 
 lemma fvi_frz_rw[simp]: "Formula.fvi b (frz_rw B \<phi>) = Formula.fvi b \<phi>"
   by (induct B \<phi> arbitrary: b rule: frz_rw.induct) (auto simp: Let_def)
@@ -708,10 +709,6 @@ proof (induct B \<phi> arbitrary: V v i rule: frz_rw.induct)
   ultimately show ?case
     by (simp add: Let_def)
 qed (auto split: nat.splits)
-
-text \<open>Outside the bound predicates, every predicate is known at every time point of the
-  prefix or at none of them; a formula that never lags then has the whole prefix as its
-  progress.\<close>
 
 definition full_env :: "(Formula.name \<times> nat) list \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> nat) \<Rightarrow> nat \<Rightarrow> bool" where
   "full_env B P j \<longleftrightarrow> (\<forall>pn. pn \<notin> set B \<longrightarrow> P pn = None \<or> P pn = Some j)"

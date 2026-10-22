@@ -4,18 +4,12 @@ theory Freeze_Locality
 begin
 (*>*)
 
-section \<open>How far into the past a formula looks\<close>
+section \<open>Locality for the freeze operator\<close>
 
-text \<open>
-  The satisfaction of a formula at a time point @{term i} depends on the valuations of the
-  predicates only at time points whose timestamp is at most a bounded distance before
-  @{term i}'s: the formula's past reach.  Future operators look only forward, and a lower-bounded
-  past operator no further back than its interval's upper bound.  The monitor uses this for
-  the frozen predicate of @{const Formula.Frz}: a time point older than the reach of every
-  verdict still to be computed can be given any value for it.
-\<close>
+subsection \<open>Past reach\<close>
 
-subsection \<open>The reach\<close>
+text \<open>Satisfaction at @{term i} reads the predicates only at time points whose timestamp lies
+  within the formula's past reach before that of @{term i}.\<close>
 
 primrec regex_reach :: "('a \<Rightarrow> enat) \<Rightarrow> 'a Regex.regex \<Rightarrow> enat" where
   "regex_reach f (Regex.Skip n) = 0"
@@ -60,7 +54,7 @@ termination
   by (relation "measure size") (auto simp: termination_simp)
 
 
-subsection \<open>Valuations that agree within a reach\<close>
+subsection \<open>Agreement within a reach\<close>
 
 definition agree_from :: "Formula.trace \<Rightarrow> enat \<Rightarrow> nat \<Rightarrow>
     (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
@@ -109,7 +103,7 @@ lemma agree_from_infinity: "agree_from \<sigma> \<infinity> i V V' \<Longrightar
   unfolding agree_from_def
   by (rule ext, erule_tac x=x in allE) (auto simp: option.rel_sel fun_eq_iff option.expand)
 
-subsection \<open>Locality\<close>
+subsection \<open>Locality of satisfaction\<close>
 
 lemma tau_fwd:
   assumes "i \<le> k"
@@ -299,17 +293,10 @@ next
 qed auto
 
 
-section \<open>A frozen predicate read only at the formula's own first variables\<close>
+subsection \<open>Separable predicates\<close>
 
-text \<open>
-  A predicate @{term pn} of arity @{term m} is \<^emph>\<open>separable\<close> in a formula if it occurs there
-  only applied to the formula's first @{term m} variables, in that order, under no quantifier and
-  in no definition of a bound predicate.  The formula's satisfaction at a valuation then reads the
-  predicate only at one tuple, the valuation's first @{term m} values: two interpretations of the
-  predicate that agree on that tuple at all time points give the same satisfaction.  The monitor
-  uses this for @{const Formula.Frz}: the body can be evaluated once with any table of the frozen
-  predicate that contains the frozen one, and the verdicts restricted to the frozen tuples.
-\<close>
+text \<open>A predicate of arity @{term m} is separable if it is applied only to the first @{term m}
+  variables, outside quantifiers and predicate definitions; satisfaction then reads it at one tuple.\<close>
 
 fun key_sep :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> bool" where
   "key_sep pn (Formula.Pred e ts) = ((e, length ts) = pn \<longrightarrow> ts = map Formula.Var [0..<length ts])"
@@ -334,8 +321,6 @@ fun key_sep :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rig
 | "key_sep pn (Formula.MatchP I r) = (\<forall>\<phi> \<in> Regex.atms r. key_sep pn \<phi>)"
 | "key_sep pn (Formula.MatchF I r) = (\<forall>\<phi> \<in> Regex.atms r. key_sep pn \<phi>)"
 | "key_sep pn _ = True"
-
-text \<open>The tuple of a valuation at which a separable predicate of arity @{term m} is read.\<close>
 
 abbreviation sep_key :: "nat \<Rightarrow> Formula.env \<Rightarrow> event_data list" where
   "sep_key m v \<equiv> map ((!) v) [0..<m]"
@@ -551,9 +536,7 @@ lemma sat_key_sep:
   shows "Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<psi> = Formula.sat \<sigma> (V((p, m) \<mapsto> X')) v i \<psi>"
   by (rule sat_key_sep_gen[where X=X and X'=X', OF assms(1)]) (use assms(2) in auto)
 
-text \<open>The verdict of a freeze at a valuation is that of its body with any interpretation of the
-  frozen predicate that agrees with the frozen value on the valuation's tuple, from a time point
-  beyond the body's past reach on.\<close>
+subsection \<open>Freeze by separable evaluation\<close>
 
 lemma sat_Frz_sep:
   assumes sep: "key_sep (p, Formula.nfv \<phi>) \<psi>"
@@ -583,9 +566,6 @@ proof -
   finally show ?thesis
     by simp
 qed
-
-text \<open>A verdict computed with the frozen predicate empty before a time point @{term w} is the
-  verdict of the freeze, provided @{term w} lies beyond the reach of the body.\<close>
 
 lemma qtable_Frz_window:
   assumes q: "qtable cs R (\<lambda>v. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> Q)) (val n cs v) i \<psi>) X"
@@ -617,8 +597,6 @@ proof -
   then show ?thesis
     using q by (auto intro: qtable_cong[OF _ refl])
 qed
-
-text \<open>A separable predicate that occurs is applied to the formula's free variables.\<close>
 
 lemma key_sep_fv:
   "key_sep (p, m) \<psi> \<Longrightarrow> Formula.contains_pred (p, m) \<psi> \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<psi>"
@@ -657,10 +635,8 @@ next
     by (auto simp: Regex.fv_regex_alt)
 qed auto
 
-text \<open>The combination of the two copies' rows at a time point @{term i}: the first copy's tuples
-  whose frozen tuple is in the frozen table of @{term i}, the second copy's others.  The first
-  copy's frozen predicate holds the frozen table's tuples (and maybe others), the second's none,
-  from points beyond the body's reach on.\<close>
+text \<open>The table of a freeze merges two evaluations of its body: one where the frozen predicate
+  contains the frozen table and one where it is empty.\<close>
 
 lemma qtable_frz_cmb:
   assumes sep: "key_sep (p, Formula.nfv \<phi>) \<psi>" and cont: "Formula.contains_pred (p, Formula.nfv \<phi>) \<psi>"
@@ -718,18 +694,14 @@ proof -
   qed
 qed
 
-subsection \<open>Interpretations of a frozen predicate by replay\<close>
+subsection \<open>Frozen predicates for replay\<close>
 
-text \<open>A valuation of a frozen predicate given by the time point whose frozen value it holds at
-  each time point, if any (@{term frz_val}): the monitor replays a freeze with the frozen predicate
-  interpreted in this way before the start of its window.\<close>
+text \<open>Before the start of its window, a replayed freeze interprets the frozen predicate at each
+  time point by the frozen value of the time point given by @{term L}, if any.\<close>
 
 definition frz_val :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
     ty Formula.formula \<Rightarrow> (nat \<Rightarrow> nat option) \<Rightarrow> Formula.env \<Rightarrow> nat \<Rightarrow> bool" where
   "frz_val \<sigma> V \<phi> L = (\<lambda>v k. case L k of None \<Rightarrow> False | Some i \<Rightarrow> Formula.sat \<sigma> V v i \<phi>)"
-
-text \<open>A copy of the replay base for the frozen table of time point @{term i}: the frozen predicate
-  holds that table from @{term w} on, and whatever the replay base absorbed before.\<close>
 
 abbreviation frz_cv where
   "frz_cv \<sigma> V \<phi> N w i \<equiv> frz_val \<sigma> V \<phi> (\<lambda>k. if k < w then N k else Some i)"
@@ -740,10 +712,8 @@ lemma frz_cv_ge: "w \<le> k \<Longrightarrow> frz_cv \<sigma> V \<phi> N w i v k
 lemma frz_val_sat: "frz_val \<sigma> V \<phi> L v k \<Longrightarrow> \<exists>i. Formula.sat \<sigma> V v i \<phi>"
   by (auto simp: frz_val_def split: option.splits)
 
-text \<open>The replay base has absorbed the time points before its window's start @{term w}; what the
-  frozen predicate holds from @{term w} on does not matter for its state, as long as it holds
-  only tuples of the frozen formula (@{term frz_sup}): the copies of the separable evaluation give
-  it a union of frozen tables, or the empty table.\<close>
+text \<open>From the window start @{term w} on, the state of the replay base does not depend on the
+  frozen predicate, as long as it holds only tuples of the frozen formula.\<close>
 
 definition frz_sup :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow>
     ty Formula.formula \<Rightarrow> (Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow> bool" where
@@ -777,8 +747,6 @@ lemma frz_ext_val: "frz_ext \<sigma> V \<phi> N w (frz_val \<sigma> V \<phi> M) 
 
 lemma frz_ext_False: "frz_ext \<sigma> V \<phi> N w (\<lambda>_ _. False) = frz_val \<sigma> V \<phi> (\<lambda>k. if k < w then N k else None)"
   by (auto simp: frz_ext_def frz_val_def fun_eq_iff)
-
-text \<open>A table of the separable evaluation: finite, and holding tuples of the frozen formula.\<close>
 
 definition frz_tab :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoonup> Formula.env \<Rightarrow> nat \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow>
     ty Formula.formula \<Rightarrow> event_data list set \<Rightarrow> bool" where

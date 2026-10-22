@@ -6,13 +6,14 @@ begin
 (*>*)
 
 
-subsection \<open> Release \<close>
+section \<open> Correctness of Release \<close>
 
-text \<open>The release with 0 in its interval is evaluated natively (@{const update_release}). The
-  auxiliary list holds, for each time point @{term i} whose verdict is pending, the tuples that
-  are still waiting to be released and the tuples that are still alive, both over the columns of
-  the right operand. The left operand is the formula the monitor evaluates; with @{term pos}
-  false, the release is by the points where it does not hold.\<close>
+
+subsection \<open> Invariant of the auxiliary list \<close>
+
+text \<open>Release with 0 in its interval is evaluated natively (@{const update_release}). For each
+  pending time point, the auxiliary list holds the tuples waiting to be released and those
+  still alive.\<close>
 
 definition "Releasep pos \<phi> I \<psi> \<equiv> Formula.Release (if pos then \<phi> else Formula.Neg \<phi>) I \<psi>"
 
@@ -32,8 +33,7 @@ definition wf_release_auxlist :: "Formula.trace \<Rightarrow> _ \<Rightarrow> na
             else \<not> Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) v) k \<phi>)) r2)
       auxlist [ne..<ne+length auxlist]"
 
-text \<open>The left operand the monitor evaluates (@{const release_left}) gives the release the
-  same verdicts and the same progress.\<close>
+subsection \<open> Evaluated left operand \<close>
 
 lemma release_left_cases: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrightarrow>
   pos \<and> \<phi> = \<alpha> \<and> safe_formula \<alpha> \<or> \<not> pos \<and> \<alpha> = Formula.Neg \<phi> \<and> safe_formula \<phi> \<or>
@@ -73,14 +73,13 @@ lemma wty_release_left: "release_left \<alpha> \<psi> = (\<phi>, pos) \<Longrigh
   S, E \<turnstile> \<phi>"
   by (auto dest!: release_left_cases dest: wty_formula_NegD intro: wty_formula.intros)
 
+subsection \<open> Preservation of the invariant \<close>
+
 lemma wf_release_auxlist_Nil: "wf_release_auxlist \<sigma> V n R pos \<phi> I \<psi> [] ne"
   unfolding wf_release_auxlist_def by simp
 
 lemma length_update_release: "length (update_release args rel1 rel2 nt aux) = Suc (length aux)"
   unfolding update_release_def by simp
-
-text \<open>A tuple stays alive at a new point of the window if it satisfies the right operand there,
-  or if it is no longer waiting to be released.\<close>
 
 lemma release_alive_step:
   assumes win: "\<And>k. i \<le> k \<Longrightarrow> k \<le> m \<Longrightarrow> mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)" and "i \<le> m"
@@ -246,6 +245,8 @@ lemma progress_Releasep[simp]: "mem I 0 \<Longrightarrow> progress \<sigma> P (R
 lemma progress_Releasep_le: "mem I 0 \<Longrightarrow>
   progress \<sigma> P (Releasep pos \<phi> I \<psi>) j \<le> min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)"
   by (auto simp: trans_le_add1 intro!: cInf_lower)
+
+subsection \<open> Evaluation step \<close>
 
 lemma update_release':
   "wf_release_auxlist \<sigma> V n R pos \<phi>'' I \<psi>'' aux'' (progress \<sigma> P' (Releasep pos \<phi>'' I \<psi>'') (j + \<delta>)) \<and>

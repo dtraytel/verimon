@@ -4,15 +4,12 @@ theory Exec_Until_Simulation
 begin
 (*>*)
 
-section \<open>The executable Until structure\<close>
+section \<open>Correctness of the executable Until structure\<close>
 
-text \<open>
-  The Until structure needs far less than the Since one.  Only one of its components mentions
-  the left operand: the mapping @{text a1_map} that records, for each tuple over the left
-  operand's columns, the last time point at which it held.  The verified structure looks a stored
-  tuple's restriction to those columns up in it; the executable one looks up the tuple's executable
-  projection, which is the same tuple.  Every other operation is the verified one.
-\<close>
+text \<open>Only @{text a1_map} mentions the left operand: the executable structure looks up a stored
+  tuple's projection where the verified one looks up its restriction, which is the same tuple.\<close>
+
+subsection \<open>Insertion over ascending columns\<close>
 
 lemma mmuaux_dq_cases:
   fixes d :: "event_data mmuaux_dq"
@@ -32,11 +29,8 @@ lemma fold_euntil_elem_step_dq:
      = fold (until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P d) xs acc"
   by (induct xs arbitrary: acc) (simp_all add: euntil_elem_step_dq_eq)
 
-text \<open>
-  The executable operation is the verified one.  Where @{const add_new_dq} guards the fold with
-  @{term \<open>finite rel2\<close>} and falls back on the other structure, this one folds unconditionally:
-  every table the evaluator produces is finite.
-\<close>
+text \<open>Unlike @{const add_new_dq}, the fold needs no guard @{term \<open>finite rel2\<close>}: every table
+  the evaluator produces is finite.\<close>
 
 theorem eadd_new_dq_eq:
   assumes fin: "finite rel2" and dm: "emsk_args args msk"
@@ -59,6 +53,8 @@ proof (cases "shift_dq args nt aux" rule: mmuaux_dq_cases)
     unfolding eadd_new_dq_def add_new_dq_def if_P[OF fin] 1 csl_finite[OF fin]
     by (simp add: Let_def fl split: prod.splits)
 qed
+
+subsection \<open>Validity over ascending columns\<close>
 
 lemma evalid_init_muaux:
   assumes LR: "set L \<subseteq> set R" "distinct L" "distinct R"
@@ -168,8 +164,7 @@ lemma eauxlist3_wf_eval_until:
   shows "\<forall>(t, a1, a2) \<in> set aux'. table kR a1 \<and> table kR a2"
   using wf eval_until_auxlist'[OF e] by (auto dest: in_set_dropD)
 
-
-
+subsection \<open>Deque reads with defaults\<close>
 
 lemma dq_nth_s_in: "k < dq_len d \<Longrightarrow> dq_nth_s d k z = dq_nth d k"
   by (simp add: dq_nth_s_def)
@@ -213,7 +208,7 @@ lemma dq_hd_s_upd_pos:
   using dq_hd_s_list[of "dq_upd d k x" z] dq_hd_s_list[of d z]
   by (cases "dq_list d"; cases k) (auto simp: dq_len_upd dq_list_upd dq_len_list)
 
-subsection \<open>Agreement with the kernel's structure\<close>
+subsection \<open>Agreement of the generic structure\<close>
 
 lemma ginit_dq_eq: "ginit_dq args = (init_dq args :: event_data mmuaux_dq)"
   by (simp add: ginit_dq_def init_dq_def)
@@ -442,7 +437,7 @@ proof -
     unfolding ga using q1 invt lt lts by (simp add: dq_len_push append_queue_rep)
 qed
 
-subsection \<open>The shape follows from the kernel's invariant\<close>
+subsection \<open>Shape from the kernel's invariant\<close>
 
 lemma evalid_muaux_ushape:
   assumes v: "evalid_muaux args msk cur d auxlist"

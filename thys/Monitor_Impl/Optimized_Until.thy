@@ -4,7 +4,9 @@ theory Optimized_Until
 begin
 (*>*)
 
-subsection \<open>Optimized data structure for Until\<close>
+section \<open>Optimized data structure for Until\<close>
+
+subsection \<open>Invariant\<close>
 
 type_synonym tp = nat
 
@@ -95,6 +97,8 @@ fun valid_mmuaux' :: "args \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow> event
 definition valid_mmuaux :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rightarrow> event_data muaux \<Rightarrow>
   bool" where
   "valid_mmuaux args cur = valid_mmuaux' args cur cur"
+
+subsection \<open>Operations\<close>
 
 fun eval_step_mmuaux :: "args \<Rightarrow> event_data mmuaux \<Rightarrow> event_data mmuaux" where
   "eval_step_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =

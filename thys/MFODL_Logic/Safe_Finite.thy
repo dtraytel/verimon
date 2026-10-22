@@ -5,21 +5,17 @@ theory Safe_Finite
 begin
 (*>*)
 
-section \<open> Finite @{term safe_formula} \<close>
+section \<open>Finiteness of safe formulas\<close>
 
-text \<open>A safe and future-bounded formula has finitely many satisfying valuations at every time-point,
-  provided that the trace's databases and the interpretations of the predicates in the
-  environment are finite (@{text safe_formula_finite} and @{text safe_formula_finite_dense}).\<close>
+text \<open>A safe, future-bounded formula has finitely many satisfying valuations at each time point
+  if the trace's databases and the interpretations of the predicates are finite.\<close>
 
-unbundle MFODL_notation \<comment> \<open> enable notation \<close>
+unbundle MFODL_notation
 
+subsection \<open>Partial valuations\<close>
 
-subsection \<open> Partial valuations \<close>
-
-text \<open>The finiteness argument works with partial valuations: lists of optional values of length
-  @{term n} that are defined exactly at a set of variables.  They are not the monitor's tuples,
-  which list the values at their columns only; @{text safe_formula_finite_dense} below transfers
-  the result to those.\<close>
+text \<open>The finiteness proof uses partial valuations, defined exactly at a set of variables,
+  rather than the monitor's tuples.\<close>
 
 definition pwf_tuple :: "nat \<Rightarrow> nat set \<Rightarrow> 'a option list \<Rightarrow> bool" where
   "pwf_tuple n V x \<longleftrightarrow> length x = n \<and> (\<forall>i<n. x!i = None \<longleftrightarrow> i \<notin> V)"
@@ -78,6 +74,8 @@ lemma pwf_tuple_prestrict_simple: "pwf_tuple n B v \<Longrightarrow> A \<subsete
 
 lemma prestrict_eq_Nil[simp]: "prestrict A v = [] \<longleftrightarrow> v = []"
   unfolding prestrict_def by auto
+
+subsection \<open>Joins of partial valuations\<close>
 
 fun pjoin1 :: "'a option list \<times> 'a option list \<Rightarrow> 'a option list option" where
   "pjoin1 ([], []) = Some []"
@@ -154,7 +152,6 @@ next
   from "2.prems"(1) obtain A B Cs where bs: "bs = A # B # Cs"
     and wf: "pwf_tuple n A a" "pwf_tuple n B b" "list_all2 (pwf_tuple n) Cs cs"
     by (auto simp: list_all2_Cons2)
-  \<comment> \<open>the prestriction of @{term z} to @{term "A \<union> B"} is the only candidate for the pjoin of a and b\<close>
   have pjoin_prestrict: "pjoin1 (a, b) = Some (prestrict (A \<union> B) z) \<longleftrightarrow> prestrict A z = a \<and> prestrict B z = b"
     if "pwf_tuple n (\<Union> (set bs)) z"
   proof -
@@ -211,7 +208,7 @@ lemma Collect_singleton_tuple_eq_image: "i < n \<Longrightarrow> {v. pwf_tuple n
   by (auto simp add: list_eq_iff_nth_eq nth_list_update intro: rev_image_eqI)
 
 
-subsection \<open> Finiteness of the satisfying valuations \<close>
+subsection \<open>Finiteness for predicates and LetPast\<close>
 
 lemma sat_the_prestrict: "fv \<phi> \<subseteq> A \<Longrightarrow>
   Formula.sat \<sigma> V (map the (prestrict A v)) i \<phi> = Formula.sat \<sigma> V (map the v) i \<phi>"
@@ -310,6 +307,8 @@ proof (induction i rule: less_induct)
   ultimately show ?case
     by (rule finite_surj)
 qed
+
+subsection \<open>Finiteness for regular expressions\<close>
 
 lemma safe_regex_Past_finite: "Regex.safe_regex fv rgx_safe_pred Past Strict r \<Longrightarrow>
   (\<And>i \<phi>. \<phi> \<in> safe_atms r \<Longrightarrow> finite {v. pwf_tuple n (fv \<phi>) v \<and> test v i \<phi>}) \<Longrightarrow>
@@ -437,6 +436,8 @@ next
     by (rule finite_subset) (simp add: unit_ptable_def)
 qed
 
+subsection \<open>Finiteness of the satisfying valuations\<close>
+
 lemma safe_formula_finite: "safe_formula \<phi> \<Longrightarrow> Safety.future_bounded \<phi> \<Longrightarrow> n\<ge> (Formula.nfv \<phi>) \<Longrightarrow> \<forall> i. finite (\<Gamma> \<sigma> i) \<Longrightarrow>
   \<forall>pn\<in>dom V. \<forall>i. finite {v. length v = snd pn \<and> the (V pn) v i} \<Longrightarrow>
   finite {v. pwf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
@@ -551,8 +552,6 @@ next
     by simp
   have fv_\<psi>_n: "\<forall>z\<in>fv \<psi>. z < n"
     using fvi_less_nfv[of \<psi>] And_assign(5) by fastforce
-  \<comment> \<open>assigning a variable @{term x} that does not occur in @{term \<phi>} the value of a term over
-    the variables of @{term \<phi>} is injective on the tuples satisfying @{term \<phi>}\<close>
   have assign: ?case
     if x: "x < n" "x \<notin> fv \<phi>" and t: "fv_trm t \<subseteq> fv \<phi>" and fv_\<psi>: "fv \<psi> = insert x (fv_trm t)"
       and sat_\<psi>: "\<And>v. Formula.sat \<sigma> V v i \<psi> \<longleftrightarrow> v ! x = Formula.eval_trm v t" for x t
@@ -776,7 +775,6 @@ next
     then obtain z where wf: "pwf_tuple n (Formula.fvi (Suc 0) \<phi>) v"
       and sat: "Formula.sat \<sigma> V (z # map the v) i \<phi>"
       by auto
-    \<comment> \<open>the bound variable 0 occurs in @{term \<phi>}, so it gets a defined value\<close>
     from wf Exists.hyps(2) have "pwf_tuple (Suc n) (fv \<phi>) (Some z # v)"
       by (simp add: pwf_tuple_def All_less_Suc2 fvi_Suc)
     moreover from sat have "Formula.sat \<sigma> V (map the (Some z # v)) i \<phi>"
@@ -803,7 +801,6 @@ next
   have final_subset: "finite (drop b`{v. pwf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})})"
     using drop_b IH_alt
     by (simp add: conj_disj_distribL Collect_disj_eq image_Un)
-  \<comment> \<open>the variable @{term y} does not occur in @{term \<phi>} (shifted by @{term b})\<close>
   have upd_eq: "(zs @ map the (x[y := None])) ! j = (zs @ map the x) ! j"
     if "length zs = b" and "j \<in> fv \<phi>" for x and zs :: Formula.env and j
   proof (cases "j < b")
@@ -833,7 +830,7 @@ next
     using Agg.hyps(1) by (simp add: fvi_iff_fv[of _ "length tys"])
   have "y < n"
     using fvi_less_nfv[of "Formula.Agg y \<omega> tys f \<phi>"] Agg.prems(2) fv_Agg by fastforce
-  \<comment> \<open>a satisfying tuple is determined by its group, i.e., the values of all other variables\<close>
+  \<comment> \<open>a satisfying tuple is determined by its group\<close>
   let ?G = "{w. pwf_tuple n (Formula.fvi b \<phi>) w \<and> (?M (map the w) = {} \<longrightarrow> fv \<phi> \<subseteq> {0..<b})}"
   let ?g = "\<lambda>w. w[y := Some (eval_agg_op \<omega> (?M (map the w)))]"
   have S_sub: "{v. pwf_tuple n (fv (Formula.Agg y \<omega> tys f \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Agg y \<omega> tys f \<phi>)}
@@ -866,7 +863,6 @@ next
     ultimately show "v \<in> ?g ` ?G"
       by (rule rev_image_eqI[OF _ sym])
   qed
-  \<comment> \<open>every group extends to a satisfying tuple of @{term \<phi>}, unless @{term \<phi>} only has the bound variables\<close>
   have G_sub: "?G \<subseteq> drop b`{v. pwf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})}"
   proof
     fix w
@@ -992,7 +988,6 @@ next
     by (auto simp: bounded_memR)
   obtain j where j: "m + \<tau> \<sigma> i \<le> \<tau> \<sigma> j"
     using ex_le_\<tau> by blast
-  \<comment> \<open>after @{term j}, the interval has been left\<close>
   have j2_le: "j2 \<le> j" if "memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)" for j2
   proof (rule ccontr)
     assume "\<not> j2 \<le> j"
@@ -1020,7 +1015,6 @@ next
     by (auto simp: bounded_memR)
   obtain j where j: "m + \<tau> \<sigma> i \<le> \<tau> \<sigma> j"
     using ex_le_\<tau> by blast
-  \<comment> \<open>after @{term j}, the interval has been left\<close>
   have j2_le: "j2 \<le> j" if "memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)" for j2
   proof (rule ccontr)
     assume "\<not> j2 \<le> j"
@@ -1044,7 +1038,7 @@ next
   from this fin show ?case
     by (rule finite_subset)
 next
-  case (Trigger \<phi> I \<psi>) (* notice the False at the end *)
+  case (Trigger \<phi> I \<psi>)
   let ?sats = "{v. pwf_tuple n (FV (\<phi> \<^bold>T I \<psi>)) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi> \<^bold>T I \<psi>}"
   have "finite (unit_ptable n)"
     by (auto simp: unit_ptable_def)
@@ -1084,7 +1078,7 @@ next
   ultimately show ?case 
     by (elim finite_subset[rotated])
 next
-  case (Release \<phi> I \<psi>) (* notice the False at the end *)
+  case (Release \<phi> I \<psi>)
   let ?sats = "{v. pwf_tuple n (FV (\<phi> \<^bold>R I \<psi>)) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi> \<^bold>R I \<psi>}"
   have "finite (unit_ptable n)"
     by (auto simp: unit_ptable_def)
@@ -1109,7 +1103,6 @@ next
     by blast
 next
   case (Release_0 \<phi> I \<psi>)
-  \<comment> \<open>with 0 in the interval, the release implies its right operand\<close>
   from Release_0 have fin: "finite {v. pwf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
     by (simp add: Formula.nfv_def)
   have "fv (Formula.Release \<phi> I \<psi>) = fv \<psi>"
@@ -1124,7 +1117,6 @@ next
   have IH: "finite {v. pwf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
     if "\<phi> \<in> safe_atms r" for k \<phi>
   proof -
-    \<comment> \<open>@{term \<phi>} is an atom of @{term r} or the negation of @{term \<phi>} is one\<close>
     from that obtain \<psi> where \<psi>: "\<psi> \<in> Regex.atms r"
       and \<phi>\<psi>: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {})"
       unfolding safe_atms_def by blast
@@ -1152,7 +1144,6 @@ next
     by (auto simp: bounded_memR)
   obtain j where j: "m + \<tau> \<sigma> i \<le> \<tau> \<sigma> j"
     using ex_le_\<tau> by blast
-  \<comment> \<open>after @{term j}, the interval has been left\<close>
   have j2_le: "j2 \<le> j" if "memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)" for j2
   proof (rule ccontr)
     assume "\<not> j2 \<le> j"
@@ -1166,7 +1157,6 @@ next
   have IH: "finite {v. pwf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
     if "\<phi> \<in> safe_atms r" for k \<phi>
   proof -
-    \<comment> \<open>@{term \<phi>} is an atom of @{term r} or the negation of @{term \<phi>} is one\<close>
     from that obtain \<psi> where \<psi>: "\<psi> \<in> Regex.atms r"
       and \<phi>\<psi>: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {})"
       unfolding safe_atms_def by blast
@@ -1200,7 +1190,7 @@ next
     by (auto simp add: pwf_tuple_empty_iff Collect_singleton_tuple_eq_image[where P="\<lambda>x. x = _"])
 qed
 
-text \<open>The same for the monitor's tuples, over any list of the free variables.\<close>
+subsection \<open>Finiteness for the monitor's tuples\<close>
 
 lemma safe_formula_finite_dense:
   assumes "safe_formula \<phi>" "Safety.future_bounded \<phi>" "n \<ge> Formula.nfv \<phi>" "\<forall>i. finite (\<Gamma> \<sigma> i)"
@@ -1235,7 +1225,7 @@ proof -
     using inj_on_finite[of ?p ?D ?P] safe_formula_finite[OF assms(1-5)] by blast
 qed
 
-unbundle MFODL_no_notation \<comment> \<open> disable notation \<close>
+unbundle MFODL_no_notation
 
 
 (*<*)

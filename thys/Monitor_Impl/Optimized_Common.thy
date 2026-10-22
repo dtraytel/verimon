@@ -4,6 +4,8 @@ theory Optimized_Common
 begin
 (*>*)
 
+section \<open>Notions shared by optimized structures\<close>
+
 fun upd_set_keys where "upd_set_keys Z (t, X) (m, Y) = (upd_set m (\<lambda>_. t) (Z X t), Y \<union> Z X t)"
 
 declare upd_set_keys.simps[simp del]

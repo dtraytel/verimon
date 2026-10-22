@@ -4,12 +4,13 @@ theory Exec_Compiler_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of the compiler\<close>
 
+text \<open>@{const eof} answers @{const EFail} where it has no executable node or a check fails.
+  Nothing relates @{const EFail} to a kernel formula, so the results assume @{term "eofz n \<phi>"}.\<close>
 
 lemma efail_nodes_eset_q: "eset_q c d = Some d' \<Longrightarrow> efail_nodes d' = efail_nodes d"
   by (cases d) (auto split: udsaux_x.splits option.splits)
-
-text \<open>The structures the compiler starts the nodes with, read through their representations.\<close>
 
 lemma rdsx_udsx_init[simp]: "rdsx (udsx_init args msk) = esx_init args msk"
   by (rule esx_init_rdsx[symmetric])
@@ -20,7 +21,7 @@ lemma rdux_udux_init[simp]: "rdux (udux_init args) = eux_init args"
 lemma rdux_udux_init_agg[simp]: "rdux (udux_init_agg args p) = eux_init_agg args p"
   by (rule eux_init_agg_rdux[symmetric])
 
-subsection \<open>Column lists in ascending order\<close>
+subsection \<open>Ascending column lists\<close>
 
 lemma set_ecols[simp]: "set (ecols k) = set k"
   by (simp add: ecols_def set_cols)
@@ -40,7 +41,7 @@ lemma ecols_upt: "set k = {0..<m} \<Longrightarrow> ecols k = [0..<m]"
 lemma eframe_fv_list: "eframe (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>))"
   by (rule eframe_dcols[OF distinct_fvi_list])
 
-subsection \<open>The kernel's initial state\<close>
+subsection \<open>Initial state of the kernel\<close>
 
 lemma fv_list_and_release_safe_bounded:
   "Formula.fv (Formula.Release \<phi>' I \<psi>') \<subseteq> Formula.fv \<phi> \<Longrightarrow>
@@ -48,8 +49,6 @@ lemma fv_list_and_release_safe_bounded:
      = Formula.fv_list (Formula.And \<phi> (Formula.Release \<phi>' I \<psi>'))"
   by (simp add: and_release_safe_bounded_def release_safe_bounded_def always_safe_bounded_def
       cols_union_subset)
-
-text \<open>The fields of the kernel's initial state, read off @{const minit_safe}.\<close>
 
 lemma minit_safe_state:
   assumes "mmonitorable \<phi>"
@@ -59,18 +58,6 @@ lemma minit_safe_state:
     and "mstate_t (minit_safe \<phi>) = []"
   using assms[unfolded monitorable_formula_code]
   by (simp_all add: default_maux.minit_safe_def default_maux.minit_def Let_def)
-
-subsection \<open>The nodes the executable fragment does not cover\<close>
-
-text \<open>
-  @{const eof} is total, and answers @{const EFail} where it has no executable node or where a check
-  fails.  Nothing relates @{const EFail} to a kernel formula, so every statement below is
-  conditional on the compiled formula containing none of them -- @{term "eofz n \<phi>"} -- and each
-  check of the compiler is then available as a fact.
-\<close>
-
-text \<open>A safe formula's initial state is a constant table only for an equality, whose table the
-  kernel's correctness proof describes.\<close>
 
 lemma esim_dof_minit0_rel:
   assumes s: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
@@ -88,7 +75,7 @@ proof -
     unfolding m eof.simps by (rule EsRel[OF eframe_fv_list])
 qed
 
-subsection \<open>The temporal structures' initial states\<close>
+subsection \<open>Initial temporal structures\<close>
 
 lemma esince_rel_init:
   assumes a: "args = init_args I n kL kR pos agg"
@@ -168,6 +155,8 @@ proof -
     by (rule etrigger_relI[OF v _ d]) simp_all
   then show ?thesis by (simp only: list.map)
 qed
+
+subsection \<open>Temporal nodes\<close>
 
 lemma eof_since_z:
   assumes "efail_nodes (eof n ks cs (MSince args \<phi> \<psi> buf aux)) = 0"
@@ -430,11 +419,7 @@ proof -
   qed
 qed
 
-subsection \<open>The guard\<close>
-
-text \<open>A constraint over a node goes into the node as its guard exactly when the node is a fused
-  aggregating Since without one; the node is then related to the kernel's constraint over the
-  kernel's node by the rule for the guarded Since, and otherwise the constraint stays above it.\<close>
+subsection \<open>Guard of a fused Since\<close>
 
 lemma esim_eset_q:
   assumes s: "esim n ks cs tw d \<phi>"
@@ -467,7 +452,7 @@ next
   then show ?thesis using Some by simp
 qed
 
-subsection \<open>The compiler produces a simulation\<close>
+subsection \<open>Simulation of the initial state\<close>
 
 theorem esim_dof_minit0:
   "safe_formula \<phi> \<Longrightarrow> \<forall>x \<in> Formula.fv \<phi>. x < n \<Longrightarrow> eofz n \<phi> \<Longrightarrow> eofc n tw \<phi>"
@@ -1153,6 +1138,11 @@ next
   show ?case using TS.prems(2) eframe_fv_list[of "Formula.TS t"]
     by (auto split: if_splits intro!: EsTS)
 qed
+
+subsection \<open>Verdicts of the compiled monitor\<close>
+
+text \<open>Started on the compiled initial state, the executable monitor outputs exactly the specified
+  verdicts, provided the state has no @{const EFail} node.\<close>
 
 lemma emsim_state_eof_state:
   assumes n: "mstate_n st = n" and p: "esim n ks cs tw (eof n ks cs (mstate_m st)) (mstate_m st)"

@@ -4,32 +4,14 @@ theory Until_Agg
 begin
 (*>*)
 
-
-
-section \<open>The Until window with the aggregation fused in\<close>
+section \<open>Until window with fused aggregation\<close>
 
 text \<open>
-  @{theory Monitor_Exec.Since_Agg} fuses an aggregation into the Since window: the
-  count set makes each tuple's entry into and exit from the window's union explicit, and those
-  are exactly the events the kernel's incremental structure takes, so the aggregate is kept in
-  step with the union and read off instead of recomputed.
-
-  The Until window keeps a count set in the same way, but it differs in when its answers are
-  produced: a time point's answer is settled only once the window has run far enough past it,
-  so @{const uw_step} pushes a \<^emph>\<open>snapshot\<close> of the union onto a list of finished answers and
-  @{const uw_eval} hands the list over later.  Fusing the aggregation therefore means two
-  things: the aggregate is maintained alongside the count set through the same insertions
-  (@{const uw_extend}) and deletions (@{const uw_step}), and what is pushed is the aggregate's
-  own reading at that moment rather than the raw union.  The list of finished answers holds
-  aggregated tables from then on, which is what makes this worth doing: the unfused node
-  clusters every one of those tables into groups once per time point.
+  The aggregate is kept alongside the count set, and a settled answer is the aggregate's reading
+  at that moment rather than the raw union.
 \<close>
 
-subsection \<open>The structure\<close>
-
-text \<open>The same seven components as @{typ uwaux}, paired with the kernel's incremental
-  structure, exactly as @{typ swagg} pairs @{typ swaux} with it.  The list of finished answers
-  inside holds tables the aggregation has already been applied to.\<close>
+subsection \<open>Fused window\<close>
 
 type_synonym uwagg = "uwaux \<times> egagg option"
 
@@ -97,11 +79,7 @@ definition ua_eval :: "args \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow> 
      (case ua_shift args p w nt a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
        (rev dn, ((nts, win, rest, len, bend, cc, []), ax)))"
 
-subsection \<open>What it is valid for\<close>
-
-text \<open>The fused window is related to a plain one that has taken the same steps: the same seven
-  components, except that its finished answers are the plain window's with the aggregation
-  applied, and the incremental structure stands for the window's current union.\<close>
+subsection \<open>Validity\<close>
 
 definition ua_rel :: "eaggp \<Rightarrow> nat \<Rightarrow> uwagg \<Rightarrow> uwaux \<Rightarrow> bool" where
   "ua_rel p w a u \<longleftrightarrow>
@@ -115,15 +93,7 @@ definition valid_ua :: "args \<Rightarrow> eaggp \<Rightarrow> ts \<Rightarrow> 
      (\<exists>u. ua_rel p (args_n args) a u \<and> valid_uw args cur u auxlist) \<and>
      length (args_R args) = args_n args \<and> eagg_ok p (args_n args)"
 
-section \<open>The executable fused Until window\<close>
-
-text \<open>
-  The theory above fuses the aggregation into the Until window.  The
-  executable window is the same structure with the count structure kept without its key set, as
-  the executable fused Since window of @{theory Monitor_Exec.Since_Agg} keeps it: it reports
-  the aggregate rather than the union, so the mapping answers everything it asks.  There is no
-  invariant here -- that stayed a level below, in @{const valid_ua}.
-\<close>
+subsection \<open>Executable fused window\<close>
 
 type_synonym uuwauxm = "ts queue \<times> uw_entry queue \<times> uw_entry queue \<times> nat \<times> bool \<times>
   ucnt \<times> event_data list set list"
@@ -204,8 +174,6 @@ definition uua_eval :: "args \<Rightarrow> eaggp \<Rightarrow> nat \<Rightarrow>
   "uua_eval args p w nt a =
      (case uua_shift args p w nt a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
        (rev dn, ((nts, win, rest, len, bend, cc, []), ax)))"
-
-subsection \<open>The refinement of the executable window\<close>
 
 fun rua :: "uuwagg \<Rightarrow> uwagg" where
   "rua (w, ax) = (uuwm w, ax)"

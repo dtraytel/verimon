@@ -4,7 +4,9 @@ theory Closed_Left_Windows_Valid
 begin
 (*>*)
 
+section \<open>Validity of the closed-left-operand windows\<close>
 
+subsection \<open>Count sets\<close>
 
 lemma cnt_rep_empty: "cnt_rep (\<lambda>_. 0) (Mapping.empty, {})"
   by (simp add: cnt_rep_def)
@@ -106,7 +108,7 @@ qed simp
 lemma cnt_inv_set: "cnt_inv Ts cc \<Longrightarrow> snd cc = \<Union> (set Ts)"
   by (auto simp: cnt_rep_def cnt_of_def filter_empty_conv)
 
-subsection \<open>Two facts about the closed left operand\<close>
+subsection \<open>Intervals, joins and scans\<close>
 
 lemma not_memR_mono: "cur \<le> nt \<Longrightarrow> \<not> memR I (cur - a) \<Longrightarrow> \<not> memR I (nt - a)"
   using memR_antimono[of I "nt - a" "cur - a"] diff_le_mono by blast
@@ -116,9 +118,6 @@ lemma memR_mono_ts: "t0 \<le> t \<Longrightarrow> memR I (nt - t0) \<Longrightar
 
 lemma check_before_fst: "check_before I nt e \<longleftrightarrow> \<not> memR I (nt - fst e)"
   by (cases e) simp
-
-text \<open>Joining a table with a table over no columns keeps it or empties it, depending only on
-  whether that table is empty and on the polarity.\<close>
 
 lemma join_closed:
   assumes "table R rel" and "table [] rel1"
@@ -161,9 +160,6 @@ lemma foldr_Un_filter:
   "foldr (\<union>) [rel. (t, rel) \<leftarrow> xs, P t] {} = \<Union> {rel. \<exists>t. (t, rel) \<in> set xs \<and> P t}"
   unfolding foldr_Un_set set_filter_comp ..
 
-text \<open>A predicate on timestamps that only fails further to the right cuts a sorted list into a
-  prefix and a suffix, so the two scans coincide with the two filters.\<close>
-
 lemma takeWhile_antitone:
   assumes s: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') xs"
     and a: "\<And>e e'. fst e \<le> fst e' \<Longrightarrow> P e' \<Longrightarrow> P e"
@@ -184,7 +180,9 @@ proof (induct xs)
   qed
 qed simp
 
-subsubsection \<open>What the two scans do to the queues\<close>
+subsection \<open>Since structure\<close>
+
+subsubsection \<open>Moving and expiring entries\<close>
 
 lemma sw_move_rep:
   "linearize pend = pl \<Longrightarrow> sw_move args nt pend win cc = (pend', win', cc') \<Longrightarrow>
@@ -259,6 +257,8 @@ next
   qed
 qed
 
+subsubsection \<open>Validity of the operations\<close>
+
 lemma valid_sw_init: "valid_sw args 0 (sw_init args) []"
   by (simp add: valid_sw_def sw_init_def sw_inv_def empty_queue_rep cnt_inv_empty)
 
@@ -321,7 +321,6 @@ proof -
     using exr[unfolded df2] by (simp add: fmvd)
   have c2: "cc2 = fold cnt_del (map snd (filter (\<lambda>e. \<not> ?Q e) (wl @ mvd))) cc1"
     using exr[unfolded tf2] by simp
-  \<comment> \<open>the count set\<close>
   have fin_mvd: "\<forall>T \<in> set (map snd mvd). finite T" using mvd_sub ipl by auto
   have fin_wl: "\<forall>T \<in> set (map snd (wl @ mvd)). finite T" using fin_mvd iwl by auto
   have cnt1: "cnt_inv (map snd (wl @ mvd)) cc1"
@@ -333,7 +332,6 @@ proof -
     unfolding c2 by (rule cnt_inv_dels) (use cnt1[unfolded split] fin_wl in auto)
   have cnt2': "cnt_inv (map snd (linearize win2)) cc2"
     using cnt2 unfolding w2 by (simp add: fmvd)
-  \<comment> \<open>the invariant on the queues\<close>
   have ord2: "\<forall>e \<in> set (filter ?Q wl). \<forall>e' \<in> set mvd. fst e \<le> fst e'"
   proof (intro ballI)
     fix e e' assume "e \<in> set (filter ?Q wl)" and "e' \<in> set mvd"
@@ -382,7 +380,6 @@ proof -
       qed
     qed
   qed
-  \<comment> \<open>the tables at every timestamp\<close>
   have at': "\<And>u. tbls_at u (linearize pend1 @ linearize win2)
       = tbls_at u (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist)"
   proof -
@@ -574,8 +571,9 @@ proof -
   then show ?thesis unfolding r foldr_Un_filter .
 qed
 
-text \<open>Appending an entry to a run extends every answer by the new table exactly when the new
-  timestamp is in range from the run's start and the left operand held throughout the run.\<close>
+subsection \<open>Until structure\<close>
+
+subsubsection \<open>Abstract list of a run\<close>
 
 lemma uw_a2_snoc:
   assumes "\<forall>e \<in> set es. fst e \<le> nt"
@@ -677,6 +675,8 @@ next
       (simp_all add: a2 Un_ac)
 qed
 
+subsubsection \<open>Extending the window\<close>
+
 lemma uw_ext_prefix: "\<exists>sfx. rl = uw_ext I ts0 bend rl @ sfx"
   by (induct I ts0 bend rl rule: uw_ext.induct) (auto simp: fun_eq_iff)
 
@@ -748,8 +748,6 @@ proof (induct rl)
   show ?case unfolding e using Cons by (cases b; cases "memR I (t - ts0)") auto
 qed simp
 
-text \<open>After the extension the window is the whole run the answer is the union of.\<close>
-
 lemma uw_win_a2:
   assumes w: "uw_win I ts0 wl bend"
   shows "uw_a2 I ts0 (wl @ rl) = \<Union> (set (map (fst \<circ> snd) (wl @ uw_ext I ts0 bend rl)))"
@@ -811,10 +809,10 @@ next
     unfolding uw_win_def ex_def[symmetric] by (auto simp: butlast_append)
 qed
 
+subsubsection \<open>Validity of the operations\<close>
+
 lemma valid_uw_init: "valid_uw args 0 (uw_init args) []"
   by (simp add: valid_uw_def uw_init_def empty_queue_rep cnt_inv_empty uw_win_Nil)
-
-text \<open>One step: the oldest pending time point's answer is its abstract entry's.\<close>
 
 lemma valid_uw_step:
   assumes v: "valid_uw args cur aux auxlist"
@@ -868,7 +866,6 @@ proof -
     unfolding w1 c1 map_append by (rule cnt_inv_adds[OF cnt fin_ex1])
   have wi1: "uw_win ?I ts0 (linearize win1) bend1"
     unfolding w1 b1 ex1_def by (rule uw_win_extend[OF wi'])
-  \<comment> \<open>the window is not empty\<close>
   have w1_ne: "linearize win1 \<noteq> []"
   proof (cases "linearize win")
     case Nil
@@ -884,13 +881,11 @@ proof -
   have lw2: "linearize win2 = e1 # wl1" using safe_hd_rep[OF sh2] wl1 by simp
   have ho: "ho = Some e1" using safe_hd_rep[OF sh2] lw2 by (cases ho) auto
   have lw3: "linearize (tl_queue win2) = wl1" by (simp add: tl_queue_rep lw2)
-  \<comment> \<open>the answer\<close>
   have ans: "snd cc1 = uw_a2 ?I ts0 es"
     using cnt_inv_set[OF cnt1] uw_win_a2[OF wi', of "linearize rest"]
     unfolding w1 ex1_def es_def by simp
   have abs0: "uw_abs args es = (ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es) # uw_abs args es'"
     unfolding es ts0 by (cases e0) simp
-  \<comment> \<open>the result\<close>
   define res where "res = (tl_queue nts', tl_queue win2, rest1, len - 1,
      if Queue.is_empty (tl_queue win2) then True else bend1, cnt_del (fst (snd e1)) cc1, snd cc1 # dn)"
   have step: "uw_step args ts0 (nts', win, rest, len, bend, cc, dn) = res"
@@ -991,8 +986,6 @@ qed
 
 lemma uw_len_step: "uw_len (uw_step args ts0 (nts, win, rest, len, bend, cc, dn)) = len - 1"
   by (simp add: uw_step_def Let_def split: prod.splits option.splits)
-
-text \<open>The shift pops the pending time points that no later one can affect, in order.\<close>
 
 lemma valid_uw_shift:
   assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"

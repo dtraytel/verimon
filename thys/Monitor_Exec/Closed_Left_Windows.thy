@@ -4,34 +4,14 @@ theory Closed_Left_Windows
 begin
 (*>*)
 
-
-
-section \<open>The closed-left-operand structures, verified\<close>
+section \<open>Sliding windows for closed left operands\<close>
 
 text \<open>
-  @{text "ONCE I \<phi>"} is @{text "TT SINCE I \<phi>"} and @{text "EVENTUALLY I \<phi>"} is
-  @{text "TT UNTIL I \<phi>"}: the left operand is closed, so it holds either for every valuation or
-  for none, and ``the left operand held throughout'' is a property of time points alone.  The
-  general structures keep a mapping from tuples to time points for the left operand; with a closed
-  left operand the answer is the union of the right operand's tables over a contiguous run of time
-  points, and both ends of that run only ever move forward.  So a sliding window suffices: the
-  tables of the run in a queue, the union of the run as a count per tuple, and the answer as the
-  set of tuples whose count is positive.
-
-  This theory defines these two structures for the verified executable evaluator and proves them
-  against the abstract specification the kernel's own structures meet: the assumptions of the
-  locales @{locale msaux} and @{locale muaux}, specialised to a closed left operand.  The verified
-  executable evaluator picks them for a closed left operand, and the simulation theorem covers the
-  choice.
+  With a closed left operand, Since and Until answer the union of the right operand's tables over
+  a run of time points whose ends only move forward: a window with a count per tuple.
 \<close>
 
-subsection \<open>A multiset of tuples as a count mapping\<close>
-
-text \<open>
-  A window's union is kept incrementally: a count per tuple, and the set of tuples whose count
-  is positive.  Adding a table increments the count of each of its tuples; removing it decrements
-  them.  The invariant relates the pair to a count function.
-\<close>
+subsection \<open>Count mappings\<close>
 
 type_synonym cntset = "(event_data tuple, nat) mapping \<times> event_data table"
 
@@ -112,15 +92,11 @@ lemma cnt_rep_add:
     csorted_list_of_set_etuple[OF assms(2)]
   unfolding cnt_add_def csl_finite[OF assms(2)] by simp
 
-text \<open>The count function of a list of tables: how many of them contain a tuple.\<close>
-
 definition cnt_of :: "event_data table list \<Rightarrow> event_data tuple \<Rightarrow> nat" where
   "cnt_of Ts x = length (filter (\<lambda>T. x \<in> T) Ts)"
 
 abbreviation cnt_inv :: "event_data table list \<Rightarrow> cntset \<Rightarrow> bool" where
   "cnt_inv Ts cc \<equiv> cnt_rep (cnt_of Ts) cc"
-
-text \<open>The tables of a list at one timestamp.\<close>
 
 definition tbls_at :: "ts \<Rightarrow> (ts \<times> event_data table) list \<Rightarrow> event_data table" where
   "tbls_at u es = \<Union> {rel. (u, rel) \<in> set es}"
@@ -128,14 +104,10 @@ definition tbls_at :: "ts \<Rightarrow> (ts \<times> event_data table) list \<Ri
 lemma tbls_at_Nil[simp]: "tbls_at u [] = {}"
   by (simp add: tbls_at_def)
 
-subsection \<open>The Since structure for a closed left operand\<close>
+subsection \<open>Since window\<close>
 
 text \<open>
-  Two queues of tables, oldest first: the ones whose timestamp is not yet old enough to be in
-  the window, and the window itself; and the window's union as a count set.  For Since a non-zero
-  left bound delays a table's entry into the window rather than excluding it, so a table waits in
-  the first queue until it is old enough, enters the window, and leaves it when it is too old.
-  Both queues are sorted and every table of the window is older than every waiting one.
+  A queue of tables not yet old enough for the window, the window, and its union as a count set.
 \<close>
 
 type_synonym swaux = "ts \<times> (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> cntset"
@@ -202,15 +174,6 @@ definition sw_result :: "args \<Rightarrow> swaux \<Rightarrow> event_data table
 
 subsubsection \<open>Validity\<close>
 
-text \<open>
-  The structure is valid for the abstract auxiliary list when: the waiting queue holds the
-  entries whose timestamp is not yet in the interval's range, the window holds the ones that are,
-  both sorted, the window older than the waiting queue; the count set is the window's; and, at
-  every timestamp, the tables of the two queues together are the tables of the auxiliary list.
-  The auxiliary list is in turn required to hold only entries within the interval's right bound,
-  which is what the kernel's shift guarantees.
-\<close>
-
 definition sw_inv :: "args \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data table) list \<Rightarrow>
     (ts \<times> event_data table) list \<Rightarrow> bool" where
   "sw_inv args cur pl wl \<longleftrightarrow>
@@ -228,16 +191,11 @@ definition valid_sw :: "args \<Rightarrow> ts \<Rightarrow> swaux \<Rightarrow> 
      (\<forall>e \<in> set auxlist. fst e \<le> cur \<and> memR (args_ivl args) (cur - fst e) \<and>
         table (args_R args) (snd e)))"
 
-subsection \<open>The Until structure for a closed left operand\<close>
+subsection \<open>Until window\<close>
 
 text \<open>
-  One entry per pending time point, oldest first, holding the time point's timestamp, the right
-  operand's table and whether the left operand held: the entries already in the window of the
-  oldest pending time point, and the rest.  The window is extended lazily, one entry at a time,
-  and stops at the first entry out of the interval's range or at the one after which the left
-  operand fails; both ends only move forward.  When the oldest time point can no longer be
-  affected by the future, its answer is the window's union, and the window slides.  The answers
-  accumulate, newest first, until the evaluator reads them.
+  One entry per pending time point; the oldest one's window is extended lazily, up to the first
+  entry out of range or the one after which the left operand fails.
 \<close>
 
 type_synonym uw_entry = "ts \<times> event_data table \<times> bool"
@@ -266,9 +224,6 @@ declare uw_extend.simps[simp del]
 
 definition uw_init :: "args \<Rightarrow> uwaux" where
   "uw_init args = (empty_queue, empty_queue, empty_queue, 0, True, (Mapping.empty, {}), [])"
-
-text \<open>The oldest pending time point leaves: its window is extended as far as its timestamp
-  allows, the window's union is its answer, and its own entry is dropped from the window.\<close>
 
 definition uw_step :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> uwaux" where
   "uw_step args ts0 aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
@@ -307,16 +262,7 @@ definition uw_eval :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> e
      (case uw_shift args nt aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
        (rev dn, (nts, win, rest, len, bend, cc, [])))"
 
-subsubsection \<open>The abstract auxiliary list of a run of entries\<close>
-
-text \<open>
-  The kernel's auxiliary list holds, for each pending time point, the accumulated left operand
-  and the accumulated answer.  With a closed left operand the first is the unit table or empty
-  according to whether the left operand held at every pending time point from this one on, and
-  the second is the union of the right operand's tables over the run that starts at this time
-  point and stops at the first one out of range or the first one after which the left operand
-  fails.
-\<close>
+subsubsection \<open>Abstract auxiliary list\<close>
 
 definition uw_a1 :: "args \<Rightarrow> bool list \<Rightarrow> event_data table" where
   "uw_a1 args bs = (if (\<forall>b \<in> set bs. b) = args_pos args then unit_table else {})"
@@ -334,26 +280,13 @@ fun uw_abs :: "args \<Rightarrow> uw_entry list \<Rightarrow> event_data muaux" 
 lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
   by (induct es rule: uw_abs.induct) simp_all
 
-text \<open>The abstract list of the expired entries is what the kernel's evaluation pops.\<close>
-
-subsubsection \<open>Extending the window\<close>
-
-text \<open>The entries the extension adds: from the rest, while in range from the window's start and
-  while the left operand keeps holding.\<close>
+subsubsection \<open>Window extension and invariant\<close>
 
 fun uw_ext :: "\<I> \<Rightarrow> ts \<Rightarrow> bool \<Rightarrow> uw_entry list \<Rightarrow> uw_entry list" where
   "uw_ext I ts0 False rl = []"
 | "uw_ext I ts0 True [] = []"
 | "uw_ext I ts0 True (e # rl) =
      (if memR I (fst e - ts0) then e # uw_ext I ts0 (snd (snd e)) rl else [])"
-
-subsubsection \<open>The window invariant\<close>
-
-text \<open>
-  Relative to a start timestamp: every entry of the window is in range from it, every entry
-  but the last saw the left operand hold, and the flag says whether the last one did (or the
-  window is empty).
-\<close>
 
 definition uw_win :: "\<I> \<Rightarrow> ts \<Rightarrow> uw_entry list \<Rightarrow> bool \<Rightarrow> bool" where
   "uw_win I ts0 wl bend \<longleftrightarrow>
@@ -362,13 +295,6 @@ definition uw_win :: "\<I> \<Rightarrow> ts \<Rightarrow> uw_entry list \<Righta
      bend = (wl = [] \<or> snd (snd (last wl)))"
 
 subsubsection \<open>Validity\<close>
-
-text \<open>
-  The pending entries are the window followed by the rest; the pending timestamps are theirs,
-  sorted; the count set is the window's; the window invariant holds relative to the oldest
-  pending timestamp.  The abstract auxiliary list is the abstract list of the expired entries,
-  whose answers are in the accumulator, followed by the abstract list of the pending ones.
-\<close>
 
 fun uw_es :: "uwaux \<Rightarrow> uw_entry list" where
   "uw_es (nts, win, rest, len, bend, cc, dn) = linearize win @ linearize rest"

@@ -4,22 +4,18 @@ theory Trigger_Window_Simulation
 begin
 (*>*)
 
-
+section \<open>Simulation of the trigger structure\<close>
 
 lemma emsk_args_distinct_R: "emsk_args args msk \<Longrightarrow> distinct (args_R args)"
   by (simp add: emsk_args_def strict_sorted_iff)
 
-
 lemma tok_mem0: "mem (args_ivl args) 0 \<Longrightarrow> tok cR cL args"
   by (simp add: tok_def)
 
-subsection \<open>The read is a finite table\<close>
+subsection \<open>Finiteness of the read\<close>
 
-text \<open>The read of the trigger structure is a finite table over the right operand's columns.
-  With an interval containing zero that is immediate, because the window then always holds the
-  latest time point and the read is contained in its right table.  Without it a safe trigger has
-  the same columns on both sides, and the read is contained in the union of the window's
-  tables -- which is what the weakened form below states.\<close>
+text \<open>With an interval containing zero, the read lies in the latest right table; otherwise a safe
+  trigger has equal columns on both sides, and the read lies in the union of the window's tables.\<close>
 
 lemma ftable_trigger_results:
   fixes args :: args
@@ -128,7 +124,7 @@ next
   qed
 qed
 
-subsection \<open>The summaries\<close>
+subsection \<open>Summaries of the window\<close>
 
 lemma sw_assoc_tcomp: "sw_assoc tcomp"
   by (simp add: sw_assoc_def tcomp_def ecomp_assoc)
@@ -181,6 +177,8 @@ proof (induct es)
   show ?case unfolding ep length_Cons All_less_Suc2 Ex_less_Suc2 nth_Cons_0 nth_Cons_Suc tT.simps
       Cons b by simp
 qed simp
+
+subsection \<open>Relation to the list of entries\<close>
 
 lemma memL_ts_anti: "t \<le> t' \<Longrightarrow> memL I (c - t') \<Longrightarrow> memL I (c - t)"
   by (erule memL_mono) simp
@@ -238,7 +236,6 @@ proof -
     using s by (simp_all add: Wl_def Pl_def sorted_filter)
   have LcLn: "Lc x \<Longrightarrow> Ln x" for x unfolding Lc_def Ln_def
     by (erule memL_mono) (use nt in simp)
-  \<comment> \<open>the in-interval points that leave\<close>
   obtain ys W1 where p1: "sw_pop tcomp id (\<lambda>t. \<not> memR ?I (nt - t)) W = (ys, W1)" by (meson surj_pair)
   have "sw_rel tcomp id W1 (dropWhile (\<lambda>x. \<not> memR ?I (nt - fst x)) (map (tent args msk) Wl))"
     using sw_pop[OF rW[folded Wl_def] p1] by simp
@@ -360,7 +357,6 @@ proof -
   have res: "tw_result ax = {x. tT args msk es x} \<union> (\<Union>x \<in> set Pl. fst (snd x))"
     unfolding tw_result_def ax prod.case qW qP tfold[OF esne]
     by (auto simp: eunion_def)
-  \<comment> \<open>the points of the window are the ones at the front\<close>
   have memi: "mem ?I (cur - fst (D ! i)) \<longleftrightarrow> i < length Wl" if "i < length D" for i
   proof -
     have "D ! i \<in> set D" using that by simp
@@ -478,7 +474,6 @@ proof -
       (tT args msk es x \<or> (\<exists>e \<in> set Pl. tphi args msk (fst (snd e)) x))}"
     unfolding trigger_results_eq if_P[OF fl] snd_conv
     by (intro Collect_cong conj_cong refl) (rule cond)
-  \<comment> \<open>the window's part is within its last right table, the pending part within the left ones\<close>
   have lastW: "snd (last es) = snd (snd (last Wl))" using Wne by (simp add: es_def last_map)
   have lW: "last Wl \<in> set D" using Wne by (simp add: D)
   have tW: "tT args msk es x \<Longrightarrow> wf_tuple ?R x" for x
@@ -502,6 +497,8 @@ proof -
   qed
   show ?thesis unfolding res tr using tW pend by blast
 qed
+
+subsection \<open>Structure of the trigger node\<close>
 
 lemma etw_init: "etw kL cL kR cR args 0 (tw_init (eargs cR cL args) (emsk cR cL)) []"
   if "tok cR cL args"

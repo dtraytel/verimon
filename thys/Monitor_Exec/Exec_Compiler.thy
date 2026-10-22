@@ -6,31 +6,18 @@ begin
 
 
 
-section \<open>The descending compiler\<close>
+section \<open>Compilation of kernel formulas\<close>
 
-text \<open>
-  The executable evaluator's formula has a node for most, but not all, of the kernel's.  This theory
-  builds the compiler that descends into a kernel formula and emits a executable node wherever the
-  simulation has a rule for one, answering \<open>EFail\<close> at the constructors the executable fragment does
-  not cover.  Nothing relates \<open>EFail\<close> to a kernel formula, so the theorems below hold of a
-  compiled formula that has none -- which the caller checks with @{const efail_nodes}.
-
-  The compiler is a plain function of the kernel's formula and the two column lists its result
-  is to have: the kernel's, @{term ks}, and the executable one, @{term cs}, which is the ascending
-  order of the same columns.  At every recursive call the kernel column list of the operand is
-  read off the node itself -- the kernel's nodes store their operands' column lists -- and the
-  executable one is its ascending order, @{term ecols}.  Wherever a node's own columns are determined
-  by its operands', the compiler checks that they are the ones it was asked for.
-\<close>
+text \<open>The executable columns are the kernel's in ascending order.  Uncovered nodes compile to
+  \<open>EFail\<close>, which the caller rules out with @{const efail_nodes}.\<close>
 
 subsection \<open>The compiler\<close>
 
 definition ecols :: "cols \<Rightarrow> cols" where
   "ecols k = set_cols (set k)"
 
-text \<open>The positions in @{term cs} of the columns in @{term L}.  The compiler fuses an aggregation
-  into the temporal operator below it only when the left operand's columns occupy none of the
-  right operand's positions.\<close>
+text \<open>An aggregation is fused into the temporal operator below it only if the left operand's
+  columns occupy none of the right operand's positions.\<close>
 
 definition cpos :: "cols \<Rightarrow> nat set \<Rightarrow> nat set" where
   "cpos cs L = {i. i < length cs \<and> cs ! i \<in> L}"
@@ -42,12 +29,8 @@ definition eagg_gcols :: "aggargs \<Rightarrow> cols" where
   "eagg_gcols args = map (\<lambda>c. c - length (aggargs_tys args))
      (drop (length (aggargs_tys args)) (ecols (aggargs_cols args)))"
 
-text \<open>The width a temporal structure runs at: its own, or -- with an aggregation fused into it --
-  the operand's, which is wider by the bound variables the aggregation ranges over.\<close>
-
-text \<open>A constraint over a fused aggregating Since becomes the node's guard rather than a filter
-  above it: the constraint is on the node's own columns, which are exactly the aggregation's, so
-  the groups that fail it never have to be built.  Nothing else takes a guard.\<close>
+text \<open>A constraint over a fused aggregating Since becomes its guard, so that the groups failing
+  it are never built.\<close>
 
 fun eset_q :: "uconstr \<Rightarrow> eformula \<Rightarrow> eformula option" where
   "eset_q c (ESince args \<phi> \<psi> buf aux) =
@@ -234,13 +217,7 @@ abbreviation (input) eofc :: "nat \<Rightarrow> ts \<Rightarrow> ty Formula.form
 abbreviation (input) eofz :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> bool" where
   "eofz n \<phi> \<equiv> efail_nodes (eof n (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) (minit0 n \<phi>)) = 0"
 
-section \<open>The executable monitor's correctness theorem, on the compiled state\<close>
-
-text \<open>
-  The state the compiler produces relates to the kernel's whenever the compilation covered every
-  node, so the transferred theorems of the preceding theories apply to it under that one check.
-  It is a check on the formula alone, made once, before the monitor runs.
-\<close>
+subsection \<open>Compiled initial state\<close>
 
 definition eof_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow> emstate" where
@@ -254,9 +231,8 @@ begin
 
 end
 
-text \<open>The executable monitor's initial state: the compiled kernel state.  The kernel's
-  initialization is executed for it.  Its window initializations are locale definitions, so they
-  are given code through constants for the interpretation the kernel state uses.\<close>
+text \<open>The kernel's window initialisations are locale definitions; constants for the
+  interpretation the kernel state uses give them code.\<close>
 
 definition "kinit_since = msaux_ops.init_since (init_mmasaux :: _ \<Rightarrow> mmasaux)"
 definition "kinit_until = muaux_ops.init_until (init_muaux_dq :: _ \<Rightarrow> muaux_dq)"

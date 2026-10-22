@@ -8,26 +8,12 @@ theory Preparation
 begin
 (*>*)
 
+section \<open>Preparation of formulas\<close>
+
 subsection \<open>Negated right operands\<close>
 
-text \<open>A past operator with a negated right operand, @{term "Formula.Since \<phi> I (Formula.Neg \<psi>)"},
-  is not safe on its own. The rewriting (@{const rrewrite}) makes it monitorable by freezing the
-  conjunct that restricts its free variables (@{const Formula.Frz}), which the monitor evaluates
-  by replaying the operator for every time point. If the interval contains 0, the dual
-  @{term "Formula.Neg (Formula.Trigger (Formula.Neg \<phi>) I \<psi>)"} is equivalent, a monitor can
-  evaluate it as far as the since operator (it has the same progress, see the session
-  Monitor_Algorithm_Proof), and it is safe in a conjunction with a formula that restricts its free
-  variables: the negation is the difference with the trigger, whose tables are contained in those of
-  @{term \<psi>}. This is the unnesting of a correlated @{text "NOT EXISTS"} into an anti-join, which
-  needs no freezing. The negation of the left operand removes a double negation
-  (@{text neg_dual}), as for @{term "Formula.Since (Formula.Neg \<phi>) I (Formula.Neg \<psi>)"}.
-  Without 0 in the interval, the trigger is not safe on its own (its tables are infinite at the
-  time points without any in the interval), and a monitor can evaluate the since operator further
-  (its progress is larger).
-  Dually, a future operator with a negated right operand,
-  @{term "Formula.Until \<phi> I (Formula.Neg \<psi>)"}, is the negation of the release
-  @{term "Formula.Release (Formula.Neg \<phi>) I \<psi>"}, which a monitor can evaluate natively with 0 in
-  the interval, as far as the until operator.\<close>
+text \<open>With 0 in the interval, a since with a negated right operand becomes a negated trigger, which
+is safe in a conjunction without freezing. Dually, an until becomes a negated release.\<close>
 
 definition neg_dual :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "neg_dual \<phi> = (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> \<phi>' | _ \<Rightarrow> Formula.Neg \<phi>)"
@@ -163,14 +149,10 @@ lemma future_bounded_dual_since: "Safety.future_bounded (dual_since \<phi>) \<Lo
     (auto simp: dual_since_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong
       split: if_splits)
 
-subsection \<open>Preparation\<close>
+subsection \<open>Preparation function\<close>
 
-text \<open>VeriMon's preparation of an input formula: type checking and, if the formula is not
-  monitorable and rewriting is requested (@{text rw}), normalization, then the duals of the
-  temporal operators with negated right operands (@{const dual_since}), and then rewriting, until the formula becomes
-  monitorable. The duals come before the rewriting, which would freeze where they need not. The
-  preparation does not depend on the auxiliary data structures of the monitor, so all monitors
-  (the kernel and the dense one) share it.\<close>
+text \<open>If a type-checked formula is not monitorable and @{text rw} holds, its normalization, duals
+and rewriting are tried in turn. The duals come first, as the rewriting would freeze needlessly.\<close>
 
 definition "prepare_verimon rw sig \<phi> =
   (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
@@ -185,7 +167,8 @@ definition "prepare_verimon rw sig \<phi> =
                     if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
          else Inl STR ''not monitorable'')))"
 
-(* Elimination rules for well-typed formulas*)
+subsection \<open>Preservation of typing\<close>
+
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
 inductive_cases wty_formula_EqE[elim!]: "S, E \<turnstile> Formula.Eq t1 t2"
 inductive_cases wty_formula_LessE[elim!]: "S, E \<turnstile> Formula.Less t1 t2"
@@ -210,8 +193,7 @@ inductive_cases wty_formula_MatchPE[elim!]: "S, E \<turnstile> Formula.MatchP I 
 inductive_cases wty_formula_TSE[elim!]: "S, E \<turnstile> Formula.TS t"
 inductive_cases wty_formula_TPE[elim!]: "S, E \<turnstile> Formula.TP t"
 
-
-(* Proofs that normalize preserves well-typedness*)
+subsubsection \<open>Normalization\<close>
 
 lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st tm :: ty"
   by (induction tm ty rule: wty_trm.induct)
@@ -354,7 +336,7 @@ lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstil
   by auto
 
 
-(* Proofs that rrewrite preserves well-typedness*)
+subsubsection \<open>Rewriting\<close>
 
 lemma wty_trm_shiftTI:
   "E \<turnstile> t :: T \<Longrightarrow> (\<lambda>i. if i < n then E i else if i = n then k else E (i - 1)) \<turnstile> shiftTI n t :: T"
@@ -393,8 +375,6 @@ next
     by (auto intro!: wty_formula.MatchP simp: regex.pred_map elim!: regex.pred_mono_strong)
 qed (auto 0 4 simp: list.rel_map once_def eventually_def historically_def always_def
     elim!: list.rel_mono_strong intro: wty_formula.intros wty_trm_shiftTI)
-
-text \<open> Typing is not affected by updating the signature for predicates that do not occur. \<close>
 
 lemma wty_formula_fun_upd_fresh: "S, E \<turnstile> \<phi> \<Longrightarrow> p \<notin> preds \<phi> \<Longrightarrow> S(p \<mapsto> x), E \<turnstile> \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
@@ -479,8 +459,6 @@ qed (auto intro!: wty_formula.intros)
 
 lemma wty_frz_atom: "S (q, n) = Some (tabulate E 0 n) \<Longrightarrow> S, E \<turnstile> project (frz_atom q n)"
   by (auto simp: frz_atom_def tabulate_alt list.rel_map intro!: wty_formula.Pred wty_trm.Var list.rel_refl)
-
-text \<open> Typing of a frozen conjunct: @{term "Frz q \<alpha>' (And \<alpha>' \<psi>)"}. \<close>
 
 lemma wty_frz_and:
   assumes "S, E \<turnstile> project \<alpha>'" "(q, nfv \<alpha>') \<notin> preds (project \<alpha>')"
@@ -885,7 +863,7 @@ lemma wty_rrewrite: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile
   unfolding rrewrite_def using wty_rewrite wty_project_embed by auto
 
 
-(* Proofs that if a normalized formula is future-bounded, then so is the original formula *)
+subsection \<open>Future boundedness of the original formula\<close>
 
 lemma safe_letpast_simplify_terms[simp]: "safe_letpast (p, n) (simplify_terms \<phi>) = safe_letpast (p, n) \<phi>"
   by (induction \<phi> arbitrary: p n rule: simplify_terms.induct)
@@ -932,8 +910,6 @@ lemma future_bounded_normalize: "Safety.future_bounded (normalize \<phi>) \<Long
     future_bounded_assoc_and by auto
 
 
-(* Proofs that if a rewritten formula is future-bounded, then so is the original formula *)
-
 lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i \<phi>)) = Safety.future_bounded (project \<phi>)"
   by (induction \<phi> arbitrary: i rule: Rewriting.formula.induct)
    (auto simp: historically_def always_def list.pred_map regex.pred_map
@@ -963,6 +939,8 @@ lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi
 lemma future_bounded_rrewrite: "Safety.future_bounded (rrewrite \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   unfolding rrewrite_def using future_bounded_rewrite future_bounded_project_embed by auto
 
+
+subsection \<open>Conversion to multiway conjunctions\<close>
 
 lemma wty_get_and_list: "S, E \<turnstile> \<phi> \<Longrightarrow> \<psi> \<in> set (get_and_list \<phi>) \<Longrightarrow> S, E \<turnstile> \<psi>"
   by (induction \<phi> rule: get_and_list.induct) (auto split: if_splits)
@@ -1119,9 +1097,8 @@ qed
 
 subsection \<open>Correctness of the preparation\<close>
 
-text \<open>The correctness of the preparation: whatever monitor evaluates the prepared formula
-  @{text \<psi>}, it satisfies the specification of @{text \<psi>}, which coincides with that of the
-  input formula. The locale does not depend on the auxiliary data structures of any monitor.\<close>
+text \<open>The prepared formula @{text \<psi>} is monitorable and well-typed, with the free variables and
+semantics of the input formula, independently of any monitor's data structures.\<close>
 
 locale verimon_prepare =
   fixes rw sig \<phi>

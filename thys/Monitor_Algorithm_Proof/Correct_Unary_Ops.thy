@@ -7,10 +7,10 @@ begin
 (*>*)
 
 
-subsection \<open> Correctness of atoms and unary Operators \<close>
+section \<open> Correctness of atoms and unary operators \<close>
 
 
-subsubsection \<open> Inequalities \<close>
+subsection \<open> Constraints \<close>
 
 fun formula_of_constraint :: "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow> ty Formula.formula" where
   "formula_of_constraint (t1, True, MEq, t2) = Formula.Eq t1 t2"
@@ -32,7 +32,7 @@ lemma eval_constraint_sat_eq: "fv_trm t1 \<subseteq> set A \<Longrightarrow> fv_
     (simp_all add: meval_trm_eval_trm)
 
 
-subsubsection \<open> Predicates \<close>
+subsection \<open> Predicates with simple patterns \<close>
 
 lemma set_pred_cols[simp]: "set (pred_cols ts) = (\<Union>t\<in>set ts. Formula.fv_trm t)"
   by (simp add: pred_cols_def set_fold_cols_union)
@@ -131,6 +131,8 @@ proof -
     unfolding assms(1) fv_list_Pred using that
     by (intro qtable_simple_pattern_gen[OF assms(3) *]) simp_all
 qed
+
+subsection \<open> Predicates without patterns \<close>
 
 lemma match_fvi_trm_Some: "Some f = match ts xs \<Longrightarrow> t \<in> set ts \<Longrightarrow> x \<in> Formula.fv_trm t \<Longrightarrow> f x \<noteq> None"
   by (induction ts xs arbitrary: f rule: match.induct) (auto split: if_splits option.splits)
@@ -277,9 +279,7 @@ proof -
     by (intro qtable_no_pattern_gen[OF * assms(3)]) simp
 qed
 
-subsubsection \<open> Equalities \<close>
-
-text \<open>The columns of an equation between a variable and a constant (or two constants).\<close>
+subsection \<open> Equalities \<close>
 
 lemma qtable_eq_relI: "\<forall>x\<in>fv_trm t1. x < n \<Longrightarrow> \<forall>x\<in>fv_trm t2. x < n \<Longrightarrow> is_simple_eq t1 t2 \<Longrightarrow>
   cs = cols_union (Formula.fv_trm_list t1) (Formula.fv_trm_list t2) \<Longrightarrow>
@@ -290,7 +290,7 @@ lemma qtable_eq_relI: "\<forall>x\<in>fv_trm t1. x < n \<Longrightarrow> \<foral
       empty_table_def length_Suc_conv tup_get_Cons dest: mem_restr_wf_tuple)
 
 
-subsubsection \<open> Next and Previous \<close>
+subsection \<open> Previous and Next \<close>
 
 lemma mprev_next_NilE[elim!]: "mprev_next I xs ts = (ys, [], []) \<Longrightarrow>
   (xs = [] \<Longrightarrow> ts = [] \<Longrightarrow> ys = [] \<Longrightarrow> R) \<Longrightarrow> R"

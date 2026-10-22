@@ -4,6 +4,9 @@ theory Optimized_Until_Valid
 begin
 (*>*)
 
+section \<open>Correctness of the optimized Until structure\<close>
+
+subsection \<open>Kernel operations and time stamps\<close>
 
 lemma map_proj_thd_update_until: "map proj_thd (takeWhile (check_before (args_ivl args) nt) auxlist) =
   map proj_thd (takeWhile (check_before (args_ivl args) nt) (update_until args rel1 rel2 nt auxlist))"
@@ -75,6 +78,8 @@ proof -
   have "\<forall>x \<in> set xb'. x \<le> ts'" using split_list_1(1)[unfolded eq(2)] assms(6) by (metis append_Cons list.set_intros(1) sorted_append)
   then show ?thesis using split_list_2(1)[unfolded eq(1)] by auto
 qed
+
+subsection \<open>Evaluation step\<close>
 
 lemma valid_eval_step_mmuaux':
   assumes "valid_mmuaux' args cur dt aux auxlist"
@@ -864,6 +869,8 @@ proof -
     using lin_ts by simp
 qed
 
+subsection \<open>Shifting the window\<close>
+
 lemma done_empty_valid_mmuaux'_intro:
   assumes "valid_mmuaux' args cur dt
     (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) auxlist"
@@ -942,6 +949,8 @@ proof -
     using valid_foldl(1)[unfolded shift_mmuaux_eq[symmetric]]
     unfolding valid_foldl(2)[unfolded shift_mmuaux_eq[symmetric]] by auto
 qed
+
+subsection \<open>Adding a new time point\<close>
 
 lemma list_all2_zip: "list_all2 (\<lambda>x y. triple_eq_pair x y f g) xs (zip ys zs) \<Longrightarrow>
   (\<And>y. y \<in> set ys \<Longrightarrow> Q y) \<Longrightarrow> x \<in> set xs \<Longrightarrow> Q (fst x)"
@@ -2064,6 +2073,8 @@ proof -
     unfolding valid_mmuaux_def add_new_mmuaux_eq valid_mmuaux'.simps
       I_def n_def L_def R_def pos_def by auto
 qed
+
+subsection \<open>Evaluation and interpretation\<close>
 
 lemma list_all2_check_before: "list_all2 (\<lambda>x y. triple_eq_pair x y f g) xs (zip ys zs) \<Longrightarrow>
   (\<And>y. y \<in> set ys \<Longrightarrow> memR I (nt - y)) \<Longrightarrow> x \<in> set xs \<Longrightarrow> \<not>check_before I nt x"

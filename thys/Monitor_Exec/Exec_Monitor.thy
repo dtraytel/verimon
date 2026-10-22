@@ -6,7 +6,7 @@ begin
 
 
 
-subsection \<open>The executable state machine\<close>
+section \<open>The executable state machine\<close>
 
 record emstate =
   emstate_i :: nat
@@ -16,23 +16,11 @@ record emstate =
   emstate_cs :: cols
   emstate_t :: "ts mbuf_t"
 
-text \<open>
-  One field is not the kernel's.  The kernel keeps the timestamps whose verdict is still
-  outstanding in a list, and at every step appends the new one to its end and drops the ones it
-  has just reported.  Both are linear in the list, and the list is as long as the window of the
-  outermost future operator.  The executable state keeps the same sequence in an @{typ "'a mbuf_t"},
-  which \<open>is\<close> a list -- the type is a copy of @{typ "'a list"} and @{const Rep_mbuf_t} the copy's
-  isomorphism -- so the state relation and this theory's proofs say what they would say for a
-  list.  What changes is the code: @{typ "'a mbuf_t"} is implemented by a queue, where an append
-  and a head removal are amortised constant.  The step takes the timestamps off the front one at
-  a time, with @{const mbuf_t_cases}.
-\<close>
+text \<open>The pending timestamps are an @{typ "'a mbuf_t"}, a copy of @{typ "'a list"} implemented
+  by a queue, in which appending and removing the head take amortised constant time.\<close>
 
-text \<open>
-  Pairing one step's verdicts with the timestamps they belong to.  Where the buffer runs out the
-  index still advances by the number of verdicts, which is what the kernel's @{term "length xs"}
-  does.
-\<close>
+text \<open>Where the timestamps run out, the index still advances by the number of verdicts, as in
+  the kernel.\<close>
 
 fun eannotate :: "nat \<Rightarrow> ts mbuf_t \<Rightarrow> 'a list \<Rightarrow> (nat \<times> ts \<times> 'a) list \<Rightarrow>
     nat \<times> ts mbuf_t \<times> (nat \<times> ts \<times> 'a) list" where

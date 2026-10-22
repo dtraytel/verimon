@@ -11,8 +11,7 @@ begin
 
 section \<open>Metric first-order dynamic logic\<close>
 
-
-subsection \<open> Instantiations \<close>
+subsection \<open>Container instances for enat\<close>
 
 derive (eq) ceq enat
 
@@ -46,7 +45,7 @@ proof -
 qed
 
 
-subsection \<open>Syntax and semantics\<close>
+subsection \<open>Traces and terms\<close>
 
 context begin
 
@@ -58,18 +57,12 @@ qualified type_synonym trace = "database trace"
 
 qualified type_synonym env = "event_data list"
 
-subsubsection \<open>Terms\<close>
-
 qualified datatype trm = is_Var: Var nat | is_Const: Const event_data
   | Plus trm trm | Minus trm trm | UMinus trm | Mult trm trm | Div trm trm | Mod trm trm
   | F2i trm | I2f trm
 
-text \<open> In this implementation of MFODL, to use De Bruijn indices, binding operators increase the
-value of the bounding number @{term b} (that starts at $0$) and this number is subtracted from
-all free variables (type @{typ nat}) greater than @{term b}. For instance, the free variable of
-$\exists.\ P\, (Var 0) \land Q\, (Var 1)$ is @{term "Var 0"} because the existential makes $b=1$
-and this value is subtracted from $Q$s argument while that of $P$ is not even taken into account. \<close>
-
+text \<open>Variables are de Bruijn indices: @{text "fvi_trm b"} returns the free variables below
+  @{term b} binders, shifted down by @{term b}.\<close>
 
 qualified primrec fvi_trm :: "nat \<Rightarrow> trm \<Rightarrow> nat set" where
   "fvi_trm b (Var x) = (if b \<le> x then {x - b} else {})"
@@ -101,17 +94,7 @@ lemma eval_trm_fv_cong: "\<forall>x\<in>fv_trm t. v ! x = v' ! x \<Longrightarro
   by (induction t) simp_all
 
 
-subsubsection \<open>Formulas\<close>
-
-text \<open> Aggregation operators @{text "Agg nat ('t agg_op) ('t list) trm ('t formula)"} 
-are special formulas with five parameters:
-\begin{itemize}
-\item A variable @{term "y::nat"} that saves the value of the aggregation operation.
-\item A type of aggregation (sum, avg, min, max, ...).
-\item A list @{term "ts::'t list"} binding (with its length) the variables in the next arguments.
-\item A term @{term "t::trm"} that represents an operation to be aggregated.
-\item A formula @{term "\<phi>"} that restricts the domain where the aggregation takes place.
-\end{itemize} \<close>
+subsection \<open>Aggregation operators\<close>
 
 datatype ty = TInt | TFloat | TString
 
@@ -317,6 +300,11 @@ fun eval_agg_op :: "ty agg_op \<Rightarrow> (event_data \<times> enat) set \<Rig
             (double_of_event_data_agg (xs ! (u'-1)) + double_of_event_data_agg (xs ! u')) / double_of_int 2
           else double_of_event_data_agg (xs ! u')))"
 
+subsection \<open>Formulas\<close>
+
+text \<open>In @{text "Agg y \<omega> tys t \<phi>"}, the variables bound by @{text tys} range over the
+  satisfying valuations of @{text \<phi>}; @{text y} holds the aggregate @{text \<omega>} of @{text t}.\<close>
+
 qualified datatype (discs_sels) 't formula = Pred name "trm list"
   | Let name "'t formula" "'t formula"
   | Frz name "'t formula" "'t formula"
@@ -361,6 +349,8 @@ lemma case_Neg_in_iff: "x \<in> (case y of formula.Neg \<phi>' \<Rightarrow> {\<
 
 qualified definition "FF = Eq (Const (EInt 0)) (Const (EInt 1))"
 qualified definition "TT \<equiv> Eq (Const (EInt 0)) (Const (EInt 0))"
+
+subsection \<open>Free variables\<close>
 
 qualified fun fvi :: "nat \<Rightarrow> 't formula \<Rightarrow> nat set" where
   "fvi b (Pred r ts) = (\<Union>t\<in>set ts. fvi_trm b t)"
@@ -457,15 +447,10 @@ lemma fvi_Suc_bound:
 lemma fvi_iff_fv: "x \<in> fvi b \<phi> \<longleftrightarrow> x + b \<in> fv \<phi>"
   using fvi_plus[where b=0 and c=b] by simp_all
 
-subsubsection \<open>Free variables as column lists\<close>
+subsection \<open>Free variables as column lists\<close>
 
-text \<open>The free variables in the order in which MonPoly lists them (its @{text free_vars}):
-  by first occurrence from left to right, except that the temporal operators Since, Until,
-  Trigger and Release list the variables of their right operand first, and an aggregation
-  lists its result variable first.  The OCaml adapter numbers the free variables of the
-  monitored formula by their position in MonPoly's list, so the columns of a formula at the
-  top level are then @{term "[0..<n]"} (up to the order of the group variables of an
-  aggregation, which MonPoly takes from the formula's syntax).\<close>
+text \<open>The order is MonPoly's: by first occurrence, except that Since, Until, Trigger and
+  Release list their right operand first and an aggregation lists its result variable first.\<close>
 
 qualified primrec fvi_trm_list :: "nat \<Rightarrow> trm \<Rightarrow> nat list" where
   "fvi_trm_list b (Var x) = (if b \<le> x then [x - b] else [])"
@@ -565,6 +550,8 @@ lemma fvi_list_Suc: "fvi_list (Suc b) \<phi> = ex_cols (fvi_list b \<phi>)"
 lemma fvi_list_plus: "fvi_list (b + k) \<phi> = shift_cols k (fvi_list b \<phi>)"
   by (induction k) (simp_all add: fvi_list_Suc shift_cols_Suc)
 
+subsection \<open>Number of free variables\<close>
+
 qualified definition nfv :: "'t formula \<Rightarrow> nat" where
   "nfv \<phi> = Max (insert 0 (Suc ` fv \<phi>))"
 
@@ -621,6 +608,8 @@ lemma fvi_less_nfv_regex: "\<forall>i\<in>fv_regex \<phi>. i < nfv_regex \<phi>"
   unfolding Regex.nfv_regex_def
   by (auto simp add: Max_gr_iff intro: max.strict_coboundedI2)
 
+subsection \<open>Predicate occurrence\<close>
+
 fun contains_pred :: "name \<times> nat \<Rightarrow> 't formula \<Rightarrow> bool" where
    "contains_pred p (Eq t1 t2) = False"
 |  "contains_pred p (Less t1 t2) = False"
@@ -651,7 +640,7 @@ lemma TT_no_pred [simp]:
   by (simp add: Formula.TT_def)
 
 
-subsubsection \<open>Semantics\<close>
+subsection \<open>Semantics\<close>
 
 declare conj_cong[fundef_cong]
 fun letpast_sat where
@@ -808,16 +797,12 @@ lemma sat_restrict: "fv \<phi> \<subseteq> set ds \<Longrightarrow>
   Formula.sat \<sigma> V (val n ds (restrict ds cs v)) i \<phi> = Formula.sat \<sigma> V (val n cs v) i \<phi>"
   by (rule sat_fv_cong) (auto simp: val_restrict_nth)
 
-text \<open>The table of a formula @{term \<phi>} at time point @{term i} over the columns @{term cs}: its
-  tuples, read as valuations of the first @{term n} variables, are the satisfying valuations in
-  the slice @{term R}.\<close>
+text \<open>A table over the columns @{term cs} whose tuples, as valuations of the first @{term n}
+  variables, are the valuations in @{term R} satisfying @{term \<phi>} at @{term i}.\<close>
 
 abbreviation sat_table :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow>
   ty Formula.formula \<Rightarrow> event_data table \<Rightarrow> bool" where
   "sat_table \<sigma> V n R cs i \<phi> \<equiv> qtable cs (mem_restr R cs) (\<lambda>v. Formula.sat \<sigma> V (val n cs v) i \<phi>)"
-
-text \<open>The table of an existential quantifier: the projection drops the column of the bound
-  variable @{term 0}.\<close>
 
 lemma qtable_project_fv:
   assumes "distinct cs" "set cs = fv \<phi>" "\<forall>x\<in>fv \<phi>. x < Suc n"
@@ -879,7 +864,7 @@ lemma eps_fv_cong:
   unfolding eps_match by (erule match_fv_cong[THEN fun_cong, THEN fun_cong])
 
 
-subsubsection \<open>Trigger / Release\<close>
+subsection \<open>Derived temporal operators\<close>
 
 qualified definition "first = Neg (Prev all TT)"
 
@@ -1050,8 +1035,7 @@ lemma fvi_and_release_safe_bounded[simp]:
   by (auto simp: and_release_safe_bounded_def release_safe_bounded_def always_safe_bounded_def)
 
 
-subsection \<open> Conatains-pred \<close> 
-(* TODO: Move contains-pred definition here and turn proof of not_contains_pred_sat to Isar *)
+subsection \<open>Predicate occurrence and satisfaction\<close>
 
 lemma contains_pred_always_safe_bounded [simp]:
   "contains_pred p (always_safe_bounded I \<psi>') \<longleftrightarrow> contains_pred p \<psi>'"
@@ -1065,7 +1049,7 @@ lemma contains_pred_release_safe_bounded [simp]: "contains_pred p (release_safe_
 
 lemma not_contains_pred_sat[simp]: 
   "\<not> contains_pred p \<phi> \<Longrightarrow> Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<phi> = Formula.sat \<sigma> V v i \<phi>"
-  supply fun_upd_apply[simp del] \<comment> \<open>keep the updates of @{term V} symbolic\<close>
+  supply fun_upd_apply[simp del]
 proof (induction p \<phi> arbitrary: V v x i rule: contains_pred.induct)
   case (5 p e \<phi> \<psi> V v x i)
   let ?q = "(e, Formula.nfv \<phi>)"
@@ -1188,6 +1172,8 @@ fun wf_formula :: "'t formula \<Rightarrow> bool"
 | "wf_formula (MatchF I r) = Regex.pred_regex wf_formula r"
 | "wf_formula _ = True"
 
+subsection \<open>Mapping type annotations\<close>
+
 lemma map_regex_fv:  assumes "\<And>x . x \<in> regex.atms x2 \<Longrightarrow>  g (formula.map_formula f x) = g' x"
   shows "Regex.fv_regex g (regex.map_regex (formula.map_formula f) x2) = Regex.fv_regex g' x2" using assms by (induction x2) auto
 
@@ -1223,7 +1209,6 @@ lemma map_regex_map_formula_size[simp]: " size (regex.map_regex (formula.map_for
 lemma map_formula_size[simp]:"size (formula.map_formula f \<psi>) = size \<psi>"
 proof (induction \<psi> arbitrary: f)
   case (Ands \<phi>s)
-  \<comment> \<open>the sizes of the list elements agree pointwise, hence so do their sums\<close>
   from Ands.IH show ?case
     by (simp add: dual_order.eq_iff size_list_pointwise)
 next
@@ -1244,11 +1229,9 @@ qed simp_all
 lemma[simp]: "regex.size_regex size (regex.map_regex (formula.map_formula x2) s) = regex.size_regex size s"
   by (induction s)  auto
 
-end (* context *)
+end
 
 subsection \<open>Finite prefixes\<close>
-
-text \<open>A prefix all of whose databases are finite -- what a log is.\<close>
 
 lift_definition pfinite :: "Formula.prefix \<Rightarrow> bool" is "\<lambda>p. \<forall>x \<in> set p. finite (fst x)" .
 
@@ -1262,7 +1245,7 @@ lemma pfinite_mono: "pfinite \<pi>' \<Longrightarrow> \<pi> \<le> \<pi>' \<Longr
   by transfer auto
 
 
-subsection \<open> Notation \<close>
+subsection \<open>Notation\<close>
 
 context
 begin
@@ -1276,7 +1259,6 @@ end
 bundle MFODL_no_notation
 begin
 
-(* use bold with \bold (warning: hard to copy-paste) *)
 no_notation trm.Var ("\<^bold>v")
      and trm.Const ("\<^bold>c")
 
@@ -1315,7 +1297,6 @@ end
 bundle MFODL_notation
 begin
 
-(* use bold with \bold (warning: hard to copy-paste) *)
 notation trm.Var ("\<^bold>v")
      and trm.Const ("\<^bold>c")
 
@@ -1351,7 +1332,7 @@ notation Formula.fv_trm ("FV\<^sub>t")
 
 end
 
-unbundle MFODL_notation \<comment> \<open> enable notation \<close>
+unbundle MFODL_notation
 unbundle ivl_notation
 
 term "v\<lbrakk>\<^bold>c t\<rbrakk>\<^sub>M"
@@ -1373,7 +1354,7 @@ abbreviation point_Until :: "'a Formula.formula \<Rightarrow> nat \<Rightarrow> 
   \<Rightarrow> 'a Formula.formula" ("_ \<^bold>U{_} _" [60,55,60] 60)
   where "\<alpha> \<^bold>U{r} \<beta> \<equiv> \<alpha> \<^bold>U (point r) \<beta>"
 
-unbundle MFODL_no_notation \<comment> \<open> disable notation \<close>
+unbundle MFODL_no_notation
 unbundle ivl_no_notation
 
 

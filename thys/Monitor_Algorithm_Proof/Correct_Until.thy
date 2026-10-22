@@ -8,13 +8,10 @@ begin
 (*>*)
 
 
-subsection \<open> Until \<close>
+section \<open> Correctness of Until \<close>
 
 
-subsubsection \<open> Invariants \<close>
-
-text \<open>The left tables of the auxiliary state are over the columns of the left operand, the right
-  tables over those of the right operand.\<close>
+subsection \<open> Invariant of the auxiliary state \<close>
 
 definition wf_until_auxlist :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> bool \<Rightarrow>
     ty Formula.formula \<Rightarrow> \<I> \<Rightarrow> ty Formula.formula \<Rightarrow> event_data muaux \<Rightarrow> nat \<Rightarrow> bool" where
@@ -179,6 +176,10 @@ lemma wf_until_aux_Cons3: "wf_until_auxlist \<sigma> V n R pos \<phi> I \<psi> (
       else \<not> Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) v) k \<phi>))) a2"
   unfolding wf_until_auxlist_def
   by (simp add: upt_conv_Cons del: upt_Suc)
+
+
+subsection \<open> Evaluation step \<close>
+
 definition "Untilp pos \<phi> I \<psi> \<equiv> Formula.Until (if pos then \<phi> else Formula.Neg \<phi>) I \<psi>"
 
 lemma (in maux) update_until':

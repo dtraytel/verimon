@@ -7,10 +7,10 @@ begin
 (*>*)
 
 
-section \<open> Correctness \<close>
+section \<open> Correctness of binary operators \<close>
 
 
-subsection \<open> Auxiliary list facts \<close>
+subsection \<open> List relations \<close>
 
 lemma upt_append: "a \<le> b \<Longrightarrow> b \<le> c \<Longrightarrow> [a..<b] @ [b..<c] = [a..<c]"
   by (metis le_Suc_ex upt_add_eq_append)
@@ -102,7 +102,7 @@ lemma list_all3_list_all2I: "list_all3 (\<lambda>x y z. Q x z) xs ys zs \<Longri
   by (induct xs ys zs rule: list_all3.induct) auto
 
 
-subsection \<open> Monitor's binary buffers \<close>
+subsection \<open> Binary buffers \<close>
 
 definition wf_mbuf2 where
   "wf_mbuf2 i ja jb P Q buf \<longleftrightarrow> i \<le> ja \<and> i \<le> jb \<and> (case buf of (xs, ys) \<Rightarrow>
@@ -238,7 +238,7 @@ lemma mbuf2t_take_add':
       progress_le_gen simp: progress_le_gen)
 
 
-subsection \<open> Binary operators' qtable \<close>
+subsection \<open> Tables of binary operators \<close>
 
 text \<open>A disjunction's table is over its left operand's columns; the right operand's table is
   reordered to them.\<close>
@@ -280,8 +280,6 @@ lemma (in maux) qtable_bin_join:
   shows "qtable C P Q (bin_join A X b B Y)"
   using qtable_join[OF assms] bin_join_table[OF assms(3,4) qtableD(1)[OF assms(1)] qtableD(1)[OF assms(2)]]
   by simp
-
-text \<open>The join of two tables restricted to a slice, in the slice.\<close>
 
 lemma (in maux) qtable_bin_join_mem_restr:
   assumes "qtable A (mem_restr R A) Q1 X" "qtable B (mem_restr R B) Q2 Y" "distinct A" "distinct B"

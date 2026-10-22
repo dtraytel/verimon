@@ -17,31 +17,14 @@ theory Rewriting
   imports Formula
 begin
 
+section \<open>Rewriting and normalization of formulas\<close>
 
-subsection \<open> Rewriting \<close>
+subsection \<open>Extended formulas\<close>
 
-text \<open> For rewriting, we define a larger formula datatype and its semantics. 
-We prove it consistent with the previous one, i.e. we add canonical projection 
-@{text "project :: 'a formula \<Rightarrow> 'a Formula.formula"} and embedding 
-@{text "embed :: 'a Formula.formula \<Rightarrow> 'a formula"} functions and show them 
-correct (lemmas @{text "sat_project"} and @{text "sat_embed"}) with respect
-to the previous semantics. In this new formula datatype, we define our rewriting 
-and show its correctness (lemma @{text "final_sat"}). \<close>
+text \<open>The rewriting works on formulas with the derived temporal operators as constructors.
+@{text embed} and @{text project} translate to and from them, preserving the semantics.\<close>
 
-(* Formula.sat           Rewriting.sat
-      \<F> ------ embed ------> \<F>\<^sup>+
-                              |
-                              v
-                           rewrite
-                              |
-                              v
-      \<F> <----- project ----- \<F>\<^sup>+ *)
-
-
-subsubsection \<open> New syntax and semantics \<close>
-
-(* defining a larger formula datatype and its semantics *)
-datatype (discs_sels) 'a formula = 
+datatype (discs_sels) 'a formula =
     Pred Formula.name "Formula.trm list"
   | Let Formula.name "'a formula" "'a formula"
   | Frz Formula.name "'a formula" "'a formula"
@@ -152,10 +135,8 @@ primrec project :: "'a formula \<Rightarrow> 'a Formula.formula"
   | "project (TP t) = Formula.TP t"
   | "project (TS t) = Formula.TS t"
 
-text \<open>The embedding recognises the derived operators @{const once}, @{const Formula.eventually},
-@{const historically}, and @{const always} of the input formula, so that the rewrite rules for
-these operators become applicable. We avoid comparing formulas for equality to not impose an
-equality constraint on the type of aggregation parameters.\<close>
+text \<open>The embedding recognises @{const once}, @{const Formula.eventually}, @{const historically}
+and @{const always}. It avoids formula equality, which would constrain the aggregation type.\<close>
 
 definition is_TT :: "'a Formula.formula \<Rightarrow> bool" where
   "is_TT \<phi> = (case \<phi> of Formula.Eq t1 t2 \<Rightarrow> t1 = Formula.Const (EInt 0) \<and> t2 = Formula.Const (EInt 0) | _ \<Rightarrow> False)"
@@ -360,9 +341,11 @@ lemma sat_embed: "sat \<sigma> V v i (embed \<phi>) \<longleftrightarrow> \<lang
   by (simp flip: sat_project add: project_embed)
 
 
-subsubsection \<open> Definition of rewriting function \<close>
+subsection \<open>Rewriting function\<close>
 
-primrec rr_regex 
+subsubsection \<open>Range restrictions\<close>
+
+primrec rr_regex
   where "rr_regex rr (Regex.Skip n) = {}"
   | "rr_regex rr (Regex.Test \<phi>) = rr \<phi>"
   | "rr_regex rr (Regex.Plus r s) = rr_regex rr r \<inter> rr_regex rr s"
@@ -401,15 +384,15 @@ primrec rr :: "nat \<Rightarrow> 'a formula \<Rightarrow> nat set"
   | "rr b (Ands \<phi>s) = (let xs = map (rr b) \<phi>s in \<Union>x\<in>set xs. x)"
   | "rr b (Exists t \<phi>) = (if (0 \<in> (rr 0 \<phi>)) then rr (Suc b) \<phi> else {})"
   | "rr b (Agg y \<omega> b' f \<phi>) = (if {0..<length b'} \<subseteq> rr 0 \<phi> 
-      then {y} \<union> rr (b + length b') \<phi> else {})" (*How?*)
+      then {y} \<union> rr (b + length b') \<phi> else {})"
   | "rr b (Prev I \<phi>) = rr b \<phi>"
   | "rr b (Next I \<phi>) = rr b \<phi>"
   | "rr b (Since \<phi> I \<psi>) = rr b \<psi>"
   | "rr b (Until \<phi> I \<psi>) = rr b \<psi>"
   | "rr b (Release \<phi> I \<psi>) = (if \<not> (mem I 0) then {} else rr b \<psi>)"
   | "rr b (Trigger \<phi> I \<psi>) = (if \<not> (mem I 0) then {} else rr b \<psi>)"
-  | "rr b (MatchF I r) = {}" (*rr_regex should have been used here*)
-  | "rr b (MatchP I r) = {}" (*and here*)
+  | "rr b (MatchF I r) = {}"
+  | "rr b (MatchP I r) = {}"
   | "rr b (Neg \<alpha>) = {}"
   | "rr b (Eventually I \<alpha>) = rr b \<alpha>"
   | "rr b (Once I \<alpha>) = rr b \<alpha>"
@@ -427,7 +410,7 @@ definition prop_cond :: "'a formula \<Rightarrow> 'a formula \<Rightarrow> bool"
             fv2 = fvi_r 0 f2
         in (rr1 \<inter> (fv2-rr2))\<noteq> {})"
 
-(*------------setup and lemmas about shifting valuation list----------------------------*)
+subsubsection \<open>Shifting of variables\<close>
 
 fun shiftTI :: "nat \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm" 
   where "shiftTI k (Formula.Var i) = (if i < k then Formula.Var i
@@ -452,7 +435,7 @@ lemma shift_fv_in_t: "x+1 \<in> Formula.fvi_trm b (shiftTI b t) \<longleftrighta
 primrec shiftI :: "nat \<Rightarrow> 'a Formula.formula \<Rightarrow> 'a Formula.formula" 
   where "shiftI k (Formula.Pred r ts) = Formula.Pred r (map (shiftTI k) ts)"
   | "shiftI k (Formula.Exists t a) = Formula.Exists t (shiftI (Suc k) a)"
-  | "shiftI k (Formula.Let nm a b) = Formula.Let nm a (shiftI k b)" (*fixed error, a is not shifted*)
+  | "shiftI k (Formula.Let nm a b) = Formula.Let nm a (shiftI k b)"
   | "shiftI k (Formula.Frz nm a b) = Formula.Frz nm a (shiftI k b)"
   | "shiftI k (Formula.LetPast nm a b) = Formula.LetPast nm a (shiftI k b)"
   | "shiftI k (Formula.Eq t1 t2) = Formula.Eq (shiftTI k t1) (shiftTI k t2)"
@@ -497,7 +480,7 @@ qed  (auto simp add: fvi_trm_shift)
 primrec shiftI_r :: "nat \<Rightarrow> 'a formula \<Rightarrow> 'a formula" 
   where "shiftI_r k (Pred r ts) = Pred r (map (shiftTI k) ts)"
   | "shiftI_r k (Exists t a) = Exists t (shiftI_r (Suc k) a)"
-  | "shiftI_r k (Let nm a b) = Let nm a (shiftI_r k b)" (*fixed error, a is not shifted*)
+  | "shiftI_r k (Let nm a b) = Let nm a (shiftI_r k b)"
   | "shiftI_r k (Frz nm a b) = Frz nm a (shiftI_r k b)"
   | "shiftI_r k (LetPast nm a b) = LetPast nm a (shiftI_r k b)"
   | "shiftI_r k (Eq t1 t2) = Eq (shiftTI k t1) (shiftTI k t2)"
@@ -541,11 +524,11 @@ lemma no_shift_t:  "b' \<le> x3 \<Longrightarrow> Formula.fvi_trm b' (shiftTI (b
   \<subseteq> {0..<x3-b'} \<longleftrightarrow> Formula.fvi_trm b' t \<subseteq> {0..<x3-b'}"
   by (induction t; auto)
 
-lemma no_shift:  "b' \<le> x3 \<Longrightarrow> Formula.fvi b' (shiftI (b + x3) \<phi>) \<subseteq> {0..<x3-b'} \<longleftrightarrow> Formula.fvi b' \<phi> \<subseteq> {0..<x3-b'}" (*MEETING: Do we want if on the top-lemma level?*)
+lemma no_shift:  "b' \<le> x3 \<Longrightarrow> Formula.fvi b' (shiftI (b + x3) \<phi>) \<subseteq> {0..<x3-b'} \<longleftrightarrow> Formula.fvi b' \<phi> \<subseteq> {0..<x3-b'}"
 proof(induction \<phi> arbitrary: b' x3)
   case (Ands x)
   then show ?case
-    by fastforce (*MEETING: why do I have to instansiate b'? A: To obtain a faster proof by auto *)
+    by fastforce
 next
   case (Pred r ts)
   thm no_shift_t[OF Pred(1)]
@@ -580,8 +563,7 @@ next
   have assoc: "b + x3 + bb = b + (x3 + bb)" by simp
   show ?case 
     by (simp only: shiftI.simps Formula.fvi.simps 
-        helper assoc flip:bb_def) 
-      (*'simp only' because we aim for the helper-lemma as the last goal*)
+        helper assoc flip:bb_def)
 next
   case (MatchF I r)
   then show ?case 
@@ -645,7 +627,10 @@ next
     by (simp add: rw)
 qed (auto simp: eval_trm_shiftTI)
 
-(* I = [a, b] \<Longrightarrow> init_ivl I = [0, b]  *)
+subsubsection \<open>Initial interval\<close>
+
+text \<open>For @{text "I = [a, b]"}, @{text "init_ivl I = [0, b]"}.\<close>
+
 lift_definition init_ivl :: "\<I> \<Rightarrow> \<I>" is "\<lambda>(_,r,n). ((\<lambda>k. True),r,n)" 
   using zero_enat_def upclosed_def by auto
 
@@ -665,7 +650,6 @@ next
     by (metis left_init_ivl memR_antimono right_init_ivl)
 qed
 
-(*Main lemma, used by equiv_4*)
 lemma nat_less_mem_of_init: "\<And>i j. k \<in> {i..j} \<and> k' \<in>{i..j} 
   \<Longrightarrow> mem I (\<tau> \<sigma> j - \<tau> \<sigma> i) 
   \<Longrightarrow>  mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> k')"
@@ -685,6 +669,8 @@ proof -
   then show " mem (init_ivl I) (\<tau> \<sigma> k - \<tau> \<sigma> k')" 
     using A(2) mem_of_init by blast
 qed
+
+subsubsection \<open>Termination measure\<close>
 
 datatype argpos = Same | Swapped
 
@@ -713,7 +699,8 @@ lemma my_size_list_cong[fundef_cong]:
   \<Longrightarrow> my_size_list fun fs = my_size_list fun' fs'"
   by (induct fs arbitrary: fs') auto
 
-(*define custom size function because it ignores everything but layers of formula constructors*)
+text \<open>A size that counts only formula constructors, so that shifting preserves it.\<close>
+
 fun my_size :: "'a formula \<Rightarrow> nat" where
   "my_size (Pred r ts) = 1"
 | "my_size (Let p \<phi> \<psi>) = 1"
@@ -791,20 +778,13 @@ lemma my_size_regex_estimation'[termination_simp]:
   "x \<in> regex.atms r \<Longrightarrow> y \<le> f x \<Longrightarrow> y \<le> my_size_regex f r"
   by (induct r) auto
 
-subsubsection \<open> Fresh predicates for frozen snapshots \<close>
+subsubsection \<open>Fresh predicates for frozen snapshots\<close>
 
-text \<open> Several rewrite rules below propagate a range restriction from a conjunct @{term \<alpha>}
-into a temporal operator. Instead of copying @{term \<alpha>} under an opposite temporal operator,
-which overapproximates @{term \<alpha>}'s satisfactions and may delay a monitor's evaluation of
-the formula (its progress, see the session Monitor_Algorithm_Proof), we freeze @{term \<alpha>} at the
-current time-point into a fresh predicate @{term q} with
-@{term "Frz q \<alpha> \<psi>"} and use @{term q} inside the temporal operator in @{term \<psi>}.
-To guarantee freshness, @{term q} is chosen to differ from all predicate names occurring in
-the involved subformulas. \<close>
+text \<open>Instead of copying a conjunct under an opposite temporal operator, which may delay the
+monitor, some rules freeze it at the current time point into a fresh predicate.\<close>
 
-text \<open> The predicates (with arities) that occur freely in a formula. Unlike
-@{const Formula.contains_pred}, this is a purely syntactic notion, which also accounts for
-definitions of unused @{const Formula.Let}-bound predicates. \<close>
+text \<open>Unlike @{const Formula.contains_pred}, @{text preds} is syntactic: it also counts the
+definitions of unused bound predicates.\<close>
 
 fun preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) set" where
   "preds (Formula.Pred e ts) = {(e, length ts)}"
@@ -845,8 +825,6 @@ lemma regex_list_cong[fundef_cong]:
 lemma set_regex_list[simp]: "set (regex_list f r) = (\<Union>z \<in> Regex.atms r. set (f z))"
   by (induct r) auto
 
-text \<open> All predicate names (including bound ones) occurring in a formula. \<close>
-
 fun pred_names :: "'t Formula.formula \<Rightarrow> Formula.name list" where
   "pred_names (Formula.Pred e ts) = [e]"
 | "pred_names (Formula.Let p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
@@ -881,8 +859,8 @@ lemma preds_pred_names: "(e, n) \<in> preds \<phi> \<Longrightarrow> e \<in> set
 lemma contains_pred_preds: "Formula.contains_pred p \<phi> \<Longrightarrow> p \<in> preds \<phi>"
   by (induction p \<phi> rule: Formula.contains_pred.induct) (auto simp: fv_regex_alt)
 
-text \<open> A name that does not occur in the given list: among the @{term "Suc (length ns)"}
-pairwise distinct candidates @{text "q, qq, qqq, \<dots>"} at least one is not in @{term ns}. \<close>
+text \<open>Of the @{term "Suc (length ns)"} distinct candidates @{text "q, qq, qqq, \<dots>"}, at least
+one is not in @{term ns}.\<close>
 
 definition frz_cand :: "nat \<Rightarrow> Formula.name" where
   "frz_cand k = string8_literal (String.implode (replicate (Suc k) CHR ''q''))"
@@ -918,8 +896,6 @@ proof -
     by (auto simp: fresh_name_def dest: find_Some_iff[THEN iffD1])
 qed
 
-text \<open> The fresh name for freezing a snapshot in the context of the given subformulas. \<close>
-
 definition frz_name :: "'a formula list \<Rightarrow> Formula.name" where
   "frz_name \<phi>s = fresh_name (concat (map (\<lambda>\<phi>. pred_names (project \<phi>)) \<phi>s))"
 
@@ -927,9 +903,8 @@ lemma frz_name_fresh: "\<phi> \<in> set \<phi>s \<Longrightarrow> (frz_name \<ph
   using fresh_name[of "concat (map (\<lambda>\<phi>. pred_names (project \<phi>)) \<phi>s)"]
   by (auto simp: frz_name_def dest!: preds_pred_names)
 
-text \<open> The frozen snapshot is applied to all variables @{term "[0..<n]"} of the frozen formula.
-This requires the frozen formula's free variables to have no gaps, which is also required by
-the monitor for @{const Formula.Frz}. \<close>
+text \<open>The snapshot is applied to the variables @{term "[0..<n]"}, so the frozen formula's free
+variables must have no gaps.\<close>
 
 definition frz_atom :: "Formula.name \<Rightarrow> nat \<Rightarrow> 'a formula" where
   "frz_atom q n = Pred q (map Formula.Var [0..<n])"
@@ -940,53 +915,41 @@ lemma my_size_frz_atom[simp]: "my_size (frz_atom q n) = 1"
 definition frz_ok :: "'a formula \<Rightarrow> bool" where
   "frz_ok \<alpha> = ({0..<nfv \<alpha>} \<subseteq> fvi 0 \<alpha>)"
 
-text \<open> The sequential patterns of @{text rewrite} below expand to more than 150 equations,
-whose pairwise compatibility yields more than 10000 proof obligations. Methods like
-@{method simp_all} or @{method auto} take minutes for that many subgoals, because they integrate
-the solution of each subgoal separately into the proof state, which each time costs time
-proportional to the size of the entire proof state. @{method safe} instead works on the first
-subgoal only, and closes each of these obligations by the injectivity and distinctness rules of
-the constructors, without such a cost. \<close>
+subsubsection \<open>Rewrite rules\<close>
 
-(* The function is inspired from "Section 5.3.4:
-Propagation of Range Restrictions" of Samuel Mueller's
-ETH PhD-thesis: Theory and applications of runtime
-monitoring MFOTL.
-The rules that would copy a conjunct under an opposite temporal operator (introducing
-future dependencies for past operators and delaying a monitor's evaluation of future operators)
-have been replaced by rules using the freeze operator (see Krstic and Traytel: "From Harbin with
-Love: Freezing MFOTL"), which do not delay a monitor (they preserve the progress defined in the
-session Monitor_Algorithm_Proof). *)
+text \<open>The rules propagate range restrictions (Mueller's thesis, Sect. 5.3.4), freezing instead of
+copying a conjunct. Unlike @{method auto}, @{method safe} scales to the many sequential equations.\<close>
+
 function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
   where
-(*1*)  "rewrite (And \<alpha> (Or \<beta> \<gamma>)) t =
+  "rewrite (And \<alpha> (Or \<beta> \<gamma>)) t =
        (if prop_cond \<alpha> \<beta> \<or> prop_cond \<alpha> \<gamma>
        then Or (rewrite (And \<alpha> \<beta>) Same) (rewrite (And \<alpha> \<gamma>) Same)
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Or \<beta>' \<gamma>'))" (*added prop_cond gamma because the rewrite shouldn't be position dependent*)
+       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Or \<beta>' \<gamma>'))"
 
-(*2*) | "rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t =
+| "rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Release (rewrite (And q\<alpha> \<beta>) Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in (And \<alpha>' (Release \<beta>' I \<gamma>')))"
 
-(*3*) | "rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t =
+| "rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Trigger (rewrite (And q\<alpha> \<beta>) Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in (And \<alpha>' (Trigger \<beta>' I \<gamma>')))"
 
-(*4*) | "rewrite (And \<alpha> (Exists k \<beta>)) t =
+| "rewrite (And \<alpha> (Exists k \<beta>)) t =
        (if prop_cond \<alpha> \<beta>
         then Exists k (rewrite (And (shiftI_r 0 \<alpha>) \<beta>) Same)
         else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Exists k \<beta>'))"
 
-(*5*) | "rewrite (And \<alpha> (Neg \<beta>)) t =
+| "rewrite (And \<alpha> (Neg \<beta>)) t =
       (if prop_cond \<alpha> \<beta>
        then And (rewrite \<alpha> Same) ((Neg (rewrite (And \<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Neg \<beta>'))"
 
-(*10,12*) | "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t =
+| "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Since (rewrite (And q\<alpha> \<beta>) Same) I (rewrite \<gamma> Same)))
@@ -995,7 +958,7 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
          Frz q \<alpha>' (And \<alpha>' (Since (rewrite \<beta> Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Since \<beta>' I \<gamma>'))"
 
-(*11,13*) | "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t =
+| "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>, \<gamma>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Until (rewrite (And q\<alpha> \<beta>) Same) I (rewrite \<gamma> Same)))
@@ -1004,44 +967,41 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
          Frz q \<alpha>' (And \<alpha>' (Until (rewrite \<beta> Same) I (rewrite (And q\<alpha> \<gamma>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Until \<beta>' I \<gamma>'))"
 
-(*18*) | "rewrite (And \<alpha> (Once I \<beta>)) t =
+| "rewrite (And \<alpha> (Once I \<beta>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Once I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Once I \<beta>'))"
 
-(*19*) | "rewrite (And \<alpha> (Eventually I \<beta>)) t =
+| "rewrite (And \<alpha> (Eventually I \<beta>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Eventually I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Eventually I \<beta>'))"
 
-(*20*) | "rewrite (And \<alpha> (Historically I \<beta>)) t =
+| "rewrite (And \<alpha> (Historically I \<beta>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Historically I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Historically I \<beta>'))"
 
-(*21*) | "rewrite (And \<alpha> (Always I \<beta>)) t =
+| "rewrite (And \<alpha> (Always I \<beta>)) t =
       (if prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
        then let \<alpha>' = rewrite \<alpha> Same; q = frz_name [\<alpha>, \<beta>]; q\<alpha> = frz_atom q (nfv \<alpha>) in
          Frz q \<alpha>' (And \<alpha>' (Always I (rewrite (And q\<alpha> \<beta>) Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Always I \<beta>'))"
 
- (*22*) | "rewrite (And \<alpha> (Prev I \<beta>)) t =
+| "rewrite (And \<alpha> (Prev I \<beta>)) t =
       (if (prop_cond \<alpha> \<beta>)
        then And (rewrite \<alpha> Same) (Prev I (And (Next I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Prev I \<beta>'))"
 
-(*23*) | "rewrite (And \<alpha> (Next I \<beta>)) t =
+| "rewrite (And \<alpha> (Next I \<beta>)) t =
       (if (prop_cond \<alpha> \<beta>)
        then And (rewrite \<alpha> Same) (Next I (And (Prev I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in (And \<alpha>' (Next I \<beta>')))"
 
-(*6 first, then 8*)
-(* the Same cases freeze \<alpha> (resp. \<gamma>), which necessarily holds at the current time-point;
-   the Swapped cases are restricted to intervals containing 0, so that they do not delay a
-   monitor (they preserve the progress defined in Monitor_Algorithm_Proof) *)
+(* the Swapped cases only for intervals containing 0, so as not to delay the monitor *)
 | "rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same in
               if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>
@@ -1055,8 +1015,7 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
                       else rewrite \<beta> Same
               in fix_r (Since l I r) t)"
 
-(*7 first*) (* the Swapped case (9) has been removed as it would delay a monitor (it does not
-   preserve the progress defined in Monitor_Algorithm_Proof) *)
+(* no Swapped case, which would delay the monitor *)
 | "rewrite (Until (And \<alpha> \<gamma>) I \<beta>) t =
              (let l = rewrite (And \<alpha> \<gamma>) Same;
                   r =      if t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once I \<alpha>) \<beta>) Same
@@ -1066,15 +1025,13 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 
 | "rewrite (Since l I r) Same = rewrite (Since r I l) Swapped"
 | "rewrite (Until l I r) Same = rewrite (Until r I l) Swapped"
-(* a disjunction one level down a conjunction, as from EQUIV: the conjunction of the other
-   two conjuncts is distributed over it, as in (1) *)
 | "rewrite (And l (And \<beta> (Or \<gamma>1 \<gamma>2))) Same =
      (if prop_cond (And l \<beta>) \<gamma>1 \<or> prop_cond (And l \<beta>) \<gamma>2
      then Or (rewrite (And (And l \<beta>) \<gamma>1) Same) (rewrite (And (And l \<beta>) \<gamma>2) Same)
      else rewrite (And (And \<beta> (Or \<gamma>1 \<gamma>2)) l) Swapped)"
 | "rewrite (And l r) Same = rewrite (And r l) Swapped"
 
-| "rewrite (Since l I r) Swapped = Since (rewrite r Same) I (rewrite l Same)" (*swap back before recursing on subformulas*)
+| "rewrite (Since l I r) Swapped = Since (rewrite r Same) I (rewrite l Same)"
 | "rewrite (Until l I r) Swapped =  Until (rewrite r Same) I (rewrite l Same)"
 | "rewrite (And l r) Swapped =  And (rewrite r Same) (rewrite l Same)"
 
@@ -1101,125 +1058,15 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 | "rewrite f t =  f"
   by pat_completeness safe
 
-(* 
-(* TODO: The following case-based variant of the function above has much fewer equations and
-   therefore loads faster. However, it is outdated: its temporal cases do not use the freeze
-   operator and thus do not match the current definition. Since the compatibility proof above
-   uses safe instead of auto, the main loading time issue of the function is fixed. Switching
-   to a case-based definition would still reduce the time spent on the function command and
-   its proof, but would change rewrite.simps and rewrite.induct, on which later proofs rely. *)
-function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
-  where "rewrite (And \<alpha> \<zeta>) t = (case \<zeta> of
-      (Or \<beta> \<gamma>) \<Rightarrow> (if prop_cond \<alpha> \<beta> \<or> prop_cond \<alpha> \<gamma>
-       then Or (rewrite (And \<alpha> \<beta>) Same) (rewrite (And \<alpha> \<gamma>) Same)
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Or \<beta>' \<gamma>')) 
-      | (Release \<beta> I \<gamma>) \<Rightarrow>
-      (if prop_cond \<alpha> \<beta>
-       then And (rewrite \<alpha> Same) (Release (rewrite (And \<beta> (Once (init_ivl I) \<alpha>)) Same) I (rewrite (And \<gamma> (Once I \<alpha>)) Same))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in (And \<alpha>' (Release \<beta>' I \<gamma>')))
-      | (Trigger \<beta> I \<gamma>) \<Rightarrow>
-      (if prop_cond \<alpha> \<beta>
-       then And (rewrite \<alpha> Same) (Trigger (rewrite (And \<beta> (Eventually (init_ivl I) \<alpha>)) Same) I (rewrite (And \<gamma> (Eventually I \<alpha>)) Same))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in (And \<alpha>' (Trigger \<beta>' I \<gamma>')))
-      | (Exists k \<beta>) \<Rightarrow>
-       (if prop_cond \<alpha> \<beta>
-        then Exists k (rewrite (And (shiftI_r 0 \<alpha>) \<beta>) Same)
-        else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Exists k \<beta>'))
-      | (Neg \<beta>) \<Rightarrow>
-      (if prop_cond \<alpha> \<beta>
-       then And (rewrite \<alpha> Same) ((Neg (rewrite (And \<alpha> \<beta>) Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Neg \<beta>'))
-      | (Since \<beta> I \<gamma>) \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Since (rewrite (And (Eventually (init_ivl I) \<alpha>) \<beta>) Same) I (rewrite \<gamma> Same))
-       else if (prop_cond \<alpha> \<gamma>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Since (rewrite \<beta> Same) I (rewrite (And (Eventually I \<alpha>) \<gamma>) Same))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Since \<beta>' I \<gamma>'))
-      | Until \<beta> I \<gamma> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Until (rewrite (And (Once (init_ivl I) \<alpha>) \<beta>) Same) I (rewrite \<gamma> Same))
-       else if (prop_cond \<alpha> \<gamma>) \<and> (bounded I) then And (rewrite \<alpha> Same) (Until (rewrite \<beta> Same) I (rewrite (And (Once I \<alpha>) \<gamma>) Same))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same;  \<gamma>' = rewrite \<gamma> Same in And \<alpha>' (Until \<beta>' I \<gamma>'))
-      | Once I \<beta> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I)
-       then And (rewrite \<alpha> Same) (Once I (And (Eventually I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Once I \<beta>'))
-      | Eventually I \<beta> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>)
-       then And (rewrite \<alpha> Same) (Eventually I (And (Once I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Eventually I \<beta>'))
-      | Historically I \<beta> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>) \<and> (bounded I)
-       then And (rewrite \<alpha> Same) (Historically I (And (Eventually I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Historically I \<beta>')) 
-      | Always I \<beta> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>)
-       then And (rewrite \<alpha> Same) (Always I (And (Once I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Always I \<beta>'))
-      | Prev I \<beta> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>)
-       then And (rewrite \<alpha> Same) (Prev I (And (Next I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in And \<alpha>' (Prev I \<beta>'))
-      | Next I \<beta> \<Rightarrow>
-      (if (prop_cond \<alpha> \<beta>)
-       then And (rewrite \<alpha> Same) (Next I (And (Prev I (rewrite \<alpha> Same)) (rewrite \<beta> Same)))
-       else let \<alpha>' = rewrite \<alpha> Same; \<beta>' = rewrite \<beta> Same in (And \<alpha>' (Next I \<beta>')))
-      | _ => if t = Swapped then And (rewrite \<zeta> Same) (rewrite \<alpha> Same) else rewrite (And \<zeta> \<alpha>) Swapped)"
-  | "rewrite (Since \<zeta> I \<beta>) t = (case \<zeta> of
-    (And \<alpha> \<gamma>) \<Rightarrow> (let l = rewrite (And \<alpha> \<gamma>) Same;
-                  r =      if t=Same \<and> \<not> (mem I 0) \<and> prop_cond \<alpha> \<beta> then rewrite (And (Eventually I \<alpha>) \<beta>) Same
-                      else if t=Same \<and> \<not> (mem I 0) \<and> prop_cond \<gamma> \<beta> then rewrite (And (Eventually I \<gamma>) \<beta>) Same
-                      else if t=Swapped \<and> bounded I \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once (init_ivl I) \<alpha>) \<beta>) Same
-                      else if t=Swapped \<and> bounded I \<and> prop_cond \<gamma> \<beta> then rewrite (And (Once (init_ivl I) \<gamma>) \<beta>) Same
-                      else rewrite \<beta> Same
-              in fix_r (Since l I r) t)
-    | _ \<Rightarrow> (if t = Same then rewrite (Since \<beta> I \<zeta>) Swapped else Since (rewrite \<beta> Same) I (rewrite \<zeta> Same)))"
-  | "rewrite (Until \<zeta> I \<beta>) t = (case \<zeta> of
-    (And \<alpha> \<gamma>) \<Rightarrow> (let l = rewrite (And \<alpha> \<gamma>) Same;
-                  r =      if t=Same \<and> \<not> (mem I 0) \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once I \<alpha>) \<beta>) Same
-                      else if t=Same \<and> \<not> (mem I 0) \<and> prop_cond \<gamma> \<beta> then rewrite (And (Once I \<gamma>) \<beta>) Same
-                      else if t=Swapped \<and> prop_cond \<alpha> \<beta> then rewrite (And (Eventually (init_ivl I) \<alpha>) \<beta>) Same
-                      else if t=Swapped \<and> prop_cond \<gamma> \<beta> then rewrite (And (Eventually (init_ivl I) \<gamma>) \<beta>) Same
-                      else rewrite \<beta> Same
-              in fix_r (Until l I r) t)
-    | _ \<Rightarrow> if t = Same then rewrite (Until \<beta> I \<zeta>) Swapped else Until (rewrite \<beta> Same) I (rewrite \<zeta> Same))"
-| "rewrite (Or \<phi> \<psi>) t =  Or (rewrite \<phi> Same) (rewrite \<psi> Same)"
-
-| "rewrite (Exists k \<phi>) t = Exists k (rewrite \<phi> Same)"
-| "rewrite (Agg y \<omega> b' f \<phi>) t = Agg y \<omega> b' f (rewrite \<phi> Same)"
-| "rewrite (Prev I \<phi>) t = Prev I (rewrite \<phi> Same)"
-| "rewrite (Next I \<phi>) t = Next I (rewrite \<phi> Same)"
-
-| "rewrite (Release \<phi> I \<psi>) t = Release (rewrite \<phi> Same) I (rewrite \<psi> Same)"
-| "rewrite (Trigger \<phi> I \<psi>) t =  Trigger (rewrite \<phi> Same) I (rewrite \<psi> Same)"
-
-| "rewrite (Neg \<alpha>) t = Neg (rewrite \<alpha> Same)"
-| "rewrite (Eventually I \<alpha>) t = Eventually I (rewrite \<alpha> Same)"
-| "rewrite (Once I \<alpha>) t = Once I (rewrite \<alpha> Same)"
-| "rewrite (Always I \<alpha>) t = Always I (rewrite \<alpha> Same)"
-| "rewrite (Historically I \<alpha>) t = Historically I (rewrite \<alpha> Same)"
-
-| "rewrite (MatchF I r) t = MatchF I (regex.map_regex (\<lambda>f. rewrite f Same) r)"
-| "rewrite (MatchP I r) t = MatchP I (regex.map_regex (\<lambda>f. rewrite f Same) r)"
-| "rewrite (Ands \<phi>s) t = Ands (map (\<lambda>r. rewrite r Same) \<phi>s)"
-
-| "rewrite f t =  f"
-
-  by pat_completeness auto 
-
-termination
- apply(relation "measures [(\<lambda>(f,t). my_size f),(\<lambda>(f,t). size_argpos t)]")
-                      apply (auto simp add:  shift_size not_zero ands_size map_cong termination_simp
-      elim!: not_swapped) (*not_zero important because size of constructor then depends on its' number of arguments*)
-              apply (frule not_swapped, simp)+
- done
-*)
-
-
 termination
   by (relation "measures [(\<lambda>(f,t). my_size f),(\<lambda>(f,t). size_argpos t)]")
     (auto simp add:  shift_size not_zero ands_size map_cong termination_simp
-      elim!: not_swapped) (*not_zero important because size of constructor then depends on its' number of arguments*)
+      elim!: not_swapped)
 
 
-subsubsection \<open> Proof of correct rewriting \<close>
+subsection \<open>Correctness of rewriting\<close>
+
+subsubsection \<open>Free variables\<close>
 
 lemma fvi_less_nfv_r: "x \<in> fvi 0 \<alpha> \<Longrightarrow> x < nfv \<alpha>"
   using Formula.fvi_less_nfv[of "project \<alpha>"] by (auto simp: fv_project nfv_project)
@@ -1267,6 +1114,8 @@ qed (auto simp: Let_def fvi_frz_atom once_def eventually_def always_def historic
 lemma rewrite_fv: "Formula.fvi b (project \<alpha>) = Formula.fvi b (project (rewrite \<alpha> t))"
   by (rule rewrite_fv'[symmetric])
 
+subsubsection \<open>Equivalences behind the rules\<close>
+
 lemma equiv_4: " sat \<sigma> V v i (Since \<alpha> I \<beta>)  = sat \<sigma> V v i (Since (And \<alpha> (Once (init_ivl I) \<beta>) ) I \<beta>)"
 (is "?L = ?R")
 proof(rule iffI)
@@ -1306,6 +1155,8 @@ proof(rule iffI)
   assume L:?L
   show ?R using iffD1[OF equiv_4 L] by fastforce
 qed auto
+
+subsubsection \<open>Congruence of constructors\<close>
 
 inductive f_con where
 f_con_1_t: "f_con (\<lambda>f1. Formula.Exists t f1)"|
@@ -1463,6 +1314,8 @@ proof -
     using Rewriting.trans_agg_2 sub_agg[OF L1 L2 A(3)]
     by (metis (mono_tags, lifting) sat_project)
 qed
+
+subsubsection \<open>Preservation of the semantics\<close>
 
 lemma nfv_rewrite[simp]: "nfv (rewrite \<alpha> t) = nfv \<alpha>"
   unfolding nfv_project[symmetric] Formula.nfv_def rewrite_fv[symmetric] ..
@@ -1658,7 +1511,7 @@ lemma rrewrite_nfv:
   unfolding Formula.nfv_def rrewrite_fvi ..
 
 
-subsection \<open> Simplify terms \<close>
+subsection \<open>Simplification of terms\<close>
 
 definition st where
   "st t = (if Formula.fv_trm t = {} then Formula.Const (Formula.eval_trm [] t) else t)"
@@ -1722,10 +1575,10 @@ next
 qed (auto simp:eval_st match_map_regex_cong simplify_terms_fvi split:nat.splits)
 
 
-subsection \<open> Push negation \<close>
+subsection \<open>Pushing negations\<close>
 
-text \<open>A double negation is removed before a negation is pushed into a conjunction or a
-  disjunction: @{text "\<not>\<not>(\<alpha> \<and> \<beta>)"} becomes @{text "\<alpha> \<and> \<beta>"}, not @{text "\<not>(\<not>\<alpha> \<or> \<not>\<beta>)"}.\<close>
+text \<open>A double negation is eliminated first: @{text "\<not>\<not>(\<alpha> \<and> \<beta>)"} becomes @{text "\<alpha> \<and> \<beta>"},
+not @{text "\<not>(\<not>\<alpha> \<or> \<not>\<beta>)"}.\<close>
 
 fun push_negation where
   "push_negation (Formula.Neg (Formula.Neg \<phi>)) = push_negation \<phi>"
@@ -1809,13 +1662,10 @@ next
   then show ?case unfolding elim_double_negation.simps Formula.sat.simps 4 elim_double_negation_nfv by auto
 qed (auto simp: match_map_regex_cong elim_double_negation_fvi split:nat.splits)
 
-subsection \<open> Conjunctions nested to the left \<close>
+subsection \<open>Conjunctions nested to the left\<close>
 
-text \<open>A conjunction is monitorable if its left operand is and its right operand is monitorable,
-  or a negation, a constraint or an assignment over the left operand's variables. So
-  @{text "\<alpha> \<and> (\<not>\<beta> \<and> \<not>\<gamma>)"}, as obtained by pushing a negation into a disjunction, is not
-  monitorable, while @{text "(\<alpha> \<and> \<not>\<beta>) \<and> \<not>\<gamma>"} is. The conjunctions are therefore nested to the
-  left: each conjunct follows those that may bind its variables.\<close>
+text \<open>Each conjunct follows those that may bind its variables: @{text "(\<alpha> \<and> \<not>\<beta>) \<and> \<not>\<gamma>"} is
+monitorable, while @{text "\<alpha> \<and> (\<not>\<beta> \<and> \<not>\<gamma>)"} is not.\<close>
 
 fun conjuncts :: "'t Formula.formula \<Rightarrow> 't Formula.formula list" where
   "conjuncts (Formula.And \<phi> \<psi>) = conjuncts \<phi> @ conjuncts \<psi>"
@@ -1826,9 +1676,6 @@ definition and_app :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Rig
 
 lemma and_app_And: "and_app \<phi> (Formula.And \<psi>1 \<psi>2) = and_app (and_app \<phi> \<psi>1) \<psi>2"
   by (simp add: and_app_def)
-
-text \<open>A property of conjunctions that is an associative operation on the properties of the
-  conjuncts holds for @{const and_app} as for @{const Formula.And}.\<close>
 
 lemma and_app_cong:
   assumes "\<And>a b. P (Formula.And a b) = f (P a) (P b)" "\<And>x y z. f (f x y) z = f x (f y z)"
@@ -1885,6 +1732,8 @@ next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding assoc_and.simps Formula.sat.simps 4 assoc_and_nfv by auto
 qed (auto simp: match_map_regex_cong assoc_and_fvi split:nat.splits)
+
+subsection \<open>Normalization\<close>
 
 definition normalize where
   "normalize = assoc_and \<circ> elim_double_negation \<circ> push_negation \<circ> simplify_terms"

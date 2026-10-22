@@ -4,46 +4,28 @@ theory Since_Agg
 begin
 (*>*)
 
-
-
-section \<open>The Since window with the aggregation fused in\<close>
+section \<open>Since window with fused aggregation\<close>
 
 text \<open>
-  The kernel folds an aggregation over a Since into the Since node (@{const args_agg}) and its
-  structure keeps the aggregate incrementally, in @{typ aggaux}: a count, a sum or a rank tree
-  per group, updated as tuples enter and leave.  The executable evaluator unfuses the two, a
-  @{text EAgg} node over a @{text ESince} whose window reports the plain union, and recomputes
-  the aggregate from the union at every time point.  This theory fuses them again for the
-  window: the count set already makes a tuple's entry into and exit from the union explicit, and
-  those are exactly the events the kernel's incremental structure takes.
-
-  The executable aggregation @{const uagg} is stated on the window's own tuples, which list the
-  operand's columns in ascending order.  The kernel's @{const eval_agg}, and hence
-  @{const valid_maggaux}, reads its tuples over an arbitrary column list, so the window's tuples
-  are themselves tuples of the kernel at the ascending column list of the operand, and the first
-  lemma below says that the executable aggregation is the kernel's there, with the result column
-  moved from the front, where the kernel puts it, to its place in the ascending order -- an
-  instance of @{thm [source] uagg_eval_agg}.
+  The count set exposes the tuples entering and leaving the window's union, which is what the
+  kernel's incremental aggregation (@{typ aggaux}) takes, so the aggregate is kept alongside.
 \<close>
 
-subsection \<open>The executable aggregation as the kernel's\<close>
+subsection \<open>Executable aggregation as the kernel's\<close>
 
-text \<open>The parameters of a @{text EAgg} node: @{text g0}, the operator, the term, the number of
-  bound variables and the position of the result column.\<close>
+subsubsection \<open>Parameters and the kernel's frame\<close>
+
+text \<open>Parameters of an @{text EAgg} node: @{text g0}, operator, term, number of bound variables
+  and position of the result column.\<close>
 
 type_synonym eaggp = "bool \<times> ty Formula.agg_op \<times> Formula.trm \<times> nat \<times> nat"
 
 fun eagg_p :: "eaggp \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "eagg_p (g0, \<omega>, f, k, pos) = uagg g0 \<omega> f k pos"
 
-text \<open>What the parameters must satisfy at a window over tuples of width @{text w}.\<close>
-
 fun eagg_ok :: "eaggp \<Rightarrow> nat \<Rightarrow> bool" where
   "eagg_ok (g0, \<omega>, f, k, pos) w \<longleftrightarrow>
      k \<le> w \<and> pos \<le> w - k \<and> Formula.fv_trm f \<subseteq> {0..<w} \<and> (g0 \<longrightarrow> w = k)"
-
-text \<open>The kernel's frame: the group columns are all of the result's columns but the result
-  column, and the term reads the tuple at those columns.\<close>
 
 fun eagg_gcols :: "eaggp \<Rightarrow> nat \<Rightarrow> cols" where
   "eagg_gcols (g0, \<omega>, f, k, pos) w = [0..<pos] @ [Suc pos..<Suc (w - k)]"
@@ -201,8 +183,10 @@ proof -
   show ?thesis using umeval_trm_reindex[OF fv', of ?cc t] unfolding r i ..
 qed
 
-text \<open>The kernel puts the result column in front of the group key; the executable order puts it at
-  its place among the group's columns.\<close>
+subsubsection \<open>Position of the result column\<close>
+
+text \<open>The kernel puts the result column in front of the group key, the executable order among the
+  group's columns.\<close>
 
 definition slot :: "nat \<Rightarrow> 'b list \<Rightarrow> 'b list" where
   "slot p x = take p (tl x) @ hd x # drop p (tl x)"
@@ -316,16 +300,11 @@ proof -
     by (simp add: eval_aggargs_def del: eagg_ccols.simps)
 qed
 
-subsection \<open>The aggregate alongside the count set\<close>
+subsection \<open>Aggregate alongside the count set\<close>
 
 text \<open>
-  The count set makes a tuple's entry into and exit from the window's union explicit: a table
-  added contributes the tuples not yet in the union, a table removed takes out the tuples it was
-  the last to hold.  Those are the insertions and deletions the kernel's incremental structure
-  takes.  The structure is optional, as in the kernel: @{const None} once an operation reports
-  that it cannot maintain the aggregate, and then the result is computed from the union
-  directly.  The kernel's operations are named @{text kag_} here: the window keeps the
-  structure of the next subsection, which they serve as the specification of.
+  An added table contributes the tuples not yet in the union, a removed one the tuples it was the
+  last to hold; the kernel's operations (@{text kag_}) specify the window's.
 \<close>
 
 definition cnt_enter :: "event_data table \<Rightarrow> cntset \<Rightarrow> event_data table" where
@@ -372,15 +351,11 @@ next
     by (auto simp: kag_inv_def kag_ins_def Some split: prod.splits)
 qed
 
-subsection \<open>The aggregate over the window's own tuples\<close>
+subsection \<open>Aggregate over the window's tuples\<close>
 
 text \<open>
-  The kernel's structure keys a group by @{const agg_key}, which at the ascending frame is the
-  tuple's suffix after the bound columns, and reads the value by the shifted term, which there
-  is the term itself.  The structure @{typ "event_data gagg"} of
-  @{theory Monitor_Exec.Exec_Agg} reads both off the tuple directly, and
-  @{text Rk} maps it to the kernel's.  The kernel's steps are the steps below under
-  @{text Rk}, and so are the folds, the initial structure and the result.
+  Under @{text Rk}, the kernel's steps, folds, initial structure and result are those of
+  @{typ "event_data gagg"}.
 \<close>
 
 fun Rk :: "event_data gagg \<Rightarrow> aggaux" where
@@ -494,10 +469,6 @@ next
   then show ?thesis using GRank by (auto simp: gmr_slot slot_singleton_table)
 qed
 
-text \<open>The window's aggregate: the structure over the window's own tuples, fed with the sorted
-  list of what enters and what leaves, and read with the result column filled in.  Its
-  invariant is the kernel's, under @{const Rk}.\<close>
-
 type_synonym egagg = "event_data gagg"
 
 definition ag_init :: "eaggp \<Rightarrow> nat \<Rightarrow> 'b gagg option" where
@@ -581,15 +552,7 @@ next
   finally show ?thesis .
 qed
 
-subsection \<open>The window, with the aggregate\<close>
-
-text \<open>
-  The window of @{theory Monitor_Exec.Closed_Left_Windows} again, with the aggregate carried along:
-  the two scans update it with every table that enters or leaves, the reset on a failed left
-  operand starts it afresh, and the result is the aggregate's rather than the union.  The
-  structure's validity is the window's, at a frame whose columns are all of the node's, together
-  with the aggregate's invariant for the window's count set.
-\<close>
+subsection \<open>Since window with aggregate\<close>
 
 type_synonym swagg = "swaux \<times> egagg option"
 
@@ -663,25 +626,13 @@ definition valid_sa :: "args \<Rightarrow> eaggp \<Rightarrow> ts \<Rightarrow> 
      valid_sw args cur w auxlist \<and> length (args_R args) = args_n args \<and>
      eagg_ok p (args_n args) \<and> ag_inv p (args_n args) (sw_cc w) ax)"
 
-section \<open>The executable fused Since window\<close>
+subsection \<open>Executable fused window\<close>
+
+subsubsection \<open>Count mapping\<close>
 
 text \<open>
-  The fused aggregation window the executable evaluator runs: its count structure is a mapping alone,
-  and its read is guarded by the node's constraint; the result cache of
-  @{text Agg_Cache} is built on it.  This section provides the window, and proves that it
-  refines the fused window above.
-\<close>
-
-subsection \<open>The count mapping\<close>
-
-text \<open>
-  The count structure of @{theory Monitor_Exec.Closed_Left_Windows} keeps the tuples' counts in a
-  mapping and their keys in a set beside it, so that the plain window can hand out its union in
-  one step.  The fused window never hands out that union -- it hands out the aggregate, and reads
-  the count structure only to learn which tuples enter the window and which leave it.  The
-  mapping answers both, so the fused window keeps the mapping alone and pays one tree operation
-  per tuple where the plain window pays two.  @{text ucc} reads the count structure off it: the
-  key set is the mapping's domain, which is what the plain window's second half always was.
+  The fused window never hands out the union, so it keeps the count mapping without its key set;
+  @{text ucc} recovers the count set.
 \<close>
 
 type_synonym ucnt = "(event_data list, nat) mapping"
@@ -707,9 +658,6 @@ fun ucc :: "ucnt \<Rightarrow> cntset" where
 
 declare ucc.simps[simp del]
 
-text \<open>What enters the window is what the mapping does not hold yet, and what leaves it is what
-  it holds exactly once: both are read off the mapping, one lookup per tuple.\<close>
-
 type_synonym ugagg = "event_data gagg"
 
 definition uag_ins :: "eaggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> ucnt \<Rightarrow>
@@ -725,16 +673,11 @@ definition uag_del :: "eaggp \<Rightarrow> nat \<Rightarrow> event_data list set
 lemma ag_del_ucc[simp]: "ag_del p w T (ucc c) ax = uag_del p w T c ax"
   by (cases p) (simp add: ag_del_def uag_del_def ucc.simps)
 
-subsection \<open>The node's guard\<close>
+subsubsection \<open>Guard of the node\<close>
 
 text \<open>
-  A node whose result is an aggregate is often read through a constraint on the aggregate's own
-  value: \<^verbatim>\<open>(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r\<close> is the shape of a whole family of
-  policies.  Compiled as a filter over the node, that builds the table of all groups and then
-  drops most of it again -- every group that fails the constraint is inserted into a tree only
-  to be removed from the next one.  The constraint is carried by the node instead, as the guard
-  below, and the read inserts only the groups that pass.  The guard is @{const None} at a node
-  that carries no constraint, and then it admits everything.
+  A constraint on the aggregate's value is carried by the node as a guard, so that the read
+  inserts only the groups that pass.
 \<close>
 
 type_synonym uconstr = "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
@@ -754,9 +697,7 @@ lemma ufilt_None[simp]: "ufilt None = id"
 lemma ufilt_idem[simp]: "ufilt q (ufilt q X) = ufilt q X"
   by (auto simp: ufilt_def)
 
-text \<open>The result writes the aggregate into each group and keeps what passes the node's guard.
-  The fused form walks the mapping's entries -- the key and its value together, so no lookup --
-  and inserts the node's own tuple straight into the answer.\<close>
+text \<open>The code walks the mapping's entries, key and value together, without lookups.\<close>
 
 definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow>
     (event_data list, 'b) mapping \<Rightarrow> event_data list set" where

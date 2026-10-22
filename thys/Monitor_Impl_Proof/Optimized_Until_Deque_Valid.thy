@@ -4,6 +4,9 @@ theory Optimized_Until_Deque_Valid
 begin
 (*>*)
 
+section \<open>Correctness of the Until structure with deques\<close>
+
+subsection \<open>Deques related to mappings\<close>
 
 lemma rel_a2_lookup: "rel_a2 tp len d m \<Longrightarrow> k \<le> len \<Longrightarrow> Mapping.lookup m (tp - len + k) = Some (dq_nth d k)"
   by (simp add: rel_a2_def)
@@ -120,11 +123,9 @@ proof -
   qed
 qed
 
-text \<open>
-  @{const rel_a2} sees a deque only through @{const dq_inv}, @{const dq_len} and
-  @{const dq_nth}, so the two ways of reaching the entry behind the head relate the refined
-  structure to the same abstract one.
-\<close>
+text \<open>@{const rel_a2} sees a deque only through @{const dq_inv}, @{const dq_len} and
+  @{const dq_nth}, so updating the entry behind the head before or after dropping the head is
+  the same.\<close>
 
 lemma rel_a2_step_tl:
   assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
@@ -183,6 +184,8 @@ next
   case False
   then show ?thesis using rel_a2_step_tl[OF assms, of C] by simp
 qed
+
+subsection \<open>Simulation of evaluation\<close>
 
 lemma eval_step_sim:
   assumes rel: "rel_uaux d a" and valid: "valid_mmuaux' args cur dt a auxlist" and tss: "lin_ts_mmuaux a = ts # tss''"
@@ -287,6 +290,8 @@ lemma init_sim: "rel_uaux (init_dq args) (init_mmuaux args)"
 lemma length_sim: "rel_uaux d a \<Longrightarrow> length_dq args d = length_mmuaux args a"
   by (cases d; cases a) auto
 
+subsection \<open>Nested update on the deque\<close>
+
 lemma upd_nested_dq_Nil[simp]: "upd_nested_dq base d f [] dq = dq"
   by (simp add: upd_nested_dq_def)
 
@@ -362,7 +367,7 @@ proof -
   qed
 qed
 
-subsection \<open>Conversions (used only for infinite operand tables)\<close>
+subsection \<open>Conversions for infinite operand tables\<close>
 
 lemma rel_a2_det:
   assumes "rel_a2 tp len dq m"
@@ -468,6 +473,8 @@ proof -
     unfolding a dq_of_uaux.simps rel_uaux.simps
     using rel_a2_of[OF facts(2,1)] rel_tstp_of[OF facts(3,1)] facts(1) by simp
 qed
+
+subsection \<open>Adding a new time point\<close>
 
 lemma set_until_pairs_list: "set (until_pairs_list a1_map L R pos tp len inz as) =
   until_cand a1_map L R pos tp len as \<union> (if inz then {(tp, as)} else {})"
@@ -604,6 +611,8 @@ next
   show ?thesis
     unfolding dq_eq mm_eq rel_uaux.simps using ra2' rt' lentp by simp
 qed
+
+subsection \<open>Combined structure\<close>
 
 lemma valid_init_muaux_dq:
   assumes LR: "set L \<subseteq> set R" "distinct L" "distinct R"

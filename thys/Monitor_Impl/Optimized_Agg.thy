@@ -4,6 +4,9 @@ theory Optimized_Agg
   "Monitor_Data_Structures.Tree_List"
 begin
 
+section \<open>Incremental aggregation structure\<close>
+
+subsection \<open>Invariant\<close>
 
 type_synonym 'a agg_map = "(event_data tuple, 'a) mapping"
 
@@ -14,9 +17,6 @@ datatype type = IntT | StringT
 datatype aggaux = CntAux "nat agg_map" | 
                   SumAux "(nat \<times> integer) agg_map" | 
                   RankAux "list_aux agg_map \<times> type"
-
-text \<open>The aggregated tuples are over the columns @{term cs}; a group is keyed by the columns
-  that the aggregation does not bind (@{const agg_key}).\<close>
 
 definition group where [simp]:
   "group k b cs X = Set.filter (\<lambda>x. agg_key b cs x = k) X"
@@ -85,19 +85,10 @@ fun valid_maggaux :: "aggargs \<Rightarrow> aggaux \<Rightarrow> event_data tabl
                                      None \<Rightarrow> False)) 
                    (length tys) cs f m X))"
 
-text \<open>
-  The second component of @{term "aggargs_\<omega> args"} is the aggregation's \<^emph>\<open>result\<close> type, not
-  the type of the values it aggregates.  For @{const Formula.Agg_Min}, @{const Formula.Agg_Max}
-  and @{const Formula.Agg_Sum} the two coincide, but @{const Formula.Agg_Avg} and
-  @{const Formula.Agg_Med} always return a float, so they arrive here as @{const TFloat} whatever
-  their values are, and admitting them on @{const TInt} admits nothing at all.  The value type is
-  therefore not available at initialisation.  Both are admitted on the float result type instead,
-  and the insertion rejects a non-integer value at the first tuple it meets, which drops the
-  structure and falls back to the generic evaluation of the aggregation.  That fallback is what
-  keeps this sound: addition of floats is not associative, so an incremental sum must never see
-  one -- which is why the accumulator is an @{typ integer} and the insertion accepts
-  @{const EInt} alone.
-\<close>
+subsection \<open>Operations\<close>
+
+text \<open>Average and median are admitted on their float result type; insertion accepts only
+  @{const EInt} (float addition is not associative) and otherwise falls back to generic evaluation.\<close>
 
 fun init_maggaux :: "aggargs \<Rightarrow> (bool \<times> aggaux)" where
   "init_maggaux args = (let aggtype = fst (aggargs_\<omega> args);
@@ -192,8 +183,6 @@ fun get_edata_list :: "list_aux \<Rightarrow> nat \<Rightarrow> event_data" wher
   "get_edata_list (LString l) n = EString (get_treelist l n)" |
   "get_edata_list (LInt l) n = EInt (get_treelist l n)"
 
-text \<open>Each group yields its aggregate followed by its key (cf. @{const eval_agg}).\<close>
-
 definition get_map_result where
   "get_map_result m f = (\<lambda>k. (case Mapping.lookup m k of
                              Some i \<Rightarrow> f i # k
@@ -223,6 +212,8 @@ fun result_maggaux :: "aggargs \<Rightarrow> aggaux \<Rightarrow> event_data tab
                                             else double_of_event_data_agg (get_edata_list k u')) in
                                             EFloat aggval))))"
 
+subsection \<open>Commutativity of updates\<close>
+
 lemma insert_sum_comm': "(insert_sum args x \<circ> insert_sum args y) (v, m)  = (insert_sum args y \<circ> insert_sum args x) (v, m)"
   by (auto simp:lookup_update' mapping_eqI update_update split:option.splits event_data.splits)
 
@@ -251,13 +242,11 @@ proof (cases v)
   show ?thesis
   proof (cases "gx = gy")
     case True
-    \<comment> \<open>Both insertions act on the same list, where they commute.\<close>
     with \<open>v\<close> show ?thesis
       by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
         (simp_all add: gx_def gy_def lookup_update' update_update insert_treelist_comm split: option.splits list_aux.splits)
   next
     case False
-    \<comment> \<open>The insertions act on different keys of the mapping, where updates commute.\<close>
     with \<open>v\<close> show ?thesis
       by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
         (simp_all add: gx_def gy_def lookup_update' update_update split: option.splits list_aux.splits)
@@ -272,8 +261,6 @@ proof (cases v)
   show ?thesis
   proof (cases "gx = gy")
     case True
-    \<comment> \<open>Both deletions act on the same list: removals commute, and a list that
-      became empty stays empty under further removals.\<close>
     have remove_empty: "remove_treelist a empty_treelist = empty_treelist" for a :: "'a::linorder"
       by (rule remove_treelist_empty)
     have remove_remove_empty: "remove_treelist a (remove_treelist b l) = empty_treelist"
@@ -285,7 +272,6 @@ proof (cases v)
           remove_comm remove_empty remove_remove_empty split: option.splits list_aux.splits)
   next
     case False
-    \<comment> \<open>The deletions act on different keys of the mapping.\<close>
     with \<open>v\<close> show ?thesis
       by (cases type; cases "meval_trm (aggargs_cols args) (aggargs_f args) x"; cases "meval_trm (aggargs_cols args) (aggargs_f args) y")
         (auto simp: gx_def gy_def lookup_update' lookup_delete mapping_eqI delete_update update_update

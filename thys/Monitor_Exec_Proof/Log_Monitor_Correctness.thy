@@ -4,43 +4,12 @@ theory Log_Monitor_Correctness
 begin
 (*>*)
 
+section \<open>Correctness of the log monitor\<close>
 
+text \<open>The reader of floats is a parameter about which nothing is assumed; the front end passes
+  OCaml's @{text float_of_string_opt}.\<close>
 
-text \<open>
-  This theory composes the verified log parser of session Log_Parser with the verified executable
-  monitor, into the monitor that @{text "-verified"} runs on a log: @{text vinit} prepares the
-  formula and starts the monitor, @{text vfeed_chunk} reads a chunk of the log, and
-  @{text vfinish} the end of the log. The parser skips the events of the predicates that the
-  signature declares but whose names do not occur freely in the formula
-  (@{theory Log_Parser.Log_Filter}); the time points it outputs are converted by the signature
-  into the monitor's databases and fed to @{const emstep}.
-
-  The main theorem, @{text verimon_log.vrun_log} (theory @{text Log_Monitor_Online}), states that for the bytes of a log that
-  denotes a prefix -- its items are those the parser reads (@{const parse_log}, which accepts
-  exactly the logs of the grammar, @{thm [source] parse_log_correct}), they are entries, their
-  timestamps are natural numbers that do not decrease, and their events are those of the
-  signature with fields of the declared types (@{text log_prefix}) -- the monitor reports no
-  error, and its verdicts are those that the specification of the formula prescribes for the
-  prefix (@{text Mt}, as in @{thm [source] verimon_prepare.eminit_verimon_mverdicts}).
-  @{text verimon_log.vrun_filtered} states the same for the logs whose events of the other
-  declared predicates are arbitrary, and that the monitor reports an error on every other log;
-  @{text verimon_log.Mt_preds} states that the verdicts do not depend on these events.
-  @{text verimon_log.vfeed_chunks_online}, @{text verimon_log.vfeed_chunks_log} and
-  @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read, from
-  the initial state; theory @{text Log_Monitor_Online} states it for the online interface, chunk
-  by chunk: an invariant relates the state to the bytes read and the prefix they denote, and a
-  chunk after which they still denote a prefix preserves it and outputs exactly the verdicts that
-  the specification prescribes for the longer prefix and not for the shorter one.
-  The theorems say nothing about which error is reported, what is output after the first error,
-  nor about the verdicts output together with it, for the same chunk; for that chunk, the driver
-  outputs the verdicts of its longest prefix whose outputs have no error, which the theorems
-  cover.
-
-  The theorems take the reader of floats as a parameter, about which nothing is assumed: the
-  front end passes OCaml's @{text float_of_string_opt}. That the generated code computes these
-  functions rests on the code printings: those of @{theory Log_Parser.Log_OCaml}, of the
-  monitor's session (strings, floats, integers and containers), and the two below.
-\<close>
+subsection \<open>Lookup in the signature\<close>
 
 lemma lsig_lookup_length: "lsig_lookup S (p, n) = Some tys \<Longrightarrow> length tys = n"
   by (induction S) (auto simp: lsig_lookup_def split: if_splits)
@@ -75,12 +44,7 @@ qed
 lemma lsig_lookup_fun[simp]: "lsig_lookup_fun S = lsig_lookup S"
   by (simp add: lsig_lookup_fun_def index_lookup_lsig_index)
 
-subsection \<open>What an entry denotes\<close>
-
-text \<open>The specification of the conversion, on the strings of the grammar
-  (@{theory Log_Parser.Log_Grammar}): a field is read by its type, an event is one of the
-  signature, with as many fields as its predicate has arguments, and an entry is a time point
-  whose timestamp is a natural number (@{const nat_of_string}). A command denotes no time point.\<close>
+subsection \<open>Prefix denoted by a log\<close>
 
 definition field_of_string :: "(string \<Rightarrow> double option) \<Rightarrow> ty \<Rightarrow> string \<Rightarrow> event_data option" where
   "field_of_string pf t f = (case t of
@@ -101,19 +65,12 @@ definition tp_of_item :: "(string \<Rightarrow> double option) \<Rightarrow> lsi
      | _ \<Rightarrow> None)
    | Command c args \<Rightarrow> None)"
 
-text \<open>The prefix a list of time points denotes if its timestamps do not decrease.\<close>
-
 lift_definition prefix_of_list :: "('a \<times> nat) list \<Rightarrow> 'a prefix" is
   "\<lambda>xs. if sorted (map snd xs) then xs else []"
   by auto
 
 lemma Rep_prefix_of_list: "sorted (map snd xs) \<Longrightarrow> Rep_prefix (prefix_of_list xs) = xs"
   by (simp add: prefix_of_list.rep_eq)
-
-text \<open>The prefix that a list of items denotes, followed by a last time point with no events at
-  timestamp @{text t} if @{text "fin = Some t"}; @{const None} if an item denotes no time point
-  or the timestamps decrease. The prefix a log denotes, with the events of the predicates that
-  @{text K} accepts, is that of its items (@{const parse_log}).\<close>
 
 definition prefix_of_items :: "(string \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> nat option \<Rightarrow> string item list \<Rightarrow>
     Formula.prefix option" where
@@ -126,9 +83,7 @@ definition log_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \<Ri
     Formula.prefix option" where
   "log_prefix K pf S fin s = Option.bind (parse_log s) (\<lambda>items. prefix_of_items pf S fin (map (filter_item K) items))"
 
-subsubsection \<open>The conversion implements the specification\<close>
-
-text \<open>A function on byte strings as one on strings.\<close>
+subsection \<open>Conversion of events\<close>
 
 definition sf :: "(bytes \<Rightarrow> 'a) \<Rightarrow> string \<Rightarrow> 'a" where
   "sf f s = f (Abs_bytes s)"
@@ -186,7 +141,7 @@ proof (induction evs)
   qed
 qed simp
 
-text \<open>The groups have distinct keys, and each holds the tuples of its key.\<close>
+subsection \<open>Database of an entry\<close>
 
 lemma map_of_add_ev:
   "map_of (add_ev (p, vs) g) k =
@@ -281,12 +236,12 @@ qed
 lemma vskip_fun: "vskip_fun xs q \<longleftrightarrow> q \<in> set xs"
   by (auto simp: vskip_fun_def str8_eq_def list_ex_iff)
 
+subsection \<open>Entries, runs and outputs\<close>
+
 definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list \<times> nat" where
   "conv_entry cf ts evs = (case bnat_of ts of
      None \<Rightarrow> Inl (VE_TIMESTAMP ts)
    | Some t \<Rightarrow> map_sum id (\<lambda>xs. (xs, t)) (conv_events (vc_pf cf) (vc_lookup cf) evs))"
-
-text \<open>For the theorems: the whole input, in chunks, and the verdicts in the output.\<close>
 
 fun vfeed_chunks :: "vconf \<Rightarrow> bytes list \<Rightarrow> vstate \<Rightarrow> vout list \<times> vstate" where
   "vfeed_chunks cf [] z = ([], z)"
@@ -315,9 +270,7 @@ lemma has_verror_simps[simp]:
   "has_verror (xs @ ys) \<longleftrightarrow> has_verror xs \<or> has_verror ys"
   by (auto simp: has_verror_def split: vout.splits)
 
-subsection \<open>Correctness\<close>
-
-subsubsection \<open>The executable monitor on a list of time points\<close>
+subsection \<open>Monitor on a list of time points\<close>
 
 fun usteps :: "(Formula.event list \<times> nat) list \<Rightarrow> emstate \<Rightarrow> (nat \<times> ts \<times> utable) list \<times> emstate" where
   "usteps [] ust = ([], ust)"
@@ -342,7 +295,7 @@ proof (induction tps arbitrary: ust)
     using Cons.IH[of ust1] u by (cases "usteps tps ust1") (simp add: tp)
 qed simp
 
-subsubsection \<open>Items\<close>
+subsection \<open>Conversion of items\<close>
 
 definition conv_item :: "vconf \<Rightarrow> bytes item \<Rightarrow> (Formula.event list \<times> nat) option" where
   "conv_item cf x = (case x of Entry ts evs \<Rightarrow> opt_of_sum (conv_entry cf ts evs) | Command c args \<Rightarrow> None)"
@@ -393,9 +346,6 @@ proof (induction cf xs z rule: vitems.induct)
       by (auto split: prod.splits vout.splits)
   qed (use v in \<open>auto simp: vitem_def split: prod.splits\<close>)
 qed simp
-
-text \<open>Without errors, the items are converted and their timestamps do not decrease, and the
-  verdicts are those of the monitor on the time points.\<close>
 
 lemma vitems_ok:
   assumes "oks xs = Some es" "vitems cf xs (ust, lt) = (vs, z')" "\<not> has_verror vs"
@@ -449,7 +399,7 @@ proof (induction xs arbitrary: es tps ust lt)
     by (auto simp: vtp_def split: prod.splits)
 qed simp
 
-subsubsection \<open>The prefix a log denotes is well typed and finite\<close>
+subsection \<open>Well-typed finite prefix of a log\<close>
 
 lemma those_map_option: "those (map (map_option g) xs) = map_option (map g) (those xs)"
   by (induction xs) (simp_all add: option.map_comp comp_def split: option.splits)
@@ -522,8 +472,6 @@ proof -
     by (simp_all add: wty_prefix.rep_eq pfinite.rep_eq)
 qed
 
-subsubsection \<open>The time points of the items\<close>
-
 lemma sorted_snoc_last: "sorted ((a :: nat) # ys) \<Longrightarrow> sorted ((a # ys) @ [t]) \<longleftrightarrow> last (a # ys) \<le> t"
 proof (induction ys arbitrary: a)
   case (Cons y ys)
@@ -540,9 +488,7 @@ lemma those_conv_item:
 definition fin_tps :: "nat option \<Rightarrow> (Formula.event list \<times> nat) list" where
   "fin_tps fin = (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [([], t)])"
 
-subsection \<open>The verdicts depend only on the events of the predicates that occur freely\<close>
-
-text \<open>An event that a formula matches is one of a predicate that occurs freely in it.\<close>
+subsection \<open>Independence of irrelevant events\<close>
 
 lemma matches_preds: "Safety.matches v \<phi> e \<Longrightarrow> (fst e, length (snd e)) \<in> Rewriting.preds \<phi>"
 proof (induction \<phi> arbitrary: v e)
@@ -569,9 +515,6 @@ lemma pmap_\<Gamma>_pmap_\<Gamma>: "pmap_\<Gamma> f (pmap_\<Gamma> g \<pi>) = pm
 
 lemma wty_prefix_pmap_\<Gamma>_Int: "wty_prefix S \<pi> \<Longrightarrow> wty_prefix S (pmap_\<Gamma> (\<lambda>D. D \<inter> E) \<pi>)"
   by (fastforce simp: wty_prefix.rep_eq pmap_\<Gamma>.rep_eq wty_db_def)
-
-text \<open>Restricting a well-typed prefix to a superset of the relevant events does not change the
-  verdicts.\<close>
 
 lemma (in future_bounded_mfodl) Mt_restrict:
   assumes wty: "wty_prefix SIG \<pi>" and E: "\<And>v e. Safety.matches v \<phi> e \<Longrightarrow> e \<in> E"
@@ -600,12 +543,10 @@ proof -
     by (simp add: Mt_def)
 qed
 
-subsection \<open>From the log to the verdicts\<close>
+subsection \<open>Kept events and widened verdicts\<close>
 
-text \<open>The predicates whose events the parser keeps, as the specification states it, and the
-  verdicts as the specification states them: tuples over the formula's free variables in the
-  order in which @{const Formula.fv_list} lists them.  The executable monitor's tuples are over the
-  same variables in ascending order.\<close>
+text \<open>The specification's tuples list the free variables in the order of @{const Formula.fv_list};
+  the executable monitor's list them in ascending order.\<close>
 
 definition keep_spec :: "bool \<Rightarrow> 't Formula.formula \<Rightarrow> lsig \<Rightarrow> string \<Rightarrow> bool" where
   "keep_spec filt \<phi> S p \<longleftrightarrow> \<not> filt \<or> Abs_string8 p \<in> fst ` Rewriting.preds \<phi> \<or> Abs_string8 p \<notin> fst ` set S"
@@ -622,7 +563,6 @@ lemma vinit_Inr:
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
   by (auto simp: fun_eq_iff sk_def vkeep_def vskip_fun vskip_def Let_def keep_spec_def string8_of_bytes_def
       Abs_bytes_inverse)
-text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>
 
 lemma those_map_cong: "those (map f xs) = Some ys \<Longrightarrow> (\<And>x y. f x = Some y \<Longrightarrow> g x = Some (h y)) \<Longrightarrow>
   those (map g xs) = Some (map h ys)"
@@ -671,7 +611,7 @@ proof -
     by (simp add: prefix_of_items_def \<pi> comp_def del: map_append split: option.splits)
 qed
 
-text \<open>The signature, as the specification of the prepared formula uses it.\<close>
+subsection \<open>Locale of the log monitor\<close>
 
 locale verimon_log = verimon_prepare rw "lsig_tsig S" \<phi>
   for rw :: bool and S :: lsig and \<phi> :: "tysym Formula.formula"
@@ -713,8 +653,6 @@ qed
 end
 
 end
-
-text \<open>The monitor starts only if the assumptions of the locale hold.\<close>
 
 lemma vinit_verimon_log:
   assumes "vinit ix mw rw filt S pf \<phi> = Inr (cf, z)"

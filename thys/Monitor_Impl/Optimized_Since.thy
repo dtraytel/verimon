@@ -6,6 +6,8 @@ begin
 
 section \<open>Optimized data structure for Since\<close>
 
+subsection \<open>Invariant\<close>
+
 type_synonym 'a mmsaux = "ts \<times> ts \<times>
   (ts \<times> 'a table) queue \<times> (ts \<times> 'a table) queue \<times>
   'a table \<times> 'a wf_table \<times> (('a tuple, ts) mapping) \<times> 'a wf_table \<times> (('a tuple, ts) mapping)"
@@ -38,17 +40,13 @@ fun valid_mmsaux :: "args \<Rightarrow> ts \<Rightarrow> 'a mmsaux \<Rightarrow>
     {tas \<in> ts_tuple_rel (set (linearize data_in)). valid_tuple tuple_since tas \<and> as = snd tas})) \<and>
     (\<forall>as \<in> Mapping.keys tuple_since. case Mapping.lookup tuple_since as of Some t \<Rightarrow> t \<le> nt)"
 
+subsection \<open>Operations\<close>
+
 definition wf_table_of_set_args :: "args \<Rightarrow> 'a table \<Rightarrow> 'a wf_table" where
   "wf_table_of_set_args args X = wf_table_of_idx (wf_idx_of_set (args_R args) (args_L args) X)"
 
-text \<open>
-  The two indexed tables are consulted by @{text join_mmsaux} only when there are join columns
-  that do not cover all columns. Without join columns (@{term "args_L args = []"}, e.g. for
-  @{text ONCE}) and when all columns are join columns (@{term "args_L args = args_R args"}, where
-  the join is a plain intersection or difference) they are maintained as the (lazily represented)
-  set of keys of the corresponding mapping, which costs nothing per operation in the generated
-  code.
-\<close>
+text \<open>The indexed tables are only read if the join columns are neither empty nor all columns;
+  otherwise they are the lazily represented key sets of the mappings.\<close>
 
 definition wf_table_of_keys :: "nat list \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a wf_table" where
   "wf_table_of_keys cs m = wf_table_of_set cs (Mapping.keys m)"

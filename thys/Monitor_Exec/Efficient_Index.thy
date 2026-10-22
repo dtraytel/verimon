@@ -6,22 +6,10 @@ begin
 
 
 
-section \<open>The Since index maintained by its keys\<close>
+section \<open>Key-driven code for the Since index\<close>
 
-text \<open>
-  The executable Since keeps its stored tables clustered by the join columns (@{const eidx}), and
-  @{theory Monitor_Exec.Exec_Since} maintains that index by whole-index operations: the tuples
-  that enter the window are clustered and merged in (@{const eidx_union}), the tuples that leave
-  it are clustered and subtracted (@{const eidx_minus}), and the probe by the left operand's table
-  restricts the index by a filter over all its keys.  Each of these walks the whole index at every
-  time point, while the tuples that actually move are typically few.
-
-  This theory gives the three operations key-driven executable forms: a fold over the tuples that
-  enter or leave, each visiting only its own bucket, and a restriction that visits only the keys
-  of the probing table.  They are stated as equalities with the abstract operations and installed
-  as code equations and @{attribute code_unfold} rules, so the verified algorithm is untouched and
-  the generated code changes its cost, not its result.
-\<close>
+text \<open>Code equations that update the index (@{const eidx}) per moving tuple and restrict it by
+  the probing table's keys, instead of walking the whole index.\<close>
 
 subsection \<open>Insertion\<close>
 
@@ -207,7 +195,7 @@ lemmas eidx_del_fallback_code[code] =
 lemma eidx_minus_didx_unfold[code_unfold]: "eidx_minus i (eidx msk D) = eidx_del msk D i"
   by (simp add: eidx_del_def)
 
-subsection \<open>Restricting a mapping by a key set\<close>
+subsection \<open>Restriction to a key set\<close>
 
 definition mfilter_keys :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
   "mfilter_keys pos Y m = Mapping.filter (\<lambda>k _. (k \<in> Y) = pos) m"
@@ -281,11 +269,10 @@ lemmas mfilter_keys_fallback_code[code] =
   mfilter_keys_code[of _ "DList_set _"] mfilter_keys_code[of _ "Set_Monad _"]
   mfilter_keys_code[of _ "Collect_set _"] mfilter_keys_code[of _ "Complement _"]
 
-subsection \<open>The deletion of a key set, on a tree\<close>
+subsection \<open>Folds over key sets on trees\<close>
 
-text \<open>@{const mapping_delete_set} folds the deletion over the set through the
-  @{type comp_fun_idem} wrapper; on a tree the fold names the deletion directly, applied, so
-  that the specialisation of the deletion at the monitor's types reaches it.\<close>
+text \<open>On a tree the fold applies its step directly, so that the step's specialisation at the
+  monitor's types reaches it.\<close>
 
 declare [[code drop: mapping_delete_set]]
 
@@ -310,9 +297,6 @@ lemmas mapping_delete_set_fallback_code[code] =
   mapping_delete_set_code[of _ "DList_set _"] mapping_delete_set_code[of _ "Set_Monad _"]
   mapping_delete_set_code[of _ "Collect_set _"] mapping_delete_set_code[of _ "Complement _"]
 
-text \<open>The same for @{const upd_set}, whose step applies the update to the key and the value
-  and so stays applied.\<close>
-
 declare [[code drop: upd_set]]
 
 lemma upd_set_RBT_code[code]:
@@ -334,11 +318,9 @@ lemmas upd_set_fallback_code[code] =
   upd_set_code[of _ _ "DList_set _"] upd_set_code[of _ _ "Set_Monad _"]
   upd_set_code[of _ _ "Collect_set _"] upd_set_code[of _ _ "Complement _"]
 
-subsection \<open>The expiry's fold, applied\<close>
+subsection \<open>Expiry with an applied fold\<close>
 
-text \<open>@{const eshift_end} folds @{const filter_set} over the expired time points with the step
-  unapplied, which no rule on an applied occurrence reaches; the fold gets a name whose code
-  equation applies the step.\<close>
+text \<open>The fold in @{const eshift_end} gets a name whose code equation applies its step.\<close>
 
 definition fold_filter_set :: "(ts \<times> 'b list set) list \<Rightarrow> ('b list, ts) mapping \<times> 'b list set \<Rightarrow>
     ('b list, ts) mapping \<times> 'b list set" where
@@ -361,28 +343,20 @@ lemma eshift_end_code[code]:
      (t, gc, msk, data_prev', data_in, table_in - del,
       eidx_upd args (\<lambda>_. eidx_minus idx_in (eidx msk del)), tuple_in, idx_since, tuple_since))"
   unfolding fold_filter_set_def by simp
-subsection \<open>The probes, restated\<close>
 
-text \<open>
-  The two operations that restrict the index by the probing table apply @{const Mapping.filter}
-  to a \<open>\<lambda>\<close>-abstraction.  The boxing of the filter at the monitor's types rewrites the
-  bare constant, before any rule on the applied form could match, so the restriction cannot be
-  installed by a rewrite rule on the pattern: the two operations get their code equations
-  restated with @{const mfilter_keys}, which is what they mean.
-\<close>
+subsection \<open>Probes as key restrictions\<close>
+
+text \<open>The boxing of @{const Mapping.filter} precedes any rewrite of its applied form, so the
+  probes' code equations are restated with @{const mfilter_keys}.\<close>
 
 declare [[code drop: esemi_idx ejoin_msaux]]
 
 lemma esemi_idx_code[code]: "esemi_idx msk pos idx X = set_of_idx (mfilter_keys pos X idx)"
   by (simp add: esemi_idx_def mfilter_keys_def)
 
-subsection \<open>Deleting an index's buckets\<close>
+subsection \<open>Deletion of buckets\<close>
 
-text \<open>
-  The join removes, from the window's table and from the per-tuple time stamps, the tuples of the
-  index entries whose keys fail the probe.  Gathering those tuples into one set first builds a
-  table that is only ever subtracted; removing each entry's tuples in turn does without it.
-\<close>
+text \<open>Each entry's tuples are removed in turn, without first gathering them into one set.\<close>
 
 definition del_buckets :: "('k, 'b set) mapping \<Rightarrow> 'b set \<times> ('b, 'v) mapping \<Rightarrow>
     'b set \<times> ('b, 'v) mapping" where
@@ -434,20 +408,10 @@ proof (cases "ID CCOMPARE('k)")
   show ?thesis unfolding Some option.case del_buckets1_def S by (simp add: fold_del_buckets1)
 qed simp
 
-subsection \<open>The probe by a positive left operand, driven by the index\<close>
+subsection \<open>Index-driven positive probe\<close>
 
-text \<open>
-  With a positive left operand the join keeps the index entries whose keys are in the left
-  table and deletes the tuples of the others.  @{thm [source] mfilter_keys_RBT_code} computes the
-  kept part by visiting the left table's tuples, and the dropped part by deleting all of them from
-  a copy of the index: work in the size of the left table, twice for each of the two indices,
-  however few keys drop out.  Under a freeze whose frozen formula lags, the left operand is a
-  large frozen table and the index is small.  MonPoly's join walks the index and removes only the
-  buckets whose key fails the probe; the two operations below do the same: one pass over the
-  index's entries collects the entries whose keys fail, whose keys are then deleted from the index
-  and whose buckets from the window's table and time stamps.  Rebuilding the kept part instead
-  (@{const RBT_Mapping2.filter}, linear in the index) costs more when few keys drop out.
-\<close>
+text \<open>One pass over the index collects the entries whose keys fail the probe; only these are
+  deleted, with their buckets.\<close>
 
 definition gjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b set) mapping \<Rightarrow> 'b set \<times> ('b, 'v) mapping \<Rightarrow>
     ('k, 'b set) mapping \<times> 'b set \<times> ('b, 'v) mapping" where
@@ -496,10 +460,7 @@ proof -
     by (simp add: entries_filter_RBT del: RBT_Mapping_def split: option.splits)
 qed
 
-text \<open>The entries whose keys fail are collected by a fold over the index that conses only
-  them, not by filtering the list of all its entries, which the join would build at every time
-  point however few keys drop out.  The fold collects them in reverse order, so they are
-  processed by a right fold.\<close>
+text \<open>The fold conses the failing entries in reverse order, hence the right folds.\<close>
 
 lemma fold_cons_fails:
   "List.fold (\<lambda>(k, v) acc. if k \<in> Y then acc else (k, v) # acc) xs a =
@@ -582,12 +543,9 @@ proof -
         mfilter_keys_def esemi_idx_def prod.case)
 qed
 
-subsection \<open>The Until structure's map of the left operand\<close>
+subsection \<open>Until's map of the left operand\<close>
 
-text \<open>For a positive left operand the Until structure keeps, for every tuple of the latest left
-  table, the time point since which it has held; the update restricts the map to that table.  The
-  restriction is @{const mfilter_keys}, which looks the table's tuples up rather than filtering
-  the whole map through a generic predicate.\<close>
+text \<open>The map is restricted to the latest left table by @{const mfilter_keys}.\<close>
 
 declare [[code drop: gadd_new_dq]]
 

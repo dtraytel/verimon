@@ -6,17 +6,12 @@ begin
 
 
 
-section \<open>The executable evaluator over indexed tables\<close>
+section \<open>Evaluation over indexed tables\<close>
 
-text \<open>
-  The evaluator below is @{const eeval} with the tables of the unions' and joins' buffers
-  indexed (@{typ "event_data itab"}): a join probes the index an operand carries at the plan's
-  mask instead of building one (@{const ijoin}), and a union keeps its left operand's indices.
-  The other nodes see plain tables, and the freeze and the recursive let run @{const eeval} on
-  their subtree.  Forgetting the indices (@{text eabs}) maps a run of this evaluator to a run of
-  @{const eeval} (@{text ieval_eeval}), so the simulation of the kernel and its correctness carry
-  over unchanged.
-\<close>
+text \<open>@{const eeval} with indexed tables in the buffers of unions and joins, which probe an
+  operand's index (@{const ijoin}).  Forgetting the indices (@{text eabs}) yields its runs.\<close>
+
+subsection \<open>Indexed formulas\<close>
 
 type_synonym itable = "event_data itab"
 type_synonym iebuf2 = "itable mbuf_t \<times> itable mbuf_t"
@@ -53,8 +48,7 @@ definition ebn :: "uebufn \<Rightarrow> iebufn" where
 lemma ibn_ebn[simp]: "ibn (ebn b) = b"
   by (simp add: ibn_def ebn_def comp_def map_idI)
 
-text \<open>Forgetting the indices, and adding none.  A subformula the indexed evaluator does not
-  run itself is kept in the plain form (@{text EPlain}): the freeze and the recursive let.\<close>
+text \<open>The freeze and the recursive let are run by @{const eeval}, kept plain (@{text EPlain}).\<close>
 
 fun eabs :: "ieformula \<Rightarrow> eformula" where
   "eabs EFail = EFail"
@@ -85,13 +79,9 @@ fun eabs :: "ieformula \<Rightarrow> eformula" where
 | "eabs (EMatchF m12 I12 mr12 mrs12 pls12 Ld12 nbuf12 nts12 t12 aux12) = EMatchF m12 I12 mr12 mrs12 pls12 (map eabs Ld12) nbuf12 nts12 t12 aux12"
 | "eabs (EPlain x) = x"
 
-subsection \<open>The evaluator\<close>
+subsection \<open>Index requests\<close>
 
-text \<open>
-  The evaluator takes, besides the formula, the masks at which its caller would like the result
-  indexed.  A join asks each operand for the index its plan probes; a Since or Until structure
-  embedded indexed keeps them, every other node ignores the request.
-\<close>
+text \<open>A node is asked for the masks at which its consumer probes its result.\<close>
 
 fun jreq_l :: "ejoin_plan \<Rightarrow> bool \<Rightarrow> bool list list" where
   "jreq_l (EJGen p lk rk) True = [lk]"
@@ -102,10 +92,6 @@ fun jreq_r :: "ejoin_plan \<Rightarrow> bool \<Rightarrow> bool list list" where
   "jreq_r (EJGen p lk rk) True = [rk]"
 | "jreq_r (EJSup msk) True = [msk]"
 | "jreq_r _ _ = []"
-
-text \<open>The multiway join joins its first operand with the other positive ones in turn, by the plans
-  @{term ps}; each operand is asked for the index its plan probes, and the operands' tables stay
-  indexed in the join's buffer.\<close>
 
 definition eands_req :: "ejoin_plan list \<Rightarrow> nat \<Rightarrow> bool list list list" where
   "eands_req ps n = take n ((case ps of [] \<Rightarrow> [[]] | p # _ \<Rightarrow> [jreq_l p True]) @
@@ -133,12 +119,7 @@ termination
 
 declare imebufn_take.simps[simp del]
 
-text \<open>
-  The database the evaluator reads holds indexed tables, so a predicate hands on the indices of
-  the table it reads.  A predicate bound by a let reads the table of the let's definition: the
-  let asks its definition for the indices that its body's joins ask of the predicate.  Which
-  ones these are depends only on the formula.
-\<close>
+text \<open>A let asks its definition for the indices its body's joins ask of the bound predicate.\<close>
 
 type_synonym idatabase = "(Formula.name \<times> nat, itable list) mapping"
 
@@ -175,19 +156,10 @@ termination
   by (relation "measure (\<lambda>(_, \<phi>). size \<phi>)")
     (auto dest!: set_zip_rightD intro: size_list_estimation' simp: less_Suc_eq_le)
 
-subsection \<open>Embedding, with the indices decided once\<close>
+subsection \<open>Embedding by an index policy\<close>
 
-text \<open>
-  Which nodes keep indexed tables is decided once, when the executable state is embedded, not
-  while the monitor runs.  The embedding passes down the masks each node's consumer will ask for,
-  exactly as the evaluator does (a join's plan, the multi-way join, the predicates of a LET), and
-  a Since or Until structure is embedded indexed at those masks when the policy lets it
-  (@{text ireq}).  Keeping an index costs at every insertion and deletion, which pays off only for
-  a table that lives long compared to the rate at which it changes; the default policy
-  (@{text IxUnbounded}) indexes the window of a past operator whose interval is unbounded.  The
-  policy affects only the speed: the embedding forgets to the same formula whatever it decides
-  (@{text eabs_eemb}).
-\<close>
+text \<open>Which windows keep indices is decided once, at embedding, by a policy; the default
+  (@{text IxUnbounded}) indexes those of unbounded intervals.  The policy affects only speed.\<close>
 
 datatype ipolicy = IxNone | IxUnbounded | IxAll
 
@@ -195,6 +167,7 @@ fun ireq :: "ipolicy \<Rightarrow> args \<Rightarrow> bool list list \<Rightarro
   "ireq IxNone args rq = []"
 | "ireq IxUnbounded args rq = (if bounded (args_ivl args) then [] else rq)"
 | "ireq IxAll args rq = rq"
+
 function (sequential) eemb :: "ipolicy \<Rightarrow> bool list list \<Rightarrow> eformula \<Rightarrow> ieformula" where
   "eemb ix rq EFail = EFail"
 | "eemb ix rq (ERel rel) = ERel rel"
@@ -227,6 +200,8 @@ function (sequential) eemb :: "ipolicy \<Rightarrow> bool list list \<Rightarrow
 termination
   by (relation "measure (\<lambda>(_, _, \<phi>). size \<phi>)")
     (auto dest!: set_zip_rightD intro: size_list_estimation' simp: less_Suc_eq_le)
+
+subsection \<open>The evaluator\<close>
 
 function (sequential) ieval :: "bool list list \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> idatabase \<Rightarrow> ieformula \<Rightarrow> itable list \<times> ieformula" where
   "ieval rq j ts db EFail = ([], EFail)"

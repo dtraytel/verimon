@@ -6,9 +6,9 @@ theory Typing
 begin
 (*>*)
 
-section \<open>Typing\<close>
+section \<open>Type system and type inference\<close>
 
-subsection \<open>Types\<close>
+subsection \<open>Typing of terms\<close>
 
 fun ty_of :: "event_data \<Rightarrow> ty" where
   "ty_of (EInt _) = TInt"
@@ -17,8 +17,6 @@ fun ty_of :: "event_data \<Rightarrow> ty" where
 
 
 definition "numeric_ty = {TInt, TFloat}"
-
-subsection \<open>Terms\<close>
 
 type_synonym 'a option_err = "String.literal + 'a"
 
@@ -93,7 +91,7 @@ proof -
 qed
 
 
-subsection \<open>Formulas\<close>
+subsection \<open>Well-typed traces\<close>
 
 type_synonym sig = "(Formula.name \<times> nat) \<rightharpoonup> ty list"
 
@@ -173,6 +171,8 @@ lemma wty_envs_\<Gamma>_D: "wty_envs S \<sigma> V \<Longrightarrow> (p, length x
 lemma wty_envs_V_D: "wty_envs S \<sigma> V \<Longrightarrow> (p, length xs) \<in> dom V \<Longrightarrow> the (V (p, length xs)) xs i \<Longrightarrow> S (p, length xs) = Some ts \<Longrightarrow>
   wty_tuple ts xs"
   by (fastforce simp: wty_envs_def wty_event_def split: option.splits)
+
+subsection \<open>Typing of formulas\<close>
 
 declare regex.pred_mono[mono]
 
@@ -441,6 +441,11 @@ proof -
   with assms show ?thesis by auto
 qed
 
+subsection \<open>Semantics with underspecified operations\<close>
+
+text \<open>The operations agree with the standard ones only on arguments of matching types; type
+  soundness holds for every such choice.\<close>
+
 locale sat_general =
   fixes 
 undef_plus :: "event_data \<Rightarrow> event_data \<Rightarrow> event_data" and
@@ -563,6 +568,8 @@ fun sat' :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpo
 | "sat' \<sigma> V v i (Formula.TP t) = (eval_trm' v t = EInt (integer_of_nat i))"
 | "sat' \<sigma> V v i (Formula.TS t) = (eval_trm' v t = EInt (integer_of_nat (\<tau> \<sigma> i)))"
 
+subsection \<open>Type soundness\<close>
+
 lemma eval_trm_sound: 
   assumes "E \<turnstile> f :: t"  "\<forall>y\<in>fv_trm f. ty_of (v ! y) = E y"
   shows "Formula.eval_trm v f = eval_trm' v f"
@@ -575,7 +582,6 @@ next
   then show ?case by simp
 next
   case (Plus x t y)
-  \<comment> \<open>both operands evaluate to integers or both to floats, where @{term undef_plus} is sound\<close>
   with value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] show ?case
     by (auto simp: numeric_ty_def undef_plus_sound)
 next
@@ -718,8 +724,6 @@ proof -
   } ultimately show ?thesis unfolding wty_envs_def by blast
 qed
 
-(**** sat' rewrites ****)
-
 lemma wty_formula_TT [simp]: "S, E \<turnstile> Formula.TT"
   by (auto simp: Formula.TT_def 
       intro: wty_formula.intros wty_trm.intros)
@@ -740,9 +744,8 @@ lemma sat'_always[simp]: "sat' \<sigma> V v i (always I \<phi>)
   by auto
 
 
-(*Theorem 3.7*)
 lemma ty_of_sat'_safe: "safe_formula \<phi> \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> wty_envs S \<sigma> V \<Longrightarrow> 
-  sat' \<sigma> V v i \<phi> \<Longrightarrow> x \<in> Formula.fv \<phi> \<Longrightarrow> ty_of (v ! x) = E x" (*Theorem 3.7*)
+  sat' \<sigma> V v i \<phi> \<Longrightarrow> x \<in> Formula.fv \<phi> \<Longrightarrow> ty_of (v ! x) = E x\"
 proof (induction arbitrary: S E V v i x rule: safe_formula_induct)
   case (Eq_Const c d)
   then show ?case by auto
@@ -1126,7 +1129,6 @@ next
             then show ?case using zs_def by auto
           next
             case (Cons aa tail)
-            \<comment> \<open>@{term "foldfun a aa"} is @{term a} or @{term aa}, which both have type @{term t}\<close>
             from Cons.prems have "foldfun a aa = a \<or> foldfun a aa = aa"
               by (auto simp: min_def max_def)
             with Cons.prems have "ty_of (foldfun a aa) = t \<and> (\<forall>z \<in> set tail. ty_of z = t)"
@@ -1142,7 +1144,6 @@ next
                   case (Cons aa tail)
                   from Cons.prems have ty: "ty_of a = t" "ty_of aa = t" and num: "t \<in> numeric_ty"
                     by auto
-                  \<comment> \<open>both summands are integers or both are floats\<close>
                   from ty num consider (int) x y where "a = EInt x" "aa = EInt y"
                     | (float) x y where "a = EFloat x" "aa = EFloat y"
                     by (cases a; cases aa) (auto simp: numeric_ty_def)
@@ -1157,7 +1158,6 @@ next
               " ty_of (foldl undef_min a list) = t" 
               proof (induction list arbitrary: a)
                   case (Cons aa tail)
-                  \<comment> \<open>the minimum is one of the two arguments\<close>
                   from Cons.prems have "ty_of (undef_min a aa) = t"
                     by (simp add: undef_min_def)
                   then show ?case using Cons.prems(1) Cons.IH[of "undef_min a aa"] by auto 
@@ -1167,7 +1167,6 @@ next
               " ty_of (foldl undef_max a list) = t" 
               proof (induction list arbitrary: a)
                   case (Cons aa tail)
-                  \<comment> \<open>the maximum is one of the two arguments\<close>
                   from Cons.prems have "ty_of (undef_max a aa) = t"
                     by (simp add: undef_max_def)
                   then show ?case using Cons.prems(1) Cons.IH[of "undef_max a aa"] by auto 
@@ -1240,7 +1239,6 @@ next
     by simp
 next
   case (Release_0 \<phi> I \<psi>)
-  \<comment> \<open>with 0 in the interval, the release implies its right operand\<close>
   have "x \<in> fv \<psi>"
     using Release_0.hyps(4) Release_0.prems(4) by auto
   moreover have "sat' \<sigma> V v i \<psi>"
@@ -1309,6 +1307,8 @@ qed
 
 end
 
+subsection \<open>Instantiation to the standard semantics\<close>
+
 interpretation  sat_inst: sat_general "(+)" "(-)" "uminus" "(*)" "(div)" "(mod)" "Event_Data.double_of_event_data" "Event_Data.double_of_event_data_agg" "Event_Data.integer_of_event_data" "(\<le>)"
   by unfold_locales  auto
 
@@ -1350,7 +1350,6 @@ next
 qed (simp_all add: eval_trm_inst less_event_data_def sat_inst.undef_less_def split: nat.splits)
 
 
-(*Theorem 3.7 instantiated with sat*)
 lemma ty_of_sat_safe: "safe_formula \<phi> \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> wty_envs S \<sigma> V \<Longrightarrow> 
   Formula.sat \<sigma> V v i \<phi> \<Longrightarrow> x \<in> Formula.fv \<phi> \<Longrightarrow> ty_of (v ! x) = E x"
   using  sat_inst.sat_general_axioms sat_inst_of_sat'
@@ -1424,6 +1423,8 @@ next
 qed (auto elim: wty_trm.cases)
 
 
+subsection \<open>Type symbols\<close>
+
 datatype tysym = TAny nat | TNum nat | TCst ty
                                  
 type_synonym tysenv = "nat \<Rightarrow> tysym"
@@ -1482,13 +1483,14 @@ fun str_of_tysym where
 | "str_of_tysym (TNum _) = STR ''numeric''"
 | "str_of_tysym (TAny _) = STR ''any''"
 
-(* takes two types as input, checks if there's no clash, returns updated env and the more specific type*)
 definition clash_propagate :: "tysym \<Rightarrow> tysym \<Rightarrow> tysenv \<Rightarrow> (tysym \<Rightarrow> tysym) option_err" where
 "clash_propagate t1 t2 E = ((min_type t1 t2) \<bind> (\<lambda>k. return (update_env k E)))
                             <? (STR ''clash of types '' + str_of_tysym t1 + STR '' and '' + str_of_tysym t2)"
 
 lemma clash_prop_comm: "clash_propagate t1 t2 E = return f \<Longrightarrow> clash_propagate t1 t2 E = clash_propagate t2 t1 E"
   using min_comm by (auto simp add: clash_propagate_def)
+
+subsection \<open>Type inference for terms\<close>
 
 definition check_binop :: "((nat \<Rightarrow> tysym) \<Rightarrow> tysym \<Rightarrow> Formula.trm \<Rightarrow> (tysym \<Rightarrow> tysym) option_err) \<Rightarrow> (nat \<Rightarrow> tysym) \<Rightarrow> tysym \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> tysym \<Rightarrow> (tysym \<Rightarrow> tysym) option_err" where
 "check_binop check_trm E typ t1 t2 exp_typ  \<equiv> 
@@ -1528,6 +1530,8 @@ fun check_trm :: "tysenv \<Rightarrow> tysym \<Rightarrow> Formula.trm \<Rightar
     check_binop check_trm (new_type_symbol \<circ> E) (new_type_symbol typ) t1 t2  (TNum 0) \<bind>
       (\<lambda>f. return (f \<circ> new_type_symbol))"
 |"check_trm E typ (Formula.Mod t1 t2) = check_binop check_trm E typ t1 t2 (TCst TInt)"
+
+subsection \<open>Substitutions of type symbols\<close>
 
 definition used_tys where
 "used_tys E \<phi> \<equiv> E ` fv \<phi> \<union> formula.set_formula \<phi>"
@@ -1650,9 +1654,14 @@ lemma wf_f_clash_propagate:
   by(induction ty1 ty2 rule:min_type.induct) (auto simp:numeric_ty_def split:bind_splits if_splits)
 
 
+subsection \<open>Soundness of term inference\<close>
+
 definition wty_result_trm :: " Formula.trm \<Rightarrow> tysenv \<Rightarrow> tysym \<Rightarrow> tysenv \<Rightarrow> tysym \<Rightarrow> bool" where
  "wty_result_trm  t E' typ' E typ \<longleftrightarrow> resultless_trm E' E typ' typ \<and> 
 (\<forall>E'' typ'' .   resultless_trm (TCst \<circ>  E'') E (TCst typ'') typ \<longrightarrow> ( E'' \<turnstile> t :: typ'' \<longleftrightarrow> resultless_trm (TCst \<circ>  E'') E' (TCst typ'') typ' ))"
+
+text \<open>A result @{term f} of inference is principal: exactly the ground substitutions that factor
+  through @{term f} make the term well-typed.\<close>
 
 definition wty_result_fX_trm :: "tysenv \<Rightarrow> tysym \<Rightarrow> Formula.trm  \<Rightarrow> (tysym \<Rightarrow> tysym) \<Rightarrow> bool" where
   "wty_result_fX_trm E typ trm f \<longleftrightarrow> wf_f f \<and> 
@@ -2004,8 +2013,7 @@ proof -
   ultimately show ?thesis unfolding wty_result_fX_trm_def by auto
 qed
 
-(*Theorem 4.1*)
-lemma check_trm_sound: "check_trm E type t = return f \<Longrightarrow> wty_result_fX_trm E type t f" (*Theorem 4.1*)
+lemma check_trm_sound: "check_trm E type t = return f \<Longrightarrow> wty_result_fX_trm E type t f\"
 proof (induction t arbitrary:  E type f)  
   case (Var x) 
   have f_def: "f = (if f type = type 
@@ -2103,6 +2111,8 @@ next
   qed
   show ?case using check_trm_step1[OF wty_uminus half] unfolding f_def by (metis comp_assoc)
 qed (auto simp: check_binop_sound check_conversion_sound)
+
+subsection \<open>Completeness of term inference\<close>
 
 definition map_sig where
   "map_sig f S = map_option (map f) \<circ> S"
@@ -2386,7 +2396,6 @@ next
   using I2f.IH I2f.prems(2) by blast 
 qed 
 
-(*Theorem 4.3*)
 lemma check_trm_complete: 
   "check_trm E type t = error e \<Longrightarrow> wty_result_fX_trm E type t f \<Longrightarrow> False"
 proof -
@@ -2397,6 +2406,8 @@ proof -
     using assm(2) unfolding wty_result_fX_trm_def by (metis calculation rewriteR_comp_comp wf_trivial)
   ultimately show "False" using check_trm_complete' assm by (metis (no_types, lifting) comp_assoc)
 qed
+
+subsection \<open>Type inference for formulas\<close>
 
 definition check_comparison where
  "check_comparison E t1 t2 \<equiv> 
@@ -2513,6 +2524,8 @@ fun check :: "tyssig \<Rightarrow> tysenv \<Rightarrow> tysym Formula.formula \<
       (\<lambda>f2. return (f2 \<circ> f1 \<circ> f0))))"
 | "check S E (Formula.TP t) = check_trm E (TCst TInt) t"
 | "check S E (Formula.TS t) = check_trm E (TCst TInt) t" 
+
+subsection \<open>Soundness of formula inference\<close>
 
 lemma map_sig_subst:
   "map_sig f (S(a \<mapsto> b)) = (map_sig f S)(a \<mapsto> map f b)"
@@ -2989,7 +3002,6 @@ lemma new_type_symbol_pow: "new_type_symbol ^^ k =
   (\<lambda>ts. case ts of TCst ty \<Rightarrow> TCst ty | TAny n \<Rightarrow> TAny (n + k) | TNum n \<Rightarrow> TNum (n + k))"
   by (induction k) (auto simp add: fun_eq_iff new_type_symbol_def split: tysym.split)
 
-(*Theorem 4.6 *)
 lemma check_sound_proven: "check S E \<phi> = return f \<Longrightarrow> wf_formula \<phi> \<Longrightarrow> wty_result_fX S E \<phi> f"
 proof (induction S E \<phi> arbitrary: f rule: check.induct)
   case (1 S E r ts)
@@ -3503,6 +3515,8 @@ next
     by(auto elim!:wty_formula.cases intro!: wty_formula.intros) (auto simp add:wf_f_def)
 qed 
 
+subsection \<open>Completeness of formula inference\<close>
+
 lemma check_pred_complete:
   "S (r, length ts) = Some tys \<Longrightarrow> list_all2 (wty_trm (f \<circ> E)) ts (map f tys) \<Longrightarrow> check_pred r E ts tys = error e \<Longrightarrow> wf_f (TCst \<circ> f) \<Longrightarrow> False"
 proof(induction arbitrary: f S rule:check_pred.induct)
@@ -3959,6 +3973,11 @@ qed
 lemma check_complete:
   "check S E \<phi> = error e \<Longrightarrow> wty_result_fX S E \<phi> f \<Longrightarrow> wf_formula \<phi> \<Longrightarrow> False"
   using check_complete' by (metis (no_types, lifting) fun.map_comp wf_f_comp wf_trivial wty_result_fX_def)
+
+subsection \<open>Type checker\<close>
+
+text \<open>After inference, the result type of each aggregation must be ground; the remaining type
+  symbols are instantiated with float.\<close>
 
 fun check_wty_regex :: "(tysym Formula.formula \<Rightarrow> bool) \<Rightarrow> tysym Formula.formula Regex.regex \<Rightarrow> bool"  where
 "check_wty_regex check_wty_formula (Regex.Skip l) = True"
