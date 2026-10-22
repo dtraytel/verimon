@@ -123,7 +123,7 @@ proof -
   then obtain b xc where xc_def: "drop (length list - length xs' - 1) lista = [b] @ xc" by (metis append_Cons append_Nil list.exhaust)
   then have "lista = take (length xs) lista @ [b] @ xc" using s1 by auto
   then obtain xb' where split_list_1: "lista = xb' @ [b] @ xc" "length xb' = length xs" "length xc = length xs'"
-    using xc_def  by (metis (no_types, lifting) One_nat_def Suc_eq_plus1 add_diff_cancel_left' assms(1) assms(2) diff_add_inverse2 diff_diff_left length_append length_drop length_nth_simps(1) length_nth_simps(2) plus_1_eq_Suc)
+    using xc_def  by (metis (no_types, lifting) One_nat_def Suc_eq_plus1 add_diff_cancel_left' assms(1) assms(2) diff_add_inverse2 diff_diff_left length_append length_drop list.size(3) length_Cons plus_1_eq_Suc)
   then show ?thesis by metis
 qed
 
