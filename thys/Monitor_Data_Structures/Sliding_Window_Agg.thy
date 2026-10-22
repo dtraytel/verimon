@@ -4,18 +4,12 @@ theory Sliding_Window_Agg
 begin
 (*>*)
 
-section \<open>Sliding-window aggregation over two lists\<close>
+section \<open>Two-stacks sliding-window aggregation\<close>
 
-text \<open>
-  A queue of timestamped elements whose summaries compose by an associative operation, kept as
-  two lists so that the composition of the whole queue is available at any time while each
-  element is composed a bounded number of times.  The front holds, for each of its elements,
-  the composition from that element to the end of the front; the back holds the elements
-  themselves, newest first, together with the composition of all of them.  Elements enter at the
-  back and leave at the front, as a prefix of those whose timestamps satisfy a predicate; when
-  the front runs out, the back is turned into a new front.  This is the two-stacks (lite)
-  algorithm of the sliding-window aggregation literature.
-\<close>
+subsection \<open>Operations\<close>
+
+text \<open>The front stores with each element the composition up to the front's end; the back stores
+  the elements newest first with their total composition, and is flipped when the front runs out.\<close>
 
 type_synonym ('t, 'e, 'a) swag = "('t \<times> 'e \<times> 'a) list \<times> ('t \<times> 'e) list \<times> 'a option"
 
@@ -45,8 +39,8 @@ fun sw_flip :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> ('e \<Right
 definition sw_strip :: "('t \<times> 'e \<times> 'a) list \<Rightarrow> ('t \<times> 'e) list" where
   "sw_strip fr = map (\<lambda>(t, e, _). (t, e)) fr"
 
-text \<open>An element leaving the queue is returned with its front summary and the summary of the back
-  at the time it leaves; composed, they are the summary of the queue from it to the end.\<close>
+text \<open>A leaving element carries its front summary and the back summary; composed, they summarise
+  the queue from it to the end.\<close>
 
 definition sw_tag :: "'a option \<Rightarrow> ('t \<times> 'e \<times> 'a) list \<Rightarrow> ('t \<times> 'e \<times> 'a \<times> 'a option) list" where
   "sw_tag B xs = map (\<lambda>(t, e, a). (t, e, a, B)) xs"
@@ -78,7 +72,7 @@ definition sw_null :: "('t, 'e, 'a) swag \<Rightarrow> bool" where
   "sw_null s = (case s of (fr, bk, B) \<Rightarrow>
      (case fr of [] \<Rightarrow> (case bk of [] \<Rightarrow> True | _ \<Rightarrow> False) | _ \<Rightarrow> False))"
 
-subsection \<open>The queue a structure stands for\<close>
+subsection \<open>Invariant and represented queue\<close>
 
 definition sw_assoc :: "('a \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> bool" where
   "sw_assoc f \<longleftrightarrow> (\<forall>x y z. f (f x y) z = f x (f y z))"
@@ -202,6 +196,8 @@ lemma sw_null:
   assumes r: "sw_rel f g s W"
   shows "sw_null s \<longleftrightarrow> W = []"
   using r by (cases s) (auto simp: sw_rel_def sw_null_def split: list.splits)
+
+subsection \<open>Correctness of popping\<close>
 
 lemma takeWhile_map_fst: "takeWhile (\<lambda>x. P (fst x)) (sw_strip fr) = sw_strip (takeWhile (\<lambda>(t, _). P t) fr)"
   by (induct fr) auto

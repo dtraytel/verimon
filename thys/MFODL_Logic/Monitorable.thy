@@ -5,7 +5,9 @@ theory Monitorable
 begin
 (*>*)
 
-subsection \<open>Monitorable formulas\<close>
+section \<open>Monitorable formulas\<close>
+
+subsection \<open>Definition and executable check\<close>
 
 definition "mmonitorable \<phi> \<longleftrightarrow> safe_formula \<phi> \<and> Safety.future_bounded \<phi>"
 definition "mmonitorable_regex b g r 
@@ -81,6 +83,8 @@ next
     by (metis dual_order.trans 
         le_imp_less_Suc size'_remove_neg)
 qed
+
+subsection \<open>Completeness of the check\<close>
 
 lemma safe_formula_mmonitorable_exec: 
   "safe_formula \<phi> \<Longrightarrow> Safety.future_bounded \<phi> \<Longrightarrow> mmonitorable_exec \<phi>"
@@ -225,6 +229,8 @@ next
   then show ?case
     by (auto elim!: safe_regex_mono[rotated] simp: case_Neg_iff regex.pred_set)
 qed (auto simp add: is_simple_eq_def list.pred_set case_Neg_iff safe_dual_def split: if_splits)
+
+subsection \<open>Soundness of the check\<close>
 
 lemma mmonitorable_exec_mmonitorable: "mmonitorable_exec \<phi> \<Longrightarrow> mmonitorable \<phi>"
 proof (induct \<phi> rule: mmonitorable_exec.induct)

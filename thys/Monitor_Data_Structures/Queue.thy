@@ -4,7 +4,9 @@ theory Queue
 begin
 (*>*)
 
-subsection \<open>Optimized queue data structure\<close>
+section \<open>Queues as pairs of lists\<close>
+
+subsection \<open>Representation and operations\<close>
 
 type_synonym 'a queue_t = "'a list \<times> 'a list"
 
@@ -80,15 +82,10 @@ fun tl_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
 lift_definition tl_queue :: "'a queue \<Rightarrow> 'a queue" is tl_queue_t
   by (auto simp: queue_invariant_def split: list.splits elim!: tl_queue_t.elims)
 
-text \<open>
-  The equations above are written so that every case names its result, which makes them read
-  well but makes the generated code rebuild a queue it does not change: the case
-  @{text "safe_hd_t (f # fs, l # ls) = (Some f, (f # fs, l # ls))"} allocates two cons cells
-  and a pair that are equal to the ones it was given. On P2 that single case was the largest
-  allocation site of the whole monitor, because @{const safe_hd} runs once per time point per
-  queue. The code equations below return the argument instead wherever the result is the
-  argument; nothing else about the queue changes.
-\<close>
+subsection \<open>Code equations\<close>
+
+text \<open>The code equations return the argument wherever it is the result, so that unchanged queues
+  are not rebuilt.\<close>
 
 declare [[code drop: safe_hd_t]]
 
@@ -122,16 +119,10 @@ lemma tl_queue_t_code[code]:
               | l # v # va \<Rightarrow> (tl (rev (v # va)), [l]))))"
   by (cases q rule: tl_queue_t.cases) auto
 
-text \<open>
-  @{const safe_hd} returns a pair whose second component is a queue, so the code generator
-  cannot state its code equation directly: @{command lift_definition} with the @{text code_dt}
-  option introduces an intermediate datatype, and the generated @{const safe_hd} builds a value
-  of it and then takes it apart into a fresh pair.  That is two blocks allocated and two
-  projections executed around a function that, with the equations above, no longer allocates
-  anything in the common case.  Splitting @{const safe_hd} into its two components avoids the
-  detour: each half has a result type the code generator can handle on its own, and the pair is
-  built once, by the equation below.
-\<close>
+subsection \<open>Head and normalisation\<close>
+
+text \<open>Splitting @{const safe_hd} into its two components avoids the intermediate datatype that
+  @{text code_dt} introduces for its pair result.\<close>
 
 fun hd_queue_t :: "'a queue_t \<Rightarrow> 'a option" where
   "hd_queue_t ([], []) = None"
@@ -174,11 +165,7 @@ lemma hd_queue_t_norm:
 
 declare [[code drop: safe_hd]]
 
-text \<open>
-  The head is read off the normalised queue rather than off the argument: on a normalised queue
-  it is the first element of the front list, while on the argument it can be the last element of
-  the back list, which costs a second pass over it.
-\<close>
+text \<open>On the normalised queue, the head is the first element of the front list.\<close>
 
 lemma safe_hd_code[code]: "safe_hd q = (let q' = norm_queue q in (hd_queue q', q'))"
   unfolding Let_def
@@ -205,10 +192,9 @@ lemma hd_queue_t_rep:
 lemma hd_queue_rep: "hd_queue q = (case linearize q of [] \<Rightarrow> None | x # _ \<Rightarrow> Some x)"
   by transfer (rule hd_queue_t_rep)
 
-text \<open>
-  Dropping the head is @{const safe_hd} followed by @{const tl_queue}, which normalises the
-  queue and then rebuilds it a second time.  One function does it in a single step.
-\<close>
+subsection \<open>Dropping the head\<close>
+
+text \<open>Popping does @{const safe_hd} followed by @{const tl_queue} in a single step.\<close>
 
 fun pop_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
   "pop_queue_t ([], []) = ([], [])"
@@ -216,13 +202,8 @@ fun pop_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
 | "pop_queue_t ([], l # ls) = (tl (rev ls), [l])"
 | "pop_queue_t (f # fs, ls) = (fs, ls)"
 
-text \<open>
-  A function whose parameter is a pattern is compiled as a function of the pattern's components,
-  and an application of it to a pair that is not written out at the call site goes through an
-  adapter that takes the pair apart again.  On P2 that adapter is entered 11.8 million times.
-  Matching on the argument inside the body, rather than in the parameter, gives an ordinary
-  one-argument function.
-\<close>
+text \<open>Matching inside the body rather than on the parameter compiles to a one-argument function
+  without an adapter for the pair.\<close>
 
 declare [[code drop: hd_queue_t]]
 
@@ -266,17 +247,10 @@ lemma pop_queue_t_rep:
 lemma pop_queue_rep: "linearize (pop_queue q) = tl (linearize q)"
   by transfer (rule pop_queue_t_rep)
 
-text \<open>
-  Appending a list element by element wraps and unwraps the queue once per element.  Appending
-  the whole list in one pass costs one pass over the list and nothing else.
-\<close>
+subsection \<open>Appending a list\<close>
 
-text \<open>
-  Reversing a list onto another one is a two-argument recursion, but the code equation the
-  library gives @{const rev} states it as a fold over a function argument, which the generated
-  code passes as a closure and applies through the generic application path once per element.
-  A named function does the same work with a direct call.
-\<close>
+text \<open>A list is appended in one pass, reversed onto the back list by a named function, since the
+  library's code for @{const rev} applies a closure per element.\<close>
 
 fun rev_prepend :: "'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "rev_prepend [] ys = ys"
@@ -295,6 +269,8 @@ lemma append_queue_list_rep:
 
 lemma fold_append_queue_rep: "linearize (fold (\<lambda>x q. append_queue x q) xs q) = linearize q @ xs"
   by (induction xs arbitrary: q) (auto simp add: append_queue_rep)
+
+subsection \<open>Dropping and taking prefixes\<close>
 
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
   by transfer (auto simp: tl_append2[symmetric] split: prod.splits list.splits elim!: tl_queue_t.elims)
@@ -365,7 +341,6 @@ qed
 lemma takeWhile_queue_rep_snd: "linearize (snd (takeWhile_queue f q)) = linearize q"
 proof -
   obtain x rm where safe_hd_eq: "safe_hd q = (x, rm)" by (cases "safe_hd q")
-  \<comment> \<open>no recursion needed: the second component is always the queue returned by @{const safe_hd}\<close>
   have "snd (takeWhile_queue f q) = rm"
     using safe_hd_eq by (simp add: case_prod_unfold split: option.split)
   then show ?thesis

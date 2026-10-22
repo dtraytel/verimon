@@ -4,13 +4,9 @@ theory Deque
 begin
 (*>*)
 
-section \<open>Deques with constant-time access at both ends\<close>
+section \<open>Double-ended queues\<close>
 
-text \<open>
-  A deque is a front list and a reversed back list together with their lengths. It replaces
-  the time-point-indexed mappings of the Until structure in the monitor's refinement (theory
-  @{text Optimized_Until_Deque}), whose operation @{text add_new} the remarks below refer to.
-\<close>
+subsection \<open>Representation and operations\<close>
 
 datatype 'a dq = Dq (dq_f: "'a list") (dq_b: "'a list") (dq_nf: nat) (dq_nb: nat)
 
@@ -26,21 +22,14 @@ definition dq_empty :: "'a dq" where
 definition dq_len :: "'a dq \<Rightarrow> nat" where
   "dq_len d = dq_nf d + dq_nb d"
 
-text \<open>
-  The front list is empty only for the empty deque: @{text dq_push} builds the front when it
-  is empty, and @{text dq_tl} normalises after removing the head. Otherwise an access to the
-  oldest entry (the common case in @{text add_new}) would walk the whole back list.
-\<close>
+text \<open>The front list is empty only for the empty deque, so the oldest entry is at hand.\<close>
 
 definition dq_push :: "'a \<Rightarrow> 'a dq \<Rightarrow> 'a dq" where
   "dq_push x d = (if dq_f d = [] then Dq (rev (x # dq_b d)) [] (dq_nb d + 1) 0
      else Dq (dq_f d) (x # dq_b d) (dq_nf d) (dq_nb d + 1))"
 
-text \<open>
-  When the front list is exhausted, only the older half of the back list is moved to the
-  front, so that the newest entries stay at the head of the back list: the entries accessed
-  by @{text add_new} are the newest ones, and a walk of the whole window is avoided.
-\<close>
+text \<open>Normalisation moves only the older half of the back list to the front, so that the newest
+  entries stay at hand as well.\<close>
 
 definition dq_norm :: "'a dq \<Rightarrow> 'a dq" where
   "dq_norm d = (if dq_f d = [] then (let h = dq_nb d div 2 in
@@ -55,6 +44,8 @@ definition dq_nth :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a" where
 definition dq_upd :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a dq" where
   "dq_upd d k x = (if k < dq_nf d then Dq ((dq_f d)[k := x]) (dq_b d) (dq_nf d) (dq_nb d)
      else Dq (dq_f d) ((dq_b d)[dq_nb d - 1 - (k - dq_nf d) := x]) (dq_nf d) (dq_nb d))"
+
+subsection \<open>Correctness of the operations\<close>
 
 lemma dq_inv_empty[simp]: "dq_inv dq_empty"
   by (simp add: dq_inv_def dq_empty_def)
@@ -159,6 +150,8 @@ lemma dq_len_upd: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_
 lemma dq_len_push: "dq_inv d \<Longrightarrow> dq_len (dq_push x d) = dq_len d + 1"
   by (simp add: dq_len_list)
 
+subsection \<open>Updates around the head\<close>
+
 lemma dq_nth_tl_upd:
   assumes "dq_inv d" "i < dq_len d" "Suc k < dq_len d"
   shows "dq_nth (dq_tl (dq_upd d i X)) k = (dq_list d)[i := X] ! Suc k"
@@ -175,14 +168,8 @@ proof -
   finally show ?thesis .
 qed
 
-text \<open>
-  The same entry, reached the other way round: dropping the head first and then reading and
-  writing at index 0. @{const dq_norm} guarantees that the front list of a non-empty deque is
-  non-empty, so index 0 is the head of the front list and both the read and the write are
-  constant time, whereas index 1 of the deque before the head is dropped falls into the back
-  list whenever the front list holds exactly one element, and is then reached by walking the
-  back list to its far end.
-\<close>
+text \<open>Index 1 is best reached after dropping the head: as index 0, it is the head of the front list
+  and accessed in constant time.\<close>
 
 lemma tl_list_update_1: "tl (xs[Suc 0 := X]) = (tl xs)[0 := X]"
   by (cases xs) auto

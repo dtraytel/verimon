@@ -179,6 +179,8 @@ proof -
     by (simp add: verdict_fold_def verdict_out_def Let_def sep_fold_out)
 qed
 
+text \<open>With @{text "-verbose"}, each time point begins with this line.\<close>
+
 definition tp_out :: "nat \<Rightarrow> string8 list" where
   "tp_out q = [S8 STR ''At time point '', str8_of_integer (integer_of_nat q), S8 STR '':\<newline>'']"
 

@@ -6,11 +6,9 @@ begin
 
 section \<open>Rewriting release\<close>
 
-text \<open>The free variables of a release and of its rewritings, and the rewriting of a release with a
-  bounded interval that does not contain 0 (@{const release_safe_bounded} and
-  @{const and_release_safe_bounded}), which preserves the satisfaction.\<close>
+subsection \<open>Free variables\<close>
 
-unbundle MFODL_notation \<comment> \<open> enable notation \<close>
+unbundle MFODL_notation
 
 lemma release_fvi:
   "Formula.fvi b (\<phi> \<^bold>R I \<psi>) = Formula.fvi b (release_safe_0 \<phi> I \<psi>)"
@@ -19,11 +17,13 @@ lemma release_fvi:
   by (auto simp add: release_safe_0_def always_safe_0_def Formula.TT_def Formula.FF_def 
       and_release_safe_bounded_def release_safe_bounded_def always_safe_bounded_def)
 
-unbundle MFODL_no_notation \<comment> \<open> disable notation \<close>
+unbundle MFODL_no_notation
+
+subsection \<open>Bounded always\<close>
 
 lemma always_rewrite_bounded:
   fixes I1 :: \<I>
-  assumes "bounded I1" (* [a, b] *)
+  assumes "bounded I1"
   shows "Formula.sat \<sigma> V v i (Formula.And (eventually I1 \<phi>) (always I1 \<phi>)) = Formula.sat \<sigma> V v i (always_safe_bounded I1 \<phi>)"
 proof (rule iffI)
   assume "Formula.sat \<sigma> V v i (Formula.And (eventually I1 \<phi>) (always I1 \<phi>))"
@@ -84,9 +84,7 @@ next
     by auto
 qed
 
-text \<open>With 0 in the interval, the first point of the window where the right operand of a release
-  fails is preceded only by points where it holds, so the left operand may be restricted to the
-  right operand.\<close>
+subsection \<open>Release with 0 in the interval\<close>
 
 lemma sat_release_conj_0:
   assumes "mem I 0"
@@ -115,12 +113,14 @@ proof (rule iffI)
     by auto
 qed auto
 
+subsection \<open>Bounded release without 0\<close>
+
 lemma sat_release_rewrite:
   fixes I1 I2 :: \<I>
-  assumes "bounded I1" "\<not>mem I1 0" (* [a, b] *)
+  assumes "bounded I1" "\<not>mem I1 0"
 shows "Formula.sat \<sigma> V v i (Formula.And (eventually I1 Formula.TT) (Formula.Release \<phi> I1 \<psi>)) = Formula.sat \<sigma> V v i (release_safe_bounded \<phi> I1 \<psi>)"
 proof (rule iffI)
-  define I2 where "I2 = flip_int_less_lower I1" (* [0, a-1] *)
+  define I2 where "I2 = flip_int_less_lower I1"
   assume release: "Formula.sat \<sigma> V v i (Formula.And (eventually I1 Formula.TT) (Formula.Release \<phi> I1 \<psi>))"
   {
     assume "\<forall>j\<ge>i. mem I1 (\<tau> \<sigma> j - \<tau> \<sigma> i) \<longrightarrow> Formula.sat \<sigma> V v j \<psi>"
@@ -324,7 +324,7 @@ proof (rule iffI)
     using assms I2_def
     by (simp add: release_safe_bounded_def) blast
 next
-  define I2 where "I2 = flip_int_less_lower I1" (* [0, a-1] *)
+  define I2 where "I2 = flip_int_less_lower I1"
   assume "Formula.sat \<sigma> V v i (release_safe_bounded \<phi> I1 \<psi>)"
   then have assm: "Formula.sat \<sigma> V v i (Formula.And (eventually I1 Formula.TT) (Formula.Or (Formula.Or (always_safe_bounded I1 \<psi>) (eventually I2 \<phi>)) (eventually I2 (Formula.Next all (Formula.Until \<psi> (int_remove_lower_bound I1) (Formula.And \<phi> \<psi>))))))"
     using assms I2_def
@@ -414,7 +414,7 @@ next
 qed
 
 lemma sat_and_release_rewrite:
-  assumes "bounded I" "\<not>mem I 0" (* [a, b] *)
+  assumes "bounded I" "\<not>mem I 0"
   shows "Formula.sat \<sigma> V v i (Formula.And \<phi> (Formula.Release \<phi>' I \<psi>')) = Formula.sat \<sigma> V v i (and_release_safe_bounded \<phi> \<phi>' I \<psi>')"
 proof (cases "\<exists>j\<ge>i. mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)")
   case True

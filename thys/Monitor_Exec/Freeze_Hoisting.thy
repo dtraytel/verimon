@@ -139,7 +139,7 @@ text \<open>Hoisting can make an operand unsafe, so the rewrite applies only if 
 definition frz_opt :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "frz_opt \<phi> = (let \<phi>' = frz_rw [] \<phi> in if mmonitorable_exec \<phi>' then \<phi>' else \<phi>)"
 
-text \<open>The quantifier's equation is no simp rule, so that proofs see the two outcomes of the
+text \<open>The quantifier's equation is not a simp rule, so that proofs see the two outcomes of the
   split.\<close>
 
 declare hoist.simps(8)[simp del]

@@ -4,13 +4,9 @@ theory CLI_Correctness
 begin
 (*>*)
 
-section \<open>The verified monitor with MonPoly's command line: correctness\<close>
+section \<open>Correctness of the command-line monitor\<close>
 
-subsection \<open>Correctness\<close>
-
-text \<open>If the monitor starts on the contents of the two files, then they are a formula and a
-  signature, and the monitor was started by @{const vinit} on the converted formula and the
-  converted signature.\<close>
+subsection \<open>Starting the monitor\<close>
 
 lemma cli_main_Run:
   assumes "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
@@ -24,12 +20,8 @@ lemma cli_main_Run:
   using assms unfolding cli_main_def start_monitor_def Let_def
   by (auto split: command.splits if_splits option.splits sum.splits vinit_error.splits prod.splits)
 
-text \<open>The main theorem: the monitor runs on the formula of the input and the signature, which
-  satisfy the assumptions of @{locale verimon_log}. So for every log that denotes a prefix, the
-  monitor reports no error and outputs the verdicts that the specification of the formula
-  prescribes for the prefix (@{thm [source] verimon_log.vrun_log}, theory
-  @{theory Monitor_Exec_Proof.Log_Monitor_Online}), and an error on every log whose events of
-  the formula's predicates denote no prefix (@{thm [source] verimon_log.vrun_filtered}).\<close>
+text \<open>A started monitor satisfies the assumptions of @{locale verimon_log}, whose theorems state its
+  correctness on logs.\<close>
 
 theorem cli_run:
   assumes "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
@@ -44,13 +36,8 @@ theorem cli_run:
 
 subsection \<open>End-to-end correctness\<close>
 
-text \<open>The verdicts that the specification prescribes for a prefix @{text \<pi>}, for the formula
-  @{text \<phi>} with the types @{text f} that the type checker infers for it and the signature
-  @{text L}: the time points @{text i} up to the progress on @{text \<pi>}, with their timestamps,
-  and the tuples @{text v} over the free variables of @{text \<phi>} such that @{text \<phi>} holds at
-  @{text i} under @{text v} on every well-typed trace that extends @{text \<pi>}. The type annotations
-  matter: an aggregation's decides, for example, whether a sum is an integer or a floating point
-  sum.\<close>
+text \<open>The verdicts prescribed for a prefix @{text \<pi>}: up to the progress, the tuples under which
+  @{text \<phi>}, with the inferred types @{text f}, holds on every well-typed extension of @{text \<pi>}.\<close>
 
 definition verdict_spec :: "lsig \<Rightarrow> tysym Formula.formula \<Rightarrow> (tysym \<Rightarrow> tysym) \<Rightarrow> Formula.prefix \<Rightarrow>
     (nat \<times> nat \<times> event_data tuple) set" where
@@ -58,9 +45,6 @@ definition verdict_spec :: "lsig \<Rightarrow> tysym Formula.formula \<Rightarro
      (\<forall>\<sigma>. wty_trace (lsig_lookup L) \<sigma> \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow>
        Formula.sat \<sigma> Map.empty (val (Formula.nfv \<phi>) (Formula.fv_list \<phi>) v) i
          (Formula.formula.map_formula (convert_tysym \<circ> f) \<phi>))}"
-
-text \<open>The verdicts of the monitor's specification (@{text monitor_\<phi>.Mt}, theory
-  @{theory Monitor_Exec.Log_Monitor}) are those of @{const verdict_spec}.\<close>
 
 context verimon_log
 begin
@@ -88,25 +72,9 @@ qed
 
 end
 
-text \<open>The correctness of the whole monitor, in terms of the specifications of its parts: if the
-  program starts the monitor on the contents of the formula file and of the signature file, then
-
-  \<^item> the formula file is lexed into a token sequence that the grammar of MonPoly's formulas
-    derives (@{const mfodl_Formula}), and @{text \<psi>0} is the formula it denotes;
-  \<^item> the signature file is lexed into a token sequence that the grammar of signatures derives
-    (@{const sig_lang}), and @{text S} is the signature it denotes;
-  \<^item> @{text \<phi>} is the conversion of @{text \<psi>0} (negated with @{text "-negate"}), @{text L} the
-    signature of the monitor, and @{text f} the types that the type checker infers for
-    @{text \<phi>};
-  \<^item> the run on a log reports an error exactly when the log's events of the formula's predicates
-    and of the predicates the signature does not declare (all events with
-    @{text "-nofilterrel"}, @{const keep_spec}) denote no prefix; and
-  \<^item> on a log that denotes a prefix @{text \<pi>}, its verdicts are exactly those that
-    @{const verdict_spec} prescribes for @{text \<pi>}.
-
-  The verdicts are those of @{const vrun}: the outputs of @{const vfeed_chunk} on the chunks of
-  the log, however it is cut into chunks, and of @{const vfinish} at its end, which the driver
-  prints with @{const verdict_out}.\<close>
+text \<open>If the program starts the monitor, the two files derive a formula and a signature. A log
+  yields an error iff the events kept denote no prefix, and on a prefix exactly the verdicts of
+  @{const verdict_spec}.\<close>
 
 theorem verimon_correct:
   assumes run: "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
@@ -147,20 +115,10 @@ proof -
     using that[OF W D C Ls ch E V] .
 qed
 
-text \<open>The same online, as the driver runs the monitor: after the chunks @{text ss} read so far,
+subsection \<open>Online correctness\<close>
 
-  \<^item> the outputs so far contain an error exactly when the bytes read so far, restricted to the
-    events the monitor keeps, denote no prefix (@{const stream_prefix}; the last time point read
-    is held back until the next begins);
-  \<^item> if the bytes read so far denote a prefix @{text \<pi>}, the outputs so far contain no error, and
-    their verdicts are exactly those of @{const verdict_spec} for @{text \<pi>};
-  \<^item> the outputs of a further chunk, after which the bytes denote @{text \<pi>'}, contain no error,
-    and their verdicts are exactly those of @{text \<pi>'} that are not those of @{text \<pi>}, so that
-    every verdict is output once, as soon as the bytes that determine it have been read;
-  \<^item> the outputs at the end of the log are those of the prefix that the whole log denotes, with
-    the last time point @{text fin}, that are not those of @{text \<pi>}; and
-  \<^item> a chunk, or the end of the log, after which the bytes no longer denote a prefix outputs an
-    error.\<close>
+text \<open>After each chunk, the outputs so far contain an error iff the bytes read denote no prefix, and
+  each verdict is output once, as soon as the bytes that determine it have been read.\<close>
 
 theorem verimon_correct_online:
   assumes run: "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"

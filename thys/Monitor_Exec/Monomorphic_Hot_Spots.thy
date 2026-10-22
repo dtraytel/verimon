@@ -22,8 +22,8 @@ setup \<open>Monomorphize.monomorphize_cmd
      ("Mapping.filter", "edl_mfilter_nat", [edl, "nat"])] end)
   ["etuple_dict_simps"]\<close>
 
-text \<open>The grouped aggregation's folds, initial state and results, so that they call the
-  specialised steps.\<close>
+text \<open>Copies of the grouped aggregation's folds, initial state and results call the specialised
+  steps.\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("gins", "edl_gins", ["event_data"]),

@@ -224,6 +224,8 @@ fun iems_ensure :: "bool list list \<Rightarrow> iemsaux \<Rightarrow> iemsaux" 
   "iems_ensure msks (nt, gc, msk, dp, di, ti, ii, tui, is, tus) =
      (nt, gc, msk, dp, di, iensure msks ti, ii, tui, is, tus)"
 
+subsubsection \<open>Code of the join\<close>
+
 text \<open>The join's code equation is restated as @{thm [source] ejoin_msaux_code} is.\<close>
 
 definition igjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b list set) mapping \<Rightarrow>

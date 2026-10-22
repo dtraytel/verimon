@@ -6,11 +6,13 @@ theory Regex
 begin
 (*>*)
 
-unbundle lattice_syntax
-
 section \<open>Regular expressions\<close>
 
+unbundle lattice_syntax
+
 context begin
+
+subsection \<open>Syntax and free variables\<close>
 
 qualified datatype (atms: 'a) regex = Skip nat | Test 'a
   | Plus "'a regex" "'a regex" | Times "'a regex" "'a regex"  | Star "'a regex"
@@ -66,6 +68,8 @@ lemma nfv_regex_simps[simp]:
   "nfv_regex fv (Star r) = nfv_regex fv r"
   unfolding nfv_regex_def
   by (auto simp add: image_Un Max_Un insert_Un simp del: Un_insert_right Un_insert_left)
+
+subsection \<open>Matching and derivatives\<close>
 
 abbreviation "min_regex_default f r j \<equiv> (if atms r = {} then j else Min ((\<lambda>z. f z j) ` atms r))"
 
@@ -213,6 +217,8 @@ lemma eps_fv_cong:
   "(\<And>i x. x \<in> atms r \<Longrightarrow> test i x = test' i x) \<Longrightarrow> eps test i r = eps test' i r"
   by (induct r) auto
 
+subsection \<open>Safety\<close>
+
 datatype modality = Past | Futu
 datatype safety = Strict | Lax
 
@@ -257,6 +263,8 @@ lemma safe_regex_mono:
   "(\<And>g x. x \<in> atms r \<Longrightarrow> safe g x \<Longrightarrow> safe' g x) \<Longrightarrow>
   Regex.safe_regex fv safe m g r \<Longrightarrow> Regex.safe_regex fv safe' m g r"
   by (induct m g r rule: safe_regex.induct) auto
+
+subsection \<open>Matching under mapping\<close>
 
 lemma match_map_regex: "match t (map_regex f r) = match (\<lambda>k z. t k (f z)) r"
   by (induct r) auto

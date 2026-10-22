@@ -89,7 +89,7 @@ fun rot2 :: "'a wbt \<Rightarrow> 'a \<Rightarrow> 'a wbt \<Rightarrow> 'a \<Rig
 subsection \<open>Balance parameters\<close>
 
 text \<open>The ratio \<open>\<Delta> = \<Delta>1/\<Delta>2\<close> decides when to rebalance, \<open>\<Gamma> = \<Gamma>1/\<Gamma>2\<close> whether to rotate
-  singly or doubly. Hirai and Yamamoto show that these constraints make them valid.\<close>
+  singly or doubly; Hirai and Yamamoto show that these constraints ensure invariant preservation.\<close>
 
 definition valid_params :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
 "valid_params \<Delta>1 \<Delta>2 \<Gamma>1 \<Gamma>2 = (
