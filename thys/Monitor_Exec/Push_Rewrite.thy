@@ -96,6 +96,14 @@ fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "push_ex (Formula.Until \<phi> I \<psi>) = Formula.Until (push_ex \<phi>) I (push_ex \<psi>)"
 | "push_ex \<phi> = \<phi>"
 
+text \<open>The conjunction's equation with its case distinction folded into a test, so that the
+  lemmas below can go by structural induction without splitting over every constructor.\<close>
+
+lemma push_ex_And:
+  "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
+     then Formula.And \<phi> \<psi> else and_cstr (push_ex \<phi>) (push_ex \<psi>))"
+  by (cases \<psi>) simp_all
+
 declare push_ex.simps(4)[simp del]
 
 lemma fvi_ex_into[simp]: "Formula.fvi b (ex_into t \<phi>) = Formula.fvi (Suc b) \<phi>"

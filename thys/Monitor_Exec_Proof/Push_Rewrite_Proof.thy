@@ -6,14 +6,6 @@ begin
 
 
 
-text \<open>The conjunction's equation with its case distinction folded into a test, so that the
-  lemmas below can go by structural induction without splitting over every constructor.\<close>
-
-lemma push_ex_And:
-  "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
-     then Formula.And \<phi> \<psi> else and_cstr (push_ex \<phi>) (push_ex \<psi>))"
-  by (cases \<psi>) simp_all
-
 subsection \<open>The comparison's move\<close>
 
 text \<open>The move keeps the conjunction's operands and only regroups them; its result is a
