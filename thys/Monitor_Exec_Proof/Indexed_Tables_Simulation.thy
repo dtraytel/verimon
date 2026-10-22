@@ -4,7 +4,9 @@ theory Indexed_Tables_Simulation
 begin
 (*>*)
 
+section \<open>Correctness of the indexed join\<close>
 
+subsection \<open>Probing an index\<close>
 
 lemma iensure_has:
   "msk \<in> set msks \<Longrightarrow> Mapping.lookup (iidxs (iensure msks A)) msk \<noteq> None"
@@ -13,7 +15,6 @@ lemma iensure_has:
 lemma iidxs_iupd_None: "Mapping.lookup (iidxs (iupd X D A)) msk = None \<longleftrightarrow>
     Mapping.lookup (iidxs A) msk = None"
   by (simp add: iidxs_def Rep_itab_iupd Mapping.lookup_map_values)
-
 
 lemma fold_union_image: "fold (\<lambda>x acc. acc \<union> f x) l acc = acc \<union> (\<Union>x \<in> set l. f x)"
   by (induct l arbitrary: acc) auto
@@ -31,8 +32,10 @@ lemma iprobe_l_eq:
    iprobe_l p rk (eidx lk A) B = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
   by (simp add: iprobe_l_def fold_union_image ebucket_eidx) blast
 
-text \<open>The test of finiteness costs nothing on the tree-based sets of the Containers framework,
-  which are finite by construction.\<close>
+subsection \<open>Join of indexed tables\<close>
+
+text \<open>The finiteness test is free on the tree-based sets of the Containers framework, which are
+  finite by construction.\<close>
 
 theorem ijoin0_eq:
   fixes A B :: "event_data itab"

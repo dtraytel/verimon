@@ -58,8 +58,8 @@ definition emsk_args :: "args \<Rightarrow> bool list \<Rightarrow> bool" where
      set (args_L args) \<subseteq> set (args_R args) \<and> msk = mrg_left_key (mrg_plan (args_R args) (args_L args))"
 
 text \<open>
-  The verified state with its two indexed tables replaced by @{const eidx} indices; @{text emsaux_of}
-  recovers the verified state, for the specification only.
+  The verified state with its two indexed tables replaced by @{const eidx} indices;
+  @{text emsaux_of} recovers the verified state, for the specification only.
 \<close>
 
 type_synonym 'a emsaux = "ts \<times> ts \<times> bool list \<times>
@@ -195,8 +195,8 @@ fun egc_join_msaux :: "args \<Rightarrow> 'a table \<Rightarrow> 'a emsaux \<Rig
 subsection \<open>Intervals containing zero\<close>
 
 text \<open>
-  Then @{text data_prev} stays empty and nothing reads @{text tuple_since} or @{text idx_since}, so
-  they are not maintained; validity holds for some choice of them.
+  With zero in the interval, @{text data_prev} stays empty and nothing reads @{text tuple_since}
+  or @{text idx_since}, so they are not maintained; validity holds for some choice of them.
 \<close>
 
 fun eset_since :: "ts \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a emsaux \<Rightarrow>

@@ -58,8 +58,8 @@ subsubsection \<open>Deque reads with defaults\<close>
 definition dq_nth_s :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
   "dq_nth_s d k z = (if k < dq_len d then dq_nth d k else z)"
 
-text \<open>Reads off the lists rather than the counters commute with a map on every deque, not only on
-  a consistent one.\<close>
+text \<open>Reading off the lists rather than the counters commutes with a map on every deque, not only
+  on a consistent one.\<close>
 
 definition dq_hd_s :: "'a dq \<Rightarrow> 'a \<Rightarrow> 'a" where
   "dq_hd_s d z = (case dq_f d of x # _ \<Rightarrow> x | [] \<Rightarrow> (case dq_b d of [] \<Rightarrow> z | _ \<Rightarrow> last (dq_b d)))"
@@ -68,7 +68,7 @@ definition dq_nth_l :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> '
   "dq_nth_l d k z = (if k < dq_nf d then (if k < length (dq_f d) then dq_f d ! k else z)
      else (let j = dq_nb d - 1 - (k - dq_nf d) in if j < length (dq_b d) then dq_b d ! j else z))"
 
-text \<open>A single walk, for code; the bound check and indexing walk the list twice.\<close>
+text \<open>A single walk for the code equation, where a bound check and an indexing walk the list twice.\<close>
 
 fun nth_def :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
   "nth_def [] k z = z"

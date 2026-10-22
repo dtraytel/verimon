@@ -552,7 +552,7 @@ next
   finally show ?thesis .
 qed
 
-subsection \<open>Since window with aggregate\<close>
+subsection \<open>Fused window\<close>
 
 type_synonym swagg = "swaux \<times> egagg option"
 
