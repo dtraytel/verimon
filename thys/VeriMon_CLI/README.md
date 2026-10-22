@@ -5,7 +5,7 @@ This session composes the verified parts of VeriMon into one program, VeriMon 2.
 command line:
 
 - the formula file is parsed by the verified parser (session `MFODL_Parser`);
-- the signature file is read by a verified reader (theory `Signature`);
+- the signature file is read by a verified reader (theory `Signature_Reader`);
 - the parsed formula is converted into the monitor's formula as MonPoly's front
   end does (theory `Surface_Conversion`);
 - the monitor is started (`vinit`, theory `MFODL_Monitor_Exec.Log_Monitor`)
@@ -21,8 +21,8 @@ errors in the log by line and column.
 
 | Theory | Content |
 |---|---|
-| `Signature` | Signature files: grammar `G_sig` over the log lexer's tokens, its language `sig_lang`, the reader `read_sig` with MonPoly's messages, and `read_sig_correct` |
-| `Surface_Conversion` | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax`, as MonPoly's front end applied it for VeriMon 1), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
+| `Signature_Reader` (session `Log_Parser`) | Signature files: grammar `G_sig` over the log lexer's tokens, its language `sig_lang`, the reader `read_sig` with MonPoly's messages, and `read_sig_correct` |
+| `Surface_Conversion` (session `MFODL_Frontend`) | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax`, as MonPoly's front end applied it for VeriMon 1), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
 | `CLI_Options` | MonPoly's options and `Arg.parse`'s messages: `parse_command`, `config` |
 | `CLI_Output` | Verdicts (`show_results`), timestamps (`-unix`), MonPoly's tuple order, and the messages for errors in the log |
 | `CLI` | `cli_main` |

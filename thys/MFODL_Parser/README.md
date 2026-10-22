@@ -15,13 +15,16 @@ introduction rule per production, with the semantic actions as values.
 
 | Session (directory) | Theory | Content |
 |---|---|---|
-| `MFODL_Grammar` (`.`) | `MFODL_Syntax` | The syntax tree: MonPoly's `MFOTL.formula` with named variables |
-| | `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
+| `MFODL_Grammar` (`.`) | `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
 | `MFODL_Parser` (`Parser`) | `MFODL_Lexer` | An executable model of MonPoly's `src/formula_lexer.mll` (not verified) |
-| | `Surface_Postprocessing` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
 | | `MFODL_Parser` | The parser `mfodl_parse`, its correctness, and `parse_formula` = lexer + parser + post-processing |
-| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Efficient_Lexer` | Code equations for the lexer |
-| | `MFODL_Parser_Code` | Examples checked by evaluation |
+| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Efficient_Lexer` | Faster code equations for the lexer and the semantic actions |
+| | `MFODL_Parser_Examples` | The parser's tables in code, and examples checked by evaluation |
+
+The syntax tree (MonPoly's `MFOTL.formula` with named variables, theory `Surface_Syntax`) and
+the post-processing (what MonPoly's actions do besides building the tree: numbering `_`,
+`add_ex`, checks; theory `Surface_Postprocessing`) are in session `MFODL_Syntax`
+(`thys/MFODL_Syntax`), which the logic and the front end use without the parser.
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
@@ -148,7 +151,7 @@ of state indices of two precomputed LR(0) automata, proved to compute the same
 result as the package's general driver. Its code equation runs on tables that
 are binary tries keyed by the bits of the index (`lr/LR_Trie.thy`): they are
 static data, and with binary naturals a lookup follows the constructors of the
-numeral without arithmetic (`MFODL_Parser_Code` declares the code equations
+numeral without arithmetic (`MFODL_Parser_Examples` declares the code equations
 `tlookup_binary`). Productions and nonterminals are numbered, goto rows are
 keyed by lookahead or nonterminal number, and the reduces licensed at a state
 are tabulated by lookahead, so a step compares no names. Each input token
@@ -177,11 +180,11 @@ repeats a stack loops. The general driver,
 which computes the closure of every new state with its layout anchors at run
 time, is about 8,000 times slower on the suite.
 
-The lexer model (`MFODL_Lexer`) is written for readability; `MFODL_Parser_Code`
+The lexer model (`MFODL_Lexer`) is written for readability; `MFODL_Efficient_Lexer`
 gives it code equations, proved equal to its definitions, that avoid
 arithmetic on naturals and try only the rules that can match at the current
 character. They reduced the lexer from 427 M to 13 M instructions.
-`MFODL_Parser_Code` also imports `Code_Abstract_Char`, which exports a
+`MFODL_Efficient_Lexer` also imports `Code_Abstract_Char`, which exports a
 character as its code, an integer: comparing two characters then compares two
 integers instead of eight bits, and `integer_of_char` needs no arithmetic
 (OCaml strings are converted with `char_of_integer`). A pattern match on
@@ -189,7 +192,7 @@ a character literal, as in `int_of_lexeme` (`CHR ''-'' # ds`), still takes the
 character apart into its bits; `digit_val`, `int_of_lexeme` and `sign_len` get
 code equations that compare instead.
 
-`MFODL_Parser_Code` exports with binary naturals (`Code_Binary_Nat`), so that
+`MFODL_Parser_Examples` exports with binary naturals (`Code_Binary_Nat`), so that
 ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
 become some 36,000 `Z.of_int` calls and ocamlopt fails with a stack overflow.
 The `grammar` package can also run the driver on arrays with integer indices

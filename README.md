@@ -175,20 +175,28 @@ The formalization
 | `thys/MFOTL_Monitor_Devel` | `MFOTL_Monitor_Devel` | Traces, intervals, tables, event data, the abstract monitor (the logic's base) |
 | `thys/MFODL_Logic` | `MFODL_Logic` | MFODL: syntax, semantics, typing, safety and monitorability, rewriting, VeriMon's preparation, the specification of a monitor |
 | `thys/MFODL_Frontend` | `MFODL_Frontend` | From parse trees to typed formulas, independent of the parsers |
-| `thys/Monitor_Data_Structures` | `Monitor_Data_Structures` | Generic data structures: queues, deques, order-statistic trees, clusters, facts on mappings, sliding-window aggregation |
-| `thys/Generic_Join_Devel` | `Generic_Join_Devel` | Multi-way joins |
-| `thys/Monitor_Algorithm` | `Monitor_Algorithm` | The monitoring algorithm, in a locale over its auxiliary structures and joins |
-| `thys/Monitor_Algorithm_Proof` | `Monitor_Algorithm_Proof` | Progress, the algorithm's invariant and correctness |
-| `thys/Monitor_Impl` | `Monitor_Impl` | The concrete auxiliary structures and joins and the algorithm's instance with them (definitions and code equations) |
-| `thys/Monitor_Impl_Proof` | `Monitor_Impl_Proof` | The invariants of the concrete structures; the instance meets the algorithm's assumptions |
-| `thys/Monitor_Exec` | `Monitor_Exec` | The executable monitor, the monitor on the bytes of a log, and the code-generator setup (definitions and code equations) |
-| `thys/Monitor_Exec_Proof` | `Monitor_Exec_Proof` | The executable monitor simulates the algorithm and inherits its correctness |
 | `thys/Log_Parser` | `Log_Parser` | The log and signature formats and their verified parsers |
 | `thys/grammar` | `Grammar_Command`, `LR_Parser` | Grammars and verified LR parsers generated from them (a submodule) |
 | `thys/MFODL_Parser` | `MFODL_Grammar`, `MFODL_Parser`, `MFODL_Parser_Code` | The grammar of MonPoly's formula syntax and its verified parser |
 | `thys/VeriMon_Parsers` | `VeriMon_Parsers` | Both parsers and Containers in one heap, the parent of the monitor's sessions |
+| `thys/Monitor_Algorithm` | `Monitor_Algorithm` | The monitoring algorithm, in a locale over its auxiliary structures and joins |
+| `thys/Monitor_Algorithm_Proof` | `Monitor_Algorithm_Proof` | Progress, the algorithm's invariant and correctness |
+| `thys/Monitor_Data_Structures` | `Monitor_Data_Structures` | Generic data structures: queues, deques, order-statistic trees, clusters, facts on mappings, sliding-window aggregation |
+| `thys/Generic_Join_Devel` | `Generic_Join_Devel` | Multi-way joins |
+| `thys/Monitor_Impl` | `Monitor_Impl` | The concrete auxiliary structures and joins and the algorithm's instance with them (definitions and code equations) |
+| `thys/Monitor_Impl_Proof` | `Monitor_Impl_Proof` | The invariants of the concrete structures; the instance meets the algorithm's assumptions |
+| `thys/Monitor_Exec` | `Monitor_Exec` | The executable monitor, the monitor on the bytes of a log, and the code-generator setup (definitions and code equations) |
+| `thys/Monitor_Exec_Proof` | `Monitor_Exec_Proof` | The executable monitor simulates the algorithm and inherits its correctness |
 | `thys/VeriMon_CLI` | `VeriMon_CLI` | The command line, the outputs, and the code export |
 | `thys/VeriMon_CLI_Proof` | `VeriMon_CLI_Proof` | The end-to-end theorems |
+
+A theory is named after what it is about. A theory of a proof session takes the name of the
+theory whose definitions it is about, plus one word for what it proves: `_Valid` (a concrete
+structure meets the algorithm's specification of it), `_Simulation` (the executable monitor
+simulates the algorithm's instance) or `_Correctness`. The prefixes `Optimized_`, `Exec_` and
+`Indexed_` mark the layer of a subject that occurs in several (the concrete structures, the
+executable monitor, its indexed tables), and `Efficient_` and `Monomorphic_` name the theories
+that only make the generated code faster.
 
 The theories are checked with Isabelle2025-2 and the
 [Archive of Formal Proofs](https://www.isa-afp.org). After `git submodule update --init`,
