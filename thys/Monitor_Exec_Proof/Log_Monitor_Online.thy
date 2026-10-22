@@ -660,6 +660,8 @@ proof -
     using main by (simp add: fz)
 qed
 
+subsection \<open>Several chunks\<close>
+
 lemma wf_vstate_stream_prefix:
   "wf_vstate filt pf cf s \<pi> z \<Longrightarrow> stream_prefix (keep_spec filt \<phi> S) (sf pf) S s = Some \<pi>"
   by (auto simp: wf_vstate_def stream_prefix_def)

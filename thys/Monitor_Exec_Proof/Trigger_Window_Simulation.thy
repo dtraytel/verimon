@@ -328,6 +328,8 @@ proof -
     by (auto simp: filter_empty_conv)
 qed
 
+subsection \<open>Read of the window\<close>
+
 lemma trel_result:
   assumes r: "trel args msk cur ax D" and ne: "\<not> tw_empty ax"
     and dm: "emsk_args args msk"

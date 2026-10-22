@@ -641,6 +641,9 @@ next
       by (rule progress_not_contains_upd[OF _ 8(3)])
   qed
 qed (rule progress_not_contains_upd; simp)+
+
+subsection \<open>Freezing as a let binding\<close>
+
 lemma sat_Frz_now_only:
   assumes "now_only (p, Formula.nfv \<phi>) \<psi>"
   shows "Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>) = Formula.sat \<sigma> V v i (Formula.Let p \<phi> \<psi>)"

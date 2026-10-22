@@ -7,7 +7,8 @@ begin
 section \<open>Conversion of parsed formulas\<close>
 
 text \<open>MonPoly's syntax tree becomes the monitor's formula over de Bruijn indices, as MonPoly's front
-  end converts it for @{text "-verified"}; but an equivalence stays one also without rewriting.\<close>
+  end converts it for @{text "-verified"}, except that without rewriting MonPoly turns
+  @{text "\<phi> EQUIV \<psi>"} into @{text "(\<phi> IMPLIES \<psi>) AND (\<psi> IMPLIES \<psi>)"}.\<close>
 
 subsection \<open>Strings\<close>
 
