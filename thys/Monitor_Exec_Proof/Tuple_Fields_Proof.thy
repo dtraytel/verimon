@@ -6,5 +6,11 @@ begin
 
 
 
+lemma umatch_match: "umatch tms xs = match tms xs"
+  by (induct tms xs rule: umatch.induct) auto
+
+lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
+  by (force simp: Option.these_def image_iff)
+
 end
 (*>*)
