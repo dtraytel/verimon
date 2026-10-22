@@ -4,19 +4,10 @@ theory CLI_Output
 begin
 (*>*)
 
-section \<open>The output\<close>
+section \<open>Output in MonPoly's format\<close>
 
-text \<open>
-  The verdicts are printed as MonPoly prints them (\<^verbatim>\<open>Verified_adapter.show_results\<close>): for
-  each time point with a nonempty verdict, a line with the timestamp, the time point and the
-  tuples in MonPoly's order; with @{text "-verbose"}, a line for every time point. The text is a
-  list of @{typ string8} pieces, which the driver writes one after the other.
-
-  Three functions on the monitor's values are implemented by OCaml in the code (theory
-  @{text CLI_Export}): @{text str8_of_integer} by Zarith's @{text Z.to_string},
-  @{text str8_quoted} by a test of the first and last byte, and the printer of floating point
-  numbers, which is a parameter (MonPoly's @{text "%g"}).
-\<close>
+text \<open>The verdicts as MonPoly prints them, as a list of @{typ string8} pieces. The code implements
+  @{text str8_of_integer} and @{text str8_quoted} by OCaml, and the float printer is a parameter.\<close>
 
 subsection \<open>Values\<close>
 
@@ -35,8 +26,7 @@ definition str8_quoted :: "string8 \<Rightarrow> bool" where
 abbreviation S8 :: "String.literal \<Rightarrow> string8" where
   "S8 \<equiv> string8_literal"
 
-text \<open>A string is printed in double quotes, unless it is empty (two double quotes) or already
-  begins and ends with one (@{text Verified_adapter.add_event_data}).\<close>
+text \<open>A string is printed in double quotes, unless it already begins and ends with one.\<close>
 
 definition ed_out :: "(double \<Rightarrow> string8) \<Rightarrow> event_data \<Rightarrow> string8 list" where
   "ed_out ff d = (case d of
@@ -55,16 +45,13 @@ definition tuple_out :: "(double \<Rightarrow> string8) \<Rightarrow> event_data
 
 subsection \<open>Timestamps\<close>
 
-text \<open>MonPoly adds the last timestamp @{text "2\<^sup>6\<^sup>4"} (@{text MFOTL.ts_max}), and prints it as
-  @{text MaxTS}.\<close>
+text \<open>MonPoly adds the last timestamp @{text "2\<^sup>6\<^sup>4"} and prints it as @{text MaxTS}.\<close>
 
 definition ts_max :: nat where
   "ts_max = 2 ^ 64"
 
-text \<open>With @{text "-unix"}, MonPoly prints the fields of OCaml's @{text "Unix.gmtime"} as they
-  are: the years since 1900, the month from 0, the day of the month, and the time. The date is
-  computed from the days since 1970 (by Hinnant's algorithm for the proleptic Gregorian
-  calendar).\<close>
+text \<open>With @{text "-unix"}, the fields of OCaml's @{text "Unix.gmtime"} as they are: years since
+  1900 and months from 0. The date is computed by Hinnant's algorithm.\<close>
 
 definition civil_of_days :: "int \<Rightarrow> int \<times> int \<times> int" where
   "civil_of_days z0 = (let z = z0 + 719468; era = z div 146097; doe = z - era * 146097;
@@ -89,9 +76,8 @@ definition ts_out :: "bool \<Rightarrow> nat \<Rightarrow> string8 list" where
 
 subsection \<open>Verdicts\<close>
 
-text \<open>MonPoly's order of tuples (@{text Tuple.compare}): lexicographic, with integers before
-  strings before floating point numbers; values of the same type in the order of the monitor's
-  comparator, which is MonPoly's order on integers and strings.\<close>
+text \<open>MonPoly's order of tuples: lexicographic, with integers before strings before floating point
+  numbers, and otherwise the monitor's comparator.\<close>
 
 definition ed_cmp :: "event_data comparator" where
   "ed_cmp = the (ID ccompare)"
@@ -111,17 +97,14 @@ fun adj_sorted :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> 'a lis
   "adj_sorted r (x # y # zs) = (r x y \<and> adj_sorted r (y # zs))"
 | "adj_sorted r _ = True"
 
-text \<open>The tuples of a verdict, in MonPoly's order: the monitor's tables are ordered by its
-  comparator, which agrees with MonPoly's order on tables whose columns each have one type; only
-  otherwise are they sorted.\<close>
+text \<open>The monitor's tables are ordered by its comparator, which agrees with MonPoly's order if each
+  column has one type; only otherwise are they sorted.\<close>
 
 definition rows_of :: "utable \<Rightarrow> event_data list list" where
   "rows_of X = (let l = csorted_list_of_set X in
      if adj_sorted (\<lambda>a b. mp_cmp a b = Lt) l then l else csort mp_cmp l)"
 
-text \<open>The lines for the verdict of time point @{text q} with timestamp @{text t}, with
-  @{text n} free variables, and whether it is nonempty (@{text "-stop_at_first_viol"} stops
-  then, after the first tuple).\<close>
+text \<open>Also whether the verdict is nonempty, for @{text "-stop_at_first_viol"}.\<close>
 
 definition verdict_out :: "config \<Rightarrow> (double \<Rightarrow> string8) \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> utable \<Rightarrow>
     string8 list \<times> bool" where
@@ -136,10 +119,9 @@ definition verdict_out :: "config \<Rightarrow> (double \<Rightarrow> string8) \
      else if n = 0 then head @ [S8 STR ''true'', nl8]
      else head @ sep_out (S8 STR '' '') (map (tuple_out ff) rows) @ [nl8], rows \<noteq> []))"
 
-text \<open>The same text as a fold, for the driver: each piece is passed to @{text f} as it is
-  produced, and each integer of a tuple to @{text fi}, rather than built into a list, which the
-  driver would then copy (@{text verdict_fold_eq}: with @{text fi} the printing of the
-  integer, the fold over the pieces of @{const verdict_out}).\<close>
+subsection \<open>Output as a fold\<close>
+
+text \<open>The driver writes each piece as it is produced, rather than copying a list.\<close>
 
 fun sep_fold :: "('b \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> string8 \<Rightarrow> (string8 \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> 'b list \<Rightarrow> 'a \<Rightarrow> 'a" where
   "sep_fold g d f [] acc = acc"
@@ -197,17 +179,14 @@ proof -
     by (simp add: verdict_fold_def verdict_out_def Let_def sep_fold_out)
 qed
 
-text \<open>With @{text "-verbose"}, each time point begins with this line.\<close>
-
 definition tp_out :: "nat \<Rightarrow> string8 list" where
   "tp_out q = [S8 STR ''At time point '', str8_of_integer (integer_of_nat q), S8 STR '':\<newline>'']"
 
 
 subsection \<open>Errors in the log\<close>
 
-text \<open>An error the monitor reports in the log, as MonPoly words it: located at the item it
-  concerns (the driver adds the position), an out-of-order timestamp, which ends the program, and
-  a command, which the verified monitor does not support.\<close>
+text \<open>Errors in the log as MonPoly words them; the driver adds the position of an error at an
+  item.\<close>
 
 datatype lerr = LE_LOC string | LE_ORDER string | LE_CMD string
 
@@ -250,9 +229,6 @@ definition dec_nat :: "nat \<Rightarrow> string" where
 
 definition lsig_arity :: "lsig \<Rightarrow> bytes \<Rightarrow> nat option" where
   "lsig_arity L p = map_option length (map_of L (string8_of_bytes p))"
-
-text \<open>A timestamp in a message (@{text MFOTL.string_of_ts}), with @{text "-unix"} as a date as
-  in @{const unix_out}.\<close>
 
 definition unix_str :: "nat \<Rightarrow> string" where
   "unix_str t = (let s = int t; (y, m, d) = civil_of_days (s div 86400); r = s mod 86400 in

@@ -1073,7 +1073,7 @@ lemma uagg_mm_Max_Min:
   by (rule uagg_mm_gen[OF assms eval_agg_op_uagg_values_Max_Min(1) foldl_max_Max]; assumption)
     (rule uagg_mm_gen[OF assms eval_agg_op_uagg_values_Max_Min(2) foldl_min_Min]; assumption)
 
-text \<open>Other tables and aggregations fall back to @{text uagg_gen} and @{const uagg_g}.\<close>
+text \<open>Other tables and aggregations fall back to @{text uagg_gen} and @{text uagg_g}.\<close>
 
 definition uagg_mm_or :: "(integer \<Rightarrow> integer \<Rightarrow> integer) \<Rightarrow> bool \<Rightarrow> ty Formula.agg_op \<Rightarrow>
     Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where

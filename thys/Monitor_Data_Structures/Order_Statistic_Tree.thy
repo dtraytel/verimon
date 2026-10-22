@@ -1,12 +1,5 @@
 (* Author: Tobias Nipkow & Stefan Dirix *)
 
-section \<open>Weight Balanced Tree Implementation of Sets\<close>
-
-text \<open>This theory follows Hirai and Yamamoto but we do not prove their general
-theorem. Instead we provide a short parameterized theory that, when
-interpreted with valid parameters, will prove perservation of the invariant
-for these parameters.\<close>
-
 theory Order_Statistic_Tree
   imports
   Deriving.Comparator
@@ -14,10 +7,12 @@ theory Order_Statistic_Tree
   "HOL-Data_Structures.Sorting"
 begin
 
+section \<open>Weight-balanced order statistic trees\<close>
+
+subsection \<open>Sorted lists\<close>
+
 abbreviation sorted :: "'a::linorder list \<Rightarrow> bool" where
 "sorted \<equiv> sorted_wrt (\<le>)"
-
-text \<open>Equivalent lemmas for <= instead of <.\<close>
 
 lemma insort_list_sorted: "sorted (xs @ [a]) \<Longrightarrow>
   Sorting.insort1 x (xs @ a # ys) =
@@ -67,7 +62,7 @@ lemma mset_del_list:
   "mset (del_list x l) = mset l - {#x#}"
   by(induction l) auto
 
-text \<open>Wbt:\<close>
+subsection \<open>Trees and rotations\<close>
 
 lemma neq_Leaf2_iff: "t \<noteq> Leaf \<longleftrightarrow> (\<exists>l a n r. t = Node l (a,n) r)"
 by(cases t) auto
@@ -78,12 +73,8 @@ fun size_wbt :: "'a wbt \<Rightarrow> nat" where
 "size_wbt Leaf = 0" |
 "size_wbt (Node _ (_, n) _) = n"
 
-text \<open>Smart constructor:\<close>
-
 fun N :: "'a wbt \<Rightarrow> 'a \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
 "N l a r = Node l (a, size_wbt l + size_wbt r + 1) r"
-
-text "Basic Rotations:"
 
 fun rot1L :: "'a wbt \<Rightarrow> 'a \<Rightarrow> 'a wbt \<Rightarrow> 'a \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
 "rot1L A a B b C = N (N A a B) b C"
@@ -95,19 +86,10 @@ fun rot2 :: "'a wbt \<Rightarrow> 'a \<Rightarrow> 'a wbt \<Rightarrow> 'a \<Rig
 "rot2 A a (Node B1 (b,_) B2) c C = N (N A a B1) b (N B2 c C)"
 
 
-subsection "WB trees"
+subsection \<open>Balance parameters\<close>
 
-text \<open>
-Parameters:
-  \<^descr> \<open>\<Delta>\<close> determines when a tree needs to be rebalanced
-  \<^descr> \<open>\<Gamma>\<close> determines whether it needs to be single or double rotation.
-
-\noindent We represent rational numbers as pairs: \<open>\<Delta> = \<Delta>1/\<Delta>2\<close> and \<open>\<Gamma> = \<Gamma>1/\<Gamma>2\<close>.
-\bigskip
-
-Hirai and Yamamoto \cite{HiraiY11} proved that under the following constraints
-insertion and deletion preserve the WB invariant, i.e.\
-\<open>\<Delta>\<close> and \<open>\<Gamma>\<close> are \emph{valid}:\<close>
+text \<open>The ratio \<open>\<Delta> = \<Delta>1/\<Delta>2\<close> decides when to rebalance, \<open>\<Gamma> = \<Gamma>1/\<Gamma>2\<close> whether to rotate
+  singly or doubly. Hirai and Yamamoto show that these constraints make them valid.\<close>
 
 definition valid_params :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
 "valid_params \<Delta>1 \<Delta>2 \<Gamma>1 \<Gamma>2 = (
@@ -125,43 +107,18 @@ definition valid_params :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow
      \<comment> \<open>\<open>\<Gamma> \<le> 5/3\<close> when \<open>4 \<le> \<Delta> < 4.5\<close>\<close>
   )"
 
-text \<open>We do not make use of these constraints and do not prove that they guarantee
-preservation of the invariant. Instead, we provide generic proofs of invariant preservation
-that work for many (all?) interpretations of locale \<open>WBT\<close> (below) with valid parameters.
-Further down we demonstrate this by interpreting \<open>WBT\<close> with a selection of valid parameters.
-[A few arithmetic facts in the proofs below hold for natural numbers but not for rationals;
-they are derived by hand for the chosen parameters and have to be adapted for other ones.]
-
-Locale \<open>WBT\<close> comes with some minimal assumptions (\<open>\<Gamma>1 > \<Gamma>2\<close> and \<open>\<Delta>1 > \<Delta>2\<close>) which follow
-from @{const valid_params} and from which we conclude some simple lemmas.
-\<close>
+text \<open>The balance checks fix \<open>\<Delta> = 25/10\<close> and \<open>\<Gamma> = 14/10\<close>; invariant preservation is proved
+  for the matching interpretation of locale \<open>WBT\<close> only.\<close>
 
 locale WBT =
 fixes \<Delta>1 \<Delta>2 :: nat and \<Gamma>1 \<Gamma>2 :: nat
 assumes Delta_gr1: "\<Delta>1 > \<Delta>2" and Gamma_gr1: "\<Gamma>1 > \<Gamma>2"
 begin
 
-(* How to prove the assumptions from valid_params:
-lemma Gamma_gr1: "\<Gamma>1 > \<Gamma>2"
-proof -
-  have "\<not> (\<Delta>1 + \<Delta>2) * \<Gamma>2 \<le> \<Delta>1 * \<Gamma>2" by (simp add: not0)
-  thus ?thesis by (metis order.trans lower mult.commute mult_le_cancel2 not_le)
-qed
-
-lemma Delta_gr2: "\<Delta>1 > 2 * \<Delta>2"
-proof -
-  from Gamma_gr1 have "\<Gamma>2 * \<Delta>2 < \<Gamma>1 * \<Delta>2" by (simp add: not0)
-  with left have "2 * \<Gamma>2 * \<Delta>2 < \<Gamma>2 * \<Delta>1" by linarith
-  thus ?thesis by(simp)
-qed
-*)
-
-subsubsection "Balance Indicators"
+subsection \<open>Invariant and operations\<close>
 
 fun balanced1 :: "'a wbt \<Rightarrow> 'a wbt \<Rightarrow> bool" where
 "balanced1 t1 t2 = (25 * (size_wbt t1 + 1) \<ge> 10 * (size_wbt t2 + 1))"
-
-text \<open>The global weight-balanced tree invariant:\<close>
 
 fun wbt :: "'a wbt \<Rightarrow> bool" where
 "wbt Leaf = True"|
@@ -173,8 +130,6 @@ by(induction t) auto
 
 fun single :: "'a wbt \<Rightarrow> 'a wbt \<Rightarrow> bool" where
 "single t1 t2 = (14 * (size_wbt t2 + 1) > 10 * (size_wbt t1 + 1))"
-
-subsubsection "Code"
 
 fun rotateL :: "'a wbt \<Rightarrow> 'a \<Rightarrow> 'a wbt \<Rightarrow> 'a wbt" where
 "rotateL A a (Node B (b, _) C) =
@@ -233,9 +188,7 @@ fun select :: "'a wbt \<Rightarrow> nat \<Rightarrow> 'a" where
       LT \<Rightarrow> select r (n - s - 1)))" |
   "select \<langle>\<rangle> n = [] ! n"
 
-subsection "Functional Correctness Proofs"
-
-text \<open>A WB tree must be of a certain structure if balanced1 and single are False.\<close>
+subsection \<open>Functional correctness\<close>
 
 lemma not_Leaf_if_not_balanced1:
   assumes "\<not> balanced1 l r"
@@ -250,8 +203,6 @@ lemma not_Leaf_if_not_single:
 proof
   assume "l = Leaf" with assms Gamma_gr1 show False by simp
 qed
-
-subsubsection "Inorder Properties"
 
 lemma inorder_rot2:
   "B \<noteq> Leaf \<Longrightarrow> inorder(rot2 A a B b C) = inorder A @ a # inorder B @ b # inorder C"
@@ -295,9 +246,7 @@ lemma inorder_delete:
      not_Leaf_if_not_balanced1 simp del: rotateL.simps rotateR.simps)
 
 
-subsection "Size Lemmas"
-
-subsubsection "Insertion"
+subsection \<open>Sizes and balance arithmetic\<close>
 
 lemma size_rot2L[simp]:
   "B \<noteq> Leaf \<Longrightarrow> size(rot2 A a B b C) = size A + size B + size C + 2"
@@ -318,8 +267,6 @@ by (induction t rule: inorder.induct) auto
 
 lemma size_insert: "size (insert x t) = Suc (size t)"
 by (induction t rule: tree2_induct) (auto simp: not_Leaf_if_not_balanced1)
-
-subsubsection "Deletion"
 
 lemma size_delete_if_isin: "isin t x \<Longrightarrow> size t = Suc (size(delete x t))"
 proof (induction t rule: tree2_induct)
@@ -343,9 +290,6 @@ by(induction t) (auto simp: not_Leaf_if_not_balanced1 split: if_splits prod.spli
 lemma size_del_max: "t \<noteq> Leaf \<Longrightarrow> size t = Suc(size(snd(del_max t)))"
 by(induction t) (auto simp: not_Leaf_if_not_balanced1 split: if_splits prod.splits)
 
-
-subsection "Auxiliary Definitions"
-
 fun balanced1_arith :: "nat \<Rightarrow> nat \<Rightarrow> bool" where
 "balanced1_arith a b = (\<Delta>1 * (a + 1) \<ge> \<Delta>2 * (b + 1))"
 
@@ -362,27 +306,10 @@ fun doubly_balanced_arith :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarr
 end
 
 
-subsection "Preservation of WB tree Invariant for Concrete Parameters"
-
-text \<open>A number of sample interpretations with valid parameters:\<close>
+subsection \<open>Preservation of the invariant\<close>
 
 interpretation WBT where
   \<Delta>1 = 25 and \<Delta>2 = 10 and \<Gamma>1 = 14 and \<Gamma>2 = 10
-(* \<Delta>1 = 25 and \<Delta>2 = 10 and \<Gamma>1 = 15 and \<Gamma>2 = 10*)
-(* \<Delta>1 = 28 and \<Delta>2 = 10 and \<Gamma>1 = 10 and \<Gamma>2 = 7*)
-
-(* \<Delta>1 = 3 and \<Delta>2 = "Suc 0" and \<Gamma>1 = 4 and \<Gamma>2 = 3*)
-  (* The only integer solution: *)
-(* \<Delta>1 = 3 and \<Delta>2 = "Suc 0" and \<Gamma>1 = 2 and \<Gamma>2 = "Suc 0"*)
-(* \<Delta>1 = 31 and \<Delta>2 = 10 and \<Gamma>1 = 18 and \<Gamma>2 = 10*)
-
-(* \<Delta>1 = 35 and \<Delta>2 = 10 and \<Gamma>1 = 45 and \<Gamma>2 = 35*)
-(* \<Delta>1 = 35 and \<Delta>2 = 10 and \<Gamma>1 = 4 and \<Gamma>2 = 3*)
-(* \<Delta>1 = 37 and \<Delta>2 = 10 and \<Gamma>1 = 13 and \<Gamma>2 = 10*)
-
-(* \<Delta>1 = 4 and \<Delta>2 = "Suc 0" and \<Gamma>1 = 5 and \<Gamma>2 = 4*)
-(* \<Delta>1 = 4 and \<Delta>2 = "Suc 0" and \<Gamma>1 = 5 and \<Gamma>2 = 3*)
-(* \<Delta>1 = 17 and \<Delta>2 = 4 and \<Gamma>1 = 5 and \<Gamma>2 = 3 *)
 by (auto simp add: WBT_def)
 
 lemma wbt_insert:
@@ -465,10 +392,6 @@ next
 qed
 
 declare [[smt_nat_as_int]]
-
-text \<open>
-  Show that invariant is preserved by deletion in the left/right subtree:
-\<close>
 
 lemma wbt_balanceL:
   assumes "wbt (Node l (a, n) r)" "wbt l'" "size l = size l' + 1"
@@ -687,6 +610,8 @@ next
   qed
 qed
 
+subsection \<open>Selection and sorted lists\<close>
+
 lemma valid_select_wbt:
   assumes "wbt t"
   shows "select t n = (inorder t) ! n"
@@ -799,6 +724,8 @@ proof -
 qed
 
 end
+
+subsection \<open>Well-formed trees\<close>
 
 typedef (overloaded) 'a wf_wbt = "{x::'a::linorder wbt. sorted (inorder x) \<and> wbt x}" 
   by(auto intro!: exI[of _ Leaf]) 
