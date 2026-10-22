@@ -7,7 +7,8 @@ begin
 section \<open>MonPoly's command line\<close>
 
 text \<open>MonPoly's options, parsed as by OCaml's @{text Arg.parse}, with the same messages. Options of
-  MonPoly's own algorithm are accepted and ignored; @{text "-load"} and @{text "-combine"} are refused.\<close>
+  MonPoly's own algorithm are accepted and ignored; @{text "-load"} and @{text "-combine"} are
+  refused.\<close>
 
 subsection \<open>Table of options\<close>
 

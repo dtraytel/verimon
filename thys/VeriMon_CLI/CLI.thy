@@ -43,8 +43,9 @@ definition fv_text :: "string list \<Rightarrow> string" where
 
 subsection \<open>MonPoly's checks of the input formula\<close>
 
-text \<open>MonPoly checks the intervals, the bounds of future operators and the declarations on the input
-  formula; the checks of @{text LET} and aggregations are left to the conversion and the type checker.\<close>
+text \<open>MonPoly checks the intervals, the bounds of future operators and the declarations of the
+  input formula; the checks of @{text LET} and aggregations are left to the conversion and the
+  type checker.\<close>
 
 fun bnd_ok :: "bound \<Rightarrow> bool" where
   "bnd_ok (OBnd a) = (0 \<le> a)"
