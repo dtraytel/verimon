@@ -211,10 +211,11 @@ checks all theories and exports the generated code, which is in the repository a
 `src/verimon_code.ml`. The sessions without `_Proof` contain the definitions and code
 equations only, so `isabelle build -e -d . VeriMon_CLI` exports the code without checking
 the correctness proofs. The sessions form one chain: the formula parser, `VeriMon_Parsers`,
-the code sessions from `MFOTL_Monitor_Devel` to `VeriMon_CLI`, and on top of them the proof
-sessions from `Monitor_Algorithm_Proof` to `VeriMon_CLI_Proof`; the small sessions
-`MFODL_Syntax`, `Log_Parser`, `MFODL_Frontend`, `Monitor_Data_Structures` and `Generic_Join_Devel` also
-build on their own and are checked again where the chain imports them.
+the code sessions from `MFOTL_Monitor_Devel` to `Monitor_Exec`, and on top of them both
+`VeriMon_CLI` (the code export) and the proof sessions from `Monitor_Algorithm_Proof` to
+`VeriMon_CLI_Proof`, which checks the command-line theories of `VeriMon_CLI` again. The small
+sessions `MFODL_Syntax`, `Log_Parser`, `MFODL_Frontend`, `Monitor_Data_Structures` and
+`Generic_Join_Devel` also build on their own and are checked again where the chain imports them.
 
 
 Performance
