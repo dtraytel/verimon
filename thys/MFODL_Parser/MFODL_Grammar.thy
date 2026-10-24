@@ -7,9 +7,10 @@ section \<open>Grammar of MFODL formulas\<close>
 subsection \<open>Tokens\<close>
 
 text \<open>The token classes of MonPoly's formula lexer. A token with a payload carries it as its lexeme,
-  which the semantic actions convert.\<close>
+  which the semantic actions convert. The datatype has only the \<open>code\<close> plugin: for 73
+  constructors the others (\<open>size\<close>, quickcheck, transfer) take minutes, and nothing uses them.\<close>
 
-datatype mtok =
+datatype (plugins only: code) mtok =
     FALSE | TRUE | LPA | RPA | LSB | RSB | COM | SC | DOT | QM | LD
   | LESSEQ | EQ | LESS | GTR | GTREQ | STAR | LARROW | SUBSTRING | MATCHES
   | PLUS | MINUS | SLASH | MOD | F2I | I2F | DAY_OF_MONTH | MONTH | YEAR | FORMAT_DATE
