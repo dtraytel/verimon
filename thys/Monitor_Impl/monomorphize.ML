@@ -94,7 +94,7 @@ fun monomorphize1 eqngr simps ({const = c_raw, name, tyinst} : spec) thy =
     val eqns = Code.equations_of_cert thy cert |> snd |> these
       |> map_filter (fn (_, (SOME thm, proper)) => SOME (thm, proper) | _ => NONE);
     val _ = if null eqns then error ("monomorphize: no code equations for " ^ quote c) else ();
-    val simp_ctxt = put_simpset HOL_basic_ss ctxt addsimps simps;
+    val simp_ctxt = put_simpset HOL_basic_ss ctxt |> Simplifier.add_simps simps;
 
     fun instantiate thm =
       let
@@ -145,13 +145,13 @@ fun monomorphize1 eqngr simps ({const = c_raw, name, tyinst} : spec) thy =
             val goal = HOLogic.mk_Trueprop (HOLogic.mk_eq (Const (c_ov, T_target) $ x, lhs' $ x));
           in
             Goal.prove ctxt ["x"] [] goal (fn {context = ctxt', ...} =>
-              simp_tac (put_simpset HOL_basic_ss ctxt' addsimps [def']) 1)
+              simp_tac (put_simpset HOL_basic_ss ctxt' |> Simplifier.add_simps [def']) 1)
             |> Drule.zero_var_indexes
           end
       | NONE => Thm.symmetric def');
     val (_, thy) = Global_Theory.add_thmss
       [((Binding.suffix_name "_unfold" b, [unfold]), [])] thy;
-    val thy = Code_Preproc.map_pre (fn ctxt => ctxt addsimps [unfold]) thy;
+    val thy = Code_Preproc.map_pre (fn ctxt => ctxt |> Simplifier.add_simps [unfold]) thy;
   in thy end;
 
 fun monomorphize specs simps thy =
@@ -205,11 +205,11 @@ fun box1 ({const = c_raw, name, tyinst} : spec) thy =
     val unbox = Const (@{const_name unbox}, boxedT --> T);
     val goal = HOLogic.mk_Trueprop (HOLogic.mk_eq (c_ov $ x, unbox $ lhs $ x));
     val unfold = Goal.prove ctxt ["x"] [] goal (fn {context = ctxt', ...} =>
-        simp_tac (put_simpset HOL_basic_ss ctxt' addsimps [def', @{thm boxed.sel}]) 1)
+        simp_tac (put_simpset HOL_basic_ss ctxt' |> Simplifier.add_simps [def', @{thm boxed.sel}]) 1)
       |> Drule.zero_var_indexes;
     val thy = Code.declare_eqns_global [(def' RS @{thm meta_eq_to_obj_eq}, true)] thy;
     val (_, thy) = Global_Theory.add_thmss [((Binding.suffix_name "_unfold" b, [unfold]), [])] thy;
-    val thy = Code_Preproc.map_pre (fn ctxt => ctxt addsimps [unfold]) thy;
+    val thy = Code_Preproc.map_pre (fn ctxt => ctxt |> Simplifier.add_simps [unfold]) thy;
   in thy end;
 
 fun box specs thy = fold box1 specs thy;

@@ -309,5 +309,6 @@ fun uedsx_eval_since :: "args \<Rightarrow> utable list \<Rightarrow> uebuf2S \<
         | (None, ts1) \<Rightarrow> (rev rs, (x1 ## xs1, y ## ys', ts1, skew), aux))
       | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
 
+(*<*)
 end
 (*>*)

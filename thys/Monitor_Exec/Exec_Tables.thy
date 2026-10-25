@@ -579,5 +579,6 @@ lemma lookup_eidx: "Mapping.lookup (eidx msk T) k =
   (if k \<in> eproj msk ` T then Some {y \<in> T. eproj msk y = k} else None)"
   unfolding eidx_def by transfer auto
 
+(*<*)
 end
 (*>*)

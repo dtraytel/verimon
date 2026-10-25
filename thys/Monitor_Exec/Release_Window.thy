@@ -96,5 +96,6 @@ definition erelease_rel :: "cols \<Rightarrow> cols \<Rightarrow> \<I> \<Rightar
      erel I daux (eauxlist3 kR cR kR cR aux) \<and> fst daux \<le> t \<and> t \<le> tw \<and>
      sorted nts \<and> (\<forall>u \<in> set nts. fst daux \<le> u \<and> u \<le> tw)"
 
+(*<*)
 end
 (*>*)
