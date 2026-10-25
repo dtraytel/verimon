@@ -41,7 +41,7 @@ proof -
     using e by (simp add: i')
   assume "(k, t, X) \<in> set vs"
   then show "emstate_i ds \<le> k \<and> k < emstate_i ds'"
-    using e by (auto simp: vs i' List.in_set_enumerate_eq)
+    using e by (auto simp: vs i' List.in_set_indexed_from_eq)
 qed
 
 lemma emsteps0_state_mono: "emstate_i ds \<le> emstate_i (emsteps0_state \<pi> ds)"
