@@ -198,8 +198,9 @@ simulates the algorithm's instance) or `_Correctness`. The prefixes `Optimized_`
 executable monitor, its indexed tables), and `Efficient_` and `Monomorphic_` name the theories
 that only make the generated code faster.
 
-The theories are checked with Isabelle2025-2 and the
-[Archive of Formal Proofs](https://www.isa-afp.org). After `git submodule update --init`,
+The theories are checked with Isabelle2026 and the development version of the
+[Archive of Formal Proofs](https://www.isa-afp.org) (revision `059c7b667e9a`). After
+`git submodule update --init`,
 
 ```
 cd thys
