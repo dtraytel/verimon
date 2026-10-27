@@ -1,11 +1,18 @@
 theory MFODL_Parser_Examples
-  imports MFODL_Efficient_Lexer
+  imports MFODL_Efficient_Lexer "HOL-Library.Code_Binary_Nat"
 begin
 
 section \<open>Examples of the formula parser\<close>
 
 text \<open>A separate session, so that the heap image of \<^session>\<open>MFODL_Parser\<close>, whose
   \<^theory_text>\<open>parser\<close> command takes long, does not depend on the examples.\<close>
+
+subsection \<open>Code for the parser tables\<close>
+
+text \<open>The parser's tables are binary tries; with binary naturals, a lookup
+  follows the constructors of the index.\<close>
+
+declare tlookup_binary [code]
 
 subsection \<open>Examples\<close>
 

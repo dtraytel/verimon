@@ -28,8 +28,9 @@ the post-processing (what MonPoly's actions do besides building the tree: number
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 2.5 minutes, most
-of it in relating the parser to that relation), and neither needs to rerun unless
+the inductive definitions of the relation; `MFODL_Parser` about 4 minutes, most
+of it in evaluating the tables and checks and in relating the parser to that
+relation), and neither needs to rerun unless
 the grammar changes.
 
 VeriMon's code export (session `VeriMon_CLI`, `src/verimon_code.ml`) contains the parser. The
@@ -192,11 +193,18 @@ a character literal, as in `int_of_lexeme` (`CHR ''-'' # ds`), still takes the
 character apart into its bits; `digit_val`, `int_of_lexeme` and `sign_len` get
 code equations that compare instead.
 
-The `grammar` package imports `Code_Target_Nat`, because it computes the tables by
-evaluation, which with naturals made of `0` and `Suc` costs time in every index. In
-OCaml, the tables then become some 36,000 `Z.of_int` calls, on which ocamlopt fails
-with a stack overflow. The package can also run the driver on arrays with integer
-indices (`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
+`MFODL_Parser` generates the parser under `declare [[parser_literal_tables]]`: the
+start state and the action table its code equation names are then evaluated
+literals, which exported code holds as static data, instead of constants defined by
+their terms, which generated code computes when it loads (and which VeriMon's export
+cannot compile: under `Containers`, the grammar's symbols have no `ceq` and
+`ccompare` instances).
+
+`MFODL_Parser_Examples` exports with binary naturals (`Code_Binary_Nat`), so that
+ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
+become some 36,000 `Z.of_int` calls and ocamlopt fails with a stack overflow.
+The `grammar` package can also run the driver on arrays with integer indices
+(`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
 when the module is loaded adds about 4.5 ms to every run. (VeriMon's export
 prints the naturals of the tables as constructor applications instead, which
 OCaml also compiles into static data; see `thys/VeriMon_CLI/README.md`.)

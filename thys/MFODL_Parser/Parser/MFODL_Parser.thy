@@ -7,7 +7,12 @@ section \<open>Verified parser of formulas\<close>
 text \<open>\<^theory_text>\<open>parser\<close> generates an LALR(1) parser for \<^const>\<open>mfodl\<close>,
   sound and complete for the derivations of its start symbol.\<close>
 
+text \<open>With evaluated tables, VeriMon's exported code holds the parser's tables as static
+  data instead of computing them when it loads.\<close>
+
+declare [[parser_literal_tables]]
 parser mfodl_parse for mfodl
+declare [[parser_literal_tables = false]]
 
 thm mfodl_parse.sound mfodl_parse.complete
 
