@@ -41,5 +41,6 @@ definition newest_tuple_in_mapping :: "
 
 declare Map_To_Mapping.map_apply_def[simp]
 
+(*<*)
 end
 (*>*)

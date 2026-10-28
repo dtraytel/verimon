@@ -221,5 +221,6 @@ interpretation default_maux: maux
   bin_join mmulti_join
   by unfold_locales (simp_all del: bin_join.simps mmulti_join.simps add: bin_join_table mmulti_join_correct)
 
+(*<*)
 end
 (*>*)

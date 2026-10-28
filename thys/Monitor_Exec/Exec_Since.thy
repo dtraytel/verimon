@@ -239,5 +239,6 @@ definition esaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> a
      (\<forall>(t, rel) \<in> set auxlist. table kR rel) \<and>
      valid_emsaux_lz (eargs cR cL args) (emsk cR cL) cur daux (eauxlist kR cR auxlist)"
 
+(*<*)
 end
 (*>*)

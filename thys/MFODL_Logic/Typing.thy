@@ -4027,5 +4027,6 @@ definition type_check where
          then return (formula.map_formula (convert_tysym \<circ> f) \<phi>)
          else error STR ''failed to infer ground type for aggregation result'')"  
 
+(*<*)
 end
 (*>*)

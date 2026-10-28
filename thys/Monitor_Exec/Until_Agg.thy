@@ -186,5 +186,6 @@ lemma fst_rua[simp]: "fst (rua a) = uuwm (fst a)"
 lemma snd_rua[simp]: "snd (rua a) = snd a"
   by (cases a) (simp add: rua.simps)
 
+(*<*)
 end
 (*>*)

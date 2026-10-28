@@ -137,5 +137,6 @@ definition eminit_verimon where
      map_sum id (\<lambda>\<psi>. eindex ix (eminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>)))
        (prepare_verimon rw sig \<phi>)"
 
+(*<*)
 end
 (*>*)

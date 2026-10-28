@@ -169,5 +169,6 @@ fun length_mmuaux :: "args \<Rightarrow> event_data mmuaux \<Rightarrow> nat" wh
   "length_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     length done + len"
 
+(*<*)
 end
 (*>*)

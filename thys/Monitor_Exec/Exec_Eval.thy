@@ -673,5 +673,6 @@ inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<
     esim n ks cs tw (EMatchF (length cs) I mr mrs pls Ld dbuf dnts t daux)
       (mformula.MMatchF I ks dss mr mrs L buf nts t aux)"
 
+(*<*)
 end
 (*>*)

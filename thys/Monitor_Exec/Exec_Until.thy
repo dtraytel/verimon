@@ -218,5 +218,6 @@ definition lift_acc :: "'b guntil_acc \<Rightarrow> 'b list set \<times> ('b lis
 definition qacc :: "nat \<Rightarrow> 'b guntil_acc \<Rightarrow> bool" where
   "qacc n acc \<longleftrightarrow> dq_inv (snd acc) \<and> dq_len (snd acc) = n \<and> 0 < n"
 
+(*<*)
 end
 (*>*)
