@@ -1,6 +1,6 @@
 chapter AFP
 
-session MFODL_Grammar = TIGER_Grammar +
+session MFODL_Grammar = TIGER_Lexer_Parser +
   description
     "The grammar of MonPoly's formula syntax, with its semantic actions and the
      relation it defines (a separate session because the grammar command is slow)."
