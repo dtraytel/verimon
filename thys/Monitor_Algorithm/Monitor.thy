@@ -2069,7 +2069,7 @@ definition (in maux_ops) mstep :: "database \<times> ts \<Rightarrow> ('msaux, '
     (nat \<times> ts \<times> event_data table) list \<times> ('msaux, 'muaux, 'mtaux) mstate" where
   "mstep tdb st =
     (case meval (mstate_j st + 1) (mstate_n st) [snd tdb] (fst tdb) (mstate_m st) of
-      (xs, m) \<Rightarrow> (List.enumerate (mstate_i st) (zip (mstate_t st @ [snd tdb]) xs),
+      (xs, m) \<Rightarrow> (List.indexed_from (mstate_i st) (zip (mstate_t st @ [snd tdb]) xs),
         \<lparr> mstate_i = mstate_i st + length xs,
           mstate_j = mstate_j st + 1,
           mstate_m = m,

@@ -709,5 +709,6 @@ definition vpending :: "vstate \<Rightarrow> integer" where
 lemma preds_map_formula[simp]: "Rewriting.preds (Formula.formula.map_formula f \<phi>) = Rewriting.preds \<phi>"
   by (induction \<phi>) (auto simp: fv_regex_alt regex.set_map)
 
+(*<*)
 end
 (*>*)

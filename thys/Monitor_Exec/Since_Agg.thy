@@ -778,5 +778,6 @@ lemma uag_res_code[code]:
    | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) g0 \<omega> pos a))"
   by (simp add: uag_res_def ugres_def ufilt_def split: option.splits prod.splits)
 
+(*<*)
 end
 (*>*)

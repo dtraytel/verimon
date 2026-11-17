@@ -181,5 +181,6 @@ fun valid_muaux_dq :: "args \<Rightarrow> ts \<Rightarrow> muaux_dq \<Rightarrow
 lemma ID_ccompare_etuple_dq: "ID CCOMPARE(event_data tuple) \<noteq> None"
   by (simp add: ccompare_list_def ccompare_option_def ccompare_event_data_def ID_def split: option.splits)
 
+(*<*)
 end
 (*>*)

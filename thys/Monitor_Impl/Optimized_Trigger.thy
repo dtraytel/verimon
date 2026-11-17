@@ -261,5 +261,6 @@ definition update_mmtaux :: "args \<Rightarrow> ts \<Rightarrow> event_data tabl
 definition result_mmtaux :: "args \<Rightarrow> event_data mmtaux \<Rightarrow> nat list \<times> event_data table" where
   "result_mmtaux args aux = result_nmtaux (trigger_args args) aux"
 
+(*<*)
 end
 (*>*)

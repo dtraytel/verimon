@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # The repository's own package is not installed (only the web version is built), so it is
-      # not pinned either: pinning clones the repository with its submodule thys/grammar.
+      # not pinned either.
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "4.14"

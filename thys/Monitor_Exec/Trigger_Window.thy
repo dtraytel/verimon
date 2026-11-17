@@ -82,5 +82,6 @@ definition etw :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols
      (\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r) \<and> tok cR cL args \<and>
      trel (eargs cR cL args) (emsk cR cL) cur daux (eauxlist3 kL cL kR cR auxlist)"
 
+(*<*)
 end
 (*>*)

@@ -176,8 +176,7 @@ The formalization
 | `thys/MFODL_Logic` | `MFODL_Logic` | MFODL: syntax, semantics, typing, safety and monitorability, rewriting, VeriMon's preparation, the specification of a monitor |
 | `thys/MFODL_Frontend` | `MFODL_Frontend` | From parse trees to typed formulas, independent of the parsers |
 | `thys/Log_Parser` | `Log_Parser` | The log and signature formats and their verified parsers |
-| `thys/grammar` | `Grammar_Command`, `LR_Parser` | Grammars and verified LR parsers generated from them (a submodule) |
-| `thys/MFODL_Parser` | `MFODL_Grammar`, `MFODL_Parser`, `MFODL_Parser_Code` | The grammar of MonPoly's formula syntax and its verified parser |
+| `thys/MFODL_Parser` | `MFODL_Grammar`, `MFODL_Parser`, `MFODL_Parser_Code` | The lexer and the grammar of MonPoly's formula syntax and the verified lexer and parser generated from them by the AFP entry [TIGER_Lexer_Parser](https://www.isa-afp.org/entries/TIGER_Lexer_Parser.html) |
 | `thys/VeriMon_Parsers` | `VeriMon_Parsers` | Both parsers and Containers in one heap, the parent of the monitor's sessions |
 | `thys/Monitor_Algorithm` | `Monitor_Algorithm` | The monitoring algorithm, in a locale over its auxiliary structures and joins |
 | `thys/Monitor_Algorithm_Proof` | `Monitor_Algorithm_Proof` | Progress, the algorithm's invariant and correctness |
@@ -198,8 +197,9 @@ simulates the algorithm's instance) or `_Correctness`. The prefixes `Optimized_`
 executable monitor, its indexed tables), and `Efficient_` and `Monomorphic_` name the theories
 that only make the generated code faster.
 
-The theories are checked with Isabelle2025-2 and the
-[Archive of Formal Proofs](https://www.isa-afp.org). After `git submodule update --init`,
+The theories are checked with Isabelle2026 and the
+[Archive of Formal Proofs](https://www.isa-afp.org) for Isabelle2026 (`afp-2026`, revision
+`e08c175f3199`, the first with the entry TIGER_Lexer_Parser).
 
 ```
 cd thys

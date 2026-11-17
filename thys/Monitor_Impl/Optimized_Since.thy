@@ -154,5 +154,6 @@ fun result_mmsaux :: "args \<Rightarrow> 'a mmsaux \<Rightarrow> 'a table" where
 
 definition "result_mmsaux' args aux = eval_args_agg args (result_mmsaux args aux)"
 
+(*<*)
 end
 (*>*)

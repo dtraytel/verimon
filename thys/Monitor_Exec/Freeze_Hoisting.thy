@@ -144,5 +144,6 @@ text \<open>The quantifier's equation is not a simp rule, so that proofs see the
 
 declare hoist.simps(8)[simp del]
 
+(*<*)
 end
 (*>*)

@@ -314,5 +314,6 @@ definition valid_uw :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> 
 fun uw_len :: "uwaux \<Rightarrow> nat" where
   "uw_len (nts, win, rest, len, bend, cc, dn) = len"
 
+(*<*)
 end
 (*>*)

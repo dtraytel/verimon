@@ -1,171 +1,114 @@
 theory MFODL_Lexer
-  imports MFODL_Grammar.MFODL_Grammar
+  imports MFODL_Grammar.MFODL_Grammar TIGER_Lexer.Lexer_Command
 begin
 
 section \<open>Lexer of MFODL formulas\<close>
 
-text \<open>An unverified model of MonPoly's formula lexer: longest match, ties by rule order, bytes as
-  characters. Unlike MonPoly, it rejects time units other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close>
-  and \<open>s\<close>.\<close>
+text \<open>MonPoly's formula lexer as a specification of the \<^theory_text>\<open>lexer\<close> command of TIGER: longest
+  match, ties by rule order, bytes as characters. The rules are those of
+  \<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly, in its order. Unlike MonPoly, it rejects time units
+  other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close> and \<open>s\<close>. Comments \<open>(* \<dots> *)\<close> do not nest.\<close>
 
-definition in_range :: \<open>char \<Rightarrow> char \<Rightarrow> char \<Rightarrow> bool\<close> where
-  \<open>in_range a b c = ((of_char a :: nat) \<le> of_char c \<and> (of_char c :: nat) \<le> of_char b)\<close>
+text \<open>A guard reads the lexeme as codepoints.\<close>
 
-definition is_digit :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_digit c = in_range (CHR ''0'') (CHR ''9'') c\<close>
+definition valid_unit :: \<open>nat list \<Rightarrow> bool\<close> where
+  \<open>valid_unit u = (last u \<in> of_char ` set ''dhms'')\<close>
 
-definition is_letter :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_letter c = (in_range (CHR ''a'') (CHR ''z'') c \<or> in_range (CHR ''A'') (CHR ''Z'') c)\<close>
+lexer (char) mfodl_lexer :: \<open>mtok\<close>
+  modes Main Comment
+  exclusive Comment
+  where digit = \<open>[0-9]\<close> | letter = \<open>[a-zA-Z]\<close>
+  | str_start = \<open>letter | digit | [_]\<close>
+  | str_char = \<open>str_start | [\-/:'"]\<close>
+  | quoted = \<open>"\"" ([^"\\] | "\\" _)* "\""\<close>
+  rules
+    \<open>[ ] | "\t" | "\n" | "\r"\<close> \<Rightarrow> skip
+  | "+" \<Rightarrow> PLUS | "-" \<Rightarrow> MINUS | "." \<Rightarrow> DOT | "*" \<Rightarrow> STAR | "/" \<Rightarrow> SLASH
+  | "(" \<Rightarrow> LPA | ")" \<Rightarrow> RPA | "[" \<Rightarrow> LSB | "]" \<Rightarrow> RSB
+  | "|>" \<Rightarrow> FREX | \<open>"\u{E2}\u{96}\u{B7}"\<close> \<Rightarrow> FREX | "FORWARD" \<Rightarrow> FREX | "MATCHF" \<Rightarrow> FREX
+  | \<open>"<|"\<close> \<Rightarrow> PREX | \<open>"\u{E2}\u{97}\u{81}"\<close> \<Rightarrow> PREX | "BACKWARD" \<Rightarrow> PREX | "MATCHP" \<Rightarrow> PREX
+  | "|" \<Rightarrow> BAR | "," \<Rightarrow> COM | ";" \<Rightarrow> SC | "?" \<Rightarrow> QM | "_" \<Rightarrow> LD | \<open>"<-"\<close> \<Rightarrow> LARROW
+  | \<open>"<="\<close> \<Rightarrow> LESSEQ | "SUBSTRING" \<Rightarrow> SUBSTRING | "MATCHES" \<Rightarrow> MATCHES
+  | "r2s" \<Rightarrow> R2S | "s2r" \<Rightarrow> S2R | \<open>"<"\<close> \<Rightarrow> LESS | ">=" \<Rightarrow> GTREQ | ">" \<Rightarrow> GTR | "=" \<Rightarrow> EQ
+  | "MOD" \<Rightarrow> MOD | "f2i" \<Rightarrow> F2I | "i2f" \<Rightarrow> I2F | "i2s" \<Rightarrow> I2S | "s2i" \<Rightarrow> S2I
+  | "f2s" \<Rightarrow> F2S | "s2f" \<Rightarrow> S2F | "DAY_OF_MONTH" \<Rightarrow> DAY_OF_MONTH | "MONTH" \<Rightarrow> MONTH
+  | "YEAR" \<Rightarrow> YEAR | "FORMAT_DATE" \<Rightarrow> FORMAT_DATE | "FALSE" \<Rightarrow> FALSE | "TRUE" \<Rightarrow> TRUE
+  | "LET" \<Rightarrow> LET | "LETPAST" \<Rightarrow> LETPAST | "FRZ" \<Rightarrow> FRZ | "IN" \<Rightarrow> IN | "NOT" \<Rightarrow> NOT
+  | "AND" \<Rightarrow> AND | "OR" \<Rightarrow> OR | "IMPLIES" \<Rightarrow> IMPL | "EQUIV" \<Rightarrow> EQUIV | "EXISTS" \<Rightarrow> EXISTS
+  | "FORALL" \<Rightarrow> FORALL | "PREV" \<Rightarrow> PREV | "PREVIOUS" \<Rightarrow> PREV | "NEXT" \<Rightarrow> NEXT
+  | "EVENTUALLY" \<Rightarrow> EVENTUALLY | "SOMETIMES" \<Rightarrow> EVENTUALLY | "ONCE" \<Rightarrow> ONCE
+  | "ALWAYS" \<Rightarrow> ALWAYS | "PAST_ALWAYS" \<Rightarrow> PAST_ALWAYS | "HISTORICALLY" \<Rightarrow> PAST_ALWAYS
+  | "SINCE" \<Rightarrow> SINCE | "TRIGGER" \<Rightarrow> TRIGGER | "UNTIL" \<Rightarrow> UNTIL | "RELEASE" \<Rightarrow> RELEASE
+  | "CNT" \<Rightarrow> CNT | "MIN" \<Rightarrow> MIN_KW | "MAX" \<Rightarrow> MAX_KW | "SUM" \<Rightarrow> SUM_KW | "AVG" \<Rightarrow> AVG | "MED" \<Rightarrow> MED
+  | \<open>digit+ letter\<close> \<Rightarrow> TU when valid_unit
+  | \<open>"-"? digit+\<close> \<Rightarrow> INTEGER
+  | \<open>"-"? digit+ "." digit*\<close> \<Rightarrow> RAT
+  | \<open>quoted\<close> \<Rightarrow> STR_CST
+  | \<open>"r" quoted\<close> \<Rightarrow> REGEXP_CST
+  | \<open>str_start str_char*\<close> \<Rightarrow> NAME
+  | "(*" \<Rightarrow> skip, begin Comment
+  | \<open>"#" [^\n\r]* ("\n" | "\r")?\<close> \<Rightarrow> skip
+  | <Comment> (
+      "*)" \<Rightarrow> skip, begin Main
+    | \<open>[^*]+ | "*"\<close> \<Rightarrow> skip
+  )
 
-definition is_str_start :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_str_start c = (is_letter c \<or> is_digit c \<or> c = CHR ''_'')\<close>
+text \<open>The lexer succeeds if it consumes the input and stops outside a comment. The parser reads
+  the tokens without their trailing trivia.\<close>
 
-definition is_str_char :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_str_char c = (is_str_start c \<or> c \<in> set ''-/:'' \<or> c = CHR 0x27 \<or> c = CHR 0x22)\<close>
+text \<open>The final modes without a set, which VeriMon's code under \<open>Containers\<close> cannot compile
+  for a mode type without \<open>ceq\<close> and \<open>ccompare\<close> instances:\<close>
 
-definition is_space :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_space c = (c \<in> set [CHR '' '', CHR 0x09, CHR 0x0A, CHR 0x0D])\<close>
+lemma mfodl_lexer_final_code [code]: \<open>mfodl_lexer.final m = (m = Main)\<close>
+  by (simp add: mfodl_lexer.final_def)
 
-subsection \<open>Matchers\<close>
+text \<open>The lexer's code takes the action of a lexeme from the rules of its mode, converted to bytes
+  by \<^const>\<open>char_spec\<close>; as constants, the converted rules are computed once and not again for
+  every lexeme, which makes the lexer ten times faster:\<close>
 
-text \<open>Each matcher returns the length of the longest match at the start of the input, if any.\<close>
+definition mfodl_lexer_cspec_Main where
+  \<open>mfodl_lexer_cspec_Main = char_spec mfodl_lexer.spec Main\<close>
 
-definition m_fixed :: \<open>string \<Rightarrow> string \<Rightarrow> nat option\<close> where
-  \<open>m_fixed k s = (if k \<noteq> [] \<and> take (length k) s = k then Some (length k) else None)\<close>
+definition mfodl_lexer_cspec_Comment where
+  \<open>mfodl_lexer_cspec_Comment = char_spec mfodl_lexer.spec Comment\<close>
 
-definition count_digits :: \<open>string \<Rightarrow> nat\<close> where
-  \<open>count_digits s = length (takeWhile is_digit s)\<close>
+definition mfodl_lexer_cspec where
+  \<open>mfodl_lexer_cspec m =
+     (case m of Main \<Rightarrow> mfodl_lexer_cspec_Main | Comment \<Rightarrow> mfodl_lexer_cspec_Comment)\<close>
 
-definition sign_len :: \<open>string \<Rightarrow> nat\<close> where
-  \<open>sign_len s = (case s of CHR ''-'' # _ \<Rightarrow> 1 | _ \<Rightarrow> 0)\<close>
+lemma char_spec_mfodl_lexer: \<open>char_spec mfodl_lexer.spec = mfodl_lexer_cspec\<close>
+  by (rule ext) (simp add: mfodl_lexer_cspec_def mfodl_lexer_cspec_Main_def
+    mfodl_lexer_cspec_Comment_def split: mfodl_lexer_mode.split)
 
-text \<open>\<open>digit+ letter\<close>\<close>
-
-definition m_unit :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_unit s = (let n = count_digits s in
-     if 0 < n \<and> n < length s \<and> is_letter (s ! n) then Some (Suc n) else None)\<close>
-
-text \<open>\<open>'-'? digit+\<close>\<close>
-
-definition m_int :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_int s = (let k = sign_len s; n = count_digits (drop k s) in
-     if 0 < n then Some (k + n) else None)\<close>
-
-text \<open>\<open>'-'? digit+ '.' digit*\<close>\<close>
-
-definition m_rat :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_rat s = (let k = sign_len s; n = count_digits (drop k s) in
-     if 0 < n \<and> k + n < length s \<and> s ! (k + n) = CHR ''.''
-     then Some (k + n + 1 + count_digits (drop (k + n + 1) s)) else None)\<close>
-
-text \<open>The body of a quoted string after the opening quote:
-  \<open>([^ '"' '\\'] | '\\' _)* '"'\<close>.\<close>
-
-fun q_body :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>q_body [] = None\<close>
-| \<open>q_body (c # s) =
-     (if c = CHR 0x22 then Some 1
-      else if c = CHR 0x5C then (case s of [] \<Rightarrow> None | _ # s' \<Rightarrow> map_option (\<lambda>n. n + 2) (q_body s'))
-      else map_option Suc (q_body s))\<close>
-
-definition m_quoted :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_quoted s = (case s of c # s' \<Rightarrow> if c = CHR 0x22 then map_option Suc (q_body s') else None
-     | [] \<Rightarrow> None)\<close>
-
-definition m_regexp :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_regexp s = (case s of c # s' \<Rightarrow> if c = CHR ''r'' then map_option Suc (m_quoted s') else None
-     | [] \<Rightarrow> None)\<close>
-
-text \<open>\<open>(letter | digit | '_') (letter | digit | '_' | '-' | '/' | ':' | '\'' | '"')*\<close>\<close>
-
-definition m_string :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_string s = (case s of c # s' \<Rightarrow>
-     if is_str_start c then Some (Suc (length (takeWhile is_str_char s'))) else None
-     | [] \<Rightarrow> None)\<close>
-
-definition m_space :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>m_space s = (case s of c # _ \<Rightarrow> if is_space c then Some 1 else None | [] \<Rightarrow> None)\<close>
-
-subsection \<open>Rules\<close>
-
-datatype action = Emit mtok | Skip | Comment | LineComment | EmitTU
-
-text \<open>The rules in the order of \<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly.\<close>
-
-definition keyword_table :: \<open>(string \<times> mtok) list\<close> where
-  \<open>keyword_table =
-    [(''+'', PLUS), (''-'', MINUS), (''.'', DOT), (''*'', STAR), (''/'', SLASH),
-     (''('', LPA), ('')'', RPA), (''['', LSB), ('']'', RSB),
-     (''|>'', FREX), ([CHR 0xE2, CHR 0x96, CHR 0xB7], FREX), (''FORWARD'', FREX), (''MATCHF'', FREX),
-     (''<|'', PREX), ([CHR 0xE2, CHR 0x97, CHR 0x81], PREX), (''BACKWARD'', PREX), (''MATCHP'', PREX),
-     (''|'', BAR), ('','', COM), ('';'', SC), (''?'', QM), (''_'', LD), (''<-'', LARROW),
-     (''<='', LESSEQ), (''SUBSTRING'', SUBSTRING), (''MATCHES'', MATCHES),
-     (''r2s'', R2S), (''s2r'', S2R), (''<'', LESS), (''>='', GTREQ), (''>'', GTR), (''='', EQ),
-     (''MOD'', MOD), (''f2i'', F2I), (''i2f'', I2F), (''i2s'', I2S), (''s2i'', S2I),
-     (''f2s'', F2S), (''s2f'', S2F), (''DAY_OF_MONTH'', DAY_OF_MONTH), (''MONTH'', MONTH),
-     (''YEAR'', YEAR), (''FORMAT_DATE'', FORMAT_DATE), (''FALSE'', FALSE), (''TRUE'', TRUE),
-     (''LET'', LET), (''LETPAST'', LETPAST), (''FRZ'', FRZ), (''IN'', IN), (''NOT'', NOT),
-     (''AND'', AND), (''OR'', OR), (''IMPLIES'', IMPL), (''EQUIV'', EQUIV), (''EXISTS'', EXISTS),
-     (''FORALL'', FORALL), (''PREV'', PREV), (''PREVIOUS'', PREV), (''NEXT'', NEXT),
-     (''EVENTUALLY'', EVENTUALLY), (''SOMETIMES'', EVENTUALLY), (''ONCE'', ONCE),
-     (''ALWAYS'', ALWAYS), (''PAST_ALWAYS'', PAST_ALWAYS), (''HISTORICALLY'', PAST_ALWAYS),
-     (''SINCE'', SINCE), (''TRIGGER'', TRIGGER), (''UNTIL'', UNTIL), (''RELEASE'', RELEASE),
-     (''CNT'', CNT), (''MIN'', MIN_KW), (''MAX'', MAX_KW), (''SUM'', SUM_KW), (''AVG'', AVG), (''MED'', MED)]\<close>
-
-definition rules :: \<open>((string \<Rightarrow> nat option) \<times> action) list\<close> where
-  \<open>rules =
-    [(m_space, Skip)] @
-    map (\<lambda>(k, t). (m_fixed k, Emit t)) keyword_table @
-    [(m_unit, EmitTU), (m_int, Emit INTEGER), (m_rat, Emit RAT), (m_quoted, Emit STR_CST),
-     (m_regexp, Emit REGEXP_CST), (m_string, Emit NAME),
-     (m_fixed ''(*'', Comment), (m_fixed ''#'', LineComment)]\<close>
-
-fun best_match :: \<open>(nat \<times> action) option \<Rightarrow> ((string \<Rightarrow> nat option) \<times> action) list \<Rightarrow> string \<Rightarrow>
-    (nat \<times> action) option\<close> where
-  \<open>best_match b [] s = b\<close>
-| \<open>best_match b ((m, a) # rs) s = best_match
-     (case m s of None \<Rightarrow> b
-      | Some n \<Rightarrow> (case b of None \<Rightarrow> Some (n, a) | Some (n', _) \<Rightarrow> if n' < n then Some (n, a) else b))
-     rs s\<close>
-
-fun comment_end :: \<open>string \<Rightarrow> nat option\<close> where
-  \<open>comment_end (c # d # s) =
-     (if c = CHR ''*'' \<and> d = CHR '')'' then Some 2 else map_option Suc (comment_end (d # s)))\<close>
-| \<open>comment_end _ = None\<close>
-
-definition line_end :: \<open>string \<Rightarrow> nat\<close> where
-  \<open>line_end s = (let n = length (takeWhile (\<lambda>c. c \<noteq> CHR 0x0A \<and> c \<noteq> CHR 0x0D) s) in
-     if n < length s then Suc n else n)\<close>
-
-definition mk_token :: \<open>mtok \<Rightarrow> nat \<Rightarrow> string \<Rightarrow> mtoken\<close> where
-  \<open>mk_token t off lx = \<lparr>tok = t, span = \<lparr>s_line = 0, s_col = off, s_off = off,
-     s_len = length lx, s_txt = lx\<rparr>\<rparr>\<close>
-
-definition valid_unit :: \<open>string \<Rightarrow> bool\<close> where
-  \<open>valid_unit lx = (last lx \<in> set ''dhms'')\<close>
-
-text \<open>Every step consumes at least one character, so the input length bounds
-  the recursion (\<open>fuel\<close>).\<close>
-
-fun lex_aux :: \<open>nat \<Rightarrow> nat \<Rightarrow> string \<Rightarrow> mtoken list option\<close> where
-  \<open>lex_aux _ _ [] = Some []\<close>
-| \<open>lex_aux 0 _ _ = None\<close>
-| \<open>lex_aux (Suc fuel) off s =
-    (case best_match None rules s of
-      None \<Rightarrow> None
-    | Some (n, a) \<Rightarrow>
-        let lx = take n s; rest = drop n s in
-        (case a of
-          Emit t \<Rightarrow> map_option ((#) (mk_token t off lx)) (lex_aux fuel (off + n) rest)
-        | EmitTU \<Rightarrow> if valid_unit lx
-            then map_option ((#) (mk_token TU off lx)) (lex_aux fuel (off + n) rest) else None
-        | Skip \<Rightarrow> lex_aux fuel (off + n) rest
-        | Comment \<Rightarrow> (case comment_end rest of
-            None \<Rightarrow> None
-          | Some k \<Rightarrow> lex_aux fuel (off + n + k) (drop k rest))
-        | LineComment \<Rightarrow> let k = line_end rest in lex_aux fuel (off + n + k) (drop k rest)))\<close>
+lemma mfodl_lexer_lex_code [code]:
+  \<open>mfodl_lexer_lex s = char_lexer mfodl_lexer_lex.tables mfodl_lexer_lex.index mfodl_lexer_cspec
+     (\<lambda>c. mfodl_lexer.is_newline (of_char c)) [mfodl_lexer.start] \<lparr>line = 0, col = 0, off = 0\<rparr> s\<close>
+  by (simp add: mfodl_lexer_lex_def char_spec_mfodl_lexer)
 
 definition lex :: \<open>string \<Rightarrow> mtoken list option\<close> where
-  \<open>lex s = lex_aux (length s) 0 s\<close>
+  \<open>lex s = (case mfodl_lexer_lex s of (l, r, st) \<Rightarrow>
+     if r = [] \<and> mfodl_lexer.final (hd st) then Some (map token.truncate (toks l)) else None)\<close>
+
+lemma lex_Some_iff_ok: \<open>(\<exists>w. lex s = Some w) \<longleftrightarrow> mfodl_lexer_lex.ok s\<close>
+  unfolding lex_def mfodl_lexer_lex.ok_def by (auto split: prod.splits)
+
+text \<open>\<^const>\<open>lex\<close> computes the lexing judgment of the specification, read on bytes, from the
+  start mode at the first position, with nothing left over and outside a comment:\<close>
+
+theorem lex_correct:
+  \<open>lex s = Some w \<longleftrightarrow>
+    (\<exists>l st. char_cls.lexes (char_spec mfodl_lexer.spec) (\<lambda>c. mfodl_lexer.is_newline (of_char c))
+       [mfodl_lexer.start] \<lparr>line = 0, col = 0, off = 0\<rparr> s l [] st \<and>
+     mfodl_lexer.final (hd st) \<and> w = map token.truncate (toks l))\<close>
+proof -
+  obtain l r st where L: \<open>mfodl_lexer_lex s = (l, r, st)\<close>
+    by (cases \<open>mfodl_lexer_lex s\<close>)
+  have \<open>char_cls.lexes (char_spec mfodl_lexer.spec) (\<lambda>c. mfodl_lexer.is_newline (of_char c))
+      [mfodl_lexer.start] \<lparr>line = 0, col = 0, off = 0\<rparr> s l' r' st' \<longleftrightarrow> (l', r', st') = (l, r, st)\<close>
+    for l' r' st'
+    using mfodl_lexer_lex.correct[of s l' r' st'] L by auto
+  then show ?thesis
+    unfolding lex_def L by auto
+qed
 
 end

@@ -1143,5 +1143,6 @@ definition usc_add_new_table :: "args \<Rightarrow> eaggp \<Rightarrow> uconstr 
 definition usc_result :: "uconstr option \<Rightarrow> args \<Rightarrow> eaggp \<Rightarrow> uswaggc \<Rightarrow> event_data list set" where
   "usc_result q args p aux = (case aux of ((t, pend, win), x) \<Rightarrow> uc_res q p (args_n args) x)"
 
+(*<*)
 end
 (*>*)

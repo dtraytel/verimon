@@ -266,5 +266,6 @@ definition ijoin :: "ejoin_plan \<Rightarrow> 'b :: ccompare itab \<Rightarrow> 
      else if Set.is_empty (iset B) then (if pos then {} else iset A)
      else ijoin0 pl A pos B)"
 
+(*<*)
 end
 (*>*)

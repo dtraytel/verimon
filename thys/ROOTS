@@ -12,7 +12,6 @@ Monitor_Impl_Proof
 Monitor_Exec
 Monitor_Exec_Proof
 Log_Parser
-grammar
 MFODL_Parser
 VeriMon_CLI
 VeriMon_CLI_Proof

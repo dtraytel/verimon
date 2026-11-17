@@ -68,5 +68,6 @@ text \<open>The rewrite applies only if its result is monitorable.\<close>
 definition share_opt :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
   "share_opt \<phi> = (let \<phi>' = share_rw \<phi> in if mmonitorable_exec \<phi>' then \<phi>' else \<phi>)"
 
+(*<*)
 end
 (*>*)
