@@ -26,10 +26,10 @@ lexer (char) mfodl_lexer :: \<open>mtok\<close>
   | "+" \<Rightarrow> PLUS | "-" \<Rightarrow> MINUS | "." \<Rightarrow> DOT | "*" \<Rightarrow> STAR | "/" \<Rightarrow> SLASH
   | "(" \<Rightarrow> LPA | ")" \<Rightarrow> RPA | "[" \<Rightarrow> LSB | "]" \<Rightarrow> RSB
   | "|>" \<Rightarrow> FREX | \<open>"\u{E2}\u{96}\u{B7}"\<close> \<Rightarrow> FREX | "FORWARD" \<Rightarrow> FREX | "MATCHF" \<Rightarrow> FREX
-  | "<|" \<Rightarrow> PREX | \<open>"\u{E2}\u{97}\u{81}"\<close> \<Rightarrow> PREX | "BACKWARD" \<Rightarrow> PREX | "MATCHP" \<Rightarrow> PREX
-  | "|" \<Rightarrow> BAR | "," \<Rightarrow> COM | ";" \<Rightarrow> SC | "?" \<Rightarrow> QM | "_" \<Rightarrow> LD | "<-" \<Rightarrow> LARROW
-  | "<=" \<Rightarrow> LESSEQ | "SUBSTRING" \<Rightarrow> SUBSTRING | "MATCHES" \<Rightarrow> MATCHES
-  | "r2s" \<Rightarrow> R2S | "s2r" \<Rightarrow> S2R | "<" \<Rightarrow> LESS | ">=" \<Rightarrow> GTREQ | ">" \<Rightarrow> GTR | "=" \<Rightarrow> EQ
+  | \<open>"<|"\<close> \<Rightarrow> PREX | \<open>"\u{E2}\u{97}\u{81}"\<close> \<Rightarrow> PREX | "BACKWARD" \<Rightarrow> PREX | "MATCHP" \<Rightarrow> PREX
+  | "|" \<Rightarrow> BAR | "," \<Rightarrow> COM | ";" \<Rightarrow> SC | "?" \<Rightarrow> QM | "_" \<Rightarrow> LD | \<open>"<-"\<close> \<Rightarrow> LARROW
+  | \<open>"<="\<close> \<Rightarrow> LESSEQ | "SUBSTRING" \<Rightarrow> SUBSTRING | "MATCHES" \<Rightarrow> MATCHES
+  | "r2s" \<Rightarrow> R2S | "s2r" \<Rightarrow> S2R | \<open>"<"\<close> \<Rightarrow> LESS | ">=" \<Rightarrow> GTREQ | ">" \<Rightarrow> GTR | "=" \<Rightarrow> EQ
   | "MOD" \<Rightarrow> MOD | "f2i" \<Rightarrow> F2I | "i2f" \<Rightarrow> I2F | "i2s" \<Rightarrow> I2S | "s2i" \<Rightarrow> S2I
   | "f2s" \<Rightarrow> F2S | "s2f" \<Rightarrow> S2F | "DAY_OF_MONTH" \<Rightarrow> DAY_OF_MONTH | "MONTH" \<Rightarrow> MONTH
   | "YEAR" \<Rightarrow> YEAR | "FORMAT_DATE" \<Rightarrow> FORMAT_DATE | "FALSE" \<Rightarrow> FALSE | "TRUE" \<Rightarrow> TRUE
