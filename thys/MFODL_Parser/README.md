@@ -65,7 +65,9 @@ Earlier versions compiled the precedences into the productions by hand, with thr
 variants of each Boolean level, copies of the term levels and fifteen nonterminals for regular
 expressions. On 6815 inputs (the formulas of the cram tests and of the performance suite, and
 random formulas and regular expressions) the parser of the declarations and that of the compiled
-grammar return the same results.
+grammar return the same results. The restricted grammar is smaller than the compiled one (159
+productions, 47 nonterminals and 249 LR states, against 211, 72 and 320), and the parsers are
+equally fast.
 
 The static check is part of the `parser` command: `mfodl_parse.complete` has no
 premises only if the check succeeds. The restricted grammar has no conflicts.
@@ -116,9 +118,13 @@ whose formulas all go through the parser.
 The measurements below were made with the earlier grammar package (a git submodule, from which
 TIGER_Lexer_Parser grew) and the earlier, hand-written lexer with the code equations of
 `MFODL_Efficient_Lexer`; they have not been repeated for the lexer of the `lexer` command.
-With it and the parser of TIGER_Lexer_Parser, `verimon -check` on the 292 formulas of the suite
-(starting the program, lexing, parsing and checking) takes 3.5 ms per formula at the median,
-against 3.0 ms with the previous export, with the same output on every formula.
+With the lexer and parser of TIGER_Lexer_Parser, `verimon -check` on the 292 formulas of the suite
+(starting the program, lexing, parsing and checking) takes 3.1 ms per formula at the median, as
+with the earlier lexer and grammar package (3.0 ms), with the same output on every formula. In
+one process, on the 815 formulas of the cram tests and the suite, lexing takes about 33 µs per
+formula and parsing about 52 µs (with `Code_Abstract_Char` and `Code_Target_Nat`; the earlier,
+hand-written lexer took about 6 µs there). Without `mfodl_lexer_lex_code`, which computes the
+lexer's rules on bytes once, lexing took about 350 µs.
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
 9 to 48 tokens), the verified parser is 5 to 8.5 times slower than MonPoly's
