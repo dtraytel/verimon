@@ -29,10 +29,10 @@ the post-processing (what MonPoly's actions do besides building the tree: number
 (`thys/MFODL_Syntax`), which the logic and the front end use without the parser.
 
 The sessions are separate because the `grammar` and `parser` commands are slow
-on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 4 minutes, most
-of it in evaluating the tables and checks and in relating the parser to that
-relation), and neither needs to rerun unless
+on a grammar of this size (`MFODL_Grammar` takes about 3 minutes, most of it in
+the inductive definitions of the relation; `MFODL_Parser` about 2 minutes, most
+of it in evaluating the parser's tables and checks and in relating the parser to that
+relation, and about 12 seconds in evaluating the lexer's tables), and neither needs to rerun unless
 the grammar changes.
 
 VeriMon's code export (session `VeriMon_CLI`, `src/verimon_code.ml`) contains the parser. The
@@ -111,6 +111,9 @@ whose formulas all go through the parser.
 The measurements below were made with the earlier grammar package (a git submodule, from which
 TIGER_Lexer_Parser grew) and the earlier, hand-written lexer with the code equations of
 `MFODL_Efficient_Lexer`; they have not been repeated for the lexer of the `lexer` command.
+With it and the parser of TIGER_Lexer_Parser, `verimon -check` on the 292 formulas of the suite
+(starting the program, lexing, parsing and checking) takes 3.5 ms per formula at the median,
+against 3.0 ms with the previous export, with the same output on every formula.
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
 9 to 48 tokens), the verified parser is 5 to 8.5 times slower than MonPoly's
