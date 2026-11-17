@@ -7,10 +7,24 @@ section \<open>Verified parser of formulas\<close>
 text \<open>\<^theory_text>\<open>parser\<close> generates an LALR(1) parser for \<^const>\<open>mfodl\<close>,
   sound and complete for the derivations of its start symbol.\<close>
 
+text \<open>The lexer package imports \<open>Code_Target_Nat\<close>, where \<open>0\<close> is no constructor, so the
+  equations of \<^const>\<open>path_bfs\<close>, which the \<^theory_text>\<open>parser\<close> command evaluates, need the
+  form that TIGER gives \<open>lreach\<close> and \<open>rlevel\<close>:\<close>
+
+lemma path_bfs_code [code]:
+  \<open>path_bfs succ tgt n seen wk = (if n = 0 then None else case wk of
+     [] \<Rightarrow> None
+   | (i, p) # wk' \<Rightarrow>
+       if i = tgt then Some (rev p)
+       else (let succs = fold (\<lambda>(X, j) acc.
+               if j \<in> set seen \<or> j \<in> set (map fst wk') \<or> j \<in> set (map fst acc) then acc
+               else acc @ [(j, X # p)]) (succ i) []
+         in path_bfs succ tgt (n - 1) (i # seen) (wk' @ succs)))\<close>
+  by (induction succ tgt n seen wk rule: path_bfs.induct) (simp_all add: Let_def)
+
 text \<open>With evaluated tables, VeriMon's exported code holds the parser's tables as static
-  data instead of computing them when it loads. The parser comes without the diagnostic parser
-  \<open>mfodl_parse_diag\<close>: VeriMon reports a rejected formula itself, and the diagnostic parser has no
-  code once \<open>Code_Target_Nat\<close>, which the lexer package imports, is in scope.\<close>
+  data instead of computing them when it loads. VeriMon reports a rejected formula itself, so the
+  parser comes without the diagnostic parser.\<close>
 
 declare [[parser_literal_tables]]
 parser (no_diagnostics) mfodl_parse for mfodl
