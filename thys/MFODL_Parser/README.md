@@ -160,9 +160,10 @@ for the simple driver of TIGER_Lexer_Parser (`grammar/lr/LR_Simple.thy`): a stac
 of state indices of two precomputed LR(0) automata, proved to compute the same
 result as the package's general driver. Its code equation runs on tables that
 are binary tries keyed by the bits of the index (`grammar/lr/LR_Trie.thy`): they are
-static data, and with binary naturals a lookup follows the constructors of the
-numeral without arithmetic (`MFODL_Parser_Examples` declares the code equations
-`tlookup_binary`). Productions and nonterminals are numbered, goto rows are
+static data, and with binary naturals (`Code_Binary_Nat`) a lookup follows the constructors
+of the numeral without arithmetic (the code equations `tlookup_binary`); VeriMon's code,
+and since the lexer package imports `Code_Target_Nat` also the examples, use target
+integers instead. Productions and nonterminals are numbered, goto rows are
 keyed by lookahead or nonterminal number, and the reduces licensed at a state
 are tabulated by lookahead, so a step compares no names. Each input token
 is paired with its number before the run (`grammar/lr/LR_Tok.thy`), and the run on
@@ -210,11 +211,11 @@ their terms, which generated code computes when it loads (and which VeriMon's ex
 cannot compile: under `Containers`, the grammar's symbols have no `ceq` and
 `ccompare` instances).
 
-`MFODL_Parser_Examples` exports with binary naturals (`Code_Binary_Nat`), so that
-ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
-become some 36,000 `Z.of_int` calls and ocamlopt fails with a stack overflow.
+An export of the parser by itself with binary naturals (`Code_Binary_Nat`) lets ocamlopt see
+the tables as static data; with `Code_Target_Nat` the tables become some 36,000 `Z.of_int`
+calls and ocamlopt fails with a stack overflow.
 TIGER_Lexer_Parser can also run the driver on arrays with integer indices
-(`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
+(`declare [[parser_int_tables]]`, `grammar/lr/LR_Int.thy`), but converting the tables
 when the module is loaded adds about 4.5 ms to every run. (VeriMon's export
 prints the naturals of the tables as constructor applications instead, which
 OCaml also compiles into static data; see `thys/VeriMon_CLI/README.md`.)
