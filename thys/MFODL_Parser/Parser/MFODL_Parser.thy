@@ -8,10 +8,12 @@ text \<open>\<^theory_text>\<open>parser\<close> generates an LALR(1) parser for
   sound and complete for the derivations of its start symbol.\<close>
 
 text \<open>With evaluated tables, VeriMon's exported code holds the parser's tables as static
-  data instead of computing them when it loads.\<close>
+  data instead of computing them when it loads. The parser comes without the diagnostic parser
+  \<open>mfodl_parse_diag\<close>: VeriMon reports a rejected formula itself, and the diagnostic parser has no
+  code once \<open>Code_Target_Nat\<close>, which the lexer package imports, is in scope.\<close>
 
 declare [[parser_literal_tables]]
-parser mfodl_parse for mfodl
+parser (no_diagnostics) mfodl_parse for mfodl
 declare [[parser_literal_tables = false]]
 
 thm mfodl_parse.sound mfodl_parse.complete
