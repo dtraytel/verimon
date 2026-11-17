@@ -1,6 +1,6 @@
 (*<*)
 theory CLI_Export
-  imports CLI "MFODL_Parser_Code.MFODL_Efficient_Lexer" "Monitor_Impl.Monomorphic_Instance" "Monitor_Exec.Monomorphic_Hot_Spots"
+  imports CLI "MFODL_Parser_Code.MFODL_Efficient_Actions" "Monitor_Impl.Monomorphic_Instance" "Monitor_Exec.Monomorphic_Hot_Spots"
     "Monitor_Exec.Exec_Preparation" "Log_Parser.Log_OCaml" "Monitor_Exec.Log_Monitor"
 begin
 (*>*)

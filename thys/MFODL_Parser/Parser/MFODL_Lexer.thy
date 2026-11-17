@@ -58,6 +58,28 @@ text \<open>The lexer succeeds if it consumes the input and stops outside a comm
 
 definition lex :: \<open>string \<Rightarrow> mtoken list option\<close> where
   \<open>lex s = (case mfodl_lexer_lex s of (l, r, st) \<Rightarrow>
-     if mfodl_lexer_lex.ok s then Some (map token.truncate (toks l)) else None)\<close>
+     if r = [] \<and> mfodl_lexer.final (hd st) then Some (map token.truncate (toks l)) else None)\<close>
+
+lemma lex_Some_iff_ok: \<open>(\<exists>w. lex s = Some w) \<longleftrightarrow> mfodl_lexer_lex.ok s\<close>
+  unfolding lex_def mfodl_lexer_lex.ok_def by (auto split: prod.splits)
+
+text \<open>\<^const>\<open>lex\<close> computes the lexing judgment of the specification, read on bytes, from the
+  start mode at the first position, with nothing left over and outside a comment:\<close>
+
+theorem lex_correct:
+  \<open>lex s = Some w \<longleftrightarrow>
+    (\<exists>l st. char_cls.lexes (char_spec mfodl_lexer.spec) (\<lambda>c. mfodl_lexer.is_newline (of_char c))
+       [mfodl_lexer.start] \<lparr>line = 0, col = 0, off = 0\<rparr> s l [] st \<and>
+     mfodl_lexer.final (hd st) \<and> w = map token.truncate (toks l))\<close>
+proof -
+  obtain l r st where L: \<open>mfodl_lexer_lex s = (l, r, st)\<close>
+    by (cases \<open>mfodl_lexer_lex s\<close>)
+  have \<open>char_cls.lexes (char_spec mfodl_lexer.spec) (\<lambda>c. mfodl_lexer.is_newline (of_char c))
+      [mfodl_lexer.start] \<lparr>line = 0, col = 0, off = 0\<rparr> s l' r' st' \<longleftrightarrow> (l', r', st') = (l, r, st)\<close>
+    for l' r' st'
+    using mfodl_lexer_lex.correct[of s l' r' st'] L by auto
+  then show ?thesis
+    unfolding lex_def L by auto
+qed
 
 end

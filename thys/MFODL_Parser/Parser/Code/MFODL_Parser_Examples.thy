@@ -1,5 +1,5 @@
 theory MFODL_Parser_Examples
-  imports MFODL_Efficient_Lexer "HOL-Library.Code_Binary_Nat"
+  imports MFODL_Efficient_Actions "HOL-Library.Code_Binary_Nat"
 begin
 
 section \<open>Examples of the formula parser\<close>
