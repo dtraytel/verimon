@@ -4,12 +4,13 @@ This session defines MonPoly's formula grammar
 (`src/formula_parser.mly` in MonPoly's sources) with the `grammar` command of
 [TIGER_Lexer_Parser](https://www.isa-afp.org/entries/TIGER_Lexer_Parser.html) (AFP), and
 MonPoly's formula lexer (`src/formula_lexer.mll`) with its `lexer` command. From the
-grammar, the `parser` command generates an LALR(1) parser and proves it sound and complete:
+grammar and its precedence declarations, the `parser` command generates an LALR(1) parser and
+proves it sound and complete:
 
     mfodl_parse_iff:  mfodl_parse w = Some φ ⟷ mfodl_Formula w φ
 
-where `mfodl_Formula` is the inductive relation defined by the grammar: one
-introduction rule per production, with the semantic actions as values. The lexer is
+where `mfodl_Formula w φ` says that a parse tree of the grammar yields `w`, satisfies the
+precedence declarations and has the value `φ` by the semantic actions. The lexer is
 verified as well: `lex_correct` says that `lex` computes the lexing judgment of the
 lexer specification (longest match, ties by rule order, as in flex and ocamllex).
 
@@ -28,12 +29,10 @@ the post-processing (what MonPoly's actions do besides building the tree: number
 `add_ex`, checks; theory `Surface_Postprocessing`) are in session `MFODL_Syntax`
 (`thys/MFODL_Syntax`), which the logic and the front end use without the parser.
 
-The sessions are separate because the `grammar` and `parser` commands are slow
-on a grammar of this size (`MFODL_Grammar` takes about 3 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 2 minutes, most
-of it in evaluating the parser's tables and checks and in relating the parser to that
-relation, and about 12 seconds in evaluating the lexer's tables), and neither needs to rerun unless
-the grammar changes.
+The sessions are separate because the `parser` and `lexer` commands evaluate tables and checks
+(`MFODL_Parser` takes about 1 minute, of it about 20 seconds for the parser's tables and checks
+and 12 seconds for the lexer's tables; `MFODL_Grammar` about 1 minute, most of it for the
+datatype of tokens), and neither needs to rerun unless the grammar or the lexer changes.
 
 VeriMon's code export (session `VeriMon_CLI`, `src/verimon_code.ml`) contains the parser. The
 sessions alone are built with
@@ -45,25 +44,31 @@ cd thys && isabelle build -b -d . MFODL_Parser_Code
 `MFODL_Grammar` is a child of the AFP session `TIGER_Lexer_Parser`, whose heap holds
 both the grammar package (`TIGER_Grammar`) and the lexer package (`TIGER_Lexer`).
 
-## From precedences to productions
+## Precedences
 
-ocamlyacc resolves the ambiguities of MonPoly's grammar with precedence
-declarations. The `parser` command has none: it needs a grammar without LALR(1)
-conflicts. So the precedences are compiled into the productions (see the text
-in `MFODL_Grammar.thy`):
+ocamlyacc resolves the ambiguities of MonPoly's grammar with precedence declarations, and so
+does the `grammar` command (see the text in `MFODL_Grammar.thy`). Its declarations are a filter
+on the parse trees, after Afroozeh et al. (2013), not a choice between the actions of the parser,
+and the parser is built from the grammar restricted to the trees that pass it:
 
-- one nonterminal per level of binary operators;
-- three variants of each level for formulas that end in a prefix operator whose
-  body extends to the right (closed, mid prefix, low prefix);
-- regular expression atoms restricted to formulas that cannot absorb what
-  continues a regular expression;
-- separate copies of a few nonterminals for contexts with different followers.
-  The `parser` command's LR machine pools the lookaheads of a production that
-  is complete after one symbol over all contexts in which that symbol starts
-  something, so its static determinism check is stricter than LALR(1).
+- `precedence` lines for the levels of the formula operators (with the unary temporal operators
+  and quantifiers, the binary temporal operators, and `LET`/`LETPAST`/`FRZ`/aggregations as
+  three levels), of the term operators and of the regular expression operators (star,
+  concatenation, alternation). A prefix form is allowed on the right of a tighter operator and
+  extends as far as it can, as in MonPoly;
+- `forbid` lines for what the verified parser rejects where MonPoly does not (see below): an
+  aggregation with an empty group-by list and a parenthesised body ends a formula, and a bare
+  comparison in a regular expression only ends a concatenation that is not followed by `+`, is
+  not starred and is not alone in parentheses.
+
+Earlier versions compiled the precedences into the productions by hand, with three
+variants of each Boolean level, copies of the term levels and fifteen nonterminals for regular
+expressions. On 6815 inputs (the formulas of the cram tests and of the performance suite, and
+random formulas and regular expressions) the parser of the declarations and that of the compiled
+grammar return the same results.
 
 The static check is part of the `parser` command: `mfodl_parse.complete` has no
-premises only if the check succeeds.
+premises only if the check succeeds. The restricted grammar has no conflicts.
 
 ## Differences from MonPoly's parser
 
@@ -174,8 +179,8 @@ the paired input is proved equal to the run on the tokens. The number is
 computed by a case distinction on the token's constructor (`mfodl_parse_tnum`,
 defined by the `parser` command and proved equal to the search in the list of
 terminals constructor by constructor). Then the
-driver runs on the product of the two automata (`grammar/lr/LR_Prod.thy`): the 324
-reachable pairs of states are numbered, a stack entry is one pair number, and
+driver runs on the product of the two automata (`grammar/lr/LR_Prod.thy`): the
+reachable pairs of states (324 with the compiled precedences) are numbered, a stack entry is one pair number, and
 the tables give per pair number the shift and goto targets and, per
 lookahead, the candidate reduces. The step is proved equal to the step on
 pairs for stacks whose pairs are all reachable; that the list of pairs is
