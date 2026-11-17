@@ -1,5 +1,5 @@
 theory MFODL_Grammar
-  imports "MFODL_Syntax.Surface_Syntax" LR_Parser.LR_Parser
+  imports "MFODL_Syntax.Surface_Syntax" TIGER_Grammar.LR_Parser
 begin
 
 section \<open>Grammar of MFODL formulas\<close>
