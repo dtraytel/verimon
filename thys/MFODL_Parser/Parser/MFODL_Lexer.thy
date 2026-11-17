@@ -56,6 +56,12 @@ lexer (char) mfodl_lexer :: \<open>mtok\<close>
 text \<open>The lexer succeeds if it consumes the input and stops outside a comment. The parser reads
   the tokens without their trailing trivia.\<close>
 
+text \<open>The final modes without a set, which VeriMon's code under \<open>Containers\<close> cannot compile
+  for a mode type without \<open>ceq\<close> and \<open>ccompare\<close> instances:\<close>
+
+lemma mfodl_lexer_final_code [code]: \<open>mfodl_lexer.final m = (m = Main)\<close>
+  by (simp add: mfodl_lexer.final_def)
+
 definition lex :: \<open>string \<Rightarrow> mtoken list option\<close> where
   \<open>lex s = (case mfodl_lexer_lex s of (l, r, st) \<Rightarrow>
      if r = [] \<and> mfodl_lexer.final (hd st) then Some (map token.truncate (toks l)) else None)\<close>
