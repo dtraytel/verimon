@@ -14,6 +14,11 @@ text \<open>The printings rely on OCaml's strings being the byte sequences of th
   @{text Verimon_runtime.dec_of_z} agreeing with @{text Z.to_string}, and on @{text "Char.chr 34"}
   being the double quote.\<close>
 
+text \<open>@{text effect} is a keyword since OCaml 5.3 (effect handlers), and the code generator of
+  Isabelle2026 does not reserve it; the lexer package has a datatype of that name.\<close>
+
+code_reserved (OCaml) effect
+
 declare [[code drop: str8_of_string bytes_of_string str8_of_integer str8_quoted]]
 
 code_printing
