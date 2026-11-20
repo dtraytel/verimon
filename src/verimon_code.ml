@@ -8716,7 +8716,7 @@ type trma = TVar of char list | TCsta of cst | TF2i of trma | TI2f of trma |
   TUMinus of trma | TMult of trma * trma | TDiv of trma * trma |
   TMod of trma * trma;;
 
-type 'a effect = Keep | Begin of 'a | Push of 'a | Pop |
+type 'a effecta = Keep | Begin of 'a | Push of 'a | Pop |
   Stack of ('a list -> 'a list);;
 
 type command = CRun of unit config_ext | CExit of char list * char list * nat;;
